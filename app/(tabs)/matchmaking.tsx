@@ -503,7 +503,7 @@ export default function MatchmakingScreen() {
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
           <View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 }}>Matchmaking</Text>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 }}>Défi</Text>
             <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569', marginTop: 2 }}>Défis & joueurs compatibles</Text>
           </View>
           {pendingCount > 0 && (

@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { usePlayer } from '../../hooks/usePlayer';
 
 const HCAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_HCAPTCHA_SITE_KEY!;
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const SUPABASE_URL      = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 
 // ─── Icons ────────────────────────────────────────────────────
 const IconMail = ({ size = 16, color = '#94a3b8' }) => (
@@ -58,43 +58,35 @@ const IconAlertCircle = ({ size = 14, color = '#dc2626' }) => (
 );
 
 // ─── Field Input ──────────────────────────────────────────────
-type FieldInputProps = {
-  label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  placeholder: string;
-  icon: React.ReactNode;
-  focused: boolean;
-  onFocus: () => void;
-  onBlur: () => void;
-  secureTextEntry?: boolean;
-  rightElement?: React.ReactNode;
-  keyboardType?: any;
-  autoComplete?: any;
-};
-
 function FieldInput({
   label, value, onChangeText, placeholder, icon, focused, onFocus, onBlur,
   secureTextEntry, rightElement, keyboardType, autoComplete,
-}: FieldInputProps) {
+}: {
+  label: string; value: string; onChangeText: (v: string) => void;
+  placeholder: string; icon: React.ReactNode; focused: boolean;
+  onFocus: () => void; onBlur: () => void; secureTextEntry?: boolean;
+  rightElement?: React.ReactNode; keyboardType?: any; autoComplete?: any;
+}) {
   return (
     <View>
       <Text style={{
         fontSize: 10, fontWeight: '900', color: '#64748b',
         textTransform: 'uppercase', letterSpacing: 2, marginBottom: 7,
-      }}>{label}</Text>
+      }}>
+        {label}
+      </Text>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: focused ? '#fff' : '#f8fafc',
-        borderRadius: 12,
+        borderRadius: 999,
         borderWidth: 1.5,
-        borderColor: focused ? '#4f46e5' : '#e2e8f0',
-        paddingHorizontal: 12,
-        shadowColor: '#4f46e5',
-        shadowOpacity: focused ? 0.14 : 0,
+        borderColor: focused ? '#6366f1' : '#e2e8f0',
+        paddingHorizontal: 16,
+        shadowColor: '#6366f1',
+        shadowOpacity: focused ? 0.12 : 0,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 0 },
-        elevation: focused ? 3 : 0,
+        elevation: focused ? 2 : 0,
       }}>
         <View style={{ marginRight: 10 }}>{icon}</View>
         <TextInput
@@ -110,7 +102,7 @@ function FieldInput({
           autoCapitalize="none"
           style={{
             flex: 1, color: '#0f172a', fontSize: 14,
-            fontWeight: '600', paddingVertical: 14,
+            fontWeight: '600', paddingVertical: 15,
           }}
         />
         {rightElement}
@@ -120,6 +112,8 @@ function FieldInput({
 }
 
 function getAuthErrorMessage(message: string): string {
+  if (message.includes('captcha') || message.includes('hcaptcha'))
+    return 'Coche "Je suis un humain" avant de te connecter.';
   if (message.includes('Invalid login credentials') || message.includes('invalid_credentials'))
     return 'Email ou mot de passe incorrect.';
   if (message.includes('Email not confirmed') || message.includes('email_not_confirmed'))
@@ -137,29 +131,27 @@ function getAuthErrorMessage(message: string): string {
 
 // ─── Screen ───────────────────────────────────────────────────
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email,       setEmail]       = useState('');
+  const [password,    setPassword]    = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
-  const [pwFocused, setPwFocused] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pwFocused,    setPwFocused]    = useState(false);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const captchaResetFn = useRef<(() => void) | null>(null);
+  const captchaRef = useRef<any>(null);
   const { refresh } = usePlayer();
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const router  = useRouter();
+  const insets  = useSafeAreaInsets();
 
   const handleCaptchaMessage = (event: any) => {
-    if (typeof event.reset === 'function') {
-      captchaResetFn.current = event.reset;
-    }
     const data: string = event.nativeEvent?.data ?? '';
+    if (data === 'cancel' || data === 'error' || data === 'expired') {
+      setCaptchaToken(null);
+      return;
+    }
     if (data.length > 35) {
       setCaptchaToken(data);
-      event.markUsed?.();
-    } else {
-      setCaptchaToken(null);
     }
   };
 
@@ -168,20 +160,15 @@ export default function LoginScreen() {
       setError('Remplis ton email et ton mot de passe.');
       return;
     }
-    if (!captchaToken) {
-      setError('Valide le captcha avant de continuer.');
-      return;
-    }
     setError(null);
     setLoading(true);
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
-        options: { captchaToken },
+        ...(captchaToken ? { options: { captchaToken } } : {}),
       });
       if (authError) {
-        captchaResetFn.current?.();
         setCaptchaToken(null);
         setError(getAuthErrorMessage(authError.message));
         setLoading(false);
@@ -190,7 +177,6 @@ export default function LoginScreen() {
       await refresh();
       router.replace('/(tabs)');
     } catch {
-      captchaResetFn.current?.();
       setCaptchaToken(null);
       setError('Une erreur inattendue est survenue. Réessaie.');
       setLoading(false);
@@ -198,188 +184,201 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#4f46e5' }}>
-      {/* Decorative orbs */}
-      <View style={{
-        position: 'absolute', top: -40, right: -40,
-        width: 200, height: 200, borderRadius: 100,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-      }} />
-      <View style={{
-        position: 'absolute', top: 130, left: -50,
-        width: 160, height: 160, borderRadius: 80,
-        backgroundColor: 'rgba(16,185,129,0.3)',
-      }} />
-
-      {/* Hero */}
-      <View style={{
-        paddingTop: insets.top + 24,
-        paddingBottom: 32,
-        alignItems: 'center',
-        paddingHorizontal: 24,
-      }}>
-        <Image
-          source={require('../../assets/icon.png')}
-          style={{
-            width: 68, height: 68, borderRadius: 20,
-            marginBottom: 18,
-            shadowColor: '#000',
-            shadowOpacity: 0.2, shadowRadius: 20,
-            shadowOffset: { width: 0, height: 10 },
-          }}
-          resizeMode="cover"
-        />
-        <Text style={{
-          fontSize: 26, fontWeight: '900', color: '#fff',
-          letterSpacing: -0.5, marginBottom: 6,
-        }}>
-          MatchupPadel
-        </Text>
-        <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 15, fontWeight: '600' }}>
-          Bon retour sur la piste 🎾
-        </Text>
-      </View>
-
-      {/* White bottom sheet */}
+    <View style={{ flex: 1, backgroundColor: '#ECECF5' }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <ScrollView
-          style={{
-            flex: 1,
-            backgroundColor: '#fff',
-            borderTopLeftRadius: 32, borderTopRightRadius: 32,
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingTop: insets.top + 40,
+            paddingBottom: insets.bottom + 24,
+            paddingHorizontal: 20,
           }}
-          contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 28 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Drag handle */}
-          <View style={{
-            width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2,
-            alignSelf: 'center', marginBottom: 22,
-          }} />
-
-          <Text style={{
-            fontSize: 22, fontWeight: '900', color: '#0f172a',
-            letterSpacing: -0.5, marginBottom: 22,
-          }}>Connexion</Text>
-
-          <View style={{ gap: 16 }}>
-            <FieldInput
-              label="Email"
-              value={email}
-              onChangeText={(v) => { setEmail(v); setError(null); }}
-              placeholder="toi@exemple.fr"
-              icon={<IconMail size={16} color={emailFocused ? '#4f46e5' : '#94a3b8'} />}
-              focused={emailFocused}
-              onFocus={() => setEmailFocused(true)}
-              onBlur={() => setEmailFocused(false)}
-              keyboardType="email-address"
-              autoComplete="email"
-            />
-
-            <FieldInput
-              label="Mot de passe"
-              value={password}
-              onChangeText={(v) => { setPassword(v); setError(null); }}
-              placeholder="••••••••"
-              icon={<IconLock size={16} color={pwFocused ? '#4f46e5' : '#94a3b8'} />}
-              focused={pwFocused}
-              onFocus={() => setPwFocused(true)}
-              onBlur={() => setPwFocused(false)}
-              secureTextEntry={!showPassword}
-              rightElement={
-                <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={{ padding: 4 }}>
-                  {showPassword
-                    ? <IconEyeOff size={16} color="#94a3b8" />
-                    : <IconEye size={16} color="#94a3b8" />}
-                </TouchableOpacity>
-              }
-            />
-          </View>
-
-          {/* hCaptcha widget */}
-          <View style={{ height: 80, marginTop: 16, overflow: 'hidden' }}>
-            <Hcaptcha
-              siteKey={HCAPTCHA_SITE_KEY}
-              size="compact"
-              url={SUPABASE_URL}
-              languageCode="fr"
-              showLoading
-              loadingIndicatorColor="#4f46e5"
-              onMessage={handleCaptchaMessage}
-            />
-          </View>
-
-          {error && (
-            <View style={{
-              marginTop: 12,
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              gap: 8,
-              backgroundColor: '#fef2f2',
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: '#fecaca',
-              paddingVertical: 12,
-              paddingHorizontal: 14,
-            }}>
-              <View style={{ marginTop: 1 }}>
-                <IconAlertCircle size={14} color="#dc2626" />
-              </View>
-              <Text style={{ flex: 1, color: '#dc2626', fontSize: 13, fontWeight: '700', lineHeight: 19 }}>
-                {error}
+          {/* ── Logo + titre ── */}
+          <View style={{ alignItems: 'center', marginBottom: 36 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <Image
+                source={require('../../assets/icon.png')}
+                style={{ width: 52, height: 52, borderRadius: 16 }}
+                resizeMode="cover"
+              />
+              <Text style={{ fontSize: 26, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 }}>
+                Matchup<Text style={{ color: '#6366f1' }}>Padel</Text>
               </Text>
             </View>
-          )}
-
-          {/* Forgot password */}
-          <View style={{ alignItems: 'flex-end', marginTop: 10 }}>
-            <TouchableOpacity>
-              <Text style={{ color: '#4f46e5', fontSize: 12, fontWeight: '800' }}>
-                Mot de passe oublié ?
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Submit */}
-          <TouchableOpacity
-            onPress={handleLogin}
-            disabled={loading || !captchaToken}
-            style={{
-              marginTop: 22,
-              backgroundColor: '#4f46e5',
-              borderRadius: 16,
-              paddingVertical: 16,
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: (loading || !captchaToken) ? 0.5 : 1,
-              shadowColor: '#4f46e5',
-              shadowOpacity: 0.35, shadowRadius: 12,
-              shadowOffset: { width: 0, height: 6 }, elevation: 6,
-            }}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Se connecter</Text>
-            }
-          </TouchableOpacity>
-
-          {/* Sign up */}
-          <View style={{ marginTop: 20, flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
-            <Text style={{ color: '#64748b', fontSize: 13, fontWeight: '500' }}>
-              Pas de compte ?
+            <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '500' }}>
+              Bon retour sur la piste
             </Text>
-            <Link href="/(auth)/signup" asChild>
-              <TouchableOpacity>
-                <Text style={{ color: '#4f46e5', fontWeight: '900', fontSize: 13 }}>
-                  S'inscrire
-                </Text>
-              </TouchableOpacity>
-            </Link>
           </View>
+
+          {/* ── Card blanche ── */}
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 24,
+            padding: 24,
+            shadowColor: '#000',
+            shadowOpacity: 0.06,
+            shadowRadius: 20,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 4,
+          }}>
+            <View style={{ gap: 16 }}>
+              <FieldInput
+                label="Email"
+                value={email}
+                onChangeText={(v) => { setEmail(v); setError(null); }}
+                placeholder="toi@exemple.fr"
+                icon={<IconMail size={16} color={emailFocused ? '#6366f1' : '#94a3b8'} />}
+                focused={emailFocused}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+
+              <FieldInput
+                label="Mot de passe"
+                value={password}
+                onChangeText={(v) => { setPassword(v); setError(null); }}
+                placeholder="••••••••"
+                icon={<IconLock size={16} color={pwFocused ? '#6366f1' : '#94a3b8'} />}
+                focused={pwFocused}
+                onFocus={() => setPwFocused(true)}
+                onBlur={() => setPwFocused(false)}
+                secureTextEntry={!showPassword}
+                rightElement={
+                  <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={{ padding: 4 }}>
+                    {showPassword
+                      ? <IconEyeOff size={16} color="#94a3b8" />
+                      : <IconEye    size={16} color="#94a3b8" />}
+                  </TouchableOpacity>
+                }
+              />
+            </View>
+
+            {/* Case à cocher hCaptcha — tape pour ouvrir le popup */}
+            <TouchableOpacity
+              onPress={() => { if (!captchaToken) captchaRef.current?.show(); }}
+              activeOpacity={captchaToken ? 1 : 0.7}
+              style={{
+                marginTop: 20,
+                flexDirection: 'row', alignItems: 'center',
+                borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12,
+                paddingHorizontal: 14, paddingVertical: 12, gap: 12,
+                backgroundColor: '#fafafa',
+              }}
+            >
+              {/* Checkbox */}
+              <View style={{
+                width: 24, height: 24, borderRadius: 5,
+                borderWidth: 2,
+                borderColor: captchaToken ? '#6366f1' : '#cbd5e1',
+                backgroundColor: captchaToken ? '#6366f1' : '#fff',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                {captchaToken && (
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</Text>
+                )}
+              </View>
+
+              <Text style={{ flex: 1, color: '#374151', fontSize: 14, fontWeight: '500' }}>
+                Je suis un humain
+              </Text>
+
+              {/* Logo hCaptcha */}
+              <View style={{ alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 18 }}>🤚</Text>
+                <Text style={{ fontSize: 8, color: '#94a3b8', fontWeight: '700' }}>hCaptcha</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* WebView hCaptcha — s'ouvre en popup via ref.show() */}
+            <Hcaptcha
+              ref={captchaRef}
+              siteKey={HCAPTCHA_SITE_KEY}
+              size="invisible"
+              url={SUPABASE_URL}
+              languageCode="fr"
+              onMessage={handleCaptchaMessage}
+            />
+
+            {/* Erreur */}
+            {error && (
+              <View style={{
+                marginTop: 14,
+                flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+                backgroundColor: '#fef2f2',
+                borderRadius: 12, borderWidth: 1, borderColor: '#fecaca',
+                paddingVertical: 12, paddingHorizontal: 14,
+              }}>
+                <View style={{ marginTop: 1 }}>
+                  <IconAlertCircle size={14} color="#dc2626" />
+                </View>
+                <Text style={{ flex: 1, color: '#dc2626', fontSize: 13, fontWeight: '700', lineHeight: 19 }}>
+                  {error}
+                </Text>
+              </View>
+            )}
+
+            {/* Bouton connexion — non bloqué par le captcha */}
+            <TouchableOpacity
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+              style={{
+                marginTop: 20,
+                backgroundColor: '#6366f1',
+                borderRadius: 999,
+                paddingVertical: 17,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: loading ? 0.65 : 1,
+                shadowColor: '#6366f1',
+                shadowOpacity: 0.3, shadowRadius: 10,
+                shadowOffset: { width: 0, height: 5 }, elevation: 5,
+              }}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16 }}>Se connecter</Text>
+              }
+            </TouchableOpacity>
+
+            {/* Séparateur */}
+            <View style={{
+              height: 1, backgroundColor: '#f1f5f9', marginVertical: 20,
+            }} />
+
+            {/* Inscription */}
+            <View style={{ alignItems: 'center', gap: 6 }}>
+              <Text style={{ color: '#64748b', fontSize: 13, fontWeight: '500' }}>
+                Pas encore de compte ?
+              </Text>
+              <Link href="/(auth)/signup" asChild>
+                <TouchableOpacity>
+                  <Text style={{ color: '#6366f1', fontWeight: '900', fontSize: 14 }}>
+                    Inscris-toi gratuitement
+                  </Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+          </View>
+
+          {/* Retour accueil */}
+          <TouchableOpacity
+            onPress={() => router.replace('/')}
+            style={{ alignItems: 'center', marginTop: 24 }}
+            activeOpacity={0.6}
+          >
+            <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '600' }}>
+              ← Retour à l'accueil
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

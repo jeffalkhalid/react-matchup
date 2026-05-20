@@ -490,7 +490,7 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
           {variant === 'upcoming' && game.my_status === 'accepted' && (
             <Pill bg="#ecfdf5" fg="#047857" border="#a7f3d0">✓ Inscrit</Pill>
           )}
-          {variant === 'upcoming' && game.is_creator && (game.pending_count ?? 0) > 0 && (
+          {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (game.pending_count ?? 0) > 0 && (
             <Pill bg="#fffbeb" fg="#b45309" border="#fcd34d">
               {game.pending_count} demande{(game.pending_count ?? 0) > 1 ? 's' : ''}
             </Pill>
@@ -1129,26 +1129,48 @@ export default function LobbyScreen() {
 
   const handleApply = async (gameId: string, joinWaitlist: boolean, teamSide?: string) => {
     if (!player) return;
+    const game = games.find(g => g.id === gameId) ?? upcomingGames.find(g => g.id === gameId);
+    const eloFit = game ? getEloFit(game, myElo) : 'outside';
+    const autoAccept = !joinWaitlist && eloFit === 'fit' && (game?.spots_available ?? 0) > 0;
+    const newStatus = joinWaitlist || (game?.spots_available ?? 0) === 0
+      ? 'waitlist'
+      : autoAccept ? 'accepted' : 'pending';
+
     const { error } = await supabase.from('game_participants').insert({
       game_id: gameId,
       player_id: player.id,
-      status: 'pending',
+      status: newStatus,
       ...(teamSide ? { team_side: teamSide } : {}),
     });
     if (error) { Alert.alert('Erreur', error.message); throw error; }
 
-    // Notify the game creator
-    const game = games.find(g => g.id === gameId) ?? upcomingGames.find(g => g.id === gameId);
-    if (game?.creator_id) {
-      notifyPlayers({
-        playerIds: [game.creator_id],
-        title: '📋 Nouvelle demande',
-        body: `${player.name} veut rejoindre ta partie`,
-        data: { type: 'lobby', gameId },
-      });
-    }
-
-    if (!joinWaitlist) {
+    if (newStatus === 'accepted' && game) {
+      await supabase.from('open_games')
+        .update({ spots_available: Math.max(0, (game.spots_available ?? 1) - 1) })
+        .eq('id', gameId);
+      const confirmedIds = [
+        game.creator_id,
+        ...(game.participants?.filter((p: any) => p.status === 'accepted').map((p: any) => p.player_id) ?? []),
+      ].filter((id: string) => id !== player.id);
+      if (confirmedIds.length > 0) {
+        notifyPlayers({
+          playerIds: confirmedIds,
+          title: '✅ Nouveau joueur confirmé !',
+          body: `${player.name} a rejoint la partie à ${game.location}.`,
+          data: { type: 'lobby', gameId },
+        });
+      }
+      Alert.alert('✅ Accepté !', 'Ton niveau correspond — tu es directement dans la partie !');
+      setOpenGameId(null);
+    } else if (newStatus === 'pending') {
+      if (game?.creator_id) {
+        notifyPlayers({
+          playerIds: [game.creator_id],
+          title: '📋 Nouvelle demande',
+          body: `${player.name} veut rejoindre ta partie`,
+          data: { type: 'lobby', gameId },
+        });
+      }
       Alert.alert('Demande envoyée !', 'Le créateur doit accepter ta demande.');
       setOpenGameId(null);
     }
@@ -1208,25 +1230,88 @@ export default function LobbyScreen() {
     currentApprovals: string[],
   ) => {
     if (!player) return;
-    const newApprovals = currentApprovals.includes(player.id)
-      ? currentApprovals
-      : [...currentApprovals, player.id];
+    if (currentApprovals.includes(player.id)) return;
+    const newApprovals = [...currentApprovals, player.id];
 
     const game = upcomingGames.find(g => g.id === gameId) ?? games.find(g => g.id === gameId);
-    const acceptedCount = (game?.participants ?? []).filter((p: any) => p.status === 'accepted').length;
-    const threshold = Math.max(1, Math.floor((acceptedCount + 1) / 2));
-    const autoAccept = newApprovals.length >= threshold;
+
+    // All current players (creator + accepted) must approve — same rule as the display in GameDetailsSheet
+    const requiredApprovers = [
+      game?.creator_id,
+      ...(game?.participants?.filter((p: any) => p.status === 'accepted').map((p: any) => p.player_id) ?? []),
+    ].filter((id): id is string => !!id && id !== participantPlayerId).slice(0, 3);
+    const allApproved = requiredApprovers.every(id => newApprovals.includes(id));
+
+    // If all approved, resolve which side to assign
+    let assignedSide: string | null = null;
+    if (allApproved && game) {
+      const SIDE_ORDER = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'];
+      const takenSides = new Set<string>([
+        ...(game.creator_side ? [game.creator_side] : ['A_GAU']),
+        ...(game.participants ?? [])
+          .filter((p: any) => p.status === 'accepted' && p.id !== participantId)
+          .map((p: any) => p.team_side)
+          .filter(Boolean),
+      ]);
+      const preferred = (game.participants ?? []).find((p: any) => p.id === participantId)?.team_side ?? null;
+      assignedSide = (preferred && !takenSides.has(preferred))
+        ? preferred
+        : SIDE_ORDER.find(s => !takenSides.has(s)) ?? null;
+    }
 
     const { error } = await supabase
       .from('game_participants')
       .update({
         approvals: newApprovals,
-        ...(autoAccept ? { status: 'accepted' } : {}),
+        ...(allApproved ? { status: 'accepted', team_side: assignedSide } : {}),
       })
       .eq('id', participantId);
 
-    if (error) Alert.alert('Erreur', error.message);
-    else fetchData();
+    if (error) { Alert.alert('Erreur', error.message); return; }
+
+    if (allApproved) {
+      // Notify the accepted player
+      notifyPlayers({
+        playerIds: [participantPlayerId],
+        title: '✅ Candidature acceptée !',
+        body: `Tu as été accepté dans la partie à ${game?.location ?? ''}.`,
+        data: { type: 'lobby', gameId },
+      });
+
+      // Eject the player from overlapping pending applications
+      if (game?.match_date) {
+        const OVERLAP = 4 * 60 * 60 * 1000;
+        const acceptedTime = new Date(game.match_date).getTime();
+
+        const { data: otherApps } = await supabase
+          .from('game_participants')
+          .select('id, game:game_id(match_date)')
+          .eq('player_id', participantPlayerId)
+          .eq('status', 'pending')
+          .neq('game_id', gameId);
+
+        const toEject = (otherApps ?? []).filter((p: any) => {
+          const t = new Date(p.game?.match_date).getTime();
+          return !isNaN(t) && Math.abs(t - acceptedTime) < OVERLAP;
+        });
+
+        if (toEject.length > 0) {
+          await supabase
+            .from('game_participants')
+            .update({ status: 'declined' })
+            .in('id', toEject.map((p: any) => p.id));
+
+          notifyPlayers({
+            playerIds: [participantPlayerId],
+            title: '📅 Candidature retirée',
+            body: `Tu es confirmé sur un autre créneau — ta candidature a été retirée automatiquement.`,
+            data: { type: 'lobby' },
+          });
+        }
+      }
+    }
+
+    fetchData();
   };
 
   const handleChangeSide = async (participantId: string, side: string) => {
@@ -1245,6 +1330,79 @@ export default function LobbyScreen() {
       .eq('id', gameId);
     if (error) Alert.alert('Erreur', error.message);
     else fetchData();
+  };
+
+  const handleLeaveGame = async (gameId: string, participantId: string, wasAccepted: boolean) => {
+    const game = upcomingGames.find(g => g.id === gameId) ?? games.find(g => g.id === gameId);
+    const isWaitlist = game?.participants?.find((p: any) => p.id === participantId)?.status === 'waitlist';
+    const label = isWaitlist ? "Quitter la liste d'attente ?" : wasAccepted ? 'Quitter cette partie ?' : 'Retirer ta candidature ?';
+    const msg   = isWaitlist ? 'Tu seras retiré de la liste.' : wasAccepted ? 'Ta place sera libérée.' : 'Ta demande sera annulée.';
+
+    Alert.alert(label, msg, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Confirmer', style: 'destructive', onPress: async () => {
+          await supabase.from('game_participants').delete().eq('id', participantId);
+
+          if (wasAccepted && player) {
+            // Remove this player's vote from all pending candidates
+            const { data: pendingRows } = await supabase
+              .from('game_participants')
+              .select('id, approvals')
+              .eq('game_id', gameId)
+              .eq('status', 'pending');
+            if (pendingRows && pendingRows.length > 0) {
+              await Promise.all(
+                pendingRows
+                  .filter((p: any) => (p.approvals ?? []).includes(player.id))
+                  .map((p: any) =>
+                    supabase.from('game_participants')
+                      .update({ approvals: (p.approvals as string[]).filter(id => id !== player.id) })
+                      .eq('id', p.id)
+                  )
+              );
+            }
+
+            // Promote first waitlisted player if any
+            const { data: nextUp } = await supabase
+              .from('game_participants')
+              .select('id, player_id, player:player_id(name)')
+              .eq('game_id', gameId)
+              .eq('status', 'waitlist')
+              .order('created_at', { ascending: true })
+              .limit(1)
+              .maybeSingle();
+
+            if (nextUp) {
+              const takenSides = new Set<string>([
+                ...(game?.creator_side ? [game.creator_side] : ['A_GAU']),
+                ...(game?.participants ?? [])
+                  .filter((p: any) => p.status === 'accepted' && p.id !== participantId)
+                  .map((p: any) => p.team_side).filter(Boolean),
+              ]);
+              const promoSide = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'].find(s => !takenSides.has(s)) ?? null;
+              await supabase.from('game_participants').update({
+                status: 'accepted',
+                ...(promoSide ? { team_side: promoSide } : {}),
+              }).eq('id', nextUp.id);
+              notifyPlayers({
+                playerIds: [nextUp.player_id],
+                title: '🎉 Place libérée — tu es accepté !',
+                body: `Tu passes de la liste d'attente à confirmé !`,
+                data: { type: 'lobby', gameId },
+              });
+            } else {
+              const currentSpots = game?.spots_available ?? 0;
+              await supabase.from('open_games')
+                .update({ spots_available: currentSpots + 1, status: 'open' })
+                .eq('id', gameId);
+            }
+          }
+
+          fetchData();
+        },
+      },
+    ]);
   };
 
   const handleDeclinePending = async (participantId: string) => {
@@ -1389,6 +1547,7 @@ export default function LobbyScreen() {
           onCreatorChangeSide={handleCreatorChangeSide}
           onApprovePending={handleApprovePending}
           onDeclinePending={handleDeclinePending}
+          onLeave={handleLeaveGame}
         />
       )}
 

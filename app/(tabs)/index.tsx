@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity,
-  ActivityIndicator, Animated, LayoutAnimation,
+  View, Text, TouchableOpacity, ScrollView, Modal,
+  ActivityIndicator, Animated, LayoutAnimation, Easing,
   Platform, UIManager, Alert, StyleSheet,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
   Path, Circle, Rect,
@@ -23,7 +23,9 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 function formatNextGame(matchDate: string, location: string): string {
   const date = new Date(matchDate);
   const now  = new Date();
-  const diffDays = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const nowDay  = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
+  const diffDays = Math.round((dateDay.getTime() - nowDay.getTime()) / (1000 * 60 * 60 * 24));
   const time = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const dayLabel = diffDays === 0 ? "Aujourd'hui"
     : diffDays === 1 ? 'Demain'
@@ -80,6 +82,134 @@ const IconCalendar = ({ size = 24, color = '#8b5cf6' }) => (
   </Svg>
 );
 
+// Filled bell — chemin exact du design Bell V2
+const BellFilledIcon = ({ size = 20 }: { size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24"
+    fill="#fff" stroke="#fff" strokeWidth={1.4} strokeLinejoin="round">
+    <Path d="M6 8a6 6 0 0 1 12 0c0 6.2 2.6 8.4 2.9 8.7a.6.6 0 0 1-.4 1H3.5a.6.6 0 0 1-.4-1C3.4 16.4 6 14.2 6 8z" />
+    <Path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" fill="none" />
+  </Svg>
+);
+
+// ─── Notification Bell V2 ─────────────────────────────────────
+// Specs: design_handoff_notification_bell/README.md
+const BADGE_RED  = '#E5484D';
+const HERO_GREEN = '#0E2A22';
+
+function NotificationBell({ count, onPress }: { count: number; onPress: () => void }) {
+  const has = count > 0;
+  const display = count > 9 ? '9+' : String(count);
+
+  // Bell swing — 2.6 s loop, ±12°, pivot top-center
+  const swing    = useRef(new Animated.Value(0)).current;
+  // Pulse ring — 1.8 s loop, scale 0.85→1.6 + fade
+  const ringScale   = useRef(new Animated.Value(0.85)).current;
+  const ringOpacity = useRef(new Animated.Value(0.9)).current;
+
+  useEffect(() => {
+    if (!has) {
+      swing.stopAnimation();
+      swing.setValue(0);
+      ringScale.stopAnimation();
+      ringOpacity.stopAnimation();
+      ringScale.setValue(0.85);
+      ringOpacity.setValue(0.9);
+      return;
+    }
+
+    // Bell swing: 7 steps × 260 ms + 780 ms pause = 2600 ms
+    const swingLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(swing, { toValue: -12, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(swing, { toValue:  12, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -12, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(swing, { toValue:  12, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -12, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(swing, { toValue:  12, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(swing, { toValue:   0, duration: 260, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.delay(780),
+      ])
+    );
+
+    // Pulse ring: scale + fade over 1440 ms, hold 360 ms = 1800 ms
+    const pulseLoop = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(ringScale,   { toValue: 1.6, duration: 1440, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+          Animated.delay(360),
+        ]),
+        Animated.sequence([
+          Animated.timing(ringOpacity, { toValue: 0,   duration: 1440, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+          Animated.delay(360),
+        ]),
+      ])
+    );
+
+    swingLoop.start();
+    pulseLoop.start();
+    return () => { swingLoop.stop(); pulseLoop.stop(); };
+  }, [has]);
+
+  const rotate = swing.interpolate({ inputRange: [-12, 12], outputRange: ['-12deg', '12deg'] });
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      style={{
+        position: 'absolute', top: 14, right: 14,
+        width: 40, height: 40, borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {/* Bell icon — animé quand has */}
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <BellFilledIcon size={20} />
+      </Animated.View>
+
+      {has && (
+        <>
+          {/* Pulse ring */}
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', top: -2, right: -2,
+              width: 22, height: 22, borderRadius: 11,
+              borderWidth: 2, borderColor: BADGE_RED,
+              transform: [{ scale: ringScale }],
+              opacity: ringOpacity,
+            }}
+          />
+          {/* Badge pill — outline via wrapper HERO_GREEN */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', top: -6, right: -8,
+              borderRadius: 11,
+              backgroundColor: HERO_GREEN,
+              padding: 2,
+            }}
+          >
+            <View style={{
+              minWidth: 18, height: 18,
+              paddingHorizontal: 5,
+              borderRadius: 9,
+              backgroundColor: BADGE_RED,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.2, lineHeight: 14 }}>
+                {display}
+              </Text>
+            </View>
+          </View>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 const IconAlertTriangle = ({ size = 18, color = '#92400e' }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -126,7 +256,7 @@ function GradientAvatar({ letter, size = 68 }: { letter: string; size?: number }
 function PendingBanner({ matches, onValidate, onContest }: {
   matches: Match[];
   onValidate: (m: Match) => void;
-  onContest: (m: Match) => void;
+  onContest:  (m: Match) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (matches.length === 0) return null;
@@ -212,9 +342,88 @@ function PendingBanner({ matches, onValidate, onContest }: {
   );
 }
 
+// ─── Badge emoji lookup (subset) ─────────────────────────────
+const BADGE_EMOJI: Record<string, string> = {
+  'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
+  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🎾',
+  'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
+  'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
+};
+
+// ─── Badge prompt banner ──────────────────────────────────────
+function BadgePromptBanner({ matches, onOpen }: {
+  matches: any[];
+  onOpen: (m: any) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (matches.length === 0) return null;
+
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(v => !v);
+  };
+
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <TouchableOpacity onPress={toggle} activeOpacity={0.85} style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 14, paddingVertical: 11,
+        backgroundColor: '#EDE9FE', borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 14,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 15 }}>🏅</Text>
+          <Text style={{ fontWeight: '900', color: '#5B21B6', fontSize: 13 }}>
+            {matches.length} match{matches.length > 1 ? 's' : ''} à noter
+          </Text>
+          <View style={{ backgroundColor: '#7C3AED', width: 18, height: 18, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{matches.length}</Text>
+          </View>
+        </View>
+        <Animated.View style={{ transform: [{ rotate: expanded ? '0deg' : '180deg' }] }}>
+          <IconChevronUp size={13} color="#7C3AED" />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={{ marginTop: 4, borderWidth: 1, borderColor: '#EDE9FE', borderRadius: 14, backgroundColor: '#fff', overflow: 'hidden' }}>
+          {matches.map((m, i) => {
+            const winnerNames = [m.winner?.name, m.winner_2?.name].filter(Boolean).join(' & ') || '?';
+            const loserNames  = [m.loser?.name,  m.loser_2?.name ].filter(Boolean).join(' & ') || '?';
+            return (
+              <View key={m.id} style={{
+                padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
+                borderBottomWidth: i < matches.length - 1 ? 1 : 0, borderBottomColor: '#f8fafc',
+              }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, alignItems: 'baseline' }}>
+                    <Text style={{ fontWeight: '900', color: '#059669', fontSize: 11 }}>{winnerNames}</Text>
+                    <Text style={{ color: '#94a3b8', fontSize: 9 }}>bat</Text>
+                    <Text style={{ fontWeight: '900', color: '#ef4444', fontSize: 11 }}>{loserNames}</Text>
+                    {m.score_text
+                      ? <Text style={{ color: '#64748b', fontWeight: '700', fontSize: 10, fontStyle: 'italic' }}>— {m.score_text}</Text>
+                      : null}
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => onOpen(m)} style={{
+                  height: 30, paddingHorizontal: 12, borderRadius: 10,
+                  backgroundColor: '#EDE9FE', borderWidth: 1, borderColor: '#DDD6FE',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#5B21B6' }}>🏅 Noter</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Profile hero card — centered vertical layout ─────────────
-function ProfileBanner({ name, elo, matchCount, badgeCount }: {
+function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPress }: {
   name: string; elo: number; matchCount: number; badgeCount: number;
+  notifCount: number; onBellPress: () => void;
 }) {
   const leagueType = getLeague(elo);
   const leagueLabel = 'Ligue ' + getLeagueLabel(leagueType);
@@ -239,13 +448,15 @@ function ProfileBanner({ name, elo, matchCount, badgeCount }: {
       shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
       shadowOffset: { width: 0, height: 8 }, elevation: 7,
     }}>
-      {/* Glow orbs */}
-      <View style={{
+      <NotificationBell count={notifCount} onPress={onBellPress} />
+
+      {/* Glow orbs — pointerEvents none pour ne pas bloquer la cloche */}
+      <View pointerEvents="none" style={{
         position: 'absolute', top: -60, right: -40,
         width: 180, height: 180, borderRadius: 90,
         backgroundColor: 'rgba(99,102,241,0.22)',
       }} />
-      <View style={{
+      <View pointerEvents="none" style={{
         position: 'absolute', bottom: -60, left: -40,
         width: 180, height: 180, borderRadius: 90,
         backgroundColor: 'rgba(16,185,129,0.22)',
@@ -429,7 +640,7 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
         <ActionCard
           icon={<IconRadar size={24} color="#4f46e5" />}
           iconBg="#e0e7ff"
-          title="Trouver un match"
+          title="Matchmaking"
           onPress={() => onNavigate('/(tabs)/lobby')}
         />
         <ActionCard
@@ -468,22 +679,38 @@ export default function HomeScreen() {
   const [badgeCount, setBadgeCount] = useState(0);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
   const [loading, setLoading] = useState(true);
+  const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
+  const [badgeDefs, setBadgeDefs] = useState<any[]>([]);
+  const [badgeModalMatch, setBadgeModalMatch] = useState<any>(null);
+  const [badgeVotes, setBadgeVotes] = useState<Record<string, string[]>>({});
+  const [submittingBadges, setSubmittingBadges] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    supabase.from('badges').select('*').eq('is_active', true).then(({ data }) => {
+      if (data) setBadgeDefs(data.filter((b: any) => b.label !== 'MVP'));
+    });
+  }, []);
 
   const fetchData = useCallback(async () => {
     if (!player) return;
     const now = new Date().toISOString();
 
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const playerOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
+
     const [
       { data: pending },
       { count: badges },
       { data: participations },
+      { data: recentMatches },
+      { data: alreadyVoted },
     ] = await Promise.all([
       supabase
         .from('matches')
         .select('*, winner:winner_id(name), winner_2:winner_id_2(name), loser:loser_id(name), loser_2:loser_id_2(name)')
-        .or(`winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`)
+        .or(playerOr)
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(5),
@@ -496,10 +723,39 @@ export default function HomeScreen() {
         .select('game_id')
         .eq('player_id', player.id)
         .eq('status', 'accepted'),
+      supabase
+        .from('matches')
+        .select('id, score_text, winner_id, winner_id_2, loser_id, loser_id_2, winner:winner_id(id, name), winner_2:winner_id_2(id, name), loser:loser_id(id, name), loser_2:loser_id_2(id, name)')
+        .or(playerOr)
+        .in('status', ['pending', 'validated'])
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('reputation_votes')
+        .select('match_id')
+        .eq('giver_id', player.id),
     ]);
 
-    setPendingMatches((pending as Match[]) ?? []);
+    // Exclude matches where the current player submitted OR is the partner of the submitter
+    const allPending = (pending as Match[]) ?? [];
+    const visiblePending = allPending.filter(m => {
+      if (!player) return false;
+      if (m.created_by === player.id) return false;
+      const cb = m.created_by;
+      if (
+        (cb === m.winner_id   && m.winner_id_2 === player.id) ||
+        (cb === m.winner_id_2 && m.winner_id   === player.id) ||
+        (cb === m.loser_id    && m.loser_id_2  === player.id) ||
+        (cb === m.loser_id_2  && m.loser_id    === player.id)
+      ) return false;
+      return true;
+    });
+    setPendingMatches(visiblePending);
     setBadgeCount(badges ?? 0);
+
+    const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
+    const pendingBadge = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id));
+    setBadgeMatches(pendingBadge);
 
     const ids = (participations ?? []).map((p: any) => p.game_id);
     const orFilter = ids.length > 0
@@ -519,9 +775,20 @@ export default function HomeScreen() {
     setLoading(false);
   }, [player]);
 
+  const { openBadge } = useLocalSearchParams<{ openBadge?: string }>();
+  const autoOpenedBadge = useRef(false);
+
   useFocusEffect(useCallback(() => {
     fetchData();
   }, [fetchData]));
+
+  useEffect(() => {
+    if (openBadge === '1' && !loading && badgeMatches.length > 0 && !autoOpenedBadge.current) {
+      autoOpenedBadge.current = true;
+      openBadgeModal(badgeMatches[0]);
+      router.setParams({ openBadge: undefined });
+    }
+  }, [openBadge, loading, badgeMatches]);
 
   const handleValidate = async (match: Match) => {
     const { error } = await supabase
@@ -533,11 +800,42 @@ export default function HomeScreen() {
     setPendingMatches(prev => prev.filter(m => m.id !== match.id));
   };
 
-  const handleContest = () => router.push('/score-entry' as any);
+  const handleContest = (match: Match) => {
+    router.push((`/score-entry?matchId=${match.id}`) as any);
+  };
+
+  const openBadgeModal = (m: any) => {
+    setBadgeModalMatch(m);
+    setBadgeVotes({});
+  };
+
+  const toggleBadgeVote = (playerId: string, label: string) => {
+    setBadgeVotes(prev => {
+      const curr = prev[playerId] ?? [];
+      return { ...prev, [playerId]: curr.includes(label) ? curr.filter(b => b !== label) : [...curr, label] };
+    });
+  };
+
+  const handleSubmitBadges = async () => {
+    if (!player || !badgeModalMatch) return;
+    setSubmittingBadges(true);
+    const inserts = Object.entries(badgeVotes).flatMap(([rid, labels]) =>
+      labels.map(label => ({ match_id: badgeModalMatch.id, giver_id: player.id, receiver_id: rid, badge_type: label }))
+    );
+    if (inserts.length > 0) await supabase.from('reputation_votes').insert(inserts);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setBadgeMatches(prev => prev.filter(m => m.id !== badgeModalMatch.id));
+    setBadgeModalMatch(null);
+    setBadgeVotes({});
+    setSubmittingBadges(false);
+  };
 
   if (!player) return null;
 
   const matchCount = player.win_count + player.loss_count;
+  const totalNotifs = pendingMatches.length + badgeMatches.length;
+  const now = new Date();
+  const visibleUpcoming = upcomingGames.filter(g => !g.match_date || new Date(g.match_date) > now);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
@@ -556,15 +854,84 @@ export default function HomeScreen() {
               onValidate={handleValidate}
               onContest={handleContest}
             />
+            <BadgePromptBanner matches={badgeMatches} onOpen={openBadgeModal} />
+
+            {/* Badge modal */}
+            <Modal visible={!!badgeModalMatch} animationType="slide" presentationStyle="pageSheet">
+              <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+                <View style={{ backgroundColor: '#102820', paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 24 }}>
+                  <TouchableOpacity onPress={() => setBadgeModalMatch(null)} style={{ marginBottom: 12, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>✕ Fermer</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff' }}>🏅 Distribue tes trophées</Text>
+                  <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+                    {badgeModalMatch?.score_text ?? ''}
+                  </Text>
+                </View>
+                <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
+                  {badgeModalMatch && (
+                    [badgeModalMatch.winner, badgeModalMatch.winner_2, badgeModalMatch.loser, badgeModalMatch.loser_2]
+                      .filter((p: any) => p && p.id !== player.id)
+                      .map((p: any) => {
+                        const myVotes = badgeVotes[p.id] ?? [];
+                        return (
+                          <View key={p.id} style={{ backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', padding: 14, marginBottom: 12 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                              <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>Pour {p.name}</Text>
+                              {myVotes.length > 0 && (
+                                <View style={{ backgroundColor: '#EDE9FE', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#5B21B6' }}>
+                                    {myVotes.length} trophée{myVotes.length > 1 ? 's' : ''}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                              {badgeDefs.map((b: any) => {
+                                const sel = myVotes.includes(b.label);
+                                return (
+                                  <TouchableOpacity key={b.id} onPress={() => toggleBadgeVote(p.id, b.label)} activeOpacity={0.75}
+                                    style={{ alignItems: 'center', gap: 4, padding: 10, borderRadius: 14, width: 72, borderWidth: 1.5, borderColor: sel ? '#6366f1' : '#e2e8f0', backgroundColor: sel ? '#eef2ff' : '#fff', position: 'relative' }}>
+                                    <Text style={{ fontSize: 20 }}>{BADGE_EMOJI[b.label] ?? '🏅'}</Text>
+                                    <Text style={{ fontSize: 8, fontWeight: '900', color: sel ? '#4338ca' : '#94a3b8', textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.3 }}>{b.label}</Text>
+                                    {sel && (
+                                      <View style={{ position: 'absolute', top: -5, right: -5, width: 14, height: 14, backgroundColor: '#4f46e5', borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }}>
+                                        <Text style={{ fontSize: 7, color: '#fff', fontWeight: '900' }}>✓</Text>
+                                      </View>
+                                    )}
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        );
+                      })
+                  )}
+                  <TouchableOpacity onPress={handleSubmitBadges} disabled={submittingBadges}
+                    style={{ backgroundColor: '#4f46e5', borderRadius: 16, padding: 16, alignItems: 'center', opacity: submittingBadges ? 0.6 : 1 }}>
+                    {submittingBadges
+                      ? <ActivityIndicator color="#fff" />
+                      : <Text style={{ fontSize: 15, fontWeight: '900', color: '#fff' }}>Envoyer les trophées</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => { setBadgeMatches(prev => prev.filter(m => m.id !== badgeModalMatch?.id)); setBadgeModalMatch(null); }}
+                    style={{ marginTop: 10, alignItems: 'center', padding: 12 }}>
+                    <Text style={{ fontSize: 13, color: '#94a3b8', fontWeight: '600' }}>Passer sans noter</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
+
             <ProfileBanner
               name={player.name}
               elo={player.elo_score}
               matchCount={matchCount}
               badgeCount={badgeCount}
+              notifCount={totalNotifs}
+              onBellPress={() => router.push('/notifications' as any)}
             />
             <View style={{ flex: 1, marginTop: 12 }}>
               <ActionsGrid
-                upcomingGames={upcomingGames}
+                upcomingGames={visibleUpcoming}
                 onNavigate={(path) => router.push(path as any)}
               />
             </View>

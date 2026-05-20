@@ -177,6 +177,7 @@ interface Props {
   onCreatorChangeSide: (gameId: string, side: string) => Promise<void>;
   onApprovePending: (participantId: string, gameId: string, participantPlayerId: string, currentApprovals: string[]) => Promise<void>;
   onDeclinePending: (participantId: string) => Promise<void>;
+  onLeave: (gameId: string, participantId: string, wasAccepted: boolean) => void;
 }
 
 // ─── Calendar + Share helpers ─────────────────────────────────
@@ -229,7 +230,7 @@ async function shareGame(game: EnrichedGame) {
 
 // ─── Main component ───────────────────────────────────────────
 export default function GameDetailsSheet({
-  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending,
+  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onLeave,
 }: Props) {
   const [mySlot, setMySlot] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
@@ -296,22 +297,48 @@ export default function GameDetailsSheet({
         ? (game.creator_side ?? 'A_GAU')
         : (myParticipant as any)?.team_side ?? null;
       return (
-        <View style={[sty.ctaBtn, { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }]}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b' }}>
-            {currentSide
-              ? `✓ Éq. ${SIDE_TEAM[currentSide]} · ${SIDE_POS[currentSide]} — touche un slot libre pour changer`
-              : '↔ Touche un slot libre pour changer de place'}
-          </Text>
+        <View style={{ gap: 8 }}>
+          <View style={[sty.ctaBtn, { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }]}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b' }}>
+              {currentSide
+                ? `✓ Éq. ${SIDE_TEAM[currentSide]} · ${SIDE_POS[currentSide]} — touche un slot libre pour changer`
+                : '↔ Touche un slot libre pour changer de place'}
+            </Text>
+          </View>
+          {isAccepted && myParticipant && (
+            <TouchableOpacity
+              onPress={() => onLeave(game.id, (myParticipant as any).id, true)}
+              style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '900', color: '#dc2626' }}>Quitter la partie</Text>
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
-    if (alreadyIn) return (
-      <View style={[sty.ctaBtn, { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' }]}>
-        <Text style={{ fontSize: 13, fontWeight: '900', color: '#d97706' }}>
-          {(myParticipant as any)?.status === 'pending' ? '⏳ Demande envoyée' : "⏳ Liste d'attente"}
-        </Text>
-      </View>
-    );
+    if (alreadyIn) {
+      const isPending = (myParticipant as any)?.status === 'pending';
+      const isWait    = (myParticipant as any)?.status === 'waitlist';
+      return (
+        <View style={{ gap: 8 }}>
+          <View style={[sty.ctaBtn, { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' }]}>
+            <Text style={{ fontSize: 13, fontWeight: '900', color: '#d97706' }}>
+              {isPending ? '⏳ Demande envoyée' : "⏳ Liste d'attente"}
+            </Text>
+          </View>
+          {myParticipant && (
+            <TouchableOpacity
+              onPress={() => onLeave(game.id, (myParticipant as any).id, false)}
+              style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '900', color: '#dc2626' }}>
+                {isPending ? 'Retirer ma candidature' : "Quitter la liste d'attente"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      );
+    }
     if (isFull) return isWaitlisted
       ? (
         <View style={[sty.ctaBtn, { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' }]}>
