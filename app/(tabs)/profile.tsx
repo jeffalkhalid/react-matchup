@@ -227,7 +227,7 @@ export default function ProfileScreen() {
             <Divider />
             <NavRow icon="🏆" label="Classement" onPress={() => router.push('/(tabs)/ranking' as any)} />
             <Divider />
-            <NavRow icon="🔔" label="Notifications" badge={totalNotif > 0 ? totalNotif : undefined} onPress={() => router.push('/(tabs)/index' as any)} />
+            <NavRow icon="🔔" label="Notifications" badge={totalNotif > 0 ? totalNotif : undefined} onPress={() => router.push('/notifications' as any)} />
           </Card>
 
           {player.is_admin && (
@@ -460,9 +460,9 @@ function ModalField({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function ModalInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+function ModalInput({ value, onChange, placeholder, keyboardType }: { value: string; onChange: (v: string) => void; placeholder?: string; keyboardType?: any }) {
   return (
-    <TextInput value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor="#94a3b8"
+    <TextInput value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor="#94a3b8" keyboardType={keyboardType}
       style={{ backgroundColor: '#fff', borderRadius: 12, borderWidth: 1.5, borderColor: '#e2e8f0', color: '#0f172a', padding: 12, fontSize: 14, fontWeight: '600' }} />
   );
 }

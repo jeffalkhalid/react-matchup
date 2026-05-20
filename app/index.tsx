@@ -33,7 +33,9 @@ export default function IndexScreen() {
     );
   }
 
-  if (player) return null;
+  // If a player exists, the useEffect above will trigger a redirect to (tabs).
+  // We should not return null here, just let it render the background/video until the transition happens.
+  // Returning null blocks the screen from mounting correctly during quick state flips.
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: '#102820' }} contentContainerStyle={{ flexGrow: 1 }}>

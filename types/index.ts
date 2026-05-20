@@ -46,8 +46,13 @@ export interface Match {
   score_text: string;
   status: MatchStatus;
   is_challenge?: boolean;
-  game_format?: GameFormat;
+  game_format?: string;
   game_id?: string;
+  created_by?: string;
+  counter_score_text?: string;
+  counter_reason?: string;
+  counter_by?: string;
+  counter_proposed_at?: string;
   created_at: string;
   winner?: Player;
   loser?: Player;

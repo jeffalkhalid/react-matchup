@@ -183,7 +183,7 @@ export default function ScoreEntryScreen() {
   const { player } = usePlayer();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { gameId } = useLocalSearchParams<{ gameId?: string }>();
+  const { gameId, matchId: contestMatchId } = useLocalSearchParams<{ gameId?: string; matchId?: string }>();
   const autoOpened = useRef(false);
 
   const [games, setGames] = useState<Game[]>([]);
@@ -224,12 +224,16 @@ export default function ScoreEntryScreen() {
       .eq('status', 'accepted');
     const partIds = (partEntries ?? []).map((e: any) => e.game_id as string).filter(Boolean);
 
-    // Build query: creator OR participant
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    // Build query: creator OR participant — exclude closed & cancelled, within 24h window
     const baseQuery = supabase
       .from('open_games')
       .select(GAME_SELECT)
       .neq('status', 'cancelled')
+      .neq('status', 'closed')
       .lt('match_date', now)
+      .gte('match_date', oneDayAgo)
       .eq('spots_available', 0)
       .order('match_date', { ascending: false })
       .limit(20);
@@ -251,7 +255,6 @@ export default function ScoreEntryScreen() {
         const allParticipants: { id: string; name: string; elo_score: number }[] = accepted.map((p: any) => ({
           id: p.player_id, name: p.player?.name ?? '?', elo_score: p.player?.elo_score ?? 0,
         }));
-        // Creator is not in game_participants — add them manually
         const creatorInList = allParticipants.some(p => p.id === g.creator_id);
         if (!creatorInList && g.creator) {
           allParticipants.unshift({ id: g.creator_id, name: g.creator.name ?? '?', elo_score: g.creator.elo_score ?? 0 });
@@ -270,13 +273,60 @@ export default function ScoreEntryScreen() {
     setLoading(false);
   }, [player]);
 
-  useFocusEffect(useCallback(() => { autoOpened.current = false; fetchGames(); }, [fetchGames]));
+  const loadContestGame = useCallback(async () => {
+    if (!player || !contestMatchId) return;
+    setLoading(true);
+    const { data: match } = await supabase
+      .from('matches')
+      .select('game_id, game_format, is_challenge, winner:winner_id(id, name, elo_score), winner_2:winner_id_2(id, name, elo_score), loser:loser_id(id, name, elo_score), loser_2:loser_id_2(id, name, elo_score)')
+      .eq('id', contestMatchId)
+      .single();
+
+    if (match) {
+      const participants: Participant[] = ([match.winner, match.winner_2, match.loser, match.loser_2] as any[])
+        .filter(Boolean)
+        .map((p: any) => ({ id: p.id, name: p.name ?? '?', elo_score: p.elo_score ?? 0 }));
+
+      let location = '—';
+      let match_date = new Date().toISOString();
+      if ((match as any).game_id) {
+        const { data: game } = await supabase
+          .from('open_games')
+          .select('location, match_date')
+          .eq('id', (match as any).game_id)
+          .single();
+        if (game) { location = game.location ?? '—'; match_date = game.match_date; }
+      }
+
+      setGames([{
+        id: (match as any).game_id ?? contestMatchId,
+        location,
+        match_date,
+        is_challenge: (match as any).is_challenge ?? false,
+        game_format: (match as any).game_format ?? 'competitive',
+        participants,
+      }]);
+      autoOpened.current = false;
+    }
+    setLoading(false);
+  }, [player, contestMatchId]);
+
+  useFocusEffect(useCallback(() => {
+    autoOpened.current = false;
+    if (contestMatchId) { loadContestGame(); } else { fetchGames(); }
+  }, [fetchGames, loadContestGame, contestMatchId]));
 
   useEffect(() => {
     if (!gameId || games.length === 0 || autoOpened.current) return;
     const target = games.find(g => g.id === gameId);
     if (target) { autoOpened.current = true; openScoring(target); }
   }, [gameId, games]);
+
+  useEffect(() => {
+    if (!contestMatchId || games.length === 0 || autoOpened.current) return;
+    autoOpened.current = true;
+    openScoring(games[0]);
+  }, [contestMatchId, games]);
 
   useEffect(() => {
     supabase.from('badges').select('*').eq('is_active', true).then(({ data }) => {
@@ -310,6 +360,7 @@ export default function ScoreEntryScreen() {
     setVotes({});
   };
 
+
   const toggleVote = (playerId: string, label: string) => {
     setVotes(prev => {
       const curr = prev[playerId] ?? [];
@@ -332,8 +383,55 @@ export default function ScoreEntryScreen() {
   };
 
   const doSubmit = async (game: Game, activeSets: { t1: number; t2: number }[], t1Sets: number, t2Sets: number) => {
-    const iWon = t1Sets > t2Sets;
     const scoreText = activeSets.map(s => `${s.t1}-${s.t2}`).join(', ');
+    setSubmitting(true);
+
+    // ── Contest (counter-proposal) mode ──────────────────────
+    if (contestMatchId) {
+      try {
+        const { data: origMatch, error } = await supabase
+          .from('matches')
+          .update({
+            status: 'counter_proposed',
+            counter_score_text: scoreText,
+            counter_by: player!.id,
+            counter_proposed_at: new Date().toISOString(),
+          })
+          .eq('id', contestMatchId)
+          .select('created_by')
+          .single();
+        if (error) throw error;
+
+        if (origMatch?.created_by) {
+          notifyPlayers({
+            playerIds: [origMatch.created_by],
+            title: '⚠️ Score contesté',
+            body: `${player!.name} a proposé un score alternatif — ${scoreText}`,
+            data: { type: 'match', matchId: contestMatchId },
+          });
+        }
+
+        const voteInserts: any[] = [];
+        Object.entries(votes).forEach(([rid, labels]) =>
+          labels.forEach(label => voteInserts.push({ match_id: contestMatchId, giver_id: player!.id, receiver_id: rid, badge_type: label }))
+        );
+        if (voteInserts.length > 0) await supabase.from('reputation_votes').insert(voteInserts);
+
+        closeScoring();
+        Alert.alert('Contestation envoyée', "Le score alternatif a été soumis.", [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } catch (e) {
+        console.error('[doSubmit/contest]', e);
+        Alert.alert('Erreur', "Impossible d'envoyer la contestation.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // ── Normal submission mode ────────────────────────────────
+    const iWon = t1Sets > t2Sets;
     const opponents = game.participants.filter(p => p.id !== partnerId && p.id !== player!.id);
     const matchPayload = {
       winner_id:   iWon ? player!.id       : opponents[0]?.id ?? null,
@@ -344,13 +442,13 @@ export default function ScoreEntryScreen() {
       status: 'pending',
       created_by: player!.id,
       game_id: game.id,
+      game_format: game.game_format ?? 'competitive',
+      is_challenge: game.is_challenge ?? false,
     };
-    setSubmitting(true);
     try {
       const { data: newMatch, error } = await supabase.from('matches').insert([matchPayload]).select().single();
       if (error) throw error;
 
-      // Notify all other players in the match to validate the score
       const otherIds = [matchPayload.winner_id, matchPayload.winner_id_2, matchPayload.loser_id, matchPayload.loser_id_2]
         .filter((id): id is string => !!id && id !== player!.id);
       notifyPlayers({
@@ -369,7 +467,8 @@ export default function ScoreEntryScreen() {
       setGames(prev => prev.filter(g => g.id !== game.id));
       closeScoring();
       Alert.alert('Score enregistré !', "En attente de validation par l'adversaire.");
-    } catch {
+    } catch (e) {
+      console.error('[doSubmit]', e);
       Alert.alert('Erreur', "Réessaie, le score n'a pas été enregistré.");
     } finally {
       setSubmitting(false);
@@ -417,11 +516,15 @@ export default function ScoreEntryScreen() {
             <Path d="M15 18l-6-6 6-6" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: -0.5 }}>✍️ Saisie du score</Text>
+        <Text style={{ fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: -0.5 }}>
+          {contestMatchId ? '⚠️ Contester le score' : '✍️ Saisie du score'}
+        </Text>
         <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-          {loading ? 'Chargement…' : games.length > 0
-            ? `${games.length} partie${games.length > 1 ? 's' : ''} en attente`
-            : 'Aucune partie à scorer'}
+          {loading ? 'Chargement…' : contestMatchId
+            ? 'Entre ton score — il sera soumis en contre-proposition'
+            : games.length > 0
+              ? `${games.length} partie${games.length > 1 ? 's' : ''} en attente`
+              : 'Aucune partie à scorer'}
         </Text>
       </View>
 
