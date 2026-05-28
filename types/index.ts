@@ -110,6 +110,9 @@ export interface Message {
   player_name: string;
   content: string;
   created_at: string;
+  // Map emoji → list of player_ids who reacted. Legacy rows may still hold a
+  // plain number (count) — handled defensively in the UI until the next toggle.
+  reactions?: Record<string, string[] | number>;
 }
 
 export interface EloHistory {

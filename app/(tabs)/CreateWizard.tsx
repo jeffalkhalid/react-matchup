@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Modal, TextInput,
-  Alert, ActivityIndicator, StyleSheet, Dimensions, KeyboardAvoidingView, Platform,
+  Alert, ActivityIndicator, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { eloToLevel, formatPadelLevel, padelLevelToElo } from '../../lib/theme';
+import PadelRacketIcon from '../../components/PadelRacketIcon';
 
 // ─── Types ────────────────────────────────────────────────────
 type GameType = 'Compétitif' | 'Amical' | 'Défi';
@@ -26,7 +27,8 @@ interface Props {
   onPublish: (data: WizardResult) => Promise<string>;
   player: { id: string; name: string; elo_score: number; gender?: string } | null;
   initialGameType?: GameType;
-  initialInvite?: { id: string; name: string; elo_score: number };
+  initialInvite?: { id: string; name: string; elo_score: number; court_side?: string };
+  replayData?: { players: Array<{ id: string; name: string; elo_score: number }>; gameType: GameType };
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -172,15 +174,16 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
 }
 
 // ─── Main component ───────────────────────────────────────────
-export default function CreateWizard({ visible, onClose, onPublish, player, initialGameType, initialInvite }: Props) {
+export default function CreateWizard({ visible, onClose, onPublish, player, initialGameType, initialInvite, replayData }: Props) {
   const insets = useSafeAreaInsets();
   const ALL_DAYS   = buildDays(92);
   const QUICK_DAYS = ALL_DAYS.slice(0, 7);
 
   // UI state
-  const [step,        setStep]        = useState(0);
-  const [published,   setPublished]   = useState(false);
-  const [submitting,  setSubmitting]  = useState(false);
+  const [step,            setStep]            = useState(0);
+  const [published,       setPublished]       = useState(false);
+  const [publishedGameId, setPublishedGameId] = useState<string | null>(null);
+  const [submitting,      setSubmitting]      = useState(false);
   const [showAbandon, setShowAbandon] = useState(false);
   const [showCal,     setShowCal]     = useState(false);
   const [venueOpen,   setVenueOpen]   = useState(false);
@@ -227,9 +230,18 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
     setStep(0); setPublished(false); setSubmitting(false);
     setShowAbandon(false); setShowCal(false); setVenueOpen(false); setVenueSearch('');
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
-    const gameType = initialGameType ?? 'Compétitif';
+    const gameType = replayData?.gameType ?? initialGameType ?? 'Compétitif';
     const invites: Record<string, { id: string; name: string; elo_score: number }> = {};
-    if (initialInvite) invites['B0'] = initialInvite;
+    if (initialInvite) {
+      const opponentSlot = initialInvite.court_side === 'right' ? 'B1' : 'B0';
+      const { court_side: _cs, ...inviteData } = initialInvite;
+      invites[opponentSlot] = inviteData;
+    } else if (replayData?.players?.length) {
+      const slots = ['A1', 'B0', 'B1'];
+      replayData.players.slice(0, 3).forEach((p, i) => {
+        if (slots[i]) invites[slots[i]] = { id: p.id, name: p.name, elo_score: p.elo_score };
+      });
+    }
     const defaultGenre: Genre =
       player?.gender === 'male' ? 'men' : player?.gender === 'female' ? 'women' : 'mixed';
     setFormState({
@@ -319,7 +331,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
     if (submitting) return;
     setSubmitting(true);
     try {
-      await onPublish({
+      const gameId = await onPublish({
         gameType:       form.gameType,
         genre:          form.genre,
         matchDate:      form.day,
@@ -331,6 +343,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         creatorSide:    form.mySlot ? SLOT_TO_SIDE[form.mySlot] : 'A_GAU',
         confirmedPlayers: Object.entries(form.invites).map(([slot, p]) => ({ ...p, team_side: SLOT_TO_SIDE[slot] })),
       });
+      setPublishedGameId(gameId);
       setPublished(true);
     } catch { /* onPublish shows Alert */ }
     finally { setSubmitting(false); }
@@ -790,7 +803,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: '#f8fafc', paddingTop: insets.top }}>
           <View style={{ alignItems: 'center', padding: 32, paddingBottom: 16 }}>
-            <Text style={{ fontSize: 52, marginBottom: 12 }}>🎾</Text>
+            <View style={{ marginBottom: 12 }}><PadelRacketIcon size={52} /></View>
             <Text style={{ fontSize: 22, fontWeight: '900', color: '#0f172a', letterSpacing: -0.4, marginBottom: 6 }}>Partie publiée !</Text>
             <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 20 }}>
               Visible dans l'Explorer.{Object.keys(form.invites).length > 0
@@ -823,11 +836,33 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
             </View>
           </ScrollView>
           <View style={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16, gap: 10 }}>
+            <TouchableOpacity
+              onPress={async () => {
+                const d = new Date(`${form.day}T${form.time}:00`);
+                const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+                const creatorLv = player ? ` (Niv. ${eloToLevel(player.elo_score).toFixed(1)})` : '';
+                const spots = 3 - Object.keys(form.invites).length;
+                const spotsText = spots <= 0 ? 'Complet' : `${spots} place${spots > 1 ? 's' : ''} dispo`;
+                const url = publishedGameId ? `https://matchup-padel.vercel.app/lobby?game=${publishedGameId}` : 'https://matchup-padel.vercel.app';
+                const msg = `Match Padel – ${form.gameType}\n👤 Organisé par ${player?.name ?? ''}${creatorLv}\n📅 ${dateStr} à ${form.time}\n📍 ${form.location}\n📊 Niveau : ${form.minLevel.toFixed(1)} – ${form.maxLevel.toFixed(1)}\n🟢 ${spotsText}\n🔗 ${url}`;
+                try { await Share.share({ message: msg }); } catch { /* annulé */ }
+              }}
+              style={{
+                padding: 14, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1.5, borderColor: t.accent,
+                alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <Text style={{ fontSize: 16 }}>📤</Text>
+              <Text style={{ color: t.accent, fontWeight: '900', fontSize: 14 }}>Partager la partie</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={onClose} style={{
               padding: 14, borderRadius: 14, backgroundColor: t.btnBg, alignItems: 'center',
               shadowColor: t.btnBg, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 6,
             }}>
-              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Retour au Lobby 🎾</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Retour au Lobby</Text>
+                <PadelRacketIcon size={16} />
+              </View>
             </TouchableOpacity>
           </View>
         </View>
@@ -843,7 +878,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         {/* Abandon confirm */}
         {showAbandon && (
           <View style={{ position: 'absolute', inset: 0, zIndex: 100, backgroundColor: 'rgba(11,17,33,0.75)', justifyContent: 'flex-end' }}>
-            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 }}>
+            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: insets.bottom + 24 }}>
               <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 10 }}>🚫</Text>
               <Text style={{ fontSize: 17, fontWeight: '900', color: '#0f172a', textAlign: 'center', marginBottom: 8 }}>Abandonner la création ?</Text>
               <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 20, marginBottom: 22 }}>
@@ -927,7 +962,10 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
               }}>
               {submitting
                 ? <ActivityIndicator color="#94a3b8" />
-                : <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Publier la partie 🎾</Text>
+                : <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Publier la partie</Text>
+                    <PadelRacketIcon size={16} />
+                  </View>
               }
             </TouchableOpacity>
           )}

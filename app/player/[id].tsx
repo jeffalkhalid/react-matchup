@@ -1,8 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput,
-  Modal, KeyboardAvoidingView, Platform, Pressable,
+  Modal, KeyboardAvoidingView, Platform, Pressable, LayoutAnimation, UIManager,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Polygon } from 'react-native-svg';
@@ -10,6 +14,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel } from '../../lib/theme';
 import type { Player, EloHistory } from '../../types';
+import PadelRacketIcon from '../../components/PadelRacketIcon';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -23,10 +28,12 @@ interface MatchRow {
   loser_id: string | null;
   winner_id_2: string | null;
   loser_id_2: string | null;
+  game_id?: string | null;
   winner: { name: string } | null;
   loser: { name: string } | null;
   winner_2: { name: string } | null;
   loser_2: { name: string } | null;
+  game?: { location: string | null; match_date?: string | null } | null;
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -37,7 +44,7 @@ const BADGES_INFO: Record<string, { icon: string; label: string }> = {
   'Le Phénix':    { icon: '🔥', label: 'Le Phénix' },
   'Le Mur':       { icon: '🧱', label: 'Le Mur' },
   "L'Essuie-glace": { icon: '🏃', label: "L'Essuie-glace" },
-  'Roi du Filet': { icon: '🎾', label: 'Roi du Filet' },
+  'Roi du Filet': { icon: '', label: 'Roi du Filet' },
   'Le Cerveau':   { icon: '🧠', label: 'Le Cerveau' },
   'Le Capitaine': { icon: '⭐', label: 'Le Capitaine' },
   'Fair-Play':    { icon: '🤝', label: 'Fair-Play' },
@@ -49,7 +56,7 @@ const BADGES_INFO: Record<string, { icon: string; label: string }> = {
   COMEBACK:       { icon: '🔥', label: 'Le Phénix' },
   WALL:           { icon: '🧱', label: 'Le Mur' },
   RUNNER:         { icon: '🏃', label: "L'Essuie-glace" },
-  NET_KING:       { icon: '🎾', label: 'Roi du Filet' },
+  NET_KING:       { icon: '', label: 'Roi du Filet' },
   BRAIN:          { icon: '🧠', label: 'Le Cerveau' },
   CAPTAIN:        { icon: '⭐', label: 'Le Capitaine' },
   FAIR_PLAY:      { icon: '🤝', label: 'Fair-Play' },
@@ -94,7 +101,7 @@ function parseSets(text: string | null): [number, number][] {
 }
 
 function isDoubles(m: MatchRow) {
-  return m.game_format === 'doubles' || m.match_type === '2v2';
+  return !!(m.winner_id_2 || m.loser_id_2) || m.match_type === '2v2';
 }
 
 // ── SVG Icons ────────────────────────────────────────────────────────
@@ -227,7 +234,12 @@ function DnaRadar({ values }: { values: Record<string, number> }) {
 }
 
 // ── Match history card ───────────────────────────────────────────────
-function MatchCard({ match, playerId }: { match: MatchRow; playerId: string }) {
+function MatchCard({ match, playerId, eloChange }: {
+  match: MatchRow;
+  playerId: string;
+  eloChange?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const isWin  = match.winner_id === playerId || match.winner_id_2 === playerId;
   const is2v2  = isDoubles(match);
   const sets   = parseSets(match.score_text);
@@ -237,15 +249,29 @@ function MatchCard({ match, playerId }: { match: MatchRow; playerId: string }) {
   const winTeam  = [match.winner?.name, is2v2 ? match.winner_2?.name : null].filter(Boolean) as string[];
   const loseTeam = [match.loser?.name,  is2v2 ? match.loser_2?.name  : null].filter(Boolean) as string[];
 
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(v => !v);
+  };
+
+  const date = new Date(match.created_at);
+  const dateLabel = date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const timeLabel = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const formatLabel = match.game_format === 'friendly' ? 'Amical' : match.game_format === 'competitive' ? 'Compétitif' : null;
+  const typeLabel = is2v2 ? 'Double' : 'Simple';
+  const eloDelta = eloChange != null ? eloChange : null;
+  const locationLabel = match.game?.location ?? null;
+
   return (
-    <View style={{ backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' }}>
+    <TouchableOpacity onPress={toggle} activeOpacity={0.9}
+      style={{ backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' }}>
       <View style={{ paddingHorizontal: 14, paddingVertical: 10, backgroundColor: isWin ? '#fef9c3' : '#fee2e2', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 13, fontWeight: '900', color: isWin ? '#713f12' : '#7f1d1d' }}>
           {isWin ? 'Victoire !' : 'Défaite'}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 10, color: isWin ? '#92400e' : '#991b1b', opacity: 0.6 }}>
-            {new Date(match.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            {dateLabel}
           </Text>
           <Text style={{ fontSize: 18 }}>{isWin ? '🏆' : '💪'}</Text>
         </View>
@@ -293,8 +319,54 @@ function MatchCard({ match, playerId }: { match: MatchRow; playerId: string }) {
             ))}
           </View>
         </View>
+
+        {/* Toggle indicator */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, gap: 4 }}>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            {expanded ? 'Masquer' : 'Détails'}
+          </Text>
+          <Text style={{ fontSize: 10, color: '#cbd5e1' }}>{expanded ? '▴' : '▾'}</Text>
+        </View>
       </View>
-    </View>
+
+      {expanded && (
+        <View style={{ borderTopWidth: 1, borderTopColor: '#f1f5f9', padding: 14, backgroundColor: '#fafbfc', gap: 10 }}>
+          {locationLabel && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+              <Text style={{ fontSize: 13 }}>📍</Text>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#0f172a', flex: 1 }} numberOfLines={2}>
+                {locationLabel}
+              </Text>
+            </View>
+          )}
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: '#e2e8f0' }}>
+              <Text style={{ fontSize: 11 }}>🕒</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>{timeLabel}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: '#e2e8f0' }}>
+              <Text style={{ fontSize: 11 }}>{is2v2 ? '👥' : '👤'}</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>{typeLabel}</Text>
+            </View>
+            {formatLabel && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                <Text style={{ fontSize: 11 }}>{match.game_format === 'friendly' ? '🤝' : '🎯'}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>{formatLabel}</Text>
+              </View>
+            )}
+            {eloDelta != null && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: eloDelta >= 0 ? '#ecfdf5' : '#fef2f2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: eloDelta >= 0 ? '#a7f3d0' : '#fecaca' }}>
+                <Text style={{ fontSize: 11 }}>{eloDelta >= 0 ? '📈' : '📉'}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: eloDelta >= 0 ? '#059669' : '#dc2626' }}>
+                  {eloDelta >= 0 ? '+' : ''}{eloDelta.toFixed(2)} niv.
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -329,10 +401,11 @@ export default function PlayerProfileScreen() {
     const [matchesRes, historyRes, repRes, favRes, rankRes] = await Promise.all([
       supabase
         .from('matches')
-        .select(`id, score_text, created_at, game_format, match_type, status,
+        .select(`id, score_text, created_at, game_format, match_type, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
           winner:winner_id(name), loser:loser_id(name),
-          winner_2:winner_id_2(name), loser_2:loser_id_2(name)`)
+          winner_2:winner_id_2(name), loser_2:loser_id_2(name),
+          game:game_id(location, match_date)`)
         .or(`winner_id.eq.${id},loser_id.eq.${id},winner_id_2.eq.${id},loser_id_2.eq.${id}`)
         .eq('status', 'validated')
         .order('created_at', { ascending: false }),
@@ -373,6 +446,17 @@ export default function PlayerProfileScreen() {
     reputation.forEach(v => { c[v.badge_type] = (c[v.badge_type] || 0) + 1; });
     return c;
   }, [reputation]);
+
+  const eloChangeByMatch = useMemo(() => {
+    const m: Record<string, number> = {};
+    eloHistory.forEach(h => {
+      if (!h.match_id) return;
+      const prev = h.elo_score - h.elo_change;
+      m[h.match_id] = eloToLevel(h.elo_score) - eloToLevel(prev);
+    });
+    return m;
+  }, [eloHistory]);
+
 
   const dna = (...keys: string[]) => keys.reduce((s, k) => s + (karmaCounts[k] ?? 0), 0);
   const dnaValues = useMemo(() => ({
@@ -521,7 +605,7 @@ export default function PlayerProfileScreen() {
     <>
     <ScrollView
       style={{ flex: 1, backgroundColor: '#f0f4f8' }}
-      contentContainerStyle={{ paddingBottom: 40 }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
       {/* ── Top bar ─────────────────────────────────────────────── */}
@@ -549,7 +633,10 @@ export default function PlayerProfileScreen() {
                 <IconStar filled={isFav} color={isFav ? '#f59e0b' : 'rgba(255,255,255,0.7)'} />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => router.push('/(tabs)/matchmaking' as any)}
+                onPress={() => {
+                  const sideParam = profile.court_side ? `&pside=${encodeURIComponent(profile.court_side)}` : '';
+                  router.push((`/(tabs)/lobby?create=1&challenge=1&with=${profile.id}&pname=${encodeURIComponent(profile.name)}&pelo=${profile.elo_score}${sideParam}`) as any);
+                }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 36, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#4f46e5' }}
                 activeOpacity={0.8}
               >
@@ -661,17 +748,6 @@ export default function PlayerProfileScreen() {
         </View>
       )}
 
-      {/* ── ADN Padel ───────────────────────────────────────────── */}
-      {hasDna && (
-        <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#e8edf2', paddingTop: 20, paddingBottom: 16, shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.2, paddingHorizontal: 20, marginBottom: 2 }}>ADN Padel</Text>
-          <Text style={{ fontSize: 10, color: '#cbd5e1', fontWeight: '500', textTransform: 'uppercase', letterSpacing: 1, paddingHorizontal: 20, marginBottom: 10 }}>
-            votes de tes partenaires
-          </Text>
-          <DnaRadar values={dnaValues} />
-        </View>
-      )}
-
       {/* ── Stats ───────────────────────────────────────────────── */}
       <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: '#fff', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#e8edf2', shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 16 }}>Statistiques</Text>
@@ -770,7 +846,7 @@ export default function PlayerProfileScreen() {
             {profile.court_side && (
               <View style={{ backgroundColor: '#f8fafc', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#e8edf2', flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18 }}>🎾</Text>
+                  <PadelRacketIcon size={20} />
                 </View>
                 <View>
                   <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 }}>Côté préféré</Text>
@@ -840,7 +916,9 @@ export default function PlayerProfileScreen() {
                 if (!info) return null;
                 return (
                   <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: '#fafafa', borderWidth: 1, borderColor: '#e2e8f0' }}>
-                    <Text style={{ fontSize: 20 }}>{info.icon}</Text>
+                    {key === 'Roi du Filet' || key === 'NET_KING'
+                      ? <PadelRacketIcon size={20} />
+                      : <Text style={{ fontSize: 20 }}>{info.icon}</Text>}
                     <View>
                       <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a' }}>{info.label}</Text>
                       <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600' }}>×{count}</Text>
@@ -884,7 +962,7 @@ export default function PlayerProfileScreen() {
 
         {filteredMatches.length === 0 ? (
           <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 40, alignItems: 'center', borderWidth: 1, borderColor: '#e8edf2', shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-            <Text style={{ fontSize: 26, marginBottom: 8 }}>🎾</Text>
+            <View style={{ marginBottom: 8 }}><PadelRacketIcon size={26} style={{ opacity: 0.6 }} /></View>
             <Text style={{ fontSize: 15, fontWeight: '900', color: '#0f172a' }}>
               {matchSearch.trim() ? 'Aucun résultat' : 'Aucun match joué'}
             </Text>
@@ -894,7 +972,14 @@ export default function PlayerProfileScreen() {
           </View>
         ) : (
           <View style={{ gap: 10 }}>
-            {filteredMatches.map(m => <MatchCard key={m.id} match={m} playerId={id as string} />)}
+            {filteredMatches.map(m => (
+              <MatchCard
+                key={m.id}
+                match={m}
+                playerId={id as string}
+                eloChange={eloChangeByMatch[m.id]}
+              />
+            ))}
           </View>
         )}
       </View>

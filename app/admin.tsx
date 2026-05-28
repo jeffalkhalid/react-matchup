@@ -13,6 +13,7 @@ import {
   type EloSimResult,
 } from '../lib/elo';
 import { rankFromPoints } from '../lib/frmt-match';
+import PadelRacketIcon from '../components/PadelRacketIcon';
 
 type AdminTab = 'disputes' | 'frmt' | 'games';
 
@@ -186,6 +187,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink }: {
   const [linkedFilter, setLinkedFilter] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 30;
+  const insets = useSafeAreaInsets();
 
   const [pickerEntry, setPickerEntry] = useState<any | null>(null);
   const [pickerSearch, setPickerSearch] = useState('');
@@ -358,7 +360,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink }: {
             <FlatList
               data={pickerPlayers.slice(0, 50)}
               keyExtractor={p => p.id}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}
               ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: '#1e293b' }} />}
               renderItem={({ item: p }) => (
                 <TouchableOpacity onPress={() => handleLink(p.id)} disabled={linking}
@@ -401,7 +403,7 @@ function GamesTab({ games, loading, deletingId, onDelete, onRefresh }: {
 
       {games.length === 0 ? (
         <View style={sty.emptyCard}>
-          <Text style={{ fontSize: 40, marginBottom: 10 }}>🎾</Text>
+          <View style={{ marginBottom: 10 }}><PadelRacketIcon size={40} style={{ opacity: 0.5 }} /></View>
           <Text style={{ fontSize: 15, fontWeight: '900', color: '#94a3b8', textAlign: 'center' }}>Aucune partie en cours</Text>
         </View>
       ) : (
@@ -661,15 +663,16 @@ export default function AdminScreen() {
         {/* Tab bar */}
         <View style={{ flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, padding: 3, gap: 2 }}>
           {([
-            { key: 'disputes' as AdminTab, label: '⚖️ Litiges', badge: disputes.length },
-            { key: 'frmt'     as AdminTab, label: '🏆 FRMT',    badge: 0 },
-            { key: 'games'    as AdminTab, label: '🎾 Parties',  badge: 0 },
+            { key: 'disputes' as AdminTab, label: '⚖️ Litiges', badge: disputes.length, withIcon: false },
+            { key: 'frmt'     as AdminTab, label: '🏆 FRMT',    badge: 0, withIcon: false },
+            { key: 'games'    as AdminTab, label: 'Parties',    badge: 0, withIcon: true  },
           ]).map(t => {
             const active = tab === t.key;
             return (
               <TouchableOpacity key={t.key} onPress={() => setTab(t.key)} activeOpacity={0.7}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
                   backgroundColor: active ? '#fff' : 'transparent', borderRadius: 11, paddingVertical: 9 }}>
+                {t.withIcon && <PadelRacketIcon size={14} />}
                 <Text style={{ fontSize: 11, fontWeight: '900', color: active ? '#0f172a' : '#475569' }}>{t.label}</Text>
                 {t.badge > 0 && (
                   <View style={{ backgroundColor: active ? '#ef4444' : '#ef444455', borderRadius: 999, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>

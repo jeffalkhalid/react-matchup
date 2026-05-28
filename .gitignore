@@ -41,3 +41,6 @@ yarn-error.*
 /android
 
 schema.sql
+
+sql
+supabase

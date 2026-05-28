@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../hooks/usePlayer';
 import { Colors, Spacing, FontSize, Radius } from '../lib/theme';
 
@@ -13,6 +14,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function IndexScreen() {
   const { player, loading } = usePlayer();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const videoPlayer = useVideoPlayer(require('../assets/padel-mobile.mp4'), p => {
     p.loop = true;
@@ -38,7 +40,7 @@ export default function IndexScreen() {
   // Returning null blocks the screen from mounting correctly during quick state flips.
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#102820' }} contentContainerStyle={{ flexGrow: 1 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: '#102820' }} contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom }}>
 
       {/* HERO */}
       <View style={{ height: SCREEN_HEIGHT, position: 'relative' }}>
@@ -57,15 +59,23 @@ export default function IndexScreen() {
         <View style={{
           position: 'absolute', top: 0, left: 0, right: 0,
           paddingTop: 56, paddingHorizontal: Spacing.lg,
-          flexDirection: 'row', alignItems: 'center',
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+          gap: 14,
           zIndex: 10,
         }}>
           <Image
             source={require('../assets/icon.png')}
-            style={{ width: 36, height: 36, borderRadius: Radius.md, marginRight: Spacing.sm }}
+            style={{ width: 60, height: 60, borderRadius: 16 }}
             resizeMode="cover"
           />
-          <Text style={{ color: '#fff', fontSize: FontSize.md, fontWeight: '900' }}>MatchupPadel</Text>
+          <View>
+            <Text style={{ color: '#fff', fontSize: 26, fontWeight: '900', letterSpacing: -0.5, lineHeight: 28 }}>
+              <Text style={{ color: '#FACC15' }}>PAG</Text> Match
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase', marginTop: 2 }}>
+              by PadelActiveGame
+            </Text>
+          </View>
         </View>
 
         {/* Hero content */}

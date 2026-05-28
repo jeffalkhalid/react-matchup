@@ -1,9 +1,10 @@
 import '../global.css';
 import { Stack, useSegments, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { PlayerProvider, usePlayer } from '../hooks/usePlayer';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import AnimatedSplash from '../components/AnimatedSplash';
 
 export const unstable_settings = {
   initialRouteName: 'index',
@@ -40,7 +41,7 @@ function RootNavigator() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="player/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="score-entry" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="admin" options={{ presentation: 'card' }} />
       <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
     </Stack>
@@ -48,10 +49,13 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const [splashDone, setSplashDone] = useState(false);
+
   return (
     <PlayerProvider>
       <StatusBar style="auto" backgroundColor="transparent" translucent />
       <RootNavigator />
+      {!splashDone && <AnimatedSplash onFinish={() => setSplashDone(true)} />}
     </PlayerProvider>
   );
 }

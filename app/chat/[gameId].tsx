@@ -12,7 +12,7 @@ import { notifyPlayers } from '../../lib/notify';
 import type { Message } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────
-const QUICK_EMOJIS = ['👍', '🔥', '😄', '💪', '🎾', '👌', '🎉', '😅'];
+const QUICK_EMOJIS = ['👍', '🔥', '😄', '💪', '👌', '🎉', '😅'];
 const AVATAR_COLORS = ['#4f46e5', '#ec4899', '#8b5cf6', '#14b8a6', '#f59e0b', '#10b981'];
 function playerColor(idx: number) { return AVATAR_COLORS[idx % AVATAR_COLORS.length]; }
 
@@ -37,18 +37,25 @@ interface MsgItemProps {
   message: Message; prevMessage?: Message;
   isMe: boolean; allPlayers: { id: string; name: string }[];
   reactingId: string | null; setReactingId: (id: string | null) => void;
-  localReactions: Record<string, Record<string, number>>;
   addReaction: (msgId: string, emoji: string) => void;
   readers: Participant[];
+  myPlayerId: string | undefined;
 }
 
-function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, setReactingId, localReactions, addReaction, readers }: MsgItemProps) {
+// Normalize a reaction entry to { count, mine } regardless of legacy (number) or new (string[]) format
+function reactionInfo(entry: string[] | number | undefined, myPlayerId?: string) {
+  if (Array.isArray(entry)) return { count: entry.length, mine: !!myPlayerId && entry.includes(myPlayerId) };
+  if (typeof entry === 'number') return { count: entry, mine: false };
+  return { count: 0, mine: false };
+}
+
+function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, setReactingId, addReaction, readers, myPlayerId }: MsgItemProps) {
   const time = new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const senderChanged = !prevMessage || prevMessage.player_id !== m.player_id;
   const showAvatar = !isMe && senderChanged;
   const pIdx = allPlayers.findIndex(p => p.id === m.player_id);
   const color = pIdx >= 0 ? playerColor(pIdx) : '#94a3b8';
-  const reactions = localReactions[m.id] ?? {};
+  const reactions = m.reactions ?? {};
   const isReacting = reactingId === m.id;
 
   return (
@@ -96,13 +103,22 @@ function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, se
           {/* Reactions */}
           {Object.keys(reactions).length > 0 && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4, justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-              {Object.entries(reactions).map(([emoji, count]) => (
-                <TouchableOpacity key={emoji} onPress={() => addReaction(m.id, emoji)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#e2e8f0' }}>
-                  <Text style={{ fontSize: 13 }}>{emoji}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b' }}>{count}</Text>
-                </TouchableOpacity>
-              ))}
+              {Object.entries(reactions).map(([emoji, entry]) => {
+                const { count, mine } = reactionInfo(entry as string[] | number | undefined, myPlayerId);
+                if (count <= 0) return null;
+                return (
+                  <TouchableOpacity key={emoji} onPress={() => addReaction(m.id, emoji)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 3,
+                      backgroundColor: mine ? '#eef2ff' : '#fff',
+                      borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3,
+                      borderWidth: 1, borderColor: mine ? '#4f46e5' : '#e2e8f0',
+                    }}>
+                    <Text style={{ fontSize: 13 }}>{emoji}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: mine ? '#4f46e5' : '#64748b' }}>{count}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
@@ -115,11 +131,14 @@ function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, se
           {isMe && readers.length > 0 && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 }}>
               <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>Lu</Text>
-              {readers.slice(0, 3).map((r, i) => (
-                <View key={r.id} style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: playerColor(i), alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#fff' }}>
-                  <Text style={{ fontSize: 7, fontWeight: '900', color: '#fff' }}>{r.name.charAt(0).toUpperCase()}</Text>
-                </View>
-              ))}
+              {readers.slice(0, 3).map(r => {
+                const idx = allPlayers.findIndex(p => p.id === r.id);
+                return (
+                  <View key={r.id} style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: idx >= 0 ? playerColor(idx) : '#94a3b8', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#fff' }}>
+                    <Text style={{ fontSize: 7, fontWeight: '900', color: '#fff' }}>{r.name.charAt(0).toUpperCase()}</Text>
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
@@ -161,7 +180,6 @@ export default function ChatScreen() {
   const [readMap, setReadMap] = useState<Map<string, string>>(new Map());
   const [headerOpen, setHeaderOpen] = useState(true);
   const [reactingId, setReactingId] = useState<string | null>(null);
-  const [localReactions, setLocalReactions] = useState<Record<string, Record<string, number>>>({});
 
   // ── Derived ─────────────────────────────────────────────────
   const allPlayers = useMemo<{ id: string; name: string }[]>(() => {
@@ -229,7 +247,13 @@ export default function ChatScreen() {
 
     markRead();
 
-    const msgCh = supabase.channel(`chat-native:${gameId}`)
+    // Unique per mount: avoids reusing a still-subscribed channel after Fast Refresh
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // One channel per event type: multi-binding on the same channel is known to drop
+    // events, and event:'*' combined with a filter is unreliable across supabase-js
+    // versions. Three channels is the safest pattern.
+    const msgInsertCh = supabase.channel(`chat-msg-ins:${gameId}:${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `game_id=eq.${gameId}` },
         payload => {
           const inc = payload.new as Message;
@@ -238,25 +262,61 @@ export default function ChatScreen() {
           markRead();
         }).subscribe();
 
-    const readCh = supabase.channel(`reads-native:${gameId}`)
+    const msgUpdateCh = supabase.channel(`chat-msg-upd:${gameId}:${suffix}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `game_id=eq.${gameId}` },
+        payload => {
+          const upd = payload.new as Message;
+          setMessages(prev => prev.map(m => m.id === upd.id ? { ...m, reactions: upd.reactions } : m));
+        }).subscribe();
+
+    const readCh = supabase.channel(`reads-native:${gameId}:${suffix}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'game_chat_reads', filter: `game_id=eq.${gameId}` },
         payload => {
           const row = payload.new as { player_id: string; last_read_at: string };
           if (row?.player_id) setReadMap(prev => new Map(prev).set(row.player_id, row.last_read_at));
         }).subscribe();
 
-    return () => { supabase.removeChannel(msgCh); supabase.removeChannel(readCh); };
+    return () => {
+      supabase.removeChannel(msgInsertCh);
+      supabase.removeChannel(msgUpdateCh);
+      supabase.removeChannel(readCh);
+    };
   }, [gameId, player, markRead]);
 
   // ── Actions ──────────────────────────────────────────────────
   const addReaction = useCallback((msgId: string, emoji: string) => {
-    setLocalReactions(prev => {
-      const r = { ...(prev[msgId] ?? {}) };
-      r[emoji] = (r[emoji] ?? 0) + 1;
-      return { ...prev, [msgId]: r };
-    });
     setReactingId(null);
-  }, []);
+    if (!player) return;
+    // Don't persist reactions on optimistic (not-yet-saved) messages
+    if (msgId.startsWith('tmp-')) return;
+
+    const myId = player.id;
+
+    // Optimistic toggle. Legacy numeric values are reset to a fresh array containing
+    // only the current player — matches what the RPC will do on the server.
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m;
+      const r: Record<string, string[] | number> = { ...(m.reactions ?? {}) };
+      const entry = r[emoji];
+      let arr: string[];
+      if (Array.isArray(entry)) {
+        arr = entry.includes(myId) ? entry.filter(id => id !== myId) : [...entry, myId];
+      } else {
+        arr = [myId];
+      }
+      if (arr.length === 0) delete r[emoji];
+      else r[emoji] = arr;
+      return { ...m, reactions: r };
+    }));
+
+    // Persist via SECURITY DEFINER RPC (toggles per-player, only touches reactions)
+    supabase.rpc('toggle_message_reaction', { p_message_id: msgId, p_emoji: emoji })
+      .then(({ data, error }) => {
+        if (error) { console.warn('toggleReaction failed', error.message); return; }
+        const row = data as Message | null;
+        if (row) setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reactions: row.reactions } : m));
+      });
+  }, [player]);
 
   const sendMessage = async () => {
     if (!text.trim() || !player || sending) return;
@@ -376,7 +436,7 @@ export default function ChatScreen() {
             keyExtractor={item => item.id}
             contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
             onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
-            extraData={{ reactingId, localReactions, readByMsgId }}
+            extraData={{ reactingId, messages, readByMsgId }}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingVertical: 60 }}>
                 <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
@@ -396,9 +456,9 @@ export default function ChatScreen() {
                 allPlayers={allPlayers}
                 reactingId={reactingId}
                 setReactingId={setReactingId}
-                localReactions={localReactions}
                 addReaction={addReaction}
                 readers={readByMsgId.get(item.id) ?? []}
+                myPlayerId={player?.id}
               />
             )}
           />

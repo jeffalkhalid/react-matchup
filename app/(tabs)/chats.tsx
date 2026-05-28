@@ -10,6 +10,17 @@ import { Colors, Spacing, FontSize, Radius } from '../../lib/theme';
 
 type TypeFilter = 'all' | 'unread' | 'challenge' | 'standard';
 
+// WhatsApp-like order: unread first, then most recent activity (last message
+// or match_date as fallback for chats with no messages yet).
+function sortGames<T extends { unread: number; last_message_at: string | null; match_date: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => {
+    if (b.unread !== a.unread) return b.unread - a.unread;
+    const aTs = new Date(a.last_message_at ?? a.match_date).getTime();
+    const bTs = new Date(b.last_message_at ?? b.match_date).getTime();
+    return bTs - aTs;
+  });
+}
+
 interface GameChat {
   id: string;
   location: string;
@@ -20,6 +31,7 @@ interface GameChat {
   creator: { name: string } | null;
   participants: Array<{ player_id: string; status: string; player: { name: string } | null }>;
   unread: number;
+  last_message_at: string | null;
 }
 
 function gameTheme(isChallenge: boolean) {
@@ -59,6 +71,46 @@ export default function ChatsScreen() {
     if (!player) return;
     loadGames();
   }, [player]));
+
+  // Live updates: new messages bump unread + reorder, and read receipts zero out.
+  useEffect(() => {
+    if (!player) return;
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const msgCh = supabase
+      .channel(`chats-list-msgs:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new as { game_id: string; player_id: string; created_at: string } | null;
+        if (!m) return;
+        setGames(prev => {
+          if (!prev.some(g => g.id === m.game_id)) return prev; // not one of our games
+          const updated = prev.map(g => {
+            if (g.id !== m.game_id) return g;
+            return {
+              ...g,
+              last_message_at: m.created_at,
+              unread: m.player_id === player.id ? g.unread : g.unread + 1,
+            };
+          });
+          return sortGames(updated);
+        });
+      })
+      .subscribe();
+
+    const readCh = supabase
+      .channel(`chats-list-reads:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_chat_reads', filter: `player_id=eq.${player.id}` }, payload => {
+        const r = payload.new as { game_id: string } | null;
+        if (!r?.game_id) return;
+        setGames(prev => {
+          if (!prev.some(g => g.id === r.game_id)) return prev;
+          return sortGames(prev.map(g => g.id === r.game_id ? { ...g, unread: 0 } : g));
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(msgCh); supabase.removeChannel(readCh); };
+  }, [player]);
 
   const loadGames = async () => {
     if (!player) return;
@@ -106,25 +158,33 @@ export default function ChatsScreen() {
 
     const readMap = Object.fromEntries((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
 
-    // Count unread messages per game
+    // Count unread messages + fetch the latest message timestamp per game
     const gamesWithUnread: GameChat[] = await Promise.all(
       all.map(async (game) => {
         const lastRead = readMap[game.id] ?? '1970-01-01';
-        const { count } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('game_id', game.id)
-          .gt('created_at', lastRead);
-        return { ...game, unread: count ?? 0 };
+        const [{ count }, { data: latest }] = await Promise.all([
+          supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('game_id', game.id)
+            .gt('created_at', lastRead),
+          supabase
+            .from('messages')
+            .select('created_at')
+            .eq('game_id', game.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+        return {
+          ...game,
+          unread: count ?? 0,
+          last_message_at: (latest as { created_at: string } | null)?.created_at ?? null,
+        };
       })
     );
 
-    gamesWithUnread.sort((a, b) => {
-      if (b.unread !== a.unread) return b.unread - a.unread;
-      return new Date(b.match_date).getTime() - new Date(a.match_date).getTime();
-    });
-
-    setGames(gamesWithUnread);
+    setGames(sortGames(gamesWithUnread));
     setLoading(false);
   };
 
@@ -298,7 +358,20 @@ export default function ChatsScreen() {
                   </View>
                 </View>
 
-                <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
+                {game.unread > 0 ? (
+                  <View style={{
+                    minWidth: 22, height: 22, borderRadius: 11,
+                    backgroundColor: Colors.primary,
+                    paddingHorizontal: 7,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>
+                      {game.unread > 99 ? '99+' : game.unread}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
+                )}
               </TouchableOpacity>
             );
           }}
