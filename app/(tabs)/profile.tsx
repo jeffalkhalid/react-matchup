@@ -33,25 +33,6 @@ function NavRow({ icon, label, badge, onPress, danger, subtle }: {
   );
 }
 
-function NotifRow({ emoji, title, sub, color, bg, onPress }: {
-  emoji: string; title: string; sub: string;
-  color: string; bg: string; onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.75}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 8, backgroundColor: bg, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: color + '30' }}>
-      <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: color + '22', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 18 }}>{emoji}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 13, fontWeight: '900', color }}>{title}</Text>
-        <Text style={{ fontSize: 11, fontWeight: '600', color: color + 'aa', marginTop: 1 }}>{sub}</Text>
-      </View>
-      <Text style={{ fontSize: 16, color: color + '80' }}>›</Text>
-    </TouchableOpacity>
-  );
-}
-
 function SectionHeader({ title }: { title: string }) {
   return (
     <Text style={{ fontSize: 10, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginHorizontal: 16, marginTop: 22, marginBottom: 6 }}>
@@ -84,20 +65,71 @@ export default function ProfileScreen() {
 
   const [challengeCount, setChallengeCount] = useState(0);
   const [pendingMatchCount, setPendingMatchCount] = useState(0);
+  const [invitationCount, setInvitationCount] = useState(0);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [unvotedCount, setUnvotedCount] = useState(0);
+  const [toScoreCount, setToScoreCount] = useState(0);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!player) return;
 
-    const [cRes, mRes] = await Promise.all([
+    const playerOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+
+    const [cRes, mRes, recentMatchesRes, votedRes, invRes, acceptedRes, creatorGamesRes] = await Promise.all([
       supabase.from('challenges').select('id', { count: 'exact', head: true }).eq('challenged_id', player.id).eq('status', 'pending'),
       supabase.from('matches').select('id', { count: 'exact', head: true })
-        .or(`winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`)
+        .or(playerOr)
         .eq('status', 'pending').neq('created_by', player.id),
+      supabase.from('matches').select('id')
+        .or(playerOr)
+        .in('status', ['pending', 'validated'])
+        .gte('created_at', sevenDaysAgo),
+      supabase.from('reputation_votes').select('match_id').eq('giver_id', player.id),
+      supabase.from('game_participants').select('id', { count: 'exact', head: true }).eq('player_id', player.id).eq('status', 'invited'),
+      supabase.from('game_participants').select('game_id').eq('player_id', player.id).eq('status', 'accepted'),
+      supabase.from('open_games').select('id').eq('creator_id', player.id).eq('status', 'open'),
     ]);
 
     setChallengeCount(cRes.count ?? 0);
     setPendingMatchCount(mRes.count ?? 0);
+    setInvitationCount(invRes.count ?? 0);
+
+    const votedIds = new Set((votedRes.data ?? []).map((v: any) => v.match_id));
+    setUnvotedCount((recentMatchesRes.data ?? []).filter((m: any) => !votedIds.has(m.id)).length);
+
+    // to_score
+    const acceptedIds = (acceptedRes.data ?? []).map((p: any) => p.game_id);
+    const toScoreOr = acceptedIds.length > 0
+      ? `creator_id.eq.${player.id},id.in.(${acceptedIds.join(',')})`
+      : `creator_id.eq.${player.id}`;
+    const { count: toScore } = await supabase
+      .from('open_games')
+      .select('id', { count: 'exact', head: true })
+      .neq('status', 'cancelled')
+      .neq('status', 'closed')
+      .lt('match_date', now)
+      .gte('match_date', fortyEightHoursAgo)
+      .eq('spots_available', 0)
+      .or(toScoreOr);
+    setToScoreCount(toScore ?? 0);
+
+    // pending_approval (candidatures dans les parties créées)
+    const cgIds = (creatorGamesRes.data ?? []).map((g: any) => g.id);
+    if (cgIds.length > 0) {
+      const { count: approvals } = await supabase
+        .from('game_participants')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .in('game_id', cgIds);
+      setPendingApprovalCount(approvals ?? 0);
+    } else {
+      setPendingApprovalCount(0);
+    }
 
     // Unread chats
     const { data: reads } = await supabase.from('game_chat_reads').select('game_id, last_read_at').eq('player_id', player.id);
@@ -135,7 +167,7 @@ export default function ProfileScreen() {
   const league = getLeague(player.elo_score);
   const level = eloToLevel(player.elo_score);
   const leagueColor = Colors.league[league];
-  const totalNotif = challengeCount + pendingMatchCount + unreadChatCount;
+  const totalNotif = challengeCount + pendingMatchCount + unvotedCount + invitationCount + toScoreCount + pendingApprovalCount;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#102820' }}>
@@ -196,28 +228,6 @@ export default function ProfileScreen() {
         {/* ── White content ── */}
         <View style={{ backgroundColor: '#f8fafc', borderTopLeftRadius: 24, borderTopRightRadius: 24, minHeight: 400 }}>
 
-          {/* Notifications */}
-          {(challengeCount > 0 || pendingMatchCount > 0 || unreadChatCount > 0) && (
-            <>
-              <SectionHeader title="Notifications" />
-              {challengeCount > 0 && (
-                <NotifRow emoji="⚔️" title={`${challengeCount} défi${challengeCount > 1 ? 's' : ''} reçu${challengeCount > 1 ? 's' : ''}`}
-                  sub="En attente de ta réponse" color="#7c3aed" bg="#f5f3ff"
-                  onPress={() => router.push('/(tabs)/matchmaking' as any)} />
-              )}
-              {pendingMatchCount > 0 && (
-                <NotifRow emoji="📋" title={`${pendingMatchCount} score${pendingMatchCount > 1 ? 's' : ''} à valider`}
-                  sub="Un adversaire a soumis un résultat" color="#d97706" bg="#fffbeb"
-                  onPress={() => router.push('/(tabs)/index' as any)} />
-              )}
-              {unreadChatCount > 0 && (
-                <NotifRow emoji="💬" title={`${unreadChatCount} message${unreadChatCount > 1 ? 's' : ''} non lu${unreadChatCount > 1 ? 's' : ''}`}
-                  sub="Dans tes matchs actifs" color="#4f46e5" bg="#eef2ff"
-                  onPress={() => router.push('/(tabs)/chats' as any)} />
-              )}
-            </>
-          )}
-
           {/* Navigation */}
           <SectionHeader title="Navigation" />
           <Card>
@@ -274,6 +284,7 @@ function EditProfileModal({ visible, onClose, player, onSaved }: {
   const [preferredCourt, setPreferredCourt] = useState(player.preferred_court ?? '');
   const [frmtRank,       setFrmtRank]       = useState(player.frmt_rank ?? '');
   const [clubs,          setClubs]          = useState(player.clubs?.join(', ') ?? '');
+  const insets = useSafeAreaInsets();
   const [loading,        setLoading]        = useState(false);
 
   // Sync state when modal reopens with fresh player data
@@ -308,7 +319,7 @@ function EditProfileModal({ visible, onClose, player, onSaved }: {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: '#f8fafc', padding: 20 }}>
+      <View style={{ flex: 1, backgroundColor: '#f8fafc', padding: 20, paddingBottom: insets.bottom + 20 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <Text style={{ fontSize: 18, fontWeight: '900', color: '#0f172a' }}>Modifier le profil</Text>
           <TouchableOpacity onPress={onClose} style={{ width: 32, height: 32, borderRadius: 999, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>

@@ -4,6 +4,7 @@ import {
   ActivityIndicator, StyleSheet, Share, Linking,
 } from 'react-native';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { formatPadelLevel } from '../../lib/theme';
 import type { OpenGame } from '../../types';
@@ -12,7 +13,7 @@ import type { OpenGame } from '../../types';
 interface SlotPlayer {
   id: string; name: string; elo: number;
   wins?: number; losses?: number;
-  isCreator?: boolean; isMe?: boolean;
+  isCreator?: boolean; isMe?: boolean; isInvited?: boolean;
 }
 
 interface GameTheme {
@@ -24,7 +25,7 @@ interface GameTheme {
 
 interface EnrichedGame extends OpenGame {
   is_creator?: boolean;
-  my_status?: 'accepted' | 'pending';
+  my_status?: 'accepted' | 'pending' | 'waitlist' | 'invited';
   pending_count?: number;
 }
 
@@ -82,12 +83,23 @@ function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
         isMe: p.player_id === myId,
       };
       const idx = SIDE_TO_IDX[p.team_side ?? ''];
-      if (idx !== undefined && !slots[idx]) {
-        slots[idx] = sp;
-      } else {
-        const free = slots.findIndex(s => s === null);
-        if (free !== -1) slots[free] = sp;
-      }
+      if (idx !== undefined && !slots[idx]) slots[idx] = sp;
+      else { const free = slots.findIndex(s => s === null); if (free !== -1) slots[free] = sp; }
+    });
+  (game.participants ?? [])
+    .filter((p: any) => p.status === 'invited')
+    .forEach((p: any) => {
+      if (p.player_id === game.creator_id) return;
+      const sp: SlotPlayer = {
+        id: p.player_id,
+        name: p.player?.name ?? '?',
+        elo: p.player?.elo_score ?? 0,
+        isMe: p.player_id === myId,
+        isInvited: true,
+      };
+      const idx = SIDE_TO_IDX[p.team_side ?? ''];
+      if (idx !== undefined && !slots[idx]) slots[idx] = sp;
+      else { const free = slots.findIndex(s => s === null); if (free !== -1) slots[free] = sp; }
     });
   return slots;
 }
@@ -150,6 +162,18 @@ function CourtSlot({
     );
   }
 
+  if (player.isInvited) {
+    return (
+      <View style={[s.cell, { borderStyle: 'dashed', borderColor: '#cbd5e1', backgroundColor: 'rgba(241,245,249,0.85)' }]}>
+        <Text style={{ fontSize: 18, opacity: 0.5 }}>⏳</Text>
+        <Text style={{ fontSize: 8, fontWeight: '900', color: '#94a3b8', marginTop: 2 }} numberOfLines={1}>
+          {player.name.split(' ')[0]}
+        </Text>
+        <Text style={{ fontSize: 7, color: '#cbd5e1', letterSpacing: 0.3 }}>Invité</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[s.cell, {
       borderStyle: 'solid', borderColor: player.isMe ? '#f59e0b' : 'transparent',
@@ -178,6 +202,14 @@ interface Props {
   onApprovePending: (participantId: string, gameId: string, participantPlayerId: string, currentApprovals: string[]) => Promise<void>;
   onDeclinePending: (participantId: string) => Promise<void>;
   onLeave: (gameId: string, participantId: string, wasAccepted: boolean) => void;
+  onAcceptInvitation: (gameId: string, participantId: string) => Promise<void>;
+  onDeclineInvitation: (gameId: string, participantId: string) => Promise<void>;
+  onViewPlayer?: (playerId: string) => void;
+  onCancelGame?: (gameId: string) => void;
+  onCloseGame?: (gameId: string) => void;
+  onCreatorLeave?: (gameId: string) => void;
+  scorable?: boolean;
+  onScorePress?: (gameId: string) => void;
 }
 
 // ─── Calendar + Share helpers ─────────────────────────────────
@@ -224,39 +256,61 @@ async function shareGame(game: EnrichedGame) {
     }).filter(Boolean);
   const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
   const url = `https://matchup-padel.vercel.app/lobby?game=${game.id}`;
-  const msg = `🎾 Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
+  const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
 
 // ─── Main component ───────────────────────────────────────────
 export default function GameDetailsSheet({
   game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onLeave,
+  onAcceptInvitation, onDeclineInvitation, onViewPlayer, onCancelGame, onCloseGame, onCreatorLeave,
+  scorable, onScorePress,
 }: Props) {
   const [mySlot, setMySlot] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isWaitlisted, setIsWaitlisted] = useState(false);
+  const [freshParticipants, setFreshParticipants] = useState<any[] | null>(null);
+  const [localCreatorSide, setLocalCreatorSide] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
 
-  useEffect(() => { setMySlot(null); }, [game.id]);
+  useEffect(() => { setMySlot(null); setFreshParticipants(null); setLocalCreatorSide(null); }, [game.id]);
+  useEffect(() => {
+    supabase
+      .from('game_participants')
+      .select('id, player_id, status, team_side, approvals, created_at, player:player_id(id, name, elo_score, win_count, loss_count)')
+      .eq('game_id', game.id)
+      .then(({ data }) => { if (data) setFreshParticipants(data); });
+  }, [game.id]);
+
+  // Re-sync local freshParticipants whenever the parent passes updated participants
+  // (e.g. after accepting an invitation, fetchData() refreshes game.participants).
+  useEffect(() => {
+    if (game.participants) setFreshParticipants(game.participants as any[]);
+    setLocalCreatorSide(null);
+  }, [game.participants, (game as any).creator_side]);
 
   const theme = getGameTheme(game);
 
   // Derived state
-  const slots = buildSlots(game, playerId);
+  const effectiveParticipants = freshParticipants ?? (game.participants ?? []);
+  const effectiveCreatorSide = localCreatorSide ?? (game as any).creator_side ?? 'A_GAU';
+  const slots = buildSlots({ ...game, creator_side: effectiveCreatorSide, participants: effectiveParticipants }, playerId);
   const emptySlots = ALL_SIDES.filter((_, i) => !slots[i]);
   const filled = ALL_SIDES
     .map((s, i) => slots[i] ? { player: slots[i]!, side: s } : null)
     .filter(Boolean) as { player: SlotPlayer; side: string }[];
 
   const isCreator    = game.creator_id === playerId;
-  const myParticipant = (game.participants ?? []).find((p: any) => p.player_id === playerId);
-  const alreadyIn    = !!myParticipant && ['accepted', 'pending', 'waitlist'].includes((myParticipant as any)?.status);
+  const myParticipant = effectiveParticipants.find((p: any) => p.player_id === playerId);
+  const alreadyIn    = !!myParticipant && ['accepted', 'pending', 'waitlist', 'invited'].includes((myParticipant as any)?.status);
   const isAccepted   = (myParticipant as any)?.status === 'accepted';
   const canParticipate = !isCreator && !alreadyIn;
 
-  const pendingPlayers = (game.participants ?? []).filter((p: any) => p.status === 'pending');
-  const acceptedCount  = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
-  const isFull         = 1 + acceptedCount >= 4;
-  const waitlistCount  = (game.participants ?? []).filter((p: any) => p.status === 'waitlist').length;
+  const pendingPlayers = effectiveParticipants.filter((p: any) => p.status === 'pending');
+  const acceptedCount  = effectiveParticipants.filter((p: any) => p.status === 'accepted').length;
+  const invitedCount   = effectiveParticipants.filter((p: any) => p.status === 'invited').length;
+  const isFull         = 1 + acceptedCount + invitedCount >= 4;
+  const waitlistCount  = effectiveParticipants.filter((p: any) => p.status === 'waitlist').length;
   const requiredVotes  = Math.min(1 + acceptedCount, 3);
 
   const fit       = (() => { const min = game.min_elo ?? 0, max = game.max_elo ?? 9999; if (myElo >= min && myElo <= max) return 'fit'; const m = Math.min(Math.abs(myElo - min), Math.abs(myElo - max)); return m <= 100 ? 'close' : 'outside'; })();
@@ -292,27 +346,106 @@ export default function GameDetailsSheet({
 
   // ─── CTA button ───────────────────────────────────────────
   function renderCTA() {
-    if (isCreator || isAccepted) {
-      const currentSide = isCreator
-        ? (game.creator_side ?? 'A_GAU')
-        : (myParticipant as any)?.team_side ?? null;
+    const gameStatus = (game as any).status as string | undefined;
+    const isCancelled = gameStatus === 'cancelled';
+    const isClosed = gameStatus === 'closed';
+
+    if (isCancelled) {
       return (
-        <View style={{ gap: 8 }}>
-          <View style={[sty.ctaBtn, { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }]}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b' }}>
-              {currentSide
-                ? `✓ Éq. ${SIDE_TEAM[currentSide]} · ${SIDE_POS[currentSide]} — touche un slot libre pour changer`
-                : '↔ Touche un slot libre pour changer de place'}
-            </Text>
-          </View>
-          {isAccepted && myParticipant && (
+        <View style={[sty.ctaBtn, { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', flex: 1 }]}>
+          <Text style={{ fontSize: 13, fontWeight: '900', color: '#b91c1c' }}>❌ Partie annulée</Text>
+        </View>
+      );
+    }
+
+    if (scorable && onScorePress) {
+      return (
+        <TouchableOpacity
+          onPress={() => onScorePress(game.id)}
+          style={[sty.ctaBtn, { backgroundColor: '#f59e0b', flex: 1, elevation: 4, shadowColor: '#f59e0b', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
+          activeOpacity={0.85}
+        >
+          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff', letterSpacing: 0.3 }}>🏆 Saisir le score</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (isCreator) {
+      const hasSecondary = (onCloseGame && !isClosed) || isClosed || !!onCreatorLeave;
+      return (
+        <View style={{ gap: 8, flex: 1 }}>
+          {hasSecondary && (
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {onCloseGame && !isClosed && (
+                <TouchableOpacity
+                  onPress={() => onCloseGame(game.id)}
+                  style={sty.ghostBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={sty.ghostBtnText}>🔒 Fermer</Text>
+                </TouchableOpacity>
+              )}
+              {isClosed && (
+                <View style={[sty.ghostBtn, { opacity: 0.6 }]}>
+                  <Text style={sty.ghostBtnText}>🔒 Fermée</Text>
+                </View>
+              )}
+              {onCreatorLeave && (
+                <TouchableOpacity
+                  onPress={() => onCreatorLeave(game.id)}
+                  style={sty.ghostBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={sty.ghostBtnText}>↪ Transférer</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+          {onCancelGame && (
             <TouchableOpacity
-              onPress={() => onLeave(game.id, (myParticipant as any).id, true)}
-              style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+              onPress={() => onCancelGame(game.id)}
+              style={[sty.ctaBtn, { backgroundColor: '#dc2626' }]}
+              activeOpacity={0.85}
             >
-              <Text style={{ fontSize: 13, fontWeight: '900', color: '#dc2626' }}>Quitter la partie</Text>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 0.3 }}>❌ Annuler la partie</Text>
             </TouchableOpacity>
           )}
+        </View>
+      );
+    }
+    if (isAccepted && myParticipant) {
+      return (
+        <View style={{ flex: 1 }}>
+          <TouchableOpacity
+            onPress={() => onLeave(game.id, (myParticipant as any).id, true)}
+            style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+            activeOpacity={0.85}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '900', color: '#dc2626' }}>Quitter la partie</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if ((myParticipant as any)?.status === 'invited') {
+      return (
+        <View style={{ flex: 1, gap: 8 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1d4ed8', textAlign: 'center' }}>
+            🎯 Tu as été invité à cette partie
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => onAcceptInvitation(game.id, (myParticipant as any).id)}
+              style={{ flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#10b981', elevation: 4, shadowColor: '#10b981', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✓ Accepter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onDeclineInvitation(game.id, (myParticipant as any).id)}
+              style={{ flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '900', color: '#dc2626' }}>✗ Décliner</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
@@ -374,22 +507,14 @@ export default function GameDetailsSheet({
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(11,17,33,0.6)', justifyContent: 'flex-end' }}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-
-        <View style={sty.sheet}>
-          {/* Drag handle */}
-          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4, backgroundColor: '#0b1121' }}>
-            <View style={{ width: 36, height: 4, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 2 }} />
-          </View>
-
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <View style={sty.sheet}>
           {/* ── Dark hero ── */}
           <View style={{ backgroundColor: '#0b1121', paddingHorizontal: 16, paddingBottom: 14, position: 'relative', overflow: 'hidden' }}>
             {/* Type strip */}
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: theme.stripColor }} />
             {/* Nav */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: insets.top + 8, marginBottom: 14 }}>
               <TouchableOpacity onPress={onClose} style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
                 <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
                   <Path stroke="rgba(255,255,255,0.8)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" d="M9 2L4 7l5 5" />
@@ -457,7 +582,7 @@ export default function GameDetailsSheet({
           </View>
 
           {/* ── Scrollable body ── */}
-          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}>
 
             {/* Status banners */}
             {(isFull || outOfLevel) && (
@@ -532,8 +657,18 @@ export default function GameDetailsSheet({
                             mode={changeMode ? 'change' : 'join'}
                             onPress={() => {
                               if (changeMode) {
-                                if (isCreator) onCreatorChangeSide(game.id, side);
-                                else if (myParticipant) onChangeSide((myParticipant as any).id, side);
+                                if (isCreator) {
+                                  setLocalCreatorSide(side);
+                                  onCreatorChangeSide(game.id, side);
+                                } else if (myParticipant) {
+                                  const pid = (myParticipant as any).id;
+                                  setFreshParticipants(prev =>
+                                    (prev ?? effectiveParticipants).map((p: any) =>
+                                      p.id === pid ? { ...p, team_side: side } : p
+                                    )
+                                  );
+                                  onChangeSide(pid, side);
+                                }
                               } else {
                                 setMySlot(mySlot === side ? null : side);
                               }
@@ -560,8 +695,18 @@ export default function GameDetailsSheet({
                             mode={changeMode ? 'change' : 'join'}
                             onPress={() => {
                               if (changeMode) {
-                                if (isCreator) onCreatorChangeSide(game.id, side);
-                                else if (myParticipant) onChangeSide((myParticipant as any).id, side);
+                                if (isCreator) {
+                                  setLocalCreatorSide(side);
+                                  onCreatorChangeSide(game.id, side);
+                                } else if (myParticipant) {
+                                  const pid = (myParticipant as any).id;
+                                  setFreshParticipants(prev =>
+                                    (prev ?? effectiveParticipants).map((p: any) =>
+                                      p.id === pid ? { ...p, team_side: side } : p
+                                    )
+                                  );
+                                  onChangeSide(pid, side);
+                                }
                               } else {
                                 setMySlot(mySlot === side ? null : side);
                               }
@@ -618,18 +763,24 @@ export default function GameDetailsSheet({
                     return (
                       <View key={p.id} style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, padding: 12 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                          <Avatar name={p.player?.name ?? '?'} size={40} />
-                          <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a' }}>{p.player?.name}</Text>
-                              <View style={{ backgroundColor: '#f1f5f9', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-                                <Text style={{ fontSize: 9, fontWeight: '900', color: '#64748b' }}>Niv.{formatPadelLevel(p.player?.elo_score ?? 0)}</Text>
+                          <TouchableOpacity
+                            activeOpacity={onViewPlayer ? 0.7 : 1}
+                            onPress={onViewPlayer && p.player_id ? () => onViewPlayer(p.player_id) : undefined}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+                          >
+                            <Avatar name={p.player?.name ?? '?'} size={40} />
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a' }}>{p.player?.name}</Text>
+                                <View style={{ backgroundColor: '#f1f5f9', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 9, fontWeight: '900', color: '#64748b' }}>Niv.{formatPadelLevel(p.player?.elo_score ?? 0)}</Text>
+                                </View>
                               </View>
+                              <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+                                {approvals.length}/{requiredVotes} approbation{approvals.length > 1 ? 's' : ''}
+                              </Text>
                             </View>
-                            <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
-                              {approvals.length}/{requiredVotes} approbation{approvals.length > 1 ? 's' : ''}
-                            </Text>
-                          </View>
+                          </TouchableOpacity>
                           {isFull ? (
                             <View style={{ backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
                               <Text style={{ fontSize: 10, fontWeight: '700', color: '#94a3b8' }}>En attente</Text>
@@ -681,8 +832,14 @@ export default function GameDetailsSheet({
                     const total   = (p.wins ?? 0) + (p.losses ?? 0);
                     const winRate = total > 0 ? Math.round((p.wins ?? 0) / total * 100) : 0;
                     const isTeamA = SIDE_TEAM[side] === 'A';
+                    const canView = !!onViewPlayer;
                     return (
-                      <View key={side} style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 18, padding: 14 }}>
+                      <TouchableOpacity
+                        key={side}
+                        activeOpacity={canView ? 0.7 : 1}
+                        onPress={canView ? () => onViewPlayer(p.id) : undefined}
+                        style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 18, padding: 14 }}
+                      >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: total > 0 ? 10 : 0 }}>
                           <Avatar name={p.name} size={44} ring={p.isMe ? '#f59e0b' : undefined} />
                           <View style={{ flex: 1 }}>
@@ -719,32 +876,19 @@ export default function GameDetailsSheet({
                             </View>
                           </View>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>
               </View>
             )}
 
-            {/* Info note */}
-            <View style={{ paddingHorizontal: 14, paddingTop: 12 }}>
-              <View style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                <Text style={{ fontSize: 14 }}>💡</Text>
-                <Text style={{ fontSize: 11, color: '#94a3b8', fontWeight: '600', flex: 1 }}>
-                  Annulation gratuite jusqu'à 24h avant la partie.
-                </Text>
-              </View>
-            </View>
           </ScrollView>
 
           {/* ── Sticky CTA ── */}
-          <View style={sty.ctaBar}>
-            <TouchableOpacity onPress={onClose} style={sty.ctaBack}>
-              <Text style={{ fontSize: 14, fontWeight: '900', color: '#64748b' }}>←</Text>
-            </TouchableOpacity>
+          <View style={[sty.ctaBar, { paddingBottom: insets.bottom + 12 }]}>
             {renderCTA()}
           </View>
-        </View>
       </View>
     </Modal>
   );
@@ -753,11 +897,9 @@ export default function GameDetailsSheet({
 // ─── Styles ───────────────────────────────────────────────────
 const sty = StyleSheet.create({
   sheet: {
+    flex: 1,
     backgroundColor: '#f8fafc',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    height: '88%', overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 40,
-    shadowOffset: { width: 0, height: -8 }, elevation: 30,
+    overflow: 'hidden',
   },
   ctaBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -766,13 +908,16 @@ const sty = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: '#f1f5f9',
     flexDirection: 'row', gap: 8,
   },
-  ctaBack: {
-    width: 50, height: 50, borderRadius: 14, borderWidth: 1,
-    borderColor: '#e2e8f0', backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-  },
   ctaBtn: {
     flex: 1, height: 50, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
+  },
+  ghostBtn: {
+    flex: 1, height: 36, borderRadius: 10, borderWidth: 1,
+    borderColor: '#e2e8f0', backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ghostBtnText: {
+    fontSize: 12, fontWeight: '800', color: '#475569', letterSpacing: 0.2,
   },
 });

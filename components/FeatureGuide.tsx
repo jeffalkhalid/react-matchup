@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Rect, Polyline } from 'react-native-svg';
+import PadelRacketIcon from './PadelRacketIcon';
 
 const { width: W } = Dimensions.get('window');
 const GUIDE_KEY = 'matchup_guide_rn_v1';
@@ -17,10 +18,10 @@ const SLIDES = [
     id:         'welcome',
     accent:     '#4f46e5',
     blush:      'rgba(79,70,229,0.12)',
-    emoji:      '🎾',
+    emoji:      '',
     tag:        'Bienvenue',
-    title:      'MatchupPadel',
-    subtitle:   "Ton espace padel pour défier d'autres joueurs",
+    title:      'PAG Match',
+    subtitle:   "by PadelActiveGame — ton espace padel pour défier d'autres joueurs",
     tip:        "Swipe ou appuie sur Suivant pour découvrir les fonctionnalités. Appuie sur ? à tout moment pour revoir ce guide.",
     route:      null as string | null,
     routeLabel: null as string | null,
@@ -243,7 +244,7 @@ function IllustrationChats() {
   return (
     <View style={{ flex: 1, overflow: 'hidden' }}>
       <View style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={{ fontSize: 18 }}>🎾</Text>
+        <PadelRacketIcon size={18} />
         <View>
           <Text style={{ fontSize: 11, fontWeight: '900', color: '#0f172a' }}>Padel Arena · Dim 18h00</Text>
           <Text style={{ fontSize: 9, color: '#94a3b8' }}>Antoine, Sara, Marc + toi</Text>

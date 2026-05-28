@@ -10,17 +10,18 @@ import { usePlayer } from '../hooks/usePlayer';
 import { supabase } from '../lib/supabase';
 import { Colors, formatPadelLevel } from '../lib/theme';
 import { notifyPlayers } from '../lib/notify';
+import PadelRacketIcon from '../components/PadelRacketIcon';
 
 // ─── Constants ────────────────────────────────────────────────
 const SCORE_OPTS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const BADGE_FALLBACK: Record<string, string> = {
   'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🎾',
+  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '',
   'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
   'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
   CANNON: '💥', SMASH: '🎯', COMEBACK: '🔥', WALL: '🧱',
-  RUNNER: '🏃', NET_KING: '🎾', BRAIN: '🧠', CAPTAIN: '⭐',
+  RUNNER: '🏃', NET_KING: '', BRAIN: '🧠', CAPTAIN: '⭐',
   FAIR_PLAY: '🤝', GOOD_VIBES: '😄', DRINKS: '🍻', PUNCTUAL: '⏰',
   'El Cañón': '💥', 'Bon Délire': '😄', 'Essuie-glace': '🏃',
 };
@@ -163,7 +164,9 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
               style={[sty.badgeBtn, sel && sty.badgeBtnSel]}
               activeOpacity={0.75}
             >
-              <Text style={{ fontSize: 20 }}>{BADGE_FALLBACK[b.label] ?? '🏅'}</Text>
+              {b.label === 'Roi du Filet' || b.label === 'NET_KING'
+                ? <PadelRacketIcon size={20} />
+                : <Text style={{ fontSize: 20 }}>{BADGE_FALLBACK[b.label] || '🏅'}</Text>}
               <Text style={[sty.badgeTxt, sel && sty.badgeTxtSel]}>{b.label}</Text>
               {sel && (
                 <View style={sty.badgeCheck}>
@@ -224,16 +227,16 @@ export default function ScoreEntryScreen() {
       .eq('status', 'accepted');
     const partIds = (partEntries ?? []).map((e: any) => e.game_id as string).filter(Boolean);
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const sevenDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    // Build query: creator OR participant — exclude closed & cancelled, within 24h window
+    // Build query: creator OR participant — exclude closed & cancelled, within 48h window
     const baseQuery = supabase
       .from('open_games')
       .select(GAME_SELECT)
       .neq('status', 'cancelled')
       .neq('status', 'closed')
       .lt('match_date', now)
-      .gte('match_date', oneDayAgo)
+      .gte('match_date', sevenDaysAgo)
       .eq('spots_available', 0)
       .order('match_date', { ascending: false })
       .limit(20);

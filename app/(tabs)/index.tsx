@@ -14,6 +14,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, getLeague, getLeagueLabel } from '../../lib/theme';
 import type { Match, OpenGame } from '../../types';
+import PadelRacketIcon from '../../components/PadelRacketIcon';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -253,12 +254,13 @@ function GradientAvatar({ letter, size = 68 }: { letter: string; size?: number }
 }
 
 // ─── Pending banner ───────────────────────────────────────────
-function PendingBanner({ matches, onValidate, onContest }: {
+function PendingBanner({ matches, onValidate, onContest, defaultExpanded }: {
   matches: Match[];
   onValidate: (m: Match) => void;
   onContest:  (m: Match) => void;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!!defaultExpanded);
   if (matches.length === 0) return null;
 
   const toggle = () => {
@@ -345,7 +347,7 @@ function PendingBanner({ matches, onValidate, onContest }: {
 // ─── Badge emoji lookup (subset) ─────────────────────────────
 const BADGE_EMOJI: Record<string, string> = {
   'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🎾',
+  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '',
   'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
   'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
 };
@@ -677,6 +679,9 @@ export default function HomeScreen() {
   const { player, refresh } = usePlayer();
   const [pendingMatches, setPendingMatches] = useState<Match[]>([]);
   const [badgeCount, setBadgeCount] = useState(0);
+  const [invitationCount, setInvitationCount] = useState(0);
+  const [toScoreCount, setToScoreCount] = useState(0);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
@@ -706,6 +711,7 @@ export default function HomeScreen() {
       { data: participations },
       { data: recentMatches },
       { data: alreadyVoted },
+      { count: invitations },
     ] = await Promise.all([
       supabase
         .from('matches')
@@ -734,6 +740,11 @@ export default function HomeScreen() {
         .from('reputation_votes')
         .select('match_id')
         .eq('giver_id', player.id),
+      supabase
+        .from('game_participants')
+        .select('id', { count: 'exact', head: true })
+        .eq('player_id', player.id)
+        .eq('status', 'invited'),
     ]);
 
     // Exclude matches where the current player submitted OR is the partner of the submitter
@@ -752,6 +763,7 @@ export default function HomeScreen() {
     });
     setPendingMatches(visiblePending);
     setBadgeCount(badges ?? 0);
+    setInvitationCount(invitations ?? 0);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
     const pendingBadge = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id));
@@ -761,22 +773,55 @@ export default function HomeScreen() {
     const orFilter = ids.length > 0
       ? `creator_id.eq.${player.id},id.in.(${ids.join(',')})`
       : `creator_id.eq.${player.id}`;
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    const { data: upcoming } = await supabase
-      .from('open_games')
-      .select('id, location, match_date, status, creator_id, spots_available, game_format')
-      .gt('match_date', now)
-      .neq('status', 'cancelled')
-      .or(orFilter)
-      .order('match_date', { ascending: true })
-      .limit(5);
+    const [{ data: upcoming }, { count: toScore }, { data: creatorGames }] = await Promise.all([
+      supabase
+        .from('open_games')
+        .select('id, location, match_date, status, creator_id, spots_available, game_format')
+        .gt('match_date', now)
+        .neq('status', 'cancelled')
+        .or(orFilter)
+        .order('match_date', { ascending: true })
+        .limit(5),
+      supabase
+        .from('open_games')
+        .select('id', { count: 'exact', head: true })
+        .neq('status', 'cancelled')
+        .neq('status', 'closed')
+        .lt('match_date', now)
+        .gte('match_date', fortyEightHoursAgo)
+        .eq('spots_available', 0)
+        .or(orFilter),
+      supabase
+        .from('open_games')
+        .select('id')
+        .eq('creator_id', player.id)
+        .eq('status', 'open'),
+    ]);
 
     setUpcomingGames((upcoming as OpenGame[]) ?? []);
+    setToScoreCount(toScore ?? 0);
+
+    // Count pending join requests in creator's games
+    const cgIds = (creatorGames ?? []).map((g: any) => g.id);
+    if (cgIds.length > 0) {
+      const { count: approvals } = await supabase
+        .from('game_participants')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .in('game_id', cgIds);
+      setPendingApprovalCount(approvals ?? 0);
+    } else {
+      setPendingApprovalCount(0);
+    }
+
     setLoading(false);
   }, [player]);
 
-  const { openBadge } = useLocalSearchParams<{ openBadge?: string }>();
+  const { openBadge, openPending } = useLocalSearchParams<{ openBadge?: string; openPending?: string }>();
   const autoOpenedBadge = useRef(false);
+  const consumedPending = useRef(false);
 
   useFocusEffect(useCallback(() => {
     fetchData();
@@ -789,6 +834,13 @@ export default function HomeScreen() {
       router.setParams({ openBadge: undefined });
     }
   }, [openBadge, loading, badgeMatches]);
+
+  useEffect(() => {
+    if (openPending === '1' && !loading && !consumedPending.current) {
+      consumedPending.current = true;
+      router.setParams({ openPending: undefined });
+    }
+  }, [openPending, loading]);
 
   const handleValidate = async (match: Match) => {
     const { error } = await supabase
@@ -833,7 +885,7 @@ export default function HomeScreen() {
   if (!player) return null;
 
   const matchCount = player.win_count + player.loss_count;
-  const totalNotifs = pendingMatches.length + badgeMatches.length;
+  const totalNotifs = pendingMatches.length + badgeMatches.length + invitationCount + toScoreCount + pendingApprovalCount;
   const now = new Date();
   const visibleUpcoming = upcomingGames.filter(g => !g.match_date || new Date(g.match_date) > now);
 
@@ -853,6 +905,7 @@ export default function HomeScreen() {
               matches={pendingMatches}
               onValidate={handleValidate}
               onContest={handleContest}
+              defaultExpanded={openPending === '1'}
             />
             <BadgePromptBanner matches={badgeMatches} onOpen={openBadgeModal} />
 
@@ -892,7 +945,9 @@ export default function HomeScreen() {
                                 return (
                                   <TouchableOpacity key={b.id} onPress={() => toggleBadgeVote(p.id, b.label)} activeOpacity={0.75}
                                     style={{ alignItems: 'center', gap: 4, padding: 10, borderRadius: 14, width: 72, borderWidth: 1.5, borderColor: sel ? '#6366f1' : '#e2e8f0', backgroundColor: sel ? '#eef2ff' : '#fff', position: 'relative' }}>
-                                    <Text style={{ fontSize: 20 }}>{BADGE_EMOJI[b.label] ?? '🏅'}</Text>
+                                    {b.label === 'Roi du Filet'
+                                      ? <PadelRacketIcon size={20} />
+                                      : <Text style={{ fontSize: 20 }}>{BADGE_EMOJI[b.label] || '🏅'}</Text>}
                                     <Text style={{ fontSize: 8, fontWeight: '900', color: sel ? '#4338ca' : '#94a3b8', textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.3 }}>{b.label}</Text>
                                     {sel && (
                                       <View style={{ position: 'absolute', top: -5, right: -5, width: 14, height: 14, backgroundColor: '#4f46e5', borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }}>

@@ -6,12 +6,18 @@ import {
 import { Link, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import { Hcaptcha } from '@hcaptcha/react-native-hcaptcha';
+import HCaptcha from '@hcaptcha/react-native-hcaptcha';
 import { supabase } from '../../lib/supabase';
 import { usePlayer } from '../../hooks/usePlayer';
 
 const HCAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_HCAPTCHA_SITE_KEY!;
-const SUPABASE_URL      = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+
+// ⚠️ DEV : captcha désactivé pour faciliter login/logout pendant les tests.
+// Remettre à `true` avant la prod (ou migrer vers Turnstile, cf. mémoire).
+// IMPORTANT : nécessite aussi de désactiver le captcha côté Supabase
+// (Dashboard → Authentication → Settings → Bot and Abuse Protection → Disabled),
+// sinon Supabase rejettera les signinWithPassword sans token.
+const CAPTCHA_ENABLED = false;
 
 // ─── Icons ────────────────────────────────────────────────────
 const IconMail = ({ size = 16, color = '#94a3b8' }) => (
@@ -139,36 +145,54 @@ export default function LoginScreen() {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const captchaRef = useRef<any>(null);
+  const captchaRef    = useRef<any>(null);
+  // Vrai pendant qu'un tap sur « Se connecter » attend le token captcha
+  // pour enchaîner automatiquement le signIn.
+  const pendingLoginRef = useRef(false);
   const { refresh } = usePlayer();
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
 
   const handleCaptchaMessage = (event: any) => {
     const data: string = event.nativeEvent?.data ?? '';
+    if (data === 'open') return; // ouverture du modal, on ignore
     if (data === 'cancel' || data === 'error' || data === 'expired') {
       setCaptchaToken(null);
+      captchaRef.current?.hide();
+      if (pendingLoginRef.current) {
+        pendingLoginRef.current = false;
+        setLoading(false);
+        if (data === 'cancel') {
+          setError('Vérification annulée. Réessaie pour te connecter.');
+        } else {
+          setError('Vérification échouée. Réessaie.');
+        }
+      }
       return;
     }
     if (data.length > 35) {
       setCaptchaToken(data);
+      captchaRef.current?.hide();
+      // Si un login était en attente du token, on enchaîne tout de suite.
+      if (pendingLoginRef.current) {
+        pendingLoginRef.current = false;
+        performSignIn(data);
+      }
     }
   };
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password) {
-      setError('Remplis ton email et ton mot de passe.');
-      return;
-    }
+  const performSignIn = async (token: string | null) => {
     setError(null);
     setLoading(true);
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
-        ...(captchaToken ? { options: { captchaToken } } : {}),
+        ...(token ? { options: { captchaToken: token } } : {}),
       });
       if (authError) {
+        // Token à usage unique : on l'oublie. Au prochain tap sur
+        // « Se connecter », un nouveau modal captcha s'ouvrira.
         setCaptchaToken(null);
         setError(getAuthErrorMessage(authError.message));
         setLoading(false);
@@ -181,6 +205,29 @@ export default function LoginScreen() {
       setError('Une erreur inattendue est survenue. Réessaie.');
       setLoading(false);
     }
+  };
+
+  const handleLogin = () => {
+    if (!email.trim() || !password) {
+      setError('Remplis ton email et ton mot de passe.');
+      return;
+    }
+    setError(null);
+    // Captcha désactivé (dev) → signIn direct sans token.
+    if (!CAPTCHA_ENABLED) {
+      performSignIn(null);
+      return;
+    }
+    // Token déjà disponible (rare) → signIn direct.
+    if (captchaToken) {
+      performSignIn(captchaToken);
+      return;
+    }
+    // Sinon, on déclenche le captcha. Le signIn enchaîne dès que le
+    // token arrive via handleCaptchaMessage.
+    pendingLoginRef.current = true;
+    setLoading(true);
+    captchaRef.current?.show();
   };
 
   return (
@@ -207,9 +254,14 @@ export default function LoginScreen() {
                 style={{ width: 52, height: 52, borderRadius: 16 }}
                 resizeMode="cover"
               />
-              <Text style={{ fontSize: 26, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 }}>
-                Matchup<Text style={{ color: '#6366f1' }}>Padel</Text>
-              </Text>
+              <View>
+                <Text style={{ fontSize: 26, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 }}>
+                  <Text style={{ color: '#FACC15' }}>PAG</Text> Match
+                </Text>
+                <Text style={{ color: '#94a3b8', fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginTop: 2 }}>
+                  by PadelActiveGame
+                </Text>
+              </View>
             </View>
             <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '500' }}>
               Bon retour sur la piste
@@ -261,48 +313,16 @@ export default function LoginScreen() {
               />
             </View>
 
-            {/* Case à cocher hCaptcha — tape pour ouvrir le popup */}
-            <TouchableOpacity
-              onPress={() => { if (!captchaToken) captchaRef.current?.show(); }}
-              activeOpacity={captchaToken ? 1 : 0.7}
-              style={{
-                marginTop: 20,
-                flexDirection: 'row', alignItems: 'center',
-                borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12,
-                paddingHorizontal: 14, paddingVertical: 12, gap: 12,
-                backgroundColor: '#fafafa',
-              }}
-            >
-              {/* Checkbox */}
-              <View style={{
-                width: 24, height: 24, borderRadius: 5,
-                borderWidth: 2,
-                borderColor: captchaToken ? '#6366f1' : '#cbd5e1',
-                backgroundColor: captchaToken ? '#6366f1' : '#fff',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                {captchaToken && (
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</Text>
-                )}
-              </View>
-
-              <Text style={{ flex: 1, color: '#374151', fontSize: 14, fontWeight: '500' }}>
-                Je suis un humain
-              </Text>
-
-              {/* Logo hCaptcha */}
-              <View style={{ alignItems: 'center', gap: 2 }}>
-                <Text style={{ fontSize: 18 }}>🤚</Text>
-                <Text style={{ fontSize: 8, color: '#94a3b8', fontWeight: '700' }}>hCaptcha</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* WebView hCaptcha — s'ouvre en popup via ref.show() */}
-            <Hcaptcha
+            {/* hCaptcha — déclenché par le bouton « Se connecter ».
+                Le modal s'ouvre brièvement ; si la vérification passive
+                passe, il se referme tout seul et le signIn enchaîne.
+                Si un défi est nécessaire, l'utilisateur peut le résoudre
+                dans le modal plein écran. */}
+            <HCaptcha
               ref={captchaRef}
               siteKey={HCAPTCHA_SITE_KEY}
               size="invisible"
-              url={SUPABASE_URL}
+              baseUrl="https://hcaptcha.com"
               languageCode="fr"
               onMessage={handleCaptchaMessage}
             />

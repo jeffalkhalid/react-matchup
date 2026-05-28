@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   Platform, ScrollView, ActivityIndicator, Alert,
@@ -8,10 +8,18 @@ import { useRouter } from 'expo-router';
 import HCaptcha from '@hcaptcha/react-native-hcaptcha';
 import { supabase } from '../../lib/supabase';
 import { Colors, Spacing, FontSize, Radius } from '../../lib/theme';
+import PadelRacketIcon from '../../components/PadelRacketIcon';
 
 const HCAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_HCAPTCHA_SITE_KEY!;
 const COLLECT_FRMT_IDENTITY = true;
 const TOTAL_STEPS = 5;
+
+// ⚠️ DEV : captcha auto-validé pour faciliter les tests de signup.
+// Remettre à `true` avant la prod (ou migrer vers Turnstile, cf. mémoire).
+// IMPORTANT : nécessite aussi de désactiver le captcha côté Supabase
+// (Dashboard → Authentication → Settings → Bot and Abuse Protection → Disabled),
+// sinon Supabase rejettera signUp même si on n'envoie pas de captchaToken.
+const CAPTCHA_ENABLED = false;
 
 // ── ELO helpers ────────────────────────────────────────────────────────────
 const PADEL_ANCHORS: [number, number][] = [
@@ -73,7 +81,7 @@ function Card({
 }: {
   label: string; value: string; field: keyof FormData;
   formData: FormData; onSet: (f: keyof FormData, v: string) => void;
-  description?: string; icon?: string;
+  description?: string; icon?: string | React.ReactNode;
 }) {
   const selected = (formData[field] as string) === value;
   return (
@@ -87,7 +95,7 @@ function Card({
         flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1,
       }}
     >
-      {icon ? <Text style={{ fontSize: 15 }}>{icon}</Text> : null}
+      {icon ? (typeof icon === 'string' ? <Text style={{ fontSize: 15 }}>{icon}</Text> : icon) : null}
       <View style={{ flex: 1 }}>
         <Text style={{ color: selected ? Colors.primary : Colors.textPrimary, fontWeight: '700', fontSize: FontSize.sm }} numberOfLines={2}>
           {label}
@@ -120,6 +128,12 @@ export default function SignupScreen() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // DEV : auto-valide le captcha au mount pour activer le bouton « Créer
+  // mon compte » sans avoir à résoudre un défi. UI inchangée (badge ✅).
+  useEffect(() => {
+    if (!CAPTCHA_ENABLED) setCaptchaToken('dev-bypass');
+  }, []);
   const [formData, setFormData] = useState<FormData>(INITIAL);
 
   const set = (field: keyof FormData, value: string) =>
@@ -200,7 +214,7 @@ export default function SignupScreen() {
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email, password: formData.password,
-        options: { captchaToken },
+        ...(CAPTCHA_ENABLED && captchaToken ? { options: { captchaToken } } : {}),
       });
       if (authError) throw authError;
       if (!authData.user?.identities || authData.user.identities.length === 0) throw new Error('email_taken');
@@ -333,7 +347,9 @@ export default function SignupScreen() {
       {/* ── Fixed top ── */}
       <View style={{ paddingTop: 52, paddingHorizontal: Spacing.lg, paddingBottom: 8, backgroundColor: Colors.bg }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <Text style={{ color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '900' }}>Matchup Padel</Text>
+          <Text style={{ color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '900' }}>
+            <Text style={{ color: '#FACC15' }}>PAG</Text> Match
+          </Text>
           <TouchableOpacity onPress={() => router.replace('/')}>
             <Text style={{ color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '700' }}>Annuler</Text>
           </TouchableOpacity>
@@ -475,7 +491,7 @@ export default function SignupScreen() {
               <Label text="As-tu un classement FRMT ?" />
               <Row>
                 <Card label="Oui, j'ai un classement" value="yes" field="hasFrmtRank" formData={formData} onSet={set} icon="✅" />
-                <Card label="Non, je joue en loisir" value="no" field="hasFrmtRank" formData={formData} onSet={set} icon="🎾" />
+                <Card label="Non, je joue en loisir" value="no" field="hasFrmtRank" formData={formData} onSet={set} icon={<PadelRacketIcon size={16} />} />
               </Row>
             </View>
 

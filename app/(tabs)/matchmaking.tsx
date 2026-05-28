@@ -307,12 +307,13 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
 }
 
 // ── Incoming challenge card ────────────────────────────────────
-function IncomingCard({ challenge, detail, onAction }: {
+function IncomingCard({ challenge, detail, onAction, onViewProfile }: {
   challenge: Challenge; detail?: CompatDetail;
   onAction: (id: string, action: 'accepted' | 'declined') => Promise<void>;
+  onViewProfile?: (playerId: string) => void;
 }) {
   const [acting, setActing] = useState<'accepted' | 'declined' | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const challenger = challenge.challenger as Player | undefined;
   const isPending = challenge.status === 'pending';
   const score = detail?.score ?? challenge.compat_score ?? 0;
@@ -351,10 +352,32 @@ function IncomingCard({ challenge, detail, onAction }: {
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <PlayerAvatar name={challenger?.name ?? '?'} size={36} />
-              <View>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>{challenger?.name ?? '?'}</Text>
-                <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600' }}>Niv. {eloToLevel(challenger?.elo_score ?? 0).toFixed(1)}</Text>
+              <TouchableOpacity activeOpacity={onViewProfile ? 0.7 : 1} onPress={onViewProfile && challenger?.id ? () => onViewProfile(challenger.id) : undefined}>
+                <PlayerAvatar name={challenger?.name ?? '?'} size={36} />
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>{challenger?.name ?? '?'}</Text>
+                  {onViewProfile && challenger?.id && (
+                    <TouchableOpacity onPress={() => onViewProfile(challenger.id)} activeOpacity={0.7}>
+                      <Text style={{ fontSize: 10, color: '#6366f1', fontWeight: '700' }}>Profil →</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
+                  <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600' }}>Niv. {eloToLevel(challenger?.elo_score ?? 0).toFixed(1)}</Text>
+                  {((challenger as any)?.win_count != null || (challenger as any)?.loss_count != null) && (
+                    <>
+                      <Text style={{ fontSize: 10, color: '#e2e8f0' }}>·</Text>
+                      <Text style={{ fontSize: 10, color: '#64748b', fontWeight: '600' }}>
+                        {(challenger as any).win_count ?? 0}V {(challenger as any).loss_count ?? 0}D
+                        {((challenger as any).win_count ?? 0) + ((challenger as any).loss_count ?? 0) > 0
+                          ? ` — ${Math.round(((challenger as any).win_count ?? 0) / (((challenger as any).win_count ?? 0) + ((challenger as any).loss_count ?? 0)) * 100)}% win`
+                          : ''}
+                      </Text>
+                    </>
+                  )}
+                </View>
               </View>
             </View>
             {challenge.message ? (
@@ -434,6 +457,7 @@ export default function MatchmakingScreen() {
       supabase.from('challenges')
         .select('*, challenger:challenger_id(*)')
         .eq('challenged_id', player.id)
+        .eq('status', 'pending')
         .order('compat_score', { ascending: false }),
       supabase.from('challenges')
         .select('challenged_id, status')
@@ -448,7 +472,14 @@ export default function MatchmakingScreen() {
 
     setSuggestions(sorted);
 
-    const challenges = (incomingRes.data ?? []) as Challenge[];
+    // Deduplicate: one challenge per challenger (highest compat_score first due to ordering)
+    const seen = new Set<string>();
+    const challenges = ((incomingRes.data ?? []) as Challenge[]).filter(c => {
+      const key = (c as any).challenger_id;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     setIncoming(challenges);
     setChallengedIds(new Set(((sentRes.data ?? []) as any[]).map((c: any) => c.challenged_id)));
     setLoading(false);
@@ -565,7 +596,13 @@ export default function MatchmakingScreen() {
                   ? <EmptyCard icon="🎯" title="Aucun défi reçu" sub="Les joueurs peuvent te défier depuis les Suggestions." />
                   : <View style={{ gap: 10 }}>
                       {incoming.map(c => (
-                        <IncomingCard key={c.id} challenge={c} detail={incomingCompatMap.get(c.id)} onAction={handleAction} />
+                        <IncomingCard
+                          key={c.id}
+                          challenge={c}
+                          detail={incomingCompatMap.get(c.id)}
+                          onAction={handleAction}
+                          onViewProfile={(pid) => router.push(`/player/${pid}` as any)}
+                        />
                       ))}
                     </View>
                 }

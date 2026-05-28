@@ -119,29 +119,94 @@ export default function TabLayout() {
       .eq('challenged_id', player.id)
       .eq('status', 'pending')
       .then(({ count }) => setChallengeCount(count ?? 0));
+  }, [player]);
 
-    // Game chats the player is in with recent activity (last 24h, not their own messages)
-    supabase
-      .from('game_participants')
-      .select('game_id')
-      .eq('player_id', player.id)
-      .eq('status', 'accepted')
-      .then(async ({ data: parts }) => {
-        if (!parts || parts.length === 0) return;
-        const gameIds = parts.map((p: any) => p.game_id);
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // Chat badge: sum of per-game unread messages (mirrors chats.tsx logic),
+  // kept live via realtime on `messages` and `game_chat_reads`.
+  useEffect(() => {
+    if (!player) return;
+
+    let cancelled = false;
+    let gameIds: string[] = [];
+    const unreadByGame = new Map<string, number>();
+
+    const recomputeTotal = () => {
+      if (cancelled) return;
+      let total = 0;
+      unreadByGame.forEach(v => { total += v; });
+      setChatBadge(total);
+    };
+
+    const load = async () => {
+      // Games where the player is creator OR accepted participant
+      const [{ data: parts }, { data: created }] = await Promise.all([
+        supabase.from('game_participants').select('game_id').eq('player_id', player.id).eq('status', 'accepted'),
+        supabase.from('open_games').select('id').eq('creator_id', player.id),
+      ]);
+      const ids = new Set<string>();
+      (parts ?? []).forEach((p: any) => { if (p.game_id) ids.add(p.game_id); });
+      (created ?? []).forEach((g: any) => { if (g.id) ids.add(g.id); });
+      gameIds = [...ids];
+      unreadByGame.clear();
+
+      if (gameIds.length === 0) { recomputeTotal(); return; }
+
+      const { data: reads } = await supabase
+        .from('game_chat_reads')
+        .select('game_id, last_read_at')
+        .eq('player_id', player.id);
+      const readMap = new Map<string, string>((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
+
+      await Promise.all(gameIds.map(async (gid) => {
+        const lastRead = readMap.get(gid) ?? '1970-01-01';
         const { count } = await supabase
           .from('messages')
           .select('id', { count: 'exact', head: true })
-          .in('game_id', gameIds)
-          .neq('player_id', player.id)
-          .gte('created_at', since);
-        setChatBadge(count ?? 0);
-      });
+          .eq('game_id', gid)
+          .gt('created_at', lastRead)
+          .neq('player_id', player.id);
+        unreadByGame.set(gid, count ?? 0);
+      }));
+      recomputeTotal();
+    };
+
+    load();
+
+    // Unique per mount: avoids reusing a still-subscribed channel after Fast Refresh
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // New message arrives → bump that game's count (if we participate, not from us)
+    const msgCh = supabase
+      .channel(`tab-chat-badge-msgs:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new as { game_id: string; player_id: string } | null;
+        if (!m || m.player_id === player.id) return;
+        if (!gameIds.includes(m.game_id)) return;
+        unreadByGame.set(m.game_id, (unreadByGame.get(m.game_id) ?? 0) + 1);
+        recomputeTotal();
+      })
+      .subscribe();
+
+    // Player marks a chat read → zero out that game's count
+    const readCh = supabase
+      .channel(`tab-chat-badge-reads:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_chat_reads', filter: `player_id=eq.${player.id}` }, payload => {
+        const r = payload.new as { game_id: string } | null;
+        if (!r?.game_id) return;
+        unreadByGame.set(r.game_id, 0);
+        recomputeTotal();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(msgCh);
+      supabase.removeChannel(readCh);
+    };
   }, [player]);
 
   const playerName = player?.name ?? 'P';
-  const totalBadge = challengeCount + chatBadge;
+  const totalBadge = challengeCount;
 
   return (
     <View style={{ flex: 1 }}>
