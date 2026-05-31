@@ -5,7 +5,7 @@ export type MatchStatus = 'pending' | 'counter_proposed' | 'validated' | 'disput
 export type GameFormat = 'singles' | 'doubles';
 export type ChallengeStatus = 'pending' | 'accepted' | 'declined' | 'expired' | 'played';
 export type OpenGameStatus = 'open' | 'closed' | 'cancelled';
-export type ParticipantStatus = 'pending' | 'accepted' | 'declined';
+export type ParticipantStatus = 'pending' | 'accepted' | 'declined' | 'invited' | 'waitlist';
 export type League = 'diamond' | 'gold' | 'silver' | 'bronze' | 'discovery';
 
 export interface Player {
@@ -58,6 +58,7 @@ export interface Match {
   loser?: Player;
   winner_2?: Player;
   loser_2?: Player;
+  game?: { location: string | null; match_date: string | null } | null;
 }
 
 export interface OpenGame {
@@ -110,6 +111,7 @@ export interface Message {
   player_name: string;
   content: string;
   created_at: string;
+  reactions?: Record<string, string[]>;
 }
 
 export interface EloHistory {

@@ -39,7 +39,7 @@ const IconMessage = ({ color, size = 22 }: { color: string; size?: number }) => 
 
 const IconPlus = ({ size = 20 }: { size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+    stroke={Colors.brand} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
     <Line x1="12" y1="5" x2="12" y2="19" />
     <Line x1="5" y1="12" x2="19" y2="12" />
   </Svg>
@@ -61,11 +61,11 @@ function AvatarTabIcon({ name, focused, badge }: { name: string; focused: boolea
       {badge > 0 && (
         <View style={{
           position: 'absolute', top: -5, right: -8,
-          minWidth: 16, height: 16, backgroundColor: '#f97316',
+          minWidth: 16, height: 16, backgroundColor: Colors.brand,
           borderRadius: 999, alignItems: 'center', justifyContent: 'center',
-          paddingHorizontal: 3, borderWidth: 2, borderColor: '#fff',
+          paddingHorizontal: 3, borderWidth: 2, borderColor: Colors.bgCard,
         }}>
-          <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{badge}</Text>
+          <Text style={{ color: Colors.textOnBrand, fontSize: 8, fontWeight: '900' }}>{badge}</Text>
         </View>
       )}
     </View>
@@ -83,11 +83,11 @@ function CreateTabButton({ ...rest }: any) {
     >
       <View style={{
         width: 44, height: 44, borderRadius: 999,
-        backgroundColor: '#4F46E5',
+        backgroundColor: Colors.primary,
         alignItems: 'center', justifyContent: 'center',
-        shadowColor: '#4F46E5', shadowOpacity: 0.35, shadowRadius: 12,
+        shadowColor: Colors.primary, shadowOpacity: 0.35, shadowRadius: 12,
         shadowOffset: { width: 0, height: 6 }, elevation: 8,
-        borderWidth: 4, borderColor: '#fff',
+        borderWidth: 4, borderColor: Colors.bgCard,
         marginTop: -20,
       }}>
         <IconPlus size={20} />
@@ -119,25 +119,87 @@ export default function TabLayout() {
       .eq('challenged_id', player.id)
       .eq('status', 'pending')
       .then(({ count }) => setChallengeCount(count ?? 0));
+  }, [player]);
 
-    // Game chats the player is in with recent activity (last 24h, not their own messages)
-    supabase
-      .from('game_participants')
-      .select('game_id')
-      .eq('player_id', player.id)
-      .eq('status', 'accepted')
-      .then(async ({ data: parts }) => {
-        if (!parts || parts.length === 0) return;
-        const gameIds = parts.map((p: any) => p.game_id);
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // Chat badge: sum of per-game unread messages (mirrors chats.tsx logic),
+  // kept live via realtime on `messages` and `game_chat_reads`.
+  useEffect(() => {
+    if (!player) return;
+
+    let cancelled = false;
+    let gameIds: string[] = [];
+    const unreadByGame = new Map<string, number>();
+
+    const recomputeTotal = () => {
+      if (cancelled) return;
+      let total = 0;
+      unreadByGame.forEach(v => { total += v; });
+      setChatBadge(total);
+    };
+
+    const load = async () => {
+      const [{ data: parts }, { data: created }] = await Promise.all([
+        supabase.from('game_participants').select('game_id').eq('player_id', player.id).eq('status', 'accepted'),
+        supabase.from('open_games').select('id').eq('creator_id', player.id),
+      ]);
+      const ids = new Set<string>();
+      (parts ?? []).forEach((p: any) => { if (p.game_id) ids.add(p.game_id); });
+      (created ?? []).forEach((g: any) => { if (g.id) ids.add(g.id); });
+      gameIds = [...ids];
+      unreadByGame.clear();
+
+      if (gameIds.length === 0) { recomputeTotal(); return; }
+
+      const { data: reads } = await supabase
+        .from('game_chat_reads')
+        .select('game_id, last_read_at')
+        .eq('player_id', player.id);
+      const readMap = new Map<string, string>((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
+
+      await Promise.all(gameIds.map(async (gid) => {
+        const lastRead = readMap.get(gid) ?? '1970-01-01';
         const { count } = await supabase
           .from('messages')
           .select('id', { count: 'exact', head: true })
-          .in('game_id', gameIds)
-          .neq('player_id', player.id)
-          .gte('created_at', since);
-        setChatBadge(count ?? 0);
-      });
+          .eq('game_id', gid)
+          .gt('created_at', lastRead)
+          .neq('player_id', player.id);
+        unreadByGame.set(gid, count ?? 0);
+      }));
+      recomputeTotal();
+    };
+
+    load();
+
+    // Unique per mount: avoids reusing a still-subscribed channel after Fast Refresh
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const msgCh = supabase
+      .channel(`tab-chat-badge-msgs:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new as { game_id: string; player_id: string } | null;
+        if (!m || m.player_id === player.id) return;
+        if (!gameIds.includes(m.game_id)) return;
+        unreadByGame.set(m.game_id, (unreadByGame.get(m.game_id) ?? 0) + 1);
+        recomputeTotal();
+      })
+      .subscribe();
+
+    const readCh = supabase
+      .channel(`tab-chat-badge-reads:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_chat_reads', filter: `player_id=eq.${player.id}` }, payload => {
+        const r = payload.new as { game_id: string } | null;
+        if (!r?.game_id) return;
+        unreadByGame.set(r.game_id, 0);
+        recomputeTotal();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(msgCh);
+      supabase.removeChannel(readCh);
+    };
   }, [player]);
 
   const playerName = player?.name ?? 'P';
@@ -150,21 +212,21 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: 'rgba(255,255,255,0.97)',
-          borderTopColor: '#F1F5F9',
+          borderTopColor: Colors.borderLight,
           borderTopWidth: 1,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
           height: 58 + insets.bottom,
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
-          shadowColor: '#0F172A',
+          shadowColor: Colors.textPrimary,
           shadowOpacity: 0.06,
           shadowRadius: 20,
           shadowOffset: { width: 0, height: -4 },
           elevation: 12,
         },
-        tabBarActiveTintColor: '#4F46E5',
-        tabBarInactiveTintColor: '#94A3B8',
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
       }}
     >
@@ -180,7 +242,7 @@ export default function TabLayout() {
         options={{
           title: 'Défi',
           tabBarBadge: challengeCount > 0 ? challengeCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: '#f59e0b', fontSize: 9, minWidth: 16, height: 16 },
+          tabBarBadgeStyle: { backgroundColor: Colors.warning, fontSize: 9, minWidth: 16, height: 16 },
           tabBarIcon: ({ color }) => <IconSwords color={color} size={22} />,
         }}
       />
@@ -197,7 +259,7 @@ export default function TabLayout() {
         options={{
           title: 'Chats',
           tabBarBadge: chatBadge > 0 ? chatBadge : undefined,
-          tabBarBadgeStyle: { backgroundColor: '#ef4444', fontSize: 9, minWidth: 16, height: 16 },
+          tabBarBadgeStyle: { backgroundColor: Colors.danger, fontSize: 9, minWidth: 16, height: 16 },
           tabBarIcon: ({ color }) => <IconMessage color={color} size={22} />,
         }}
       />
@@ -212,6 +274,9 @@ export default function TabLayout() {
       <Tabs.Screen name="ranking" options={{ href: null }} />
       <Tabs.Screen name="GameDetailsSheet" options={{ href: null }} />
       <Tabs.Screen name="CreateWizard" options={{ href: null }} />
+      <Tabs.Screen name="player/[id]" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen name="admin" options={{ href: null }} />
     </Tabs>
     <FeatureGuide />
     </View>

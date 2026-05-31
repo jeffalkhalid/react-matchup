@@ -8,8 +8,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
-import { Colors, eloToLevel } from '../../lib/theme';
+import { notifyPlayers } from '../../lib/notify';
+import { Colors, eloToLevel, Fonts } from '../../lib/theme';
 import type { Player, Challenge } from '../../types';
+import { Pill, type PillVariant } from '../../components/Pill';
 
 // ── Types ─────────────────────────────────────────────────────
 type Tab = 'suggestions' | 'defis';
@@ -24,19 +26,30 @@ interface CompatDetail {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
-function compatTier(score: number) {
-  if (score >= 80) return { label: 'Match parfait',   color: '#059669', bg: '#ecfdf5', border: '#6ee7b7' };
-  if (score >= 60) return { label: 'Très compatible', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe' };
-  if (score >= 40) return { label: 'Compatible',      color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
-  return             { label: 'Passable',            color: '#94a3b8', bg: '#f8fafc', border: '#e2e8f0' };
+function compatTier(score: number): { label: string; color: string; bg: string; border: string; variant: PillVariant } {
+  if (score >= 80) return { label: 'Match parfait',   color: '#047857',           bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)', variant: 'success' };
+  if (score >= 60) return { label: 'Très compatible', color: Colors.brandDeep,    bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)', variant: 'brand'   };
+  if (score >= 40) return { label: 'Compatible',      color: '#B45309',           bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)', variant: 'warning' };
+  return             { label: 'Passable',           color: Colors.textSecondary, bg: Colors.bgCardAlt,        border: Colors.border,            variant: 'neutral' };
 }
 
 function leagueColors(elo: number) {
-  if (elo >= 1800) return { label: 'Diamant',    color: '#06b6d4', bg: '#ecfeff', border: '#a5f3fc' };
-  if (elo >= 1500) return { label: 'Or',         color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
-  if (elo >= 1200) return { label: 'Argent',     color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' };
-  if (elo >= 1000) return { label: 'Bronze',     color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
-  return             { label: 'Découverte',    color: '#059669', bg: '#ecfdf5', border: '#6ee7b7' };
+  // Couleurs de ligues conservées (palette officielle) : diamond/gold/silver/bronze/discovery.
+  if (elo >= 1800) return { label: 'Diamant',    color: '#67E8F9', bg: 'rgba(103,232,249,0.12)', border: 'rgba(103,232,249,0.45)' };
+  if (elo >= 1500) return { label: 'Or',         color: '#FBBF24', bg: 'rgba(251,191,36,0.12)',  border: 'rgba(251,191,36,0.45)'  };
+  if (elo >= 1200) return { label: 'Argent',     color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)', border: 'rgba(156,163,175,0.45)' };
+  if (elo >= 1000) return { label: 'Bronze',     color: '#F97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.45)'  };
+  return             { label: 'Découverte',    color: '#34D399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.45)'  };
+}
+
+// League pill (couleurs ligues officielles, gardées intactes — pas via le composant Pill partagé).
+function LeaguePill({ elo }: { elo: number }) {
+  const l = leagueColors(elo);
+  return (
+    <View style={{ backgroundColor: l.bg, borderWidth: 1, borderColor: l.border, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 }}>
+      <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: l.color, letterSpacing: 0.4, textTransform: 'uppercase' }}>{l.label}</Text>
+    </View>
+  );
 }
 
 // Exact port of web compatibility.ts
@@ -125,7 +138,7 @@ function hashColor(name: string) {
 function PlayerAvatar({ name, size = 36 }: { name: string; size?: number }) {
   return (
     <View style={{ width: size, height: size, borderRadius: Math.round(size * 0.36), backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: '#fff', fontSize: Math.round(size * 0.38), fontWeight: '900' }}>
+      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.38), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -141,7 +154,7 @@ function CompatRing({ score, size = 54, strokeWidth = 5 }: { score: number; size
   const cx = size / 2, cy = size / 2;
   return (
     <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <Circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
+      <Circle cx={cx} cy={cy} r={r} fill="none" stroke={Colors.border} strokeWidth={strokeWidth} />
       <Circle cx={cx} cy={cy} r={r} fill="none" stroke={tier.color} strokeWidth={strokeWidth}
         strokeDasharray={`${circ}`} strokeDashoffset={offset}
         strokeLinecap="round" transform={`rotate(-90, ${cx}, ${cy})`} />
@@ -163,15 +176,15 @@ function CompatBreakdown({ detail }: { detail: CompatDetail }) {
     { label: 'Côté',       value: detail.sideScore, max: 10, info: detail.sideMatch },
   ];
   return (
-    <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9', gap: 8 }}>
+    <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt, gap: 8 }}>
       {bars.map(b => (
         <View key={b.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-              <Text style={{ fontSize: 9, fontWeight: '900', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.6 }}>{b.label}</Text>
-              <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }} numberOfLines={1}>{b.info}</Text>
+              <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>{b.label}</Text>
+              <Text style={{ fontSize: 9, color: Colors.textMuted, fontWeight: '600' }} numberOfLines={1}>{b.info}</Text>
             </View>
-            <View style={{ height: 4, backgroundColor: '#f1f5f9', borderRadius: 2, overflow: 'hidden', flexDirection: 'row' }}>
+            <View style={{ height: 4, backgroundColor: Colors.bgCardAlt, borderRadius: 2, overflow: 'hidden', flexDirection: 'row' }}>
               <View style={{ flex: b.value, height: 4, backgroundColor: tier.color }} />
               <View style={{ flex: Math.max(0, b.max - b.value) }} />
             </View>
@@ -186,7 +199,7 @@ function CompatBreakdown({ detail }: { detail: CompatDetail }) {
 // ── Sort toggle ───────────────────────────────────────────────
 function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (m: SortMode) => void; computing: boolean }) {
   return (
-    <View style={{ flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 12, padding: 3, gap: 2, marginBottom: 14 }}>
+    <View style={{ flexDirection: 'row', backgroundColor: Colors.bgCardAlt, borderRadius: 12, padding: 3, gap: 2, marginBottom: 14 }}>
       {([
         { val: 'compat' as SortMode, label: '⚡ Compatibilité' },
         { val: 'elo'    as SortMode, label: '📊 Niveau ELO'    },
@@ -197,12 +210,13 @@ function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (
           <TouchableOpacity key={t.val} onPress={() => onChange(t.val)} disabled={disabled} activeOpacity={0.75}
             style={{
               flex: 1, paddingVertical: 7, borderRadius: 9, alignItems: 'center',
-              backgroundColor: active ? '#fff' : 'transparent',
+              backgroundColor: active ? Colors.bgCard : 'transparent',
+              borderWidth: active ? 1 : 0, borderColor: active ? Colors.brand : 'transparent',
               opacity: disabled ? 0.6 : 1,
-              shadowColor: '#0f172a', shadowOpacity: active ? 0.1 : 0,
+              shadowColor: Colors.textPrimary, shadowOpacity: active ? 0.1 : 0,
               shadowRadius: active ? 4 : 0, shadowOffset: { width: 0, height: 2 }, elevation: active ? 2 : 0,
             }}>
-            <Text style={{ fontSize: 11, fontWeight: '900', color: active ? '#0f172a' : '#94a3b8' }}>
+            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: active ? Colors.brandDeep : Colors.textMuted }}>
               {disabled ? '⏳ …' : t.label}
             </Text>
           </TouchableOpacity>
@@ -212,22 +226,13 @@ function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (
   );
 }
 
-// ── Pill ──────────────────────────────────────────────────────
-function Pill({ bg, fg, border, children }: { bg: string; fg: string; border: string; children: React.ReactNode }) {
-  return (
-    <View style={{ backgroundColor: bg, borderWidth: 1, borderColor: border, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 }}>
-      <Text style={{ fontSize: 9, fontWeight: '900', color: fg, letterSpacing: 0.3 }}>{children}</Text>
-    </View>
-  );
-}
-
 // ── Empty state ───────────────────────────────────────────────
 function EmptyCard({ icon, title, sub }: { icon: string; title: string; sub: string }) {
   return (
-    <View style={{ backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', padding: 40, alignItems: 'center' }}>
+    <View style={{ backgroundColor: Colors.bgCard, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, padding: 40, alignItems: 'center' }}>
       <Text style={{ fontSize: 36, marginBottom: 10 }}>{icon}</Text>
-      <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a', marginBottom: 4, textAlign: 'center' }}>{title}</Text>
-      <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: '600', textAlign: 'center' }}>{sub}</Text>
+      <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, marginBottom: 4, textAlign: 'center' }}>{title}</Text>
+      <Text style={{ fontSize: 12, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' }}>{sub}</Text>
     </View>
   );
 }
@@ -240,12 +245,11 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
   const [expanded, setExpanded] = useState(false);
   const score = detail?.score ?? 0;
   const tier = compatTier(score);
-  const league = leagueColors(player.elo_score);
   const total = player.win_count + player.loss_count;
   const winRate = total > 0 ? Math.round(player.win_count / total * 100) : null;
   const isPerfect = score >= 80;
   const isGreat = score >= 60;
-  const btnBg = isPerfect ? '#059669' : isGreat ? '#4f46e5' : '#0f172a';
+  const btnBg = isPerfect ? Colors.success : isGreat ? Colors.primary : Colors.primary;
 
   return (
     <View style={[sty.card, { borderColor: expanded ? tier.border : '#e2e8f0' },
@@ -263,33 +267,33 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 }}>
               <PlayerAvatar name={player.name} size={36} />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }} numberOfLines={1}>{player.name}</Text>
-                <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600', marginTop: 1 }}>Niv. {eloToLevel(player.elo_score).toFixed(1)}</Text>
+                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{player.name}</Text>
+                <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>Niv. {eloToLevel(player.elo_score).toFixed(1)}</Text>
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-              <Pill bg={league.bg} fg={league.color} border={league.border}>{league.label}</Pill>
-              {winRate !== null && <Pill bg="#f8fafc" fg="#64748b" border="#e2e8f0">{winRate}% W</Pill>}
-              {detail?.sideMatch === 'complémentaires' && <Pill bg="#ecfdf5" fg="#059669" border="#6ee7b7">↔ Comp.</Pill>}
+              <LeaguePill elo={player.elo_score} />
+              {winRate !== null && <Pill variant="neutral">{winRate}% W</Pill>}
+              {detail?.sideMatch === 'complémentaires' && <Pill variant="success">↔ Comp.</Pill>}
             </View>
           </View>
           <View>
             {alreadyChallenged ? (
-              <Pill bg="#fffbeb" fg="#d97706" border="#fde68a">⏳ En attente</Pill>
+              <Pill variant="warning">⏳ En attente</Pill>
             ) : (
               <TouchableOpacity onPress={() => onChallenge(player)}
                 style={{ backgroundColor: btnBg, borderRadius: 11, paddingHorizontal: 13, paddingVertical: 8 }}
                 activeOpacity={0.8}>
-                <Text style={{ fontSize: 11.5, fontWeight: '900', color: '#fff' }}>⚡ Défier</Text>
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.3 }}>⚡ Défier</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
         {((detail?.sharedClubs.length ?? 0) > 0 || (detail?.sharedDays.length ?? 0) > 0) && (
-          <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
-            {detail?.sharedClubs.slice(0, 2).map(c => <Pill key={c} bg="#f8fafc" fg="#64748b" border="#e2e8f0">📍 {c}</Pill>)}
-            {detail?.sharedDays.slice(0, 2).map(d => <Pill key={d} bg="#f8fafc" fg="#64748b" border="#e2e8f0">📅 {d}</Pill>)}
+          <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt }}>
+            {detail?.sharedClubs.slice(0, 2).map(c => <Pill key={c} variant="neutral">📍 {c}</Pill>)}
+            {detail?.sharedDays.slice(0, 2).map(d => <Pill key={d} variant="neutral">📅 {d}</Pill>)}
           </View>
         )}
 
@@ -323,12 +327,12 @@ function IncomingCard({ challenge, detail, onAction }: {
   const hours = Math.floor((diff % 86400000) / 3600000);
   const timeLeft = diff <= 0 ? 'Expiré' : days > 0 ? `${days}j restants` : `${hours}h restants`;
 
-  const statusInfo: Record<string, { label: string; bg: string; color: string; border: string }> = {
-    pending:  { label: 'En attente', bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-    accepted: { label: 'Accepté',    bg: '#ecfdf5', color: '#059669', border: '#6ee7b7' },
-    declined: { label: 'Refusé',     bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    expired:  { label: 'Expiré',     bg: '#f8fafc', color: '#94a3b8', border: '#e2e8f0' },
-    played:   { label: 'Joué',       bg: '#eef2ff', color: '#4f46e5', border: '#c7d2fe' },
+  const statusInfo: Record<string, { label: string; variant: PillVariant }> = {
+    pending:  { label: 'En attente', variant: 'warning' },
+    accepted: { label: 'Accepté',    variant: 'success' },
+    declined: { label: 'Refusé',     variant: 'danger'  },
+    expired:  { label: 'Expiré',     variant: 'neutral' },
+    played:   { label: 'Joué',       variant: 'ink'     },
   };
   const st = statusInfo[challenge.status] ?? statusInfo.pending;
 
@@ -353,24 +357,24 @@ function IncomingCard({ challenge, detail, onAction }: {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <PlayerAvatar name={challenger?.name ?? '?'} size={36} />
               <View>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>{challenger?.name ?? '?'}</Text>
-                <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600' }}>Niv. {eloToLevel(challenger?.elo_score ?? 0).toFixed(1)}</Text>
+                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{challenger?.name ?? '?'}</Text>
+                <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>Niv. {eloToLevel(challenger?.elo_score ?? 0).toFixed(1)}</Text>
               </View>
             </View>
             {challenge.message ? (
-              <View style={{ backgroundColor: '#f8fafc', borderRadius: 10, padding: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: tier.color }}>
-                <Text style={{ fontSize: 11.5, color: '#334155', fontStyle: 'italic' }}>"{challenge.message}"</Text>
+              <View style={{ backgroundColor: Colors.bg, borderRadius: 10, padding: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: tier.color }}>
+                <Text style={{ fontSize: 11.5, color: Colors.textSecondary, fontStyle: 'italic' }}>"{challenge.message}"</Text>
               </View>
             ) : null}
             {((challenge.shared_clubs?.length ?? 0) > 0 || (challenge.shared_days?.length ?? 0) > 0) && (
               <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-                {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} bg="#eef2ff" fg="#4f46e5" border="#c7d2fe">📍 {c}</Pill>)}
-                {challenge.shared_days?.slice(0, 2).map(d => <Pill key={d} bg="#fffbeb" fg="#d97706" border="#fde68a">📅 {d}</Pill>)}
+                {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} variant="info">📍 {c}</Pill>)}
+                {challenge.shared_days?.slice(0, 2).map(d => <Pill key={d} variant="brand">📅 {d}</Pill>)}
               </View>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Pill bg={st.bg} fg={st.color} border={st.border}>{st.label}</Pill>
-              {isPending && <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '600' }}>⏰ {timeLeft}</Text>}
+              <Pill variant={st.variant}>{st.label}</Pill>
+              {isPending && <Text style={{ fontSize: 9, color: Colors.textMuted, fontWeight: '600' }}>⏰ {timeLeft}</Text>}
             </View>
           </View>
         </View>
@@ -386,14 +390,14 @@ function IncomingCard({ challenge, detail, onAction }: {
       {isPending && (
         <View style={{ flexDirection: 'row', gap: 8, padding: 14, paddingTop: 0 }}>
           <TouchableOpacity onPress={() => handle('declined')} disabled={acting !== null}
-            style={[sty.actionBtn, { flex: 1, borderWidth: 1.5, borderColor: '#e2e8f0', backgroundColor: '#fff', opacity: acting ? 0.5 : 1 }]}
+            style={[sty.actionBtn, { flex: 1, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bgCard, opacity: acting ? 0.5 : 1 }]}
             activeOpacity={0.75}>
-            <Text style={{ fontSize: 13, fontWeight: '900', color: '#334155' }}>{acting === 'declined' ? '…' : '✕ Décliner'}</Text>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textSecondary }}>{acting === 'declined' ? '…' : '✕ Décliner'}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handle('accepted')} disabled={acting !== null}
-            style={[sty.actionBtn, { flex: 2, backgroundColor: '#0f172a', opacity: acting ? 0.5 : 1 }]}
+            style={[sty.actionBtn, { flex: 2, backgroundColor: Colors.primary, opacity: acting ? 0.5 : 1 }]}
             activeOpacity={0.85}>
-            <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{acting === 'accepted' ? '…' : '✓ Accepter le défi'}</Text>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>{acting === 'accepted' ? '…' : '✓ Accepter le défi'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -425,20 +429,26 @@ export default function MatchmakingScreen() {
     if (!player) return;
     setLoading(true);
 
+    const nowIso = new Date().toISOString();
     const [playersRes, incomingRes, sentRes] = await Promise.all([
       supabase.from('players')
         .select('*')
         .neq('id', player.id)
         .order('elo_score', { ascending: false })
         .limit(50),
+      // Défis reçus : uniquement en attente et non expirés
       supabase.from('challenges')
         .select('*, challenger:challenger_id(*)')
         .eq('challenged_id', player.id)
+        .eq('status', 'pending')
+        .gt('expires_at', nowIso)
         .order('compat_score', { ascending: false }),
+      // Défis envoyés (pour griser "déjà défié") : en attente et non expirés
       supabase.from('challenges')
         .select('challenged_id, status')
         .eq('challenger_id', player.id)
-        .eq('status', 'pending'),
+        .eq('status', 'pending')
+        .gt('expires_at', nowIso),
     ]);
 
     const allPlayers = (playersRes.data ?? []) as Player[];
@@ -459,14 +469,14 @@ export default function MatchmakingScreen() {
 
     const [detailMap, incDetailMap] = await Promise.all([
       Promise.all(sorted.map(async s => {
-        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, s.id, s.elo_score, (s as any).court_side ?? (s as any).preferred_side);
+        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, s.id, s.elo_score, s.court_side);
         return [s.id, detail] as const;
       })).then(entries => new Map(entries)),
 
       Promise.all(challenges.map(async c => {
         const ch = c.challenger as Player | undefined;
         if (!ch) return null;
-        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, ch.id, ch.elo_score, (ch as any).court_side ?? (ch as any).preferred_side);
+        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, ch.id, ch.elo_score, ch.court_side);
         return [c.id, detail] as const;
       })).then(entries => new Map(entries.filter(Boolean) as [string, CompatDetail][])),
     ]);
@@ -480,9 +490,52 @@ export default function MatchmakingScreen() {
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
   const handleAction = async (id: string, action: 'accepted' | 'declined') => {
+    const c = incoming.find(x => x.id === id);
+
+    // 1) Statut du défi
     await supabase.from('challenges').update({ status: action }).eq('id', id);
-    setIncoming(prev => prev.map(c => c.id === id ? { ...c, status: action } : c));
-    showToast(action === 'accepted' ? '✅ Défi accepté !' : 'Défi décliné');
+
+    // 2) Répercuter sur la partie liée — même effet qu'accepter/refuser
+    //    l'invitation depuis le Lobby (Option B2).
+    if (c?.game_id && player) {
+      if (action === 'accepted') {
+        const { error } = await supabase
+          .from('game_participants')
+          .update({ status: 'accepted' })
+          .eq('game_id', c.game_id)
+          .eq('player_id', player.id);
+        if (error) { showToast('⚠️ Impossible de rejoindre la partie'); return; }
+      } else {
+        await supabase
+          .from('game_participants')
+          .update({ status: 'declined' })
+          .eq('game_id', c.game_id)
+          .eq('player_id', player.id);
+        // Libérer la place tenue par l'invitation
+        const { data: g } = await supabase
+          .from('open_games').select('spots_available').eq('id', c.game_id).single();
+        if (g) {
+          await supabase.from('open_games')
+            .update({ spots_available: Math.min(3, (g.spots_available ?? 0) + 1) })
+            .eq('id', c.game_id);
+        }
+      }
+    }
+
+    // 3) Notifier le challengeur de la réponse
+    if (c?.challenger_id && player) {
+      notifyPlayers({
+        playerIds: [c.challenger_id],
+        title: action === 'accepted' ? '✅ Défi accepté !' : '❌ Défi décliné',
+        body: action === 'accepted'
+          ? `${player.name} a accepté ton défi — rendez-vous sur le terrain !`
+          : `${player.name} a décliné ton défi`,
+        data: c.game_id ? { type: 'lobby', gameId: c.game_id } : { type: 'challenge' },
+      });
+    }
+
+    setIncoming(prev => prev.map(x => x.id === id ? { ...x, status: action } : x));
+    showToast(action === 'accepted' ? '✅ Défi accepté ! Tu es inscrit à la partie.' : 'Défi décliné');
   };
 
   const sortedSuggestions = sortMode === 'compat' && compatMap.size > 0
@@ -494,21 +547,23 @@ export default function MatchmakingScreen() {
   if (!player) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Dark header */}
       <View style={{
-        backgroundColor: '#102820',
+        backgroundColor: Colors.heroBg,
         paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16,
         borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
           <View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 }}>Défi</Text>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569', marginTop: 2 }}>Défis & joueurs compatibles</Text>
+            <Text style={{ fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
+              Les <Text style={{ color: Colors.brand }}>Défis</Text>
+            </Text>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2 }}>Défis & joueurs compatibles</Text>
           </View>
           {pendingCount > 0 && (
-            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#4f46e5', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>{pendingCount}</Text>
+            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brandDeep }}>{pendingCount}</Text>
             </View>
           )}
         </View>
@@ -524,12 +579,12 @@ export default function MatchmakingScreen() {
                   flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
                   backgroundColor: active ? '#fff' : 'transparent', borderRadius: 14, paddingVertical: 9,
                 }}>
-                <Text style={{ color: active ? '#0f172a' : 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                <Text style={{ color: active ? Colors.textPrimary : 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 }}>
                   {t.label}
                 </Text>
                 {t.badge > 0 && (
-                  <View style={{ backgroundColor: active ? '#4f46e5' : 'rgba(255,255,255,0.2)', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1 }}>
-                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{t.badge}</Text>
+                  <View style={{ backgroundColor: active ? Colors.brand : 'rgba(255,255,255,0.2)', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1 }}>
+                    <Text style={{ color: active ? Colors.brandDeep : Colors.textOnDark, fontSize: 9, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>{t.badge}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -578,10 +633,10 @@ export default function MatchmakingScreen() {
       {toast && (
         <View style={{
           position: 'absolute', bottom: insets.bottom + 80, alignSelf: 'center',
-          backgroundColor: '#102820', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 10,
+          backgroundColor: Colors.heroBg, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 10,
           shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
         }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>{toast}</Text>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textOnDark }}>{toast}</Text>
         </View>
       )}
     </View>
@@ -591,9 +646,9 @@ export default function MatchmakingScreen() {
 // ── Styles ────────────────────────────────────────────────────
 const sty = StyleSheet.create({
   card: {
-    backgroundColor: '#fff', borderRadius: 18,
-    borderWidth: 1.5, borderColor: '#e2e8f0', overflow: 'hidden',
-    shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 6,
+    backgroundColor: Colors.bgCard, borderRadius: 18,
+    borderWidth: 1.5, borderColor: Colors.border, overflow: 'hidden',
+    shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   actionBtn: {

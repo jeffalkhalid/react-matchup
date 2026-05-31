@@ -43,3 +43,5 @@ yarn-error.*
 schema.sql
 supabase
 sql
+design_handoff_pagmatch_icon
+design_handoff_auth_flow

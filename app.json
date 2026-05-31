@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Matchup Padel",
-    "slug": "matchup-padel",
+    "name": "PagMatch",
+    "slug": "pagmatch",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,20 +10,20 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F8FAFC"
+      "backgroundColor": "#0A0A0A"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.matchuppadel.app",
+      "bundleIdentifier": "com.pagmatch.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.matchuppadel.app",
+      "package": "com.pagmatch.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0F1E"
+        "backgroundColor": "#0A0A0A"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -42,13 +42,14 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#10B981"
+          "icon": "./assets/notification-icon.png",
+          "color": "#FFC11A"
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-font"
     ],
-    "scheme": "matchuppadel",
+    "scheme": "pagmatch",
     "extra": {
       "router": {},
       "eas": {

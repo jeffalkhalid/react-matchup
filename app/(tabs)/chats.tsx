@@ -6,7 +6,8 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { usePlayer } from '../../hooks/usePlayer';
-import { Colors, Spacing, FontSize, Radius } from '../../lib/theme';
+import { Colors, Spacing, FontSize, Radius, Fonts } from '../../lib/theme';
+import { Pill } from '../../components/Pill';
 
 type TypeFilter = 'all' | 'unread' | 'challenge' | 'standard';
 
@@ -20,11 +21,26 @@ interface GameChat {
   creator: { name: string } | null;
   participants: Array<{ player_id: string; status: string; player: { name: string } | null }>;
   unread: number;
+  last_message_at: string | null;
 }
 
-function gameTheme(isChallenge: boolean) {
-  if (isChallenge) return { badge: '#92400E', badgeBg: '#FEF3C7', label: 'Défi', accent: '#F59E0B' };
-  return { badge: '#1E40AF', badgeBg: '#DBEAFE', label: 'Partie', accent: '#3B82F6' };
+// WhatsApp-like order: unread first, then most recent activity (last message
+// or match_date as fallback for chats with no messages yet).
+function sortGames<T extends { unread: number; last_message_at: string | null; match_date: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => {
+    if (b.unread !== a.unread) return b.unread - a.unread;
+    const aTs = new Date(a.last_message_at ?? a.match_date).getTime();
+    const bTs = new Date(b.last_message_at ?? b.match_date).getTime();
+    return bTs - aTs;
+  });
+}
+
+// Mapping de pill via le composant partagé. La logique métier reste inchangée.
+function gameVariant(isChallenge: boolean): 'brand' | 'ink' {
+  return isChallenge ? 'brand' : 'ink';
+}
+function gameLabel(isChallenge: boolean): string {
+  return isChallenge ? 'Défi' : 'Partie';
 }
 
 function AvatarGrid({ players }: { players: Array<{ name: string; isMe: boolean }> }) {
@@ -39,7 +55,7 @@ function AvatarGrid({ players }: { players: Array<{ name: string; isMe: boolean 
             backgroundColor: p ? (p.isMe ? Colors.primary : COLORS[i]) : Colors.border,
             alignItems: 'center', justifyContent: 'center',
           }}>
-            {p ? <Text style={{ color: '#fff', fontSize: 7, fontWeight: '900' }}>{p.name.charAt(0).toUpperCase()}</Text> : null}
+            {p ? <Text style={{ color: Colors.textOnDark, fontSize: 7, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{p.name.charAt(0).toUpperCase()}</Text> : null}
           </View>
         ))}
       </View>
@@ -59,6 +75,46 @@ export default function ChatsScreen() {
     if (!player) return;
     loadGames();
   }, [player]));
+
+  // Live updates: new messages bump unread + reorder, and read receipts zero out.
+  useEffect(() => {
+    if (!player) return;
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const msgCh = supabase
+      .channel(`chats-list-msgs:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new as { game_id: string; player_id: string; created_at: string } | null;
+        if (!m) return;
+        setGames(prev => {
+          if (!prev.some(g => g.id === m.game_id)) return prev;
+          const updated = prev.map(g => {
+            if (g.id !== m.game_id) return g;
+            return {
+              ...g,
+              last_message_at: m.created_at,
+              unread: m.player_id === player.id ? g.unread : g.unread + 1,
+            };
+          });
+          return sortGames(updated);
+        });
+      })
+      .subscribe();
+
+    const readCh = supabase
+      .channel(`chats-list-reads:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_chat_reads', filter: `player_id=eq.${player.id}` }, payload => {
+        const r = payload.new as { game_id: string } | null;
+        if (!r?.game_id) return;
+        setGames(prev => {
+          if (!prev.some(g => g.id === r.game_id)) return prev;
+          return sortGames(prev.map(g => g.id === r.game_id ? { ...g, unread: 0 } : g));
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(msgCh); supabase.removeChannel(readCh); };
+  }, [player]);
 
   const loadGames = async () => {
     if (!player) return;
@@ -106,25 +162,36 @@ export default function ChatsScreen() {
 
     const readMap = Object.fromEntries((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
 
-    // Count unread messages per game
+    // Count unread messages + fetch the latest message timestamp per game (in parallel)
     const gamesWithUnread: GameChat[] = await Promise.all(
       all.map(async (game) => {
         const lastRead = readMap[game.id] ?? '1970-01-01';
-        const { count } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('game_id', game.id)
-          .gt('created_at', lastRead);
-        return { ...game, unread: count ?? 0 };
+        const [{ count }, { data: latest }] = await Promise.all([
+          supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('game_id', game.id)
+            .gt('created_at', lastRead)
+            // Exclure mes propres messages — cohérent avec le badge d'onglet
+            // (_layout.tsx) et le comptage realtime (ligne ~96).
+            .neq('player_id', player.id),
+          supabase
+            .from('messages')
+            .select('created_at')
+            .eq('game_id', game.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+        return {
+          ...game,
+          unread: count ?? 0,
+          last_message_at: (latest as { created_at: string } | null)?.created_at ?? null,
+        };
       })
     );
 
-    gamesWithUnread.sort((a, b) => {
-      if (b.unread !== a.unread) return b.unread - a.unread;
-      return new Date(b.match_date).getTime() - new Date(a.match_date).getTime();
-    });
-
-    setGames(gamesWithUnread);
+    setGames(sortGames(gamesWithUnread));
     setLoading(false);
   };
 
@@ -153,8 +220,8 @@ export default function ChatsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Header */}
-      <View style={{ backgroundColor: '#102820', paddingTop: 56, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md }}>
-        <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 2 }}>Chats</Text>
+      <View style={{ backgroundColor: Colors.heroBg, paddingTop: 56, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md }}>
+        <Text style={{ color: Colors.textOnDark, fontSize: 28, marginBottom: 2, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
         <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', marginBottom: Spacing.md }}>
           {games.length} match{games.length !== 1 ? 's' : ''} actif{games.length !== 1 ? 's' : ''}
           {totalUnread > 0 ? `  ·  ${totalUnread} non lu${totalUnread > 1 ? 's' : ''}` : ''}
@@ -186,29 +253,34 @@ export default function ChatsScreen() {
       {/* Filter pills */}
       <View style={{ paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.sm }}>
-          {FILTERS.map(f => (
-            <TouchableOpacity
-              key={f.id}
-              onPress={() => setTypeFilter(f.id)}
-              style={{
-                paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.full,
-                backgroundColor: typeFilter === f.id
-                  ? (f.id === 'unread' ? Colors.danger : Colors.bgCardAlt)
-                  : Colors.bgCard,
-                borderWidth: 1,
-                borderColor: typeFilter === f.id
-                  ? (f.id === 'unread' ? Colors.danger : Colors.border)
-                  : Colors.border,
-              }}
-            >
-              <Text style={{
-                color: typeFilter === f.id ? (f.id === 'unread' ? '#fff' : Colors.textPrimary) : Colors.textSecondary,
-                fontSize: FontSize.xs, fontWeight: '700',
-              }}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {FILTERS.map(f => {
+            const active = typeFilter === f.id;
+            const isUnread = f.id === 'unread';
+            return (
+              <TouchableOpacity
+                key={f.id}
+                onPress={() => setTypeFilter(f.id)}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.full,
+                  backgroundColor: active
+                    ? (isUnread ? Colors.danger : 'rgba(255,193,26,0.14)')
+                    : Colors.bgCard,
+                  borderWidth: 1,
+                  borderColor: active
+                    ? (isUnread ? Colors.danger : Colors.brand)
+                    : Colors.border,
+                }}
+              >
+                <Text style={{
+                  color: active ? (isUnread ? Colors.textOnDark : Colors.brandDeep) : Colors.textSecondary,
+                  fontSize: FontSize.xs, fontWeight: '700',
+                  fontFamily: active ? Fonts.uiExtraBold : Fonts.uiBold,
+                }}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
@@ -222,7 +294,7 @@ export default function ChatsScreen() {
           <Text style={{ fontSize: 40, marginBottom: Spacing.md }}>
             {typeFilter === 'unread' ? '✅' : '💬'}
           </Text>
-          <Text style={{ color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '900', textAlign: 'center' }}>
+          <Text style={{ color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '900', textAlign: 'center', fontFamily: Fonts.uiBlack }}>
             {typeFilter === 'unread' ? 'Tout est lu !' : search ? 'Aucun résultat' : 'Aucune conversation'}
           </Text>
           <Text style={{ color: Colors.textSecondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: 4 }}>
@@ -230,7 +302,7 @@ export default function ChatsScreen() {
           </Text>
           {(search || typeFilter !== 'all') && (
             <TouchableOpacity onPress={() => { setSearch(''); setTypeFilter('all'); }} style={{ marginTop: Spacing.md }}>
-              <Text style={{ color: Colors.primary, fontSize: FontSize.sm, fontWeight: '900' }}>Voir toutes les conversations</Text>
+              <Text style={{ color: Colors.primary, fontSize: FontSize.sm, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Voir toutes les conversations</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -240,7 +312,8 @@ export default function ChatsScreen() {
           keyExtractor={g => g.id}
           contentContainerStyle={{ paddingBottom: 80 }}
           renderItem={({ item: game }) => {
-            const theme = gameTheme(game.is_challenge);
+            const variant = gameVariant(game.is_challenge);
+            const label = gameLabel(game.is_challenge);
             const accepted = (game.participants ?? []).filter((p: any) => p.status === 'accepted');
             const allPlayers = [
               { name: game.creator?.name ?? '?', isMe: player?.id === game.creator_id },
@@ -270,7 +343,7 @@ export default function ChatsScreen() {
                       backgroundColor: Colors.primary, borderWidth: 2, borderColor: Colors.bg,
                       alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{game.unread}</Text>
+                      <Text style={{ color: Colors.textOnDark, fontSize: 9, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{game.unread}</Text>
                     </View>
                   )}
                 </View>
@@ -278,7 +351,7 @@ export default function ChatsScreen() {
                 {/* Content */}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <Text style={{ color: game.unread > 0 ? Colors.textPrimary : Colors.textSecondary, fontSize: FontSize.sm, fontWeight: game.unread > 0 ? '900' : '600' }} numberOfLines={1}>
+                    <Text style={{ color: game.unread > 0 ? Colors.textPrimary : Colors.textSecondary, fontSize: FontSize.sm, fontWeight: game.unread > 0 ? '900' : '600', fontFamily: game.unread > 0 ? Fonts.uiBlack : Fonts.uiSemi }} numberOfLines={1}>
                       {dateStr} · {timeStr}
                     </Text>
                     <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs }}>
@@ -289,16 +362,27 @@ export default function ChatsScreen() {
                     📍 {game.location}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ backgroundColor: theme.badgeBg, borderRadius: Radius.full, paddingHorizontal: 7, paddingVertical: 2 }}>
-                      <Text style={{ color: theme.badge, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' }}>{theme.label}</Text>
-                    </View>
-                    <Text style={{ color: game.unread > 0 ? Colors.textPrimary : Colors.textMuted, fontSize: FontSize.xs, fontWeight: game.unread > 0 ? '700' : '400' }} numberOfLines={1}>
+                    <Pill variant={variant}>{label}</Pill>
+                    <Text style={{ color: game.unread > 0 ? Colors.textPrimary : Colors.textMuted, fontSize: FontSize.xs, fontWeight: game.unread > 0 ? '700' : '400', fontFamily: game.unread > 0 ? Fonts.uiBold : Fonts.ui }} numberOfLines={1}>
                       {allPlayers.filter(p => !p.isMe)[0]?.name ?? 'Démarrer la conversation'}
                     </Text>
                   </View>
                 </View>
 
-                <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
+                {game.unread > 0 ? (
+                  <View style={{
+                    minWidth: 22, height: 22, borderRadius: 11,
+                    backgroundColor: Colors.primary,
+                    paddingHorizontal: 7,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900' }}>
+                      {game.unread > 99 ? '99+' : game.unread}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
+                )}
               </TouchableOpacity>
             );
           }}

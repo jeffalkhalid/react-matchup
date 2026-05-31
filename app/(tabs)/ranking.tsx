@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
-import { Colors, getLeague, getLeagueLabel, formatPadelLevel } from '../../lib/theme';
+import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../../lib/theme';
 import type { Player } from '../../types';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ const PODIUM_SLOTS = [
 type RankedPlayer = Player & { rank: number };
 
 // ── Icons ────────────────────────────────────────────────────────────
-function IconStar({ size = 16, filled = false, color = '#94a3b8' }: { size?: number; filled?: boolean; color?: string }) {
+function IconStar({ size = 16, filled = false, color = Colors.textMuted }: { size?: number; filled?: boolean; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24"
       fill={filled ? color : 'none'} stroke={color} strokeWidth={2}
@@ -58,8 +58,8 @@ function IconStar({ size = 16, filled = false, color = '#94a3b8' }: { size?: num
 function IconSearch() {
   return (
     <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-      <Circle cx={6} cy={6} r={4.5} stroke="#94a3b8" strokeWidth={1.5} />
-      <Line x1={9.5} y1={9.5} x2={12} y2={12} stroke="#94a3b8" strokeWidth={1.5} strokeLinecap="round" />
+      <Circle cx={6} cy={6} r={4.5} stroke={Colors.textMuted} strokeWidth={1.5} />
+      <Line x1={9.5} y1={9.5} x2={12} y2={12} stroke={Colors.textMuted} strokeWidth={1.5} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -137,17 +137,17 @@ export default function RankingScreen() {
   const favCount   = favorites.size;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f7f9f5' }}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
 
       {/* ── Dark header ──────────────────────────────────────────── */}
-      <View style={{ backgroundColor: '#102820', paddingTop: insets.top + 14, paddingHorizontal: 16 }}>
+      <View style={{ backgroundColor: Colors.heroBg, paddingTop: insets.top + 14, paddingHorizontal: 16 }}>
         {/* Title row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <View>
-            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', letterSpacing: -0.5, lineHeight: 24 }}>
-              Classement
+            <Text style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 30, fontFamily: Fonts.welcome }}>
+              Le <Text style={{ color: Colors.brand }}>classement</Text>
             </Text>
-            <Text style={{ color: '#64748b', fontSize: 11, fontWeight: '600', marginTop: 4 }}>
+            <Text style={{ color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 4 }}>
               {ranked.length} joueur{ranked.length !== 1 ? 's' : ''} classés
             </Text>
           </View>
@@ -158,8 +158,8 @@ export default function RankingScreen() {
               paddingHorizontal: 12, paddingVertical: 6,
               borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
             }}>
-              <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600' }}>Votre rang</Text>
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900' }}>#{myEntry.rank}</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '600' }}>Votre rang</Text>
+              <Text style={{ color: Colors.textOnDark, fontSize: 15, fontWeight: '900', fontFamily: Fonts.uiBlack }}>#{myEntry.rank}</Text>
             </View>
           )}
         </View>
@@ -184,15 +184,15 @@ export default function RankingScreen() {
                   backgroundColor: active ? '#fff' : 'transparent',
                 }}
               >
-                <Text style={{ color: active ? '#0f172a' : 'rgba(255,255,255,0.5)', fontSize: 11.5, fontWeight: '900' }}>
+                <Text style={{ color: active ? Colors.textPrimary : 'rgba(255,255,255,0.5)', fontSize: 11.5, fontWeight: '900', fontFamily: Fonts.uiBlack }}>
                   {['Global', 'Amis'][i]}
                 </Text>
                 {badge !== null && (
                   <View style={{
-                    backgroundColor: active ? '#f59e0b' : 'rgba(245,158,11,0.7)',
+                    backgroundColor: active ? Colors.brand : 'rgba(255,193,26,0.7)',
                     borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1,
                   }}>
-                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{badge}</Text>
+                    <Text style={{ color: active ? Colors.brandDeep : Colors.textOnDark, fontSize: 9, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{badge}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -202,25 +202,25 @@ export default function RankingScreen() {
       </View>
 
       {/* ── Search + filters ─────────────────────────────────────── */}
-      <View style={{ backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
+      <View style={{ backgroundColor: Colors.bgCard, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
         <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 8 }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 8,
-            backgroundColor: '#f8fafc', borderRadius: 12,
+            backgroundColor: Colors.bg, borderRadius: 12,
             paddingHorizontal: 12, paddingVertical: 10,
-            borderWidth: 1.5, borderColor: '#e2e8f0',
+            borderWidth: 1.5, borderColor: Colors.border,
           }}>
             <IconSearch />
             <TextInput
               value={search}
               onChangeText={setSearch}
               placeholder="Chercher un joueur…"
-              placeholderTextColor="#94a3b8"
-              style={{ flex: 1, fontSize: 13.5, color: '#0f172a', fontWeight: '500' }}
+              placeholderTextColor={Colors.textMuted}
+              style={{ flex: 1, fontSize: 13.5, color: Colors.textPrimary, fontWeight: '500' }}
             />
             {!!search && (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ color: '#94a3b8', fontSize: 14 }}>✕</Text>
+                <Text style={{ color: Colors.textMuted, fontSize: 14 }}>✕</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -238,11 +238,11 @@ export default function RankingScreen() {
                 activeOpacity={0.8}
                 style={{
                   paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
-                  backgroundColor: active ? (f.color ?? '#0f172a') : '#fff',
-                  borderWidth: active ? 0 : 1.5, borderColor: '#e2e8f0',
+                  backgroundColor: active ? (f.color ?? Colors.primary) : Colors.bgCard,
+                  borderWidth: active ? 0 : 1.5, borderColor: Colors.border,
                 }}
               >
-                <Text style={{ color: active ? '#fff' : '#0f172a', fontSize: 11.5, fontWeight: '700' }}>
+                <Text style={{ color: active ? Colors.textOnDark : Colors.textPrimary, fontSize: 11.5, fontWeight: '700', fontFamily: Fonts.uiExtraBold }}>
                   {f.label}
                 </Text>
               </TouchableOpacity>
@@ -279,24 +279,24 @@ export default function RankingScreen() {
                 <View style={{
                   marginHorizontal: 14, marginTop: 4, marginBottom: 8,
                   flexDirection: 'row', alignItems: 'center', gap: 10,
-                  backgroundColor: '#eef2ff', borderRadius: 14,
+                  backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 14,
                   paddingHorizontal: 14, paddingVertical: 10,
-                  borderWidth: 1.5, borderColor: '#c7d2fe',
+                  borderWidth: 1.5, borderColor: 'rgba(255,193,26,0.55)',
                 }}>
                   <View style={{
                     width: 36, height: 36, borderRadius: 11,
-                    backgroundColor: '#4f46e5',
+                    backgroundColor: Colors.primary,
                     alignItems: 'center', justifyContent: 'center',
                   }}>
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>{getInitials(myEntry.name)}</Text>
+                    <Text style={{ color: Colors.textOnDark, fontSize: 13, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(myEntry.name)}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#4f46e5', fontSize: 12.5, fontWeight: '900' }}>Votre position</Text>
-                    <Text style={{ color: '#818cf8', fontSize: 11, marginTop: 2 }}>
+                    <Text style={{ color: Colors.brandDeep, fontSize: 12.5, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Votre position</Text>
+                    <Text style={{ color: Colors.brandDeep, fontSize: 11, marginTop: 2 }}>
                       Niv. {formatPadelLevel(myEntry.elo_score)} · {(myEntry.win_count ?? 0) + (myEntry.loss_count ?? 0)} matchs
                     </Text>
                   </View>
-                  <Text style={{ color: '#4f46e5', fontSize: 22, fontWeight: '900' }}>#{myEntry.rank}</Text>
+                  <Text style={{ color: Colors.brandDeep, fontSize: 22, fontWeight: '900', fontFamily: Fonts.uiBlack }}>#{myEntry.rank}</Text>
                 </View>
               )}
 
@@ -305,7 +305,7 @@ export default function RankingScreen() {
                 paddingHorizontal: 16, paddingVertical: 10,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
               }}>
-                <Text style={{ fontSize: 12, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.uiBlack }}>
                   {tab === 'amis'
                     ? `${displayed.length} favori${displayed.length !== 1 ? 's' : ''}`
                     : search
@@ -314,7 +314,7 @@ export default function RankingScreen() {
                     ? 'Suite du classement'
                     : `${displayed.length} joueur${displayed.length !== 1 ? 's' : ''}`}
                 </Text>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: '#94a3b8' }}>ELO ↓</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: Colors.textMuted }}>ELO ↓</Text>
               </View>
             </>
           }
@@ -339,18 +339,18 @@ export default function RankingScreen() {
                 }}>
                   <IconStar size={22} color="#f59e0b" />
                 </View>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a', marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginBottom: 6, fontFamily: Fonts.uiBlack }}>
                   Aucun favori pour l'instant
                 </Text>
-                <Text style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', lineHeight: 17 }}>
+                <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: 'center', lineHeight: 17 }}>
                   Va dans l'onglet{' '}
-                  <Text style={{ fontWeight: '900', color: '#475569' }}>Global</Text>
+                  <Text style={{ fontWeight: '900', color: Colors.textSecondary, fontFamily: Fonts.uiBlack }}>Global</Text>
                   {' '}et clique sur l'étoile à côté d'un joueur.
                 </Text>
               </View>
             ) : (
               <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-                <Text style={{ color: '#94a3b8', fontSize: 13 }}>Aucun joueur trouvé</Text>
+                <Text style={{ color: Colors.textMuted, fontSize: 13 }}>Aucun joueur trouvé</Text>
               </View>
             )
           }
@@ -370,7 +370,7 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
   onPressPlayer: (id: string) => void;
 }) {
   return (
-    <View style={{ backgroundColor: '#102820', paddingTop: 20 }}>
+    <View style={{ backgroundColor: Colors.heroBg, paddingTop: 20 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', paddingHorizontal: 10 }}>
         {PODIUM_SLOTS.map(({ idx, blockH, avatarSz, rankNum }) => {
           const p = top3[idx];
@@ -400,7 +400,7 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
                   borderWidth: rankNum === 1 ? 3 : 2.5,
                   borderColor: borderCol,
                 }}>
-                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: avatarSz * 0.32 }}>
+                  <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: avatarSz * 0.32, fontFamily: Fonts.uiBlack }}>
                     {getInitials(p.name)}
                   </Text>
                 </View>
@@ -409,9 +409,9 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
                   position: 'absolute', top: -8, right: -8,
                   width: 22, height: 22, borderRadius: 11,
                   backgroundColor: medal, alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 2, borderColor: '#102820',
+                  borderWidth: 2, borderColor: Colors.heroBg,
                 }}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>{rankNum}</Text>
+                  <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{rankNum}</Text>
                 </View>
                 {/* Fav toggle */}
                 {me && me.id !== p.id && (
@@ -434,14 +434,14 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
 
               {/* Name */}
               <Text
-                style={{ color: '#fff', fontWeight: '900', fontSize: rankNum === 1 ? 13 : 11.5, marginBottom: 2 }}
+                style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: rankNum === 1 ? 13 : 11.5, marginBottom: 2, fontFamily: Fonts.uiBlack }}
                 numberOfLines={1}
               >
                 {p.name.split(' ')[0]}
               </Text>
 
               {/* Level */}
-              <Text style={{ color: leagueHex, fontSize: 12, fontWeight: '900', marginBottom: 6 }}>
+              <Text style={{ color: leagueHex, fontSize: 13, fontWeight: '900', marginBottom: 6, fontFamily: Fonts.uiBlack }}>
                 {formatPadelLevel(p.elo_score)}
               </Text>
 
@@ -462,7 +462,7 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
           );
         })}
       </View>
-      <View style={{ height: 8, backgroundColor: '#f7f9f5' }} />
+      <View style={{ height: 8, backgroundColor: Colors.bg }} />
     </View>
   );
 }
@@ -491,8 +491,8 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 10,
         paddingHorizontal: 16, paddingVertical: 10,
-        backgroundColor: isMe ? '#eef2ff' : '#fff',
-        borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+        backgroundColor: isMe ? 'rgba(255,193,26,0.14)' : Colors.bgCard,
+        borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt,
       }}
     >
       {/* Rank */}
@@ -500,7 +500,7 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
         {isTop3 ? (
           <Text style={{ fontSize: 16 }}>{['🥇','🥈','🥉'][player.rank - 1]}</Text>
         ) : (
-          <Text style={{ fontSize: 13, fontWeight: '900', color: isMe ? '#4f46e5' : '#94a3b8' }}>
+          <Text style={{ fontSize: 13, fontWeight: '900', color: isMe ? Colors.brandDeep : Colors.textMuted, fontFamily: Fonts.uiBlack }}>
             #{player.rank}
           </Text>
         )}
@@ -511,23 +511,23 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
         width: 38, height: 38, borderRadius: 11,
         backgroundColor: col,
         alignItems: 'center', justifyContent: 'center',
-        borderWidth: isMe ? 2 : 0, borderColor: '#4f46e5',
+        borderWidth: isMe ? 2 : 0, borderColor: Colors.brand,
       }}>
-        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>{getInitials(player.name)}</Text>
+        <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(player.name)}</Text>
       </View>
 
       {/* Name + badges + meta */}
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
           <Text
-            style={{ fontSize: 13, fontWeight: isMe ? '900' : '700', color: '#0f172a' }}
+            style={{ fontSize: 13, fontWeight: isMe ? '900' : '700', color: Colors.textPrimary, fontFamily: isMe ? Fonts.uiBlack : Fonts.uiBold }}
             numberOfLines={1}
           >
             {player.name}
           </Text>
           {isMe && (
-            <View style={{ backgroundColor: '#eef2ff', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: '#c7d2fe' }}>
-              <Text style={{ color: '#4f46e5', fontSize: 9, fontWeight: '900' }}>Vous</Text>
+            <View style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
+              <Text style={{ color: Colors.brandDeep, fontSize: 9, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Vous</Text>
             </View>
           )}
           {player.frmt_verified && player.frmt_rank && (
@@ -545,12 +545,12 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
           <View style={{ backgroundColor: leagueHex + '18', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1 }}>
             <Text style={{ color: leagueHex, fontSize: 9.5, fontWeight: '700' }}>{leagueShort}</Text>
           </View>
-          <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{matchCount} matchs</Text>
+          <Text style={{ color: Colors.textMuted, fontSize: 10.5 }}>{matchCount} matchs</Text>
         </View>
       </View>
 
       {/* ELO level */}
-      <Text style={{ fontSize: 15, fontWeight: '900', color: isMe ? '#4f46e5' : '#0f172a' }}>
+      <Text style={{ fontSize: 15, fontWeight: '900', color: isMe ? Colors.brandDeep : Colors.textPrimary, fontFamily: Fonts.uiBlack }}>
         {formatPadelLevel(player.elo_score)}
       </Text>
 

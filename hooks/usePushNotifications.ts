@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { usePlayer } from './usePlayer';
+import { Colors } from '../lib/theme';
 
 // Push tokens don't work in Expo Go since SDK 53 — only in dev/prod builds
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
@@ -37,7 +38,7 @@ export function usePushNotifications() {
             name: 'default',
             importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#4f46e5',
+            lightColor: Colors.brand,
           });
         }
 
@@ -85,7 +86,8 @@ export function usePushNotifications() {
           else router.push('/(tabs)/chats');
           break;
         case 'lobby':
-          router.push('/(tabs)/lobby');
+          if (data.gameId) router.push(`/(tabs)/lobby?gameId=${data.gameId}` as any);
+          else router.push('/(tabs)/lobby');
           break;
       }
     });

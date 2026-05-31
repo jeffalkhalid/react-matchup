@@ -5,19 +5,19 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { usePlayer } from '../hooks/usePlayer';
-import { supabase } from '../lib/supabase';
-import { Colors, getLeague, getLeagueLabel, eloToLevel } from '../lib/theme';
+import { usePlayer } from '../../hooks/usePlayer';
+import { supabase } from '../../lib/supabase';
+import { Colors, getLeague, getLeagueLabel, eloToLevel, Fonts } from '../../lib/theme';
 
 // ─── Icons ───────────────────────────────────────────────────
-const IconChevronLeft = ({ size = 20, color = '#0f172a' }) => (
+const IconChevronLeft = ({ size = 20, color = Colors.textPrimary }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
     <Path stroke={color} d="M15 18l-6-6 6-6" />
   </Svg>
 );
 
-const IconBell = ({ size = 32, color = '#cbd5e1' }) => (
+const IconBell = ({ size = 32, color = Colors.border }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Path stroke={color} d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -25,7 +25,7 @@ const IconBell = ({ size = 32, color = '#cbd5e1' }) => (
   </Svg>
 );
 
-const IconSwords = ({ size = 18, color = '#4f46e5' }) => (
+const IconSwords = ({ size = 18, color = Colors.brandDeep }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Path stroke={color} d="M14.5 17.5 3 6V3h3l11.5 11.5" />
@@ -45,7 +45,7 @@ const IconCheckSquare = ({ size = 18, color = '#d97706' }) => (
   </Svg>
 );
 
-const IconMedal = ({ size = 18, color = '#059669' }) => (
+const IconMedal = ({ size = 18, color = Colors.success }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Circle cx="12" cy="8" r="6" stroke={color} />
@@ -61,14 +61,14 @@ const IconTrendingUp = ({ size = 18, color = '#b45309' }) => (
   </Svg>
 );
 
-const IconChevronRight = ({ size = 16, color = '#cbd5e1' }) => (
+const IconChevronRight = ({ size = 16, color = Colors.border }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
     <Path stroke={color} d="M9 18l6-6-6-6" />
   </Svg>
 );
 
-const IconX = ({ size = 14, color = '#94a3b8' }) => (
+const IconX = ({ size = 14, color = Colors.textMuted }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
     <Path stroke={color} d="M18 6L6 18M6 6l12 12" />
@@ -78,7 +78,7 @@ const IconX = ({ size = 14, color = '#94a3b8' }) => (
 // ─── Types ────────────────────────────────────────────────────
 interface NotifItem {
   id: string;
-  type: 'challenge' | 'match' | 'badge' | 'levelup';
+  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score';
   title: string;
   subtitle: string;
   route: string;
@@ -104,12 +104,28 @@ export default function NotificationsScreen() {
       `loser_id_2.eq.${player.id}`,
     ].join(',');
 
+    // "Partie à scorer" : mêmes critères que score-entry et lobby.readyToScore.
+    const nowIso = new Date().toISOString();
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data: acceptedGames } = await supabase
+      .from('game_participants')
+      .select('game_id')
+      .eq('player_id', player.id)
+      .eq('status', 'accepted');
+    const acceptedGameIds = (acceptedGames ?? []).map((e: any) => e.game_id).filter(Boolean) as string[];
+    const orParts = [
+      `creator_id.eq.${player.id}`,
+      ...(acceptedGameIds.length > 0 ? [`id.in.(${acceptedGameIds.join(',')})`] : []),
+    ].join(',');
+
     const [
       { data: challenges },
       { data: pending },
       { data: recentMatches },
       { data: alreadyVoted },
       { data: eloHistory },
+      { count: toScoreCount },
+      { data: invitations },
     ] = await Promise.all([
       supabase
         .from('challenges')
@@ -118,10 +134,9 @@ export default function NotificationsScreen() {
         .eq('status', 'pending'),
       supabase
         .from('matches')
-        .select('id, winner:winner_id(name), created_by')
+        .select('id, winner:winner_id(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
         .or(playerOr)
-        .eq('status', 'pending')
-        .neq('created_by', player.id),
+        .eq('status', 'pending'),
       supabase
         .from('matches')
         .select('id')
@@ -139,10 +154,37 @@ export default function NotificationsScreen() {
         .gt('elo_change', 0)
         .gte('created_at', sevenDaysAgo)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('open_games')
+        .select('id', { count: 'exact', head: true })
+        .neq('status', 'cancelled')
+        .neq('status', 'closed')
+        .lt('match_date', nowIso)
+        .gte('match_date', fortyEightHoursAgo)
+        .eq('spots_available', 0)
+        .or(orParts),
+      supabase
+        .from('game_participants')
+        .select('id, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
+        .eq('player_id', player.id)
+        .eq('status', 'invited'),
     ]);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
     const unvotedCount = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id)).length;
+
+    // Filter pending: exclude matches submitted by me OR by my doubles partner
+    const visiblePending = (pending ?? []).filter((m: any) => {
+      if (m.created_by === player.id) return false;
+      const cb = m.created_by;
+      if (
+        (cb === m.winner_id   && m.winner_id_2 === player.id) ||
+        (cb === m.winner_id_2 && m.winner_id   === player.id) ||
+        (cb === m.loser_id    && m.loser_id_2  === player.id) ||
+        (cb === m.loser_id_2  && m.loser_id    === player.id)
+      ) return false;
+      return true;
+    });
 
     // Detect most recent league or full-level promotion in the last 7 days
     const levelUpEntry = (eloHistory ?? []).find((h: any) => {
@@ -152,7 +194,28 @@ export default function NotificationsScreen() {
       return leagueChanged || levelIncreased;
     });
 
+    // Filter active invitations: skip those whose game is closed/cancelled or already past
+    const activeInvites = (invitations ?? []).filter((inv: any) => {
+      const g = inv.game;
+      if (!g) return false;
+      if (g.status === 'closed' || g.status === 'cancelled') return false;
+      if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
+      return true;
+    });
+
     const result: NotifItem[] = [
+      ...activeInvites.map((inv: any) => {
+        const isChall = !!inv.game?.is_challenge;
+        const who = inv.game?.creator?.name ?? '?';
+        const where = inv.game?.location ? ` à ${inv.game.location}` : '';
+        return {
+          id: `invitation-${inv.id}`,
+          type: (isChall ? 'challenge' : 'invitation') as 'challenge' | 'invitation',
+          title: isChall ? '⚡ Défi reçu' : '✉️ Invitation reçue',
+          subtitle: isChall ? `${who} te défie en duel${where}` : `${who} t'invite à jouer${where}`,
+          route: `/(tabs)/lobby?gameId=${inv.game.id}`,
+        };
+      }),
       ...(challenges ?? []).map((c: any) => ({
         id: `challenge-${c.id}`,
         type: 'challenge' as const,
@@ -160,13 +223,20 @@ export default function NotificationsScreen() {
         subtitle: `${c.challenger?.name ?? '?'} t'a lancé un défi`,
         route: '/(tabs)/matchmaking',
       })),
-      ...(pending ?? []).map((m: any) => ({
+      ...visiblePending.map((m: any) => ({
         id: `match-${m.id}`,
         type: 'match' as const,
         title: 'Score à valider',
         subtitle: `Soumis par ${m.winner?.name ?? '?'}`,
-        route: '/(tabs)',
+        route: '/(tabs)/lobby?tab=history&openValidation=1',
       })),
+      ...((toScoreCount ?? 0) > 0 ? [{
+        id: 'to-score',
+        type: 'to_score' as const,
+        title: 'Partie à scorer',
+        subtitle: `${toScoreCount} partie${(toScoreCount ?? 0) > 1 ? 's' : ''} en attente de score`,
+        route: '/(tabs)/lobby?tab=history',
+      }] : []),
       ...(unvotedCount > 0 ? [{
         id: 'badge-prompt',
         type: 'badge' as const,
@@ -198,36 +268,42 @@ export default function NotificationsScreen() {
   }, [fetchNotifs]));
 
   const iconFor = (type: NotifItem['type']) => {
-    if (type === 'challenge') return <IconSwords size={18} color="#4f46e5" />;
-    if (type === 'badge')     return <IconMedal size={18} color="#059669" />;
-    if (type === 'levelup')   return <IconTrendingUp size={18} color="#b45309" />;
+    if (type === 'challenge')  return <IconSwords size={18} color={Colors.brandDeep} />;
+    if (type === 'invitation') return <IconSwords size={18} color="#0891b2" />;
+    if (type === 'badge')      return <IconMedal size={18} color={Colors.success} />;
+    if (type === 'levelup')    return <IconTrendingUp size={18} color="#b45309" />;
+    if (type === 'to_score')   return <IconCheckSquare size={18} color="#0891b2" />;
     return <IconCheckSquare size={18} color="#d97706" />;
   };
 
   const bgFor = (type: NotifItem['type']) => {
-    if (type === 'challenge') return { bg: '#eef2ff', border: '#c7d2fe' };
-    if (type === 'badge')     return { bg: '#ecfdf5', border: '#a7f3d0' };
-    if (type === 'levelup')   return { bg: '#fffbeb', border: '#fde68a' };
-    return { bg: '#fff7ed', border: '#fed7aa' };
+    if (type === 'challenge')  return { bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)' };
+    if (type === 'invitation') return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
+    if (type === 'badge')      return { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)' };
+    if (type === 'levelup')    return { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)' };
+    if (type === 'to_score')   return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
+    return { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)' };
   };
 
   const textFor = (type: NotifItem['type']) => {
-    if (type === 'challenge') return { title: '#3730a3', sub: '#6366f1' };
+    if (type === 'challenge')  return { title: Colors.brandDeep, sub: '#A16207' };
+    if (type === 'invitation') return { title: '#155e75', sub: '#0e7490' };
     if (type === 'badge')     return { title: '#065f46', sub: '#059669' };
     if (type === 'levelup')   return { title: '#92400e', sub: '#b45309' };
+    if (type === 'to_score')  return { title: '#155e75', sub: '#0e7490' };
     return { title: '#7c2d12', sub: '#c2410c' };
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Header */}
       <View style={{
         paddingTop: insets.top + 12,
         paddingHorizontal: 16,
         paddingBottom: 14,
-        backgroundColor: '#fff',
+        backgroundColor: Colors.bgCard,
         borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
+        borderBottomColor: Colors.bgCardAlt,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
@@ -237,32 +313,32 @@ export default function NotificationsScreen() {
           activeOpacity={0.7}
           style={{
             width: 36, height: 36, borderRadius: 10,
-            backgroundColor: '#f1f5f9',
+            backgroundColor: Colors.bgCardAlt,
             alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <IconChevronLeft size={20} color="#0f172a" />
+          <IconChevronLeft size={20} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 20, fontWeight: '900', color: '#0f172a', flex: 1 }}>
-          Notifications
+        <Text style={{ fontSize: 26, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>
+          Tes <Text style={{ color: Colors.brand }}>notifications</Text>
         </Text>
         {items.length > 0 && (
           <>
             <View style={{
-              backgroundColor: '#ef4444', borderRadius: 999,
+              backgroundColor: Colors.danger, borderRadius: 999,
               paddingHorizontal: 8, paddingVertical: 2,
             }}>
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>{items.length}</Text>
+              <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{items.length}</Text>
             </View>
             <TouchableOpacity
               onPress={() => setItems([])}
               activeOpacity={0.7}
               style={{
                 paddingHorizontal: 10, paddingVertical: 6,
-                borderRadius: 8, backgroundColor: '#f1f5f9',
+                borderRadius: 8, backgroundColor: Colors.bgCardAlt,
               }}
             >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b' }}>Tout effacer</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary, fontFamily: Fonts.uiBold }}>Tout effacer</Text>
             </TouchableOpacity>
           </>
         )}
@@ -274,16 +350,16 @@ export default function NotificationsScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
           <View style={{
             width: 72, height: 72, borderRadius: 20,
-            backgroundColor: '#f1f5f9',
+            backgroundColor: Colors.bgCardAlt,
             alignItems: 'center', justifyContent: 'center',
             marginBottom: 16,
           }}>
-            <IconBell size={32} color="#cbd5e1" />
+            <IconBell size={32} color={Colors.border} />
           </View>
-          <Text style={{ fontSize: 17, fontWeight: '900', color: '#475569', textAlign: 'center' }}>
+          <Text style={{ fontSize: 17, fontWeight: '900', color: Colors.textSecondary, textAlign: 'center', fontFamily: Fonts.uiBlack }}>
             Tout est à jour !
           </Text>
-          <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
+          <Text style={{ fontSize: 13, color: Colors.textMuted, marginTop: 6, textAlign: 'center' }}>
             Aucune notification en attente pour le moment.
           </Text>
         </View>
@@ -309,7 +385,7 @@ export default function NotificationsScreen() {
               >
                 <View style={{
                   width: 40, height: 40, borderRadius: 12,
-                  backgroundColor: '#fff',
+                  backgroundColor: Colors.bgCard,
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: '#000', shadowOpacity: 0.05,
                   shadowOffset: { width: 0, height: 1 }, shadowRadius: 3,
@@ -318,14 +394,14 @@ export default function NotificationsScreen() {
                   {iconFor(item.type)}
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: text.title }} numberOfLines={1}>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: text.title, fontFamily: Fonts.uiBlack }} numberOfLines={1}>
                     {item.title}
                   </Text>
                   <Text style={{ fontSize: 12, color: text.sub, marginTop: 2 }} numberOfLines={1}>
                     {item.subtitle}
                   </Text>
                 </View>
-                <IconChevronRight size={16} color="#cbd5e1" />
+                <IconChevronRight size={16} color={Colors.border} />
                 <TouchableOpacity
                   onPress={() => setItems(prev => prev.filter(i => i.id !== item.id))}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -336,7 +412,7 @@ export default function NotificationsScreen() {
                     marginLeft: 4,
                   }}
                 >
-                  <IconX size={14} color="#64748b" />
+                  <IconX size={14} color={Colors.textSecondary} />
                 </TouchableOpacity>
               </TouchableOpacity>
             );
