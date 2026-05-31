@@ -1,52 +1,21 @@
 import { type League } from '../types';
+import { Colors as ColorsRaw, LeagueGradients as LeagueGradientsRaw } from './colors';
 
-export const Colors = {
-  // Surfaces
-  bg: '#F8FAFC',
-  bgCard: '#FFFFFF',
-  bgCardAlt: '#F1F5F9',
-
-  // Borders
-  border: '#E2E8F0',
-  borderLight: '#F1F5F9',
-
-  // Brand — indigo primary + emerald accent (aligned with web)
-  primary: '#4F46E5',
-  primaryDark: '#4338CA',
-  primaryLight: '#6366F1',
-  accent: '#10B981',
-  accentDark: '#059669',
-  accentLight: '#34D399',
-
-  // Feedback
-  danger: '#EF4444',
-  warning: '#F59E0B',
-  info: '#3B82F6',
-
-  // Text
-  textPrimary: '#0F172A',
-  textSecondary: '#475569',
-  textMuted: '#94A3B8',
-
-  // Hero dark background (same as web #102820)
-  heroBg: '#102820',
-
-  league: {
-    diamond: '#67E8F9',
-    gold: '#FBBF24',
-    silver: '#9CA3AF',
-    bronze: '#F97316',
-    discovery: '#34D399',
-  },
-} as const;
-
-export const LeagueGradients: Record<League, string[]> = {
-  diamond: ['#0EA5E9', '#67E8F9'],
-  gold: ['#D97706', '#FBBF24'],
-  silver: ['#6B7280', '#D1D5DB'],
-  bronze: ['#B45309', '#F97316'],
-  discovery: ['#059669', '#34D399'],
+export const Colors = ColorsRaw as {
+  bg: string; bgCard: string; bgCardAlt: string; bgCream: string;
+  bgDark: string; bgDarkAlt: string; bgDarkFrom: string; bgDarkTo: string;
+  border: string; borderLight: string; borderDark: string;
+  brand: string; brandBright: string; brandDeep: string;
+  primary: string; primaryDark: string; primaryLight: string;
+  accent: string; accentDark: string; accentLight: string;
+  danger: string; warning: string; info: string; success: string;
+  textPrimary: string; textSecondary: string; textMuted: string;
+  textOnDark: string; textOnBrand: string;
+  heroBg: string;
+  league: Record<League, string>;
 };
+
+export const LeagueGradients = LeagueGradientsRaw as Record<League, string[]>;
 
 export const Spacing = {
   xs: 4,
@@ -74,6 +43,23 @@ export const Radius = {
   lg: 16,
   xl: 24,
   full: 9999,
+} as const;
+
+// Polices bundlées via expo-font (voir app/_layout.tsx).
+// - Inter : UI générale (labels, inputs, boutons, liens) — design system auth flow.
+// - Barlow Condensed Italic Black : titres de bienvenue ("Bon retour sur la piste !").
+// - Anton : display historique (wordmark hors PNG, gros titres legacy).
+// - Manrope : tagline et UI uppercase (legacy, conservé pour compat).
+export const Fonts = {
+  display: 'Anton_400Regular',
+  ui: 'Inter_500Medium',
+  uiBold: 'Inter_700Bold',
+  uiBlack: 'Inter_900Black',
+  uiExtraBold: 'Inter_800ExtraBold',
+  uiSemi: 'Inter_600SemiBold',
+  welcome: 'BarlowCondensed_900Black_Italic',
+  manrope: 'Manrope_600SemiBold',
+  manropeBold: 'Manrope_700Bold',
 } as const;
 
 export function getLeague(elo: number): League {
@@ -133,8 +119,8 @@ export function formatPadelLevel(elo: number): string {
 }
 
 export function getCompatTier(score: number): { label: string; emoji: string; color: string } {
-  if (score >= 80) return { label: 'Top', emoji: '🔥', color: '#EF4444' };
-  if (score >= 60) return { label: 'Élevé', emoji: '⚡', color: '#F59E0B' };
-  if (score >= 40) return { label: 'Bon', emoji: '👍', color: '#10B981' };
-  return { label: 'Faible', emoji: '〜', color: '#6B7280' };
+  if (score >= 80) return { label: 'Top', emoji: '🔥', color: Colors.danger };
+  if (score >= 60) return { label: 'Élevé', emoji: '⚡', color: Colors.brand };
+  if (score >= 40) return { label: 'Bon', emoji: '👍', color: Colors.success };
+  return { label: 'Faible', emoji: '〜', color: Colors.textMuted };
 }

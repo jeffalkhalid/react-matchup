@@ -5,7 +5,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { eloToLevel, formatPadelLevel, padelLevelToElo } from '../../lib/theme';
+import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
+import { Pill } from '../../components/Pill';
 
 // ─── Types ────────────────────────────────────────────────────
 type GameType = 'Compétitif' | 'Amical' | 'Défi';
@@ -26,7 +27,8 @@ interface Props {
   onPublish: (data: WizardResult) => Promise<string>;
   player: { id: string; name: string; elo_score: number; gender?: string } | null;
   initialGameType?: GameType;
-  initialInvite?: { id: string; name: string; elo_score: number };
+  initialInvite?: { id: string; name: string; elo_score: number; court_side?: string };
+  initialInvites?: Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>>;
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -65,25 +67,25 @@ function buildDays(n: number): Array<{ label: string; val: string }> {
 // ─── Theme ────────────────────────────────────────────────────
 function getTheme(type: GameType) {
   if (type === 'Défi') return {
-    accent: '#d97706', headerBg: '#92400e', btnBg: '#f59e0b',
-    eloBg: '#fef3c7', eloColor: '#92400e', eloBorder: '#fde68a',
-    teamABg: '#fffbeb', teamABorder: '#fde68a', teamBBg: '#fff7ed', teamBBorder: '#fed7aa',
-    libreBg: '#fffbeb', libreBorder: '#fde68a', libreColor: '#d97706',
-    selectBg: '#fffbeb', selectColor: '#92400e',
+    accent: Colors.brandDeep, headerBg: Colors.heroBg, btnBg: Colors.brand,
+    eloBg: 'rgba(255,193,26,0.14)', eloColor: Colors.brandDeep, eloBorder: 'rgba(255,193,26,0.55)',
+    teamABg: 'rgba(255,193,26,0.10)', teamABorder: 'rgba(255,193,26,0.45)', teamBBg: 'rgba(255,193,26,0.06)', teamBBorder: 'rgba(255,193,26,0.35)',
+    libreBg: 'rgba(255,193,26,0.10)', libreBorder: 'rgba(255,193,26,0.45)', libreColor: Colors.brandDeep,
+    selectBg: 'rgba(255,193,26,0.14)', selectColor: Colors.brandDeep,
   };
   if (type === 'Amical') return {
-    accent: '#059669', headerBg: '#064e3b', btnBg: '#10b981',
-    eloBg: '#d1fae5', eloColor: '#065f46', eloBorder: '#6ee7b7',
-    teamABg: '#f0fdf4', teamABorder: '#bbf7d0', teamBBg: '#f0fdf4', teamBBorder: '#86efac',
-    libreBg: '#dcfce7', libreBorder: '#86efac', libreColor: '#059669',
-    selectBg: '#f0fdf4', selectColor: '#065f46',
+    accent: '#047857', headerBg: Colors.heroBg, btnBg: '#10b981',
+    eloBg: 'rgba(16,185,129,0.10)', eloColor: '#047857', eloBorder: 'rgba(16,185,129,0.45)',
+    teamABg: 'rgba(16,185,129,0.08)', teamABorder: 'rgba(16,185,129,0.40)', teamBBg: 'rgba(16,185,129,0.05)', teamBBorder: 'rgba(16,185,129,0.30)',
+    libreBg: 'rgba(16,185,129,0.10)', libreBorder: 'rgba(16,185,129,0.45)', libreColor: '#047857',
+    selectBg: 'rgba(16,185,129,0.10)', selectColor: '#047857',
   };
   return {
-    accent: '#4f46e5', headerBg: '#1e1b4b', btnBg: '#4f46e5',
-    eloBg: '#e0e7ff', eloColor: '#3730a3', eloBorder: '#c7d2fe',
-    teamABg: '#eef2ff', teamABorder: '#c7d2fe', teamBBg: '#f5f3ff', teamBBorder: '#ddd6fe',
-    libreBg: '#eef2ff', libreBorder: '#c7d2fe', libreColor: '#4f46e5',
-    selectBg: '#eef2ff', selectColor: '#3730a3',
+    accent: Colors.textPrimary, headerBg: Colors.heroBg, btnBg: Colors.primary,
+    eloBg: Colors.bgCardAlt, eloColor: Colors.textPrimary, eloBorder: Colors.border,
+    teamABg: Colors.bgCardAlt, teamABorder: Colors.border, teamBBg: Colors.bg, teamBBorder: Colors.border,
+    libreBg: Colors.bgCardAlt, libreBorder: Colors.border, libreColor: Colors.textSecondary,
+    selectBg: 'rgba(255,193,26,0.14)', selectColor: Colors.brandDeep,
   };
 }
 
@@ -96,7 +98,7 @@ function hashColor(name: string) {
 function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: '#fff', fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
+      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -127,23 +129,23 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
   }
 
   return (
-    <View style={{ backgroundColor: '#fff', borderRadius: 14, borderWidth: 1.5, borderColor: '#e2e8f0', padding: 12, marginBottom: 10 }}>
+    <View style={{ backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border, padding: 12, marginBottom: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <TouchableOpacity onPress={() => offset > 0 && setOffset(o => o - 1)}
-          style={{ width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center', opacity: offset > 0 ? 1 : 0.3 }}>
-          <Text style={{ color: '#64748b', fontSize: 16, fontWeight: '600' }}>‹</Text>
+          style={{ width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', opacity: offset > 0 ? 1 : 0.3 }}>
+          <Text style={{ color: Colors.textSecondary, fontSize: 16, fontWeight: '600' }}>‹</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a' }}>{FR_MONTHS_LONG[month]} {year}</Text>
+        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{FR_MONTHS_LONG[month]} {year}</Text>
         <TouchableOpacity onPress={() => offset < 3 && setOffset(o => o + 1)}
-          style={{ width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center', opacity: offset < 3 ? 1 : 0.3 }}>
-          <Text style={{ color: '#64748b', fontSize: 16, fontWeight: '600' }}>›</Text>
+          style={{ width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', opacity: offset < 3 ? 1 : 0.3 }}>
+          <Text style={{ color: Colors.textSecondary, fontSize: 16, fontWeight: '600' }}>›</Text>
         </TouchableOpacity>
       </View>
       {/* Day headers */}
       <View style={{ flexDirection: 'row', marginBottom: 4 }}>
         {FR_DAYS_SHORT.map(d => (
           <View key={d} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 9.5, fontWeight: '900', color: '#94a3b8' }}>{d}</Text>
+            <Text style={{ fontSize: 9.5, fontWeight: '900', color: Colors.textMuted }}>{d}</Text>
           </View>
         ))}
       </View>
@@ -161,7 +163,7 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
                 opacity: !cell.valid ? 0.3 : 1,
               }}>
               <Text style={{ fontSize: 12, fontWeight: (active || isToday) ? '900' : '500',
-                color: active ? '#fff' : isToday ? t.eloColor : '#0f172a',
+                color: active ? Colors.textOnDark : isToday ? t.eloColor : Colors.textPrimary,
               }}>{cell.d}</Text>
             </TouchableOpacity>
           );
@@ -172,7 +174,7 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
 }
 
 // ─── Main component ───────────────────────────────────────────
-export default function CreateWizard({ visible, onClose, onPublish, player, initialGameType, initialInvite }: Props) {
+export default function CreateWizard({ visible, onClose, onPublish, player, initialGameType, initialInvite, initialInvites }: Props) {
   const insets = useSafeAreaInsets();
   const ALL_DAYS   = buildDays(92);
   const QUICK_DAYS = ALL_DAYS.slice(0, 7);
@@ -229,7 +231,19 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
     const gameType = initialGameType ?? 'Compétitif';
     const invites: Record<string, { id: string; name: string; elo_score: number }> = {};
-    if (initialInvite) invites['B0'] = initialInvite;
+    if (initialInvites) {
+      (['A1', 'B0', 'B1'] as const).forEach(slot => {
+        const p = initialInvites[slot];
+        if (p) invites[slot] = { id: p.id, name: p.name, elo_score: p.elo_score };
+      });
+    } else if (initialInvite) {
+      const opponentSlot = initialInvite.court_side === 'right' ? 'B1' : 'B0';
+      invites[opponentSlot] = {
+        id: initialInvite.id,
+        name: initialInvite.name,
+        elo_score: initialInvite.elo_score,
+      };
+    }
     const defaultGenre: Genre =
       player?.gender === 'male' ? 'men' : player?.gender === 'female' ? 'women' : 'mixed';
     setFormState({
@@ -346,52 +360,52 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         {/* Reservation toggle */}
         <TouchableOpacity onPress={() => set('hasReservation', !form.hasReservation)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12,
-            backgroundColor: form.hasReservation ? '#fffbeb' : '#f8fafc',
-            borderWidth: 1.5, borderColor: form.hasReservation ? '#fde68a' : '#e2e8f0', marginBottom: 10,
+            backgroundColor: form.hasReservation ? 'rgba(255,193,26,0.14)' : Colors.bg,
+            borderWidth: 1.5, borderColor: form.hasReservation ? 'rgba(255,193,26,0.55)' : Colors.border, marginBottom: 10,
           }}>
           <Text style={{ fontSize: 15 }}>📅</Text>
-          <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '900', color: form.hasReservation ? '#92400e' : '#334155' }}>
+          <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: form.hasReservation ? Colors.brandDeep : Colors.textSecondary }}>
             J'ai une réservation
           </Text>
-          <View style={{ width: 42, height: 24, borderRadius: 99, backgroundColor: form.hasReservation ? '#f59e0b' : '#e2e8f0', justifyContent: 'center', paddingHorizontal: 3 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff', alignSelf: form.hasReservation ? 'flex-end' : 'flex-start', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 }} />
+          <View style={{ width: 42, height: 24, borderRadius: 99, backgroundColor: form.hasReservation ? Colors.brand : Colors.border, justifyContent: 'center', paddingHorizontal: 3 }}>
+            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: Colors.bgCard, alignSelf: form.hasReservation ? 'flex-end' : 'flex-start', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 }} />
           </View>
         </TouchableOpacity>
 
         {/* Venue picker */}
         <TouchableOpacity onPress={() => setVenueOpen(v => !v)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 13,
-            borderWidth: 1.5, borderColor: form.location ? t.eloBorder : '#e2e8f0',
-            backgroundColor: form.location ? t.selectBg : '#fff', marginBottom: venueOpen ? 0 : 10,
+            borderWidth: 1.5, borderColor: form.location ? t.eloBorder : Colors.border,
+            backgroundColor: form.location ? t.selectBg : Colors.bgCard, marginBottom: venueOpen ? 0 : 10,
           }}>
-          <View style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: form.location ? t.btnBg : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: form.location ? t.btnBg : Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 14 }}>📍</Text>
           </View>
-          <Text style={{ flex: 1, fontSize: 13, fontWeight: form.location ? '900' : '500', color: form.location ? t.selectColor : '#94a3b8' }}>
+          <Text style={{ flex: 1, fontSize: 13, fontWeight: form.location ? '900' : '500', color: form.location ? t.selectColor : Colors.textMuted }}>
             {form.location || 'Choisir un terrain…'}
           </Text>
-          <Text style={{ color: '#94a3b8', fontSize: 12 }}>{venueOpen ? '▲' : '▼'}</Text>
+          <Text style={{ color: Colors.textMuted, fontSize: 12 }}>{venueOpen ? '▲' : '▼'}</Text>
         </TouchableOpacity>
 
         {venueOpen && (
-          <View style={{ backgroundColor: '#fff', borderWidth: 1.5, borderColor: t.eloBorder, borderTopWidth: 0, borderBottomLeftRadius: 13, borderBottomRightRadius: 13, marginBottom: 10, overflow: 'hidden' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}>
+          <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: t.eloBorder, borderTopWidth: 0, borderBottomLeftRadius: 13, borderBottomRightRadius: 13, marginBottom: 10, overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
               <Text style={{ fontSize: 13 }}>🔍</Text>
               <TextInput
                 value={venueSearch} onChangeText={setVenueSearch}
-                placeholder="Rechercher…" placeholderTextColor="#94a3b8"
-                style={{ flex: 1, fontSize: 13, color: '#0f172a' }}
+                placeholder="Rechercher…" placeholderTextColor={Colors.textMuted}
+                style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
                 autoFocus
               />
-              {venueSearch ? <TouchableOpacity onPress={() => setVenueSearch('')}><Text style={{ color: '#94a3b8' }}>✕</Text></TouchableOpacity> : null}
+              {venueSearch ? <TouchableOpacity onPress={() => setVenueSearch('')}><Text style={{ color: Colors.textMuted }}>✕</Text></TouchableOpacity> : null}
             </View>
             <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
               {filteredClubs.map(club => {
                 const active = form.location === club;
                 return (
                   <TouchableOpacity key={club} onPress={() => { set('location', club); setVenueOpen(false); setVenueSearch(''); }}
-                    style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#f8fafc', backgroundColor: active ? t.selectBg : '#fff' }}>
-                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: active ? t.selectColor : '#0f172a' }}>{club}</Text>
+                    style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.bg, backgroundColor: active ? t.selectBg : Colors.bgCard }}>
+                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: active ? t.selectColor : Colors.textPrimary }}>{club}</Text>
                     {active && <Text style={{ color: t.accent, fontWeight: '900' }}>✓</Text>}
                   </TouchableOpacity>
                 );
@@ -404,7 +418,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
               )}
               {filteredClubs.length === 0 && venueSearch.length === 0 && (
                 <View style={{ padding: 14, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 12, color: '#94a3b8' }}>Aucun club trouvé</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textMuted }}>Aucun club trouvé</Text>
                 </View>
               )}
             </ScrollView>
@@ -419,10 +433,10 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
             return (
               <TouchableOpacity key={d.val} onPress={() => { set('day', d.val); setShowCal(false); }}
                 style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
-                  borderWidth: 2, borderColor: active ? t.accent : '#e2e8f0',
-                  backgroundColor: active ? t.selectBg : '#fff',
+                  borderWidth: 2, borderColor: active ? t.accent : Colors.border,
+                  backgroundColor: active ? t.selectBg : Colors.bgCard,
                 }}>
-                <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600', color: active ? t.selectColor : '#0f172a' }}>
+                <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600', color: active ? t.selectColor : Colors.textPrimary }}>
                   {d.label}
                 </Text>
               </TouchableOpacity>
@@ -430,10 +444,10 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
           })}
           <TouchableOpacity onPress={() => setShowCal(v => !v)}
             style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
-              borderWidth: 2, borderColor: showCal ? t.eloBorder : '#e2e8f0',
+              borderWidth: 2, borderColor: showCal ? t.eloBorder : Colors.border,
               backgroundColor: showCal ? t.selectBg : 'transparent',
             }}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: showCal ? t.selectColor : '#94a3b8' }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: showCal ? t.selectColor : Colors.textMuted }}>
               📅 {showCal ? 'Masquer' : 'Autres dates'}
             </Text>
           </TouchableOpacity>
@@ -465,10 +479,10 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
             return (
               <TouchableOpacity key={tm} onPress={() => set('time', tm)}
                 style={{ width: '23%', paddingVertical: 9, borderRadius: 10,
-                  borderWidth: 1.5, borderColor: active ? t.eloBorder : '#e2e8f0',
-                  backgroundColor: active ? t.selectBg : '#fff', alignItems: 'center',
+                  borderWidth: 1.5, borderColor: active ? t.eloBorder : Colors.border,
+                  backgroundColor: active ? t.selectBg : Colors.bgCard, alignItems: 'center',
                 }}>
-                <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600', color: active ? t.selectColor : '#0f172a' }}>{tm}</Text>
+                <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600', color: active ? t.selectColor : Colors.textPrimary }}>{tm}</Text>
               </TouchableOpacity>
             );
           })}
@@ -513,15 +527,15 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
                   else set('gameType', opt.val);
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
-                  borderWidth: 2, borderColor: active ? ot.eloBorder : '#e2e8f0',
-                  backgroundColor: active ? ot.teamABg : '#fff',
+                  borderWidth: 2, borderColor: active ? ot.eloBorder : Colors.border,
+                  backgroundColor: active ? ot.teamABg : Colors.bgCard,
                 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: active ? ot.btnBg : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: active ? ot.btnBg : Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 20 }}>{opt.icon}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: active ? ot.eloColor : '#0f172a' }}>{opt.val}</Text>
-                  <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{opt.desc}</Text>
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: active ? ot.eloColor : Colors.textPrimary }}>{opt.val}</Text>
+                  <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 1 }}>{opt.desc}</Text>
                 </View>
                 {active && <Text style={{ color: ot.accent, fontWeight: '900', fontSize: 16 }}>✓</Text>}
               </TouchableOpacity>
@@ -537,12 +551,12 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
             return (
               <TouchableOpacity key={opt.val} onPress={() => set('genre', opt.val)} activeOpacity={0.8}
                 style={{ flex: 1, alignItems: 'center', gap: 5, paddingVertical: 12, paddingHorizontal: 6, borderRadius: 14,
-                  borderWidth: 2, borderColor: active ? t.eloBorder : '#e2e8f0',
-                  backgroundColor: active ? t.selectBg : '#fff',
+                  borderWidth: 2, borderColor: active ? t.eloBorder : Colors.border,
+                  backgroundColor: active ? t.selectBg : Colors.bgCard,
                 }}>
                 <Text style={{ fontSize: 22 }}>{opt.icon}</Text>
-                <Text style={{ fontSize: 12, fontWeight: '900', color: active ? t.selectColor : '#0f172a', textAlign: 'center' }}>{opt.label}</Text>
-                <Text style={{ fontSize: 9.5, color: '#94a3b8', textAlign: 'center' }}>{opt.desc}</Text>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: active ? t.selectColor : Colors.textPrimary, textAlign: 'center' }}>{opt.label}</Text>
+                <Text style={{ fontSize: 9.5, color: Colors.textMuted, textAlign: 'center' }}>{opt.desc}</Text>
                 {active && <Text style={{ color: t.accent, fontWeight: '900' }}>✓</Text>}
               </TouchableOpacity>
             );
@@ -551,58 +565,58 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
 
         {/* Level range */}
         <Text style={sty.sectionLabel}>Niveau (Padel)</Text>
-        <View style={{ backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#e2e8f0', padding: 16, marginBottom: 16 }}>
+        <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             {/* Min */}
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 6 }}>
                 Minimum{lockMin ? ' 🔒' : ''}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 {!lockMin && (
                   <TouchableOpacity onPress={() => set('minLevel', Math.max(1.0, +(form.minLevel - 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: '#0f172a' }}>−</Text>
+                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
                   </TouchableOpacity>
                 )}
-                <Text style={{ fontSize: 26, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
+                <Text style={{ fontSize: 26, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
                   {form.minLevel.toFixed(2)}
                 </Text>
                 {!lockMin && (
                   <TouchableOpacity onPress={() => set('minLevel', Math.min(8.0, +(form.minLevel + 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: '#0f172a' }}>+</Text>
+                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
                 )}
               </View>
             </View>
-            <View style={{ width: 1, height: 40, backgroundColor: '#e2e8f0' }} />
+            <View style={{ width: 1, height: 40, backgroundColor: Colors.border }} />
             {/* Max */}
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 6 }}>
                 Maximum{lockMax ? ' 🔒' : ''}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 {!lockMax && (
                   <TouchableOpacity onPress={() => set('maxLevel', Math.max(form.minLevel, +(form.maxLevel - 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: '#0f172a' }}>−</Text>
+                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
                   </TouchableOpacity>
                 )}
-                <Text style={{ fontSize: 26, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
+                <Text style={{ fontSize: 26, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
                   {form.maxLevel.toFixed(2)}
                 </Text>
                 {!lockMax && (
                   <TouchableOpacity onPress={() => set('maxLevel', Math.min(8.0, +(form.maxLevel + 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: '#0f172a' }}>+</Text>
+                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
                 )}
               </View>
             </View>
           </View>
           {/* Range bar */}
-          <View style={{ height: 5, borderRadius: 99, backgroundColor: '#f1f5f9', overflow: 'hidden' }}>
+          <View style={{ height: 5, borderRadius: 99, backgroundColor: Colors.bgCardAlt, overflow: 'hidden' }}>
             <View style={{ position: 'absolute', height: '100%', borderRadius: 99, backgroundColor: t.btnBg,
               left: `${((form.minLevel - 1) / 7) * 100}%`,
               right: `${100 - ((form.maxLevel - 1) / 7) * 100}%`,
@@ -636,7 +650,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
           borderWidth: 1, borderColor: missingCount === 0 ? t.eloBorder : '#fed7aa',
         }}>
           <Text style={{ fontSize: 16 }}>{missingCount === 0 ? '✅' : 'ℹ️'}</Text>
-          <Text style={{ fontSize: 12, fontWeight: '900', color: missingCount === 0 ? t.eloColor : '#c2410c' }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: missingCount === 0 ? t.eloColor : '#B45309' }}>
             {missingCount === 0 ? 'Équipe complète !'
               : `${missingCount} place${missingCount > 1 ? 's' : ''} libre${missingCount > 1 ? 's' : ''}`}
           </Text>
@@ -676,24 +690,24 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
                         }}
                         activeOpacity={0.7}
                         style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: isMe ? '#4f46e5' : inv ? hashColor(inv.name) : t.libreBg,
+                          backgroundColor: isMe ? Colors.primary : inv ? hashColor(inv.name) : t.libreBg,
                           borderWidth: isEmpty ? 2 : isMe ? 2.5 : 0,
                           borderStyle: isEmpty ? 'dashed' : 'solid',
-                          borderColor: isEmpty ? t.libreBorder : isMe ? '#fff' : 'transparent',
+                          borderColor: isEmpty ? t.libreBorder : isMe ? Colors.bgCard : 'transparent',
                         }}>
                         {isMe
-                          ? <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>{(player?.name || '?').charAt(0).toUpperCase()}</Text>
+                          ? <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>{(player?.name || '?').charAt(0).toUpperCase()}</Text>
                           : inv
-                            ? <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
+                            ? <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
                             : <Text style={{ color: t.libreColor, fontSize: 20, fontWeight: '300' }}>+</Text>
                         }
                       </TouchableOpacity>
-                      <View style={{ backgroundColor: '#0f172a', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                        <Text style={{ fontSize: 8, fontWeight: '900', color: '#fff', letterSpacing: 0.5 }}>
+                      <View style={{ backgroundColor: Colors.textPrimary, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                        <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.5 }}>
                           {pos === 0 ? 'GAU' : 'DRO'}
                         </Text>
                       </View>
-                      <Text style={{ fontSize: 9.5, fontWeight: '700', color: isMe ? '#4f46e5' : inv ? '#4f46e5' : t.libreColor, maxWidth: 52, textAlign: 'center' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 9.5, fontWeight: '700', color: isMe ? Colors.primary : inv ? Colors.primary : t.libreColor, maxWidth: 52, textAlign: 'center' }} numberOfLines={1}>
                         {isMe ? 'Vous' : inv ? inv.name.split(' ')[0] : 'Libre'}
                       </Text>
                     </View>
@@ -707,25 +721,25 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         {/* Invite panel */}
         {inviteTarget && (
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={{ backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 14, padding: 12, marginBottom: 14 }}>
+            <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   Inviter — Éq. {inviteTarget[0]} · {inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}
                 </Text>
                 <TouchableOpacity onPress={() => { setInviteTarget(null); setSearchQ(''); }}
-                  style={{ width: 24, height: 24, backgroundColor: '#f1f5f9', borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '900' }}>✕</Text>
+                  style={{ width: 24, height: 24, backgroundColor: Colors.bgCardAlt, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '900' }}>✕</Text>
                 </TouchableOpacity>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f8fafc', borderRadius: 10, padding: 10, borderWidth: 1.5, borderColor: '#e2e8f0', marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.bg, borderRadius: 10, padding: 10, borderWidth: 1.5, borderColor: Colors.border, marginBottom: 10 }}>
                 <Text style={{ fontSize: 13 }}>🔍</Text>
                 <TextInput
                   value={searchQ} onChangeText={setSearchQ}
-                  placeholder="Nom du joueur…" placeholderTextColor="#94a3b8"
-                  style={{ flex: 1, fontSize: 13, color: '#0f172a' }}
+                  placeholder="Nom du joueur…" placeholderTextColor={Colors.textMuted}
+                  style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
                   autoFocus
                 />
-                {searching && <ActivityIndicator size="small" color="#4f46e5" />}
+                {searching && <ActivityIndicator size="small" color={Colors.primary} />}
               </View>
               {/* Frequent players */}
               {!searchQ && freqAvail.length > 0 && (
@@ -734,15 +748,13 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
                   <View style={{ gap: 5, marginBottom: searchAvail.length > 0 ? 10 : 0 }}>
                     {freqAvail.map(p => (
                       <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }}>
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard }}>
                         <Avatar name={p.name} size={32} />
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{p.name}</Text>
-                          <Text style={{ fontSize: 10, color: '#94a3b8' }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                          <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
                         </View>
-                        <View style={{ backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fde68a', borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 }}>
-                          <Text style={{ fontSize: 9, fontWeight: '900', color: '#92400e' }}>Habituel</Text>
-                        </View>
+                        <Pill variant="brand">Habituel</Pill>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -768,13 +780,13 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         )}
 
         {/* Recap */}
-        <View style={{ backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 14, overflow: 'hidden', marginBottom: 8 }}>
+        <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, overflow: 'hidden', marginBottom: 8 }}>
           <View style={{ height: 3, backgroundColor: t.btnBg }} />
           <View style={{ padding: 12 }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
               {recapItems.map((item, i) => (
-                <View key={i} style={{ backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155' }}>{item}</Text>
+                <View key={i} style={{ backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }}>{item}</Text>
                 </View>
               ))}
             </View>
@@ -788,35 +800,33 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
   if (published) {
     return (
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-        <View style={{ flex: 1, backgroundColor: '#f8fafc', paddingTop: insets.top }}>
+        <View style={{ flex: 1, backgroundColor: Colors.bg, paddingTop: insets.top }}>
           <View style={{ alignItems: 'center', padding: 32, paddingBottom: 16 }}>
             <Text style={{ fontSize: 52, marginBottom: 12 }}>🎾</Text>
-            <Text style={{ fontSize: 22, fontWeight: '900', color: '#0f172a', letterSpacing: -0.4, marginBottom: 6 }}>Partie publiée !</Text>
-            <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 20 }}>
+            <Text style={{ fontSize: 26, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6 }}>
+              Partie <Text style={{ color: Colors.brand }}>publiée !</Text>
+            </Text>
+            <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
               Visible dans l'Explorer.{Object.keys(form.invites).length > 0
                 ? ` ${Object.keys(form.invites).length} invitation${Object.keys(form.invites).length > 1 ? 's' : ''} envoyée${Object.keys(form.invites).length > 1 ? 's' : ''}.`
                 : ''}
             </Text>
           </View>
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
-            <View style={{ backgroundColor: '#fff', borderRadius: 18, borderWidth: 1.5, borderColor: '#e2e8f0', overflow: 'hidden' }}>
+            <View style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5, borderColor: Colors.border, overflow: 'hidden' }}>
               <View style={{ height: 4, backgroundColor: t.btnBg }} />
               <View style={{ padding: 14 }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                  <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '900', color: t.eloColor, textTransform: 'uppercase' }}>{form.gameType}</Text>
-                  </View>
-                  <View style={{ backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#64748b' }}>
-                      {form.genre === 'mixed' ? '⚧ Mixte' : form.genre === 'men' ? '♂ Hommes' : '♀ Femmes'}
-                    </Text>
-                  </View>
+                  <Pill variant={form.gameType === 'Défi' ? 'brand' : form.gameType === 'Amical' ? 'success' : 'ink'}>{form.gameType}</Pill>
+                  <Pill variant={form.genre === 'mixed' ? 'neutral' : form.genre === 'men' ? 'info' : 'magenta'}>
+                    {form.genre === 'mixed' ? '⚧ Mixte' : form.genre === 'men' ? '♂ Hommes' : '♀ Femmes'}
+                  </Pill>
                 </View>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: '#0f172a' }}>
+                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
                   {ALL_DAYS.find(d => d.val === form.day)?.label || form.day}
                   <Text style={{ color: t.accent }}> · {form.time}</Text>
                 </Text>
-                <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>
+                <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 3 }}>
                   Niv. {form.minLevel.toFixed(2)}–{form.maxLevel.toFixed(2)} · {form.location}
                 </Text>
               </View>
@@ -827,7 +837,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
               padding: 14, borderRadius: 14, backgroundColor: t.btnBg, alignItems: 'center',
               shadowColor: t.btnBg, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 6,
             }}>
-              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Retour au Lobby 🎾</Text>
+              <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Retour au Lobby 🎾</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -838,25 +848,25 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
   // ─── Wizard shell ──────────────────────────────────────────
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={() => setShowAbandon(true)}>
-      <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+      <View style={{ flex: 1, backgroundColor: Colors.bg }}>
 
         {/* Abandon confirm */}
         {showAbandon && (
           <View style={{ position: 'absolute', inset: 0, zIndex: 100, backgroundColor: 'rgba(11,17,33,0.75)', justifyContent: 'flex-end' }}>
-            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 }}>
+            <View style={{ backgroundColor: Colors.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 }}>
               <Text style={{ fontSize: 32, textAlign: 'center', marginBottom: 10 }}>🚫</Text>
-              <Text style={{ fontSize: 17, fontWeight: '900', color: '#0f172a', textAlign: 'center', marginBottom: 8 }}>Abandonner la création ?</Text>
-              <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 20, marginBottom: 22 }}>
+              <Text style={{ fontSize: 17, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center', marginBottom: 8 }}>Abandonner la création ?</Text>
+              <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 22 }}>
                 Ta partie n'a pas été sauvegardée.{'\n'}Toutes les informations seront perdues.
               </Text>
               <View style={{ gap: 9 }}>
                 <TouchableOpacity onPress={() => { setShowAbandon(false); onClose(); }}
-                  style={{ padding: 14, borderRadius: 14, backgroundColor: '#ef4444', alignItems: 'center' }}>
-                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Abandonner</Text>
+                  style={{ padding: 14, borderRadius: 14, backgroundColor: Colors.danger, alignItems: 'center' }}>
+                  <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Abandonner</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setShowAbandon(false)}
-                  style={{ padding: 13, borderRadius: 14, borderWidth: 1.5, borderColor: '#e2e8f0', backgroundColor: '#fff', alignItems: 'center' }}>
-                  <Text style={{ color: '#334155', fontWeight: '800', fontSize: 14 }}>Continuer la création</Text>
+                  style={{ padding: 13, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bgCard, alignItems: 'center' }}>
+                  <Text style={{ color: Colors.textSecondary, fontFamily: Fonts.uiExtraBold, fontWeight: '800', fontSize: 14 }}>Continuer la création</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -871,13 +881,15 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
               <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, fontWeight: '600' }}>‹</Text>
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: '#fff' }}>Créer une partie</Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: '600' }}>{SCREEN_LABELS[step]}</Text>
+              <Text style={{ fontSize: 22, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
+                Nouvelle <Text style={{ color: Colors.brand }}>partie</Text>
+              </Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: Fonts.uiSemi, fontWeight: '600' }}>{SCREEN_LABELS[step]}</Text>
             </View>
             {/* Step dots */}
             <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
               {[0, 1, 2].map(i => (
-                <View key={i} style={{ height: 6, borderRadius: 99, backgroundColor: i < step ? 'rgba(255,255,255,0.55)' : i === step ? '#fff' : 'rgba(255,255,255,0.18)', width: i === step ? 18 : 6 }} />
+                <View key={i} style={{ height: 6, borderRadius: 99, backgroundColor: i < step ? 'rgba(255,255,255,0.55)' : i === step ? Colors.textOnDark : 'rgba(255,255,255,0.18)', width: i === step ? 18 : 6 }} />
               ))}
             </View>
             <TouchableOpacity onPress={() => setShowAbandon(true)}
@@ -903,31 +915,31 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         </View>
 
         {/* CTA */}
-        <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 14, backgroundColor: '#fff', borderTopWidth: 1.5, borderTopColor: '#e2e8f0', flexDirection: 'row', gap: 8 }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 14, backgroundColor: Colors.bgCard, borderTopWidth: 1.5, borderTopColor: Colors.border, flexDirection: 'row', gap: 8 }}>
           {step > 0 && (
             <TouchableOpacity onPress={() => setStep(s => s - 1)}
-              style={{ width: 50, height: 50, borderRadius: 13, borderWidth: 1.5, borderColor: '#e2e8f0', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: '#64748b', fontWeight: '900', fontSize: 16 }}>‹</Text>
+              style={{ width: 50, height: 50, borderRadius: 13, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bgCard, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: Colors.textSecondary, fontWeight: '900', fontSize: 16 }}>‹</Text>
             </TouchableOpacity>
           )}
           {step < 2 ? (
             <TouchableOpacity onPress={() => canNext && setStep(s => s + 1)}
               activeOpacity={canNext ? 0.8 : 1}
-              style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: canNext ? t.btnBg : '#e2e8f0', alignItems: 'center', justifyContent: 'center',
+              style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: canNext ? t.btnBg : Colors.border, alignItems: 'center', justifyContent: 'center',
                 ...(canNext ? { shadowColor: t.btnBg, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 } : {}),
               }}>
-              <Text style={{ color: canNext ? '#fff' : '#94a3b8', fontWeight: '900', fontSize: 14 }}>
+              <Text style={{ color: canNext ? Colors.textOnDark : Colors.textMuted, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>
                 {step === 0 && !canNext ? 'Choisissez un terrain, une date et une heure' : 'Continuer →'}
               </Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={handlePublish} disabled={submitting}
-              style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: submitting ? '#e2e8f0' : t.btnBg, alignItems: 'center', justifyContent: 'center',
+              style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: submitting ? Colors.border : t.btnBg, alignItems: 'center', justifyContent: 'center',
                 ...(!submitting ? { shadowColor: t.btnBg, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 } : {}),
               }}>
               {submitting
-                ? <ActivityIndicator color="#94a3b8" />
-                : <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Publier la partie 🎾</Text>
+                ? <ActivityIndicator color={Colors.textMuted} />
+                : <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Publier la partie 🎾</Text>
               }
             </TouchableOpacity>
           )}
@@ -940,7 +952,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
 // ─── Styles ───────────────────────────────────────────────────
 const sty = StyleSheet.create({
   sectionLabel: {
-    fontSize: 10, fontWeight: '900', color: '#94a3b8',
+    fontSize: 10, fontWeight: '900', color: Colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 7,
   },
 });

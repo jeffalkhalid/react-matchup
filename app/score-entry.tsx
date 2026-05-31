@@ -8,7 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { usePlayer } from '../hooks/usePlayer';
 import { supabase } from '../lib/supabase';
-import { Colors, formatPadelLevel } from '../lib/theme';
+import { Colors, formatPadelLevel, Fonts } from '../lib/theme';
+import { Pill, type PillVariant } from '../components/Pill';
 import { notifyPlayers } from '../lib/notify';
 
 // ─── Constants ────────────────────────────────────────────────
@@ -42,8 +43,9 @@ function getGameType(g: Game): 'challenge' | 'friendly' | 'competitive' {
 }
 
 const TYPE_LABEL: Record<string, string> = { competitive: 'Compétitif', friendly: 'Amical', challenge: 'Défi' };
-const TYPE_COLOR: Record<string, string> = { competitive: '#4f46e5', friendly: '#059669', challenge: '#d97706' };
-const TYPE_BG:    Record<string, string> = { competitive: '#eef2ff', friendly: '#d1fae5', challenge: '#fef3c7' };
+const TYPE_COLOR: Record<string, string> = { competitive: Colors.textPrimary, friendly: '#047857', challenge: Colors.brandDeep };
+const TYPE_BG:    Record<string, string> = { competitive: Colors.bgCardAlt, friendly: 'rgba(16,185,129,0.10)', challenge: 'rgba(255,193,26,0.14)' };
+const TYPE_VARIANT: Record<string, PillVariant> = { competitive: 'ink', friendly: 'success', challenge: 'brand' };
 
 // ─── Per-set validation ───────────────────────────────────────
 function validateSet(set: SetScore): string | null {
@@ -66,19 +68,19 @@ function ScoreDropdown({ label, value, onChange }: {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ alignItems: 'center', gap: 4 }}>
-      <Text style={{ fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
+      <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
       <TouchableOpacity onPress={() => setOpen(true)} activeOpacity={0.75} style={sty.dropTrigger}>
-        <Text style={[sty.dropValue, value === null && { color: '#cbd5e1' }]}>
+        <Text style={[sty.dropValue, value === null && { color: Colors.border }]}>
           {value !== null ? String(value) : '–'}
         </Text>
-        <Text style={{ fontSize: 9, color: '#94a3b8', lineHeight: 10 }}>▾</Text>
+        <Text style={{ fontSize: 9, color: Colors.textMuted, lineHeight: 10 }}>▾</Text>
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" statusBarTranslucent>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} activeOpacity={1} onPress={() => setOpen(false)} />
         <View style={[sty.dropSheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', alignSelf: 'center', marginBottom: 14 }} />
-          <Text style={{ fontSize: 11, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.8, marginBottom: 14 }}>
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 14 }} />
+          <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.textSecondary, textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.8, marginBottom: 14 }}>
             {label}
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
@@ -121,17 +123,17 @@ function SetRow({ idx, set, onChange, onRemove, canRemove }: {
           <ScoreDropdown label="Adv." value={set.t2} onChange={v => onChange({ ...set, t2: v })} />
         </View>
         {valid
-          ? <Text style={{ fontSize: 16, color: '#10b981' }}>✓</Text>
+          ? <Text style={{ fontSize: 16, color: Colors.success }}>✓</Text>
           : canRemove
             ? <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ color: '#cbd5e1', fontSize: 16, fontWeight: '700' }}>✕</Text>
+                <Text style={{ color: Colors.border, fontSize: 16, fontWeight: '700' }}>✕</Text>
               </TouchableOpacity>
             : null
         }
       </View>
       {err && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 6 }}>
-          <Text style={{ fontSize: 12, color: '#ef4444', fontWeight: '700' }}>⚠ {err}</Text>
+          <Text style={{ fontSize: 12, color: Colors.danger, fontWeight: '700' }}>⚠ {err}</Text>
         </View>
       )}
     </View>
@@ -146,10 +148,10 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
   return (
     <View style={sty.badgeCard}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a' }}>Pour {player.name}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Pour {player.name}</Text>
         {votes.length > 0 && (
-          <View style={{ backgroundColor: '#e0e7ff', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-            <Text style={{ fontSize: 10, fontWeight: '900', color: '#4338ca' }}>
+          <View style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
+            <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.brandDeep, fontFamily: Fonts.uiBlack }}>
               {votes.length} trophée{votes.length > 1 ? 's' : ''}
             </Text>
           </View>
@@ -167,7 +169,7 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
               <Text style={[sty.badgeTxt, sel && sty.badgeTxtSel]}>{b.label}</Text>
               {sel && (
                 <View style={sty.badgeCheck}>
-                  <Text style={{ fontSize: 7, color: '#fff', fontWeight: '900' }}>✓</Text>
+                  <Text style={{ fontSize: 7, color: Colors.textOnDark, fontWeight: '900' }}>✓</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -248,7 +250,11 @@ export default function ScoreEntryScreen() {
         if (seen.has(g.id)) return false;
         seen.add(g.id);
         const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
-        return accepted.length >= 1;
+        // Doubles uniquement (pas de 1v1) : il faut 4 joueurs au total
+        // (le créateur + 3 participants acceptés, sauf s'il est lui-même accepté).
+        const creatorAccepted = accepted.some((p: any) => p.player_id === g.creator_id);
+        const total = accepted.length + (creatorAccepted ? 0 : 1);
+        return total >= 4;
       })
       .map((g: any) => {
         const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
@@ -477,6 +483,12 @@ export default function ScoreEntryScreen() {
 
   const handleSubmit = async (game: Game) => {
     if (!player) return;
+    // Doubles uniquement (pas de 1v1) : partenaire + exactement 2 adversaires
+    const oppCount = game.participants.filter(p => p.id !== player.id && p.id !== partnerId).length;
+    if (!partnerId || oppCount !== 2) {
+      Alert.alert('Match en double', 'Le padel se joue en 2 contre 2 : sélectionne ton partenaire et assure-toi qu’il y a bien 4 joueurs (toi + partenaire + 2 adversaires).');
+      return;
+    }
     const activeSets = sets.filter(s => s.t1 !== null && s.t2 !== null) as { t1: number; t2: number }[];
     if (activeSets.length < 2) { Alert.alert('Sets incomplets', 'Un match doit compter au moins 2 sets.'); return; }
     const err = validateSets(activeSets);
@@ -507,17 +519,17 @@ export default function ScoreEntryScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: '#102820' }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: Colors.heroBg }}>
       {/* Dark hero header */}
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 28 }}>
         <TouchableOpacity onPress={() => router.back()}
           style={{ width: 36, height: 36, backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.textOnDark} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
             <Path d="M15 18l-6-6 6-6" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: -0.5 }}>
-          {contestMatchId ? '⚠️ Contester le score' : '✍️ Saisie du score'}
+        <Text style={{ fontSize: 30, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>
+          {contestMatchId ? (<>Contester le <Text style={{ color: Colors.brand }}>score</Text></>) : (<>Le <Text style={{ color: Colors.brand }}>score</Text></>)}
         </Text>
         <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
           {loading ? 'Chargement…' : contestMatchId
@@ -529,19 +541,19 @@ export default function ScoreEntryScreen() {
       </View>
 
       {/* Content card */}
-      <View style={{ flex: 1, backgroundColor: '#f8fafc', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
+      <View style={{ flex: 1, backgroundColor: Colors.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
 
         {/* Search + filters */}
         <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
           <View style={sty.searchBar}>
-            <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.textMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
             </Svg>
             <TextInput
               value={search}
               onChangeText={setSearch}
               placeholder="Lieu ou joueur…"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={Colors.textMuted}
               style={sty.searchInput}
               returnKeyType="search"
               clearButtonMode="while-editing"
@@ -551,14 +563,14 @@ export default function ScoreEntryScreen() {
             contentContainerStyle={{ gap: 8, paddingVertical: 10 }}>
             {(['all', 'competitive', 'friendly', 'challenge'] as GameType[]).map(t => {
               const active = typeFilter === t;
-              const color = t === 'all' ? '#0f172a' : TYPE_COLOR[t];
-              const bg    = t === 'all' ? (active ? '#0f172a' : '#f1f5f9') : (active ? TYPE_BG[t] : '#f1f5f9');
-              const fg    = active ? (t === 'all' ? '#fff' : color) : '#64748b';
-              const border = active ? (t === 'all' ? '#0f172a' : color) : 'transparent';
+              const color = t === 'all' ? Colors.textPrimary : TYPE_COLOR[t];
+              const bg    = t === 'all' ? (active ? Colors.primary : Colors.bgCardAlt) : (active ? TYPE_BG[t] : Colors.bgCardAlt);
+              const fg    = active ? (t === 'all' ? Colors.textOnDark : color) : Colors.textSecondary;
+              const border = active ? (t === 'all' ? Colors.primary : color) : 'transparent';
               return (
                 <TouchableOpacity key={t} onPress={() => setTypeFilter(t)} activeOpacity={0.75}
                   style={{ backgroundColor: bg, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1.5, borderColor: border }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: fg }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: fg, fontFamily: Fonts.uiExtraBold }}>
                     {t === 'all' ? 'Tous' : TYPE_LABEL[t]}
                   </Text>
                 </TouchableOpacity>
@@ -576,10 +588,10 @@ export default function ScoreEntryScreen() {
         ) : filteredGames.length === 0 ? (
           <View style={sty.emptyBox}>
             <Text style={{ fontSize: 36, marginBottom: 10 }}>{games.length === 0 ? '🏝️' : '🔍'}</Text>
-            <Text style={{ fontSize: 15, fontWeight: '900', color: '#0f172a', marginBottom: 4 }}>
+            <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.textPrimary, marginBottom: 4, fontFamily: Fonts.uiBlack }}>
               {games.length === 0 ? 'Aucune partie à scorer' : 'Aucun résultat'}
             </Text>
-            <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: '600', textAlign: 'center' }}>
+            <Text style={{ fontSize: 12, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' }}>
               {games.length === 0 ? 'Tes parties Lobby terminées apparaîtront ici' : 'Essaie un autre filtre ou terme de recherche'}
             </Text>
           </View>
@@ -587,9 +599,11 @@ export default function ScoreEntryScreen() {
           const isScoring = scoringId === game.id;
           const others = game.participants.filter(p => p.id !== player?.id);
           const partner = game.participants.find(p => p.id === partnerId);
+          const oppCount = others.filter(p => p.id !== partnerId).length;
           const activeSets = sets.filter(s => s.t1 !== null && s.t2 !== null) as { t1: number; t2: number }[];
           const scorePreview = activeSets.map(s => `${s.t1}-${s.t2}`).join(' / ');
-          const canSubmit = activeSets.length >= 2 && !submitting;
+          // Doubles obligatoire : partenaire sélectionné + exactement 2 adversaires
+          const canSubmit = activeSets.length >= 2 && !!partnerId && oppCount === 2 && !submitting;
 
           return (
             <View key={game.id} style={sty.gameCard}>
@@ -598,14 +612,12 @@ export default function ScoreEntryScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '900', color: '#0f172a', flex: 1 }} numberOfLines={1}>{game.location}</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '900', color: Colors.textPrimary, flex: 1, fontFamily: Fonts.uiBlack }} numberOfLines={1}>{game.location}</Text>
                       {(() => { const t = getGameType(game); return (
-                        <View style={{ backgroundColor: TYPE_BG[t], borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                          <Text style={{ fontSize: 10, fontWeight: '800', color: TYPE_COLOR[t] }}>{TYPE_LABEL[t]}</Text>
-                        </View>
+                        <Pill variant={TYPE_VARIANT[t]}>{TYPE_LABEL[t]}</Pill>
                       ); })()}
                     </View>
-                    <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600', marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '600', marginTop: 2 }}>
                       📅 {formatMatchDate(game.match_date)}
                     </Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -630,7 +642,7 @@ export default function ScoreEntryScreen() {
                   {/* Partner */}
                   <View style={{ marginBottom: 16 }}>
                     <Text style={sty.sectionLabel}>Ton partenaire</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8', fontWeight: '600', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 8 }}>
                       Pré-sélectionné — modifiable si changé en cours de match
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -641,20 +653,20 @@ export default function ScoreEntryScreen() {
                             style={[sty.partnerChip, sel && sty.partnerChipSel]}
                             activeOpacity={0.75}
                           >
-                            <View style={[sty.partnerAvatar, { backgroundColor: sel ? '#4f46e5' : '#e2e8f0' }]}>
-                              <Text style={{ fontSize: 12, fontWeight: '900', color: sel ? '#fff' : '#64748b' }}>
+                            <View style={[sty.partnerAvatar, { backgroundColor: sel ? Colors.primary : Colors.border }]}>
+                              <Text style={{ fontSize: 12, fontWeight: '900', color: sel ? Colors.textOnDark : Colors.textSecondary }}>
                                 {p.name.charAt(0).toUpperCase()}
                               </Text>
                             </View>
                             <View>
-                              <Text style={[sty.partnerName, sel && { color: '#4f46e5' }]}>{p.name}</Text>
-                              <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600' }}>
+                              <Text style={[sty.partnerName, sel && { color: Colors.primary }]}>{p.name}</Text>
+                              <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
                                 Niv. {formatPadelLevel(p.elo_score)}
                               </Text>
                             </View>
                             {sel && (
-                              <View style={{ marginLeft: 'auto', backgroundColor: '#4f46e5', borderRadius: 999, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>
+                              <View style={{ marginLeft: 'auto', backgroundColor: Colors.primary, borderRadius: 999, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 8, color: Colors.textOnDark, fontWeight: '900' }}>✓</Text>
                               </View>
                             )}
                           </TouchableOpacity>
@@ -669,8 +681,8 @@ export default function ScoreEntryScreen() {
                       <Text style={sty.sectionLabel}>Score (tes points en premier)</Text>
                       {sets.length < 3 && (
                         <TouchableOpacity onPress={() => setSets(prev => [...prev, { t1: null, t2: null }])}
-                          style={{ backgroundColor: '#e0e7ff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '800', color: '#4338ca' }}>+ Set</Text>
+                          style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.brandDeep, fontFamily: Fonts.uiExtraBold }}>+ Set</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -686,8 +698,8 @@ export default function ScoreEntryScreen() {
                   {/* Score preview */}
                   {scorePreview && (
                     <View style={sty.previewBox}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 2 }}>Score</Text>
-                      <Text style={{ fontSize: 22, fontWeight: '900', color: '#0f172a', letterSpacing: 0.5 }}>{scorePreview}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: 2 }}>Score</Text>
+                      <Text style={{ fontSize: 22, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.5, fontFamily: Fonts.uiBlack }}>{scorePreview}</Text>
                     </View>
                   )}
 
@@ -695,7 +707,7 @@ export default function ScoreEntryScreen() {
                   {others.length > 0 && badges.length > 0 && (
                     <View style={{ marginBottom: 16 }}>
                       <Text style={sty.sectionLabel}>🌟 Distribue tes trophées</Text>
-                      <Text style={{ fontSize: 11, color: '#94a3b8', fontWeight: '600', marginBottom: 10 }}>
+                      <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 10 }}>
                         Optionnel — tu peux en donner plusieurs par joueur
                       </Text>
                       {others.map(p => (
@@ -712,7 +724,7 @@ export default function ScoreEntryScreen() {
                     <TouchableOpacity onPress={() => handleSubmit(game)} disabled={!canSubmit}
                       style={[sty.submitBtn, !canSubmit && { opacity: 0.5 }]} activeOpacity={0.85}>
                       {submitting
-                        ? <ActivityIndicator color="#fff" size="small" />
+                        ? <ActivityIndicator color={Colors.textOnDark} size="small" />
                         : <Text style={sty.submitBtnTxt}>Valider le score</Text>
                       }
                     </TouchableOpacity>
@@ -731,96 +743,96 @@ export default function ScoreEntryScreen() {
 // ─── Styles ───────────────────────────────────────────────────
 const sty = StyleSheet.create({
   emptyBox: {
-    backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bgCard, borderRadius: 24, borderWidth: 1, borderColor: Colors.border,
     padding: 48, alignItems: 'center', justifyContent: 'center',
   },
   gameCard: {
-    backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bgCard, borderRadius: 24, borderWidth: 1, borderColor: Colors.border,
     marginBottom: 14, overflow: 'hidden',
-    shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   playerPill: {
-    backgroundColor: '#eef2ff', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
-    borderWidth: 1, borderColor: '#c7d2fe',
+    backgroundColor: Colors.bgCardAlt, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  playerPillTxt: { fontSize: 11, fontWeight: '700', color: '#4338ca' },
+  playerPillTxt: { fontSize: 11, fontWeight: '700', color: Colors.textPrimary, fontFamily: Fonts.uiBold },
   scorerBtn: {
-    backgroundColor: '#4f46e5', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8,
   },
-  scorerBtnTxt: { fontSize: 13, fontWeight: '900', color: '#fff' },
+  scorerBtnTxt: { fontSize: 13, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack },
   scoringArea: {
-    borderTopWidth: 1, borderTopColor: '#e0e7ff', backgroundColor: '#f5f3ff',
+    borderTopWidth: 1, borderTopColor: '#e0e7ff', backgroundColor: Colors.bgCardAlt,
     padding: 16,
   },
-  sectionLabel: { fontSize: 11, fontWeight: '900', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+  sectionLabel: { fontSize: 11, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, fontFamily: Fonts.uiBlack },
   setRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#fff', borderRadius: 14, padding: 12,
-    marginBottom: 8, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bgCard, borderRadius: 14, padding: 12,
+    marginBottom: 8, borderWidth: 1, borderColor: Colors.border,
   },
-  setLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8', width: 36 },
+  setLabel: { fontSize: 11, fontWeight: '800', color: Colors.textMuted, width: 36 },
   setPickersWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, justifyContent: 'center' },
-  dash: { fontSize: 20, fontWeight: '900', color: '#cbd5e1' },
+  dash: { fontSize: 20, fontWeight: '900', color: Colors.border },
   dropTrigger: {
     width: 58, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e2e8f0', gap: 2,
+    backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, gap: 2,
   },
-  dropValue: { fontSize: 24, fontWeight: '900', color: '#0f172a', lineHeight: 28 },
+  dropValue: { fontSize: 24, fontWeight: '900', color: Colors.textPrimary, lineHeight: 28 },
   dropSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: Colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 24, paddingTop: 16,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -4 }, elevation: 12,
   },
   dropItem: {
     width: 64, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bg, borderWidth: 1.5, borderColor: Colors.border,
   },
-  dropItemSel: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
-  dropItemTxt: { fontSize: 22, fontWeight: '900', color: '#334155' },
-  dropItemTxtSel: { color: '#fff' },
+  dropItemSel: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  dropItemTxt: { fontSize: 22, fontWeight: '900', color: Colors.textSecondary },
+  dropItemTxtSel: { color: Colors.textOnDark },
   previewBox: {
-    backgroundColor: '#fff', borderRadius: 14, borderWidth: 1.5, borderColor: '#4f46e5',
+    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.primary,
     padding: 14, alignItems: 'center', marginBottom: 16,
   },
   partnerChip: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
     padding: 10, flex: 1,
   },
-  partnerChipSel: { borderColor: '#4f46e5', backgroundColor: '#eef2ff' },
+  partnerChipSel: { borderColor: Colors.brand, backgroundColor: 'rgba(255,193,26,0.14)' },
   partnerAvatar: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  partnerName: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
+  partnerName: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary, fontFamily: Fonts.uiExtraBold },
   badgeCard: {
-    backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
     padding: 12, marginBottom: 10,
   },
   badgeBtn: {
     alignItems: 'center', gap: 4, padding: 10, borderRadius: 14,
-    borderWidth: 1.5, borderColor: '#e2e8f0', backgroundColor: '#fff',
+    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bgCard,
     width: 72,
   },
-  badgeBtnSel: { borderColor: '#6366f1', backgroundColor: '#eef2ff' },
-  badgeTxt: { fontSize: 8, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.3 },
-  badgeTxtSel: { color: '#4338ca' },
+  badgeBtnSel: { borderColor: Colors.brand, backgroundColor: 'rgba(255,193,26,0.14)' },
+  badgeTxt: { fontSize: 8, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.3, fontFamily: Fonts.uiBlack },
+  badgeTxtSel: { color: Colors.brandDeep },
   badgeCheck: {
     position: 'absolute', top: -5, right: -5, width: 14, height: 14,
-    backgroundColor: '#4f46e5', borderRadius: 999, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: '#fff',
+    backgroundColor: Colors.primary, borderRadius: 999, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: Colors.bgCard,
   },
   cancelBtn: {
-    flex: 1, backgroundColor: '#f1f5f9', borderRadius: 14, padding: 14, alignItems: 'center',
+    flex: 1, backgroundColor: Colors.bgCardAlt, borderRadius: 14, padding: 14, alignItems: 'center',
   },
-  cancelBtnTxt: { fontSize: 14, fontWeight: '800', color: '#475569' },
+  cancelBtnTxt: { fontSize: 14, fontWeight: '800', color: Colors.textSecondary, fontFamily: Fonts.uiExtraBold },
   submitBtn: {
-    flex: 2, backgroundColor: '#4f46e5', borderRadius: 14, padding: 14, alignItems: 'center',
+    flex: 2, backgroundColor: Colors.primary, borderRadius: 14, padding: 14, alignItems: 'center',
   },
-  submitBtnTxt: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  submitBtnTxt: { fontSize: 14, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
     paddingHorizontal: 14, paddingVertical: 10,
   },
   searchInput: {
-    flex: 1, fontSize: 14, fontWeight: '600', color: '#0f172a', padding: 0,
+    flex: 1, fontSize: 14, fontWeight: '600', color: Colors.textPrimary, padding: 0,
   },
 });

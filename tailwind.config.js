@@ -1,32 +1,48 @@
 /** @type {import('tailwindcss').Config} */
+const { Colors } = require('./lib/colors');
+
 module.exports = {
   content: ['./app/**/*.{js,jsx,ts,tsx}', './components/**/*.{js,jsx,ts,tsx}', './hooks/**/*.{js,jsx,ts,tsx}'],
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
       colors: {
-        navy: {
-          950: '#05091A',
-          900: '#0A0F1E',
-          800: '#111827',
-          700: '#1F2937',
-          600: '#374151',
+        // Brand jaune (parcimonie : accents, liens, pills)
+        brand: {
+          DEFAULT: Colors.brand,
+          bright: Colors.brandBright,
+          deep: Colors.brandDeep,
         },
+        // CTA = noir
         primary: {
-          DEFAULT: '#10B981',
-          dark: '#059669',
-          light: '#34D399',
+          DEFAULT: Colors.primary,
+          dark: Colors.primaryDark,
+          light: Colors.primaryLight,
         },
-        league: {
-          diamond: '#67E8F9',
-          gold: '#FBBF24',
-          silver: '#9CA3AF',
-          bronze: '#F97316',
-          discovery: '#34D399',
+        accent: {
+          DEFAULT: Colors.accent,
+          dark: Colors.accentDark,
+          light: Colors.accentLight,
         },
+        ink: {
+          DEFAULT: Colors.bgDark,
+          alt: Colors.bgDarkAlt,
+          from: Colors.bgDarkFrom,
+          to: Colors.bgDarkTo,
+        },
+        surface: {
+          DEFAULT: Colors.bg,
+          card: Colors.bgCard,
+          alt: Colors.bgCardAlt,
+          cream: Colors.bgCream,
+        },
+        league: Colors.league,
       },
       fontFamily: {
-        sans: ['System'],
+        sans: ['Manrope_600SemiBold', 'System'],
+        display: ['Anton_400Regular', 'System'],
+        ui: ['Manrope_600SemiBold', 'System'],
+        'ui-bold': ['Manrope_700Bold', 'System'],
       },
     },
   },

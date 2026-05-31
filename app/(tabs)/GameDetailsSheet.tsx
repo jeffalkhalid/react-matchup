@@ -3,16 +3,18 @@ import {
   View, Text, ScrollView, TouchableOpacity, Modal, Alert,
   ActivityIndicator, StyleSheet, Share, Linking,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
-import { formatPadelLevel } from '../../lib/theme';
+import { Colors, formatPadelLevel, Fonts } from '../../lib/theme';
 import type { OpenGame } from '../../types';
 
 // ─── Types ────────────────────────────────────────────────────
 interface SlotPlayer {
   id: string; name: string; elo: number;
   wins?: number; losses?: number;
-  isCreator?: boolean; isMe?: boolean;
+  isCreator?: boolean; isMe?: boolean; isInvited?: boolean;
 }
 
 interface GameTheme {
@@ -24,7 +26,7 @@ interface GameTheme {
 
 interface EnrichedGame extends OpenGame {
   is_creator?: boolean;
-  my_status?: 'accepted' | 'pending';
+  my_status?: 'accepted' | 'pending' | 'invited' | 'waitlist';
   pending_count?: number;
 }
 
@@ -38,22 +40,22 @@ const ALL_SIDES = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'] as const;
 // ─── Helpers ──────────────────────────────────────────────────
 function getGameTheme(game: any): GameTheme {
   if (game.is_challenge) return {
-    accentHex: '#d97706', stripColor: '#f59e0b',
-    courtBg: '#fffbeb', courtLine: 'rgba(217,119,6,0.25)', courtLabel: '#92400e',
-    btnColor: '#f59e0b', heroBg: '#78350f',
-    eloBg: '#fef3c7', eloColor: '#92400e', eloBorder: '#fde68a',
+    accentHex: Colors.brandDeep, stripColor: Colors.brand,
+    courtBg: 'rgba(255,193,26,0.14)', courtLine: 'rgba(255,193,26,0.55)', courtLabel: Colors.brandDeep,
+    btnColor: Colors.brand, heroBg: Colors.heroBg,
+    eloBg: 'rgba(255,193,26,0.14)', eloColor: Colors.brandDeep, eloBorder: 'rgba(255,193,26,0.55)',
   };
   if ((game.game_format as string) === 'friendly') return {
-    accentHex: '#059669', stripColor: '#10b981',
-    courtBg: '#f0fdf4', courtLine: 'rgba(5,150,105,0.25)', courtLabel: '#065f46',
-    btnColor: '#10b981', heroBg: '#064e3b',
-    eloBg: '#d1fae5', eloColor: '#065f46', eloBorder: '#6ee7b7',
+    accentHex: '#047857', stripColor: '#10b981',
+    courtBg: 'rgba(16,185,129,0.10)', courtLine: 'rgba(16,185,129,0.45)', courtLabel: '#047857',
+    btnColor: '#10b981', heroBg: Colors.heroBg,
+    eloBg: 'rgba(16,185,129,0.10)', eloColor: '#047857', eloBorder: 'rgba(16,185,129,0.45)',
   };
   return {
-    accentHex: '#4f46e5', stripColor: '#4f46e5',
-    courtBg: '#eef2ff', courtLine: 'rgba(79,70,229,0.2)', courtLabel: '#3730a3',
-    btnColor: '#4f46e5', heroBg: '#1e1b4b',
-    eloBg: '#e0e7ff', eloColor: '#3730a3', eloBorder: '#c7d2fe',
+    accentHex: Colors.textPrimary, stripColor: Colors.primary,
+    courtBg: Colors.bgCardAlt, courtLine: Colors.border, courtLabel: Colors.textPrimary,
+    btnColor: Colors.primary, heroBg: Colors.heroBg,
+    eloBg: Colors.bgCardAlt, eloColor: Colors.textPrimary, eloBorder: Colors.border,
   };
 }
 
@@ -70,7 +72,7 @@ function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
     isMe: game.creator_id === myId,
   };
   (game.participants ?? [])
-    .filter((p: any) => p.status === 'accepted')
+    .filter((p: any) => p.status === 'accepted' || p.status === 'invited')
     .forEach((p: any) => {
       if (p.player_id === game.creator_id) return;
       const sp: SlotPlayer = {
@@ -80,6 +82,7 @@ function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
         wins: p.player?.win_count,
         losses: p.player?.loss_count,
         isMe: p.player_id === myId,
+        isInvited: p.status === 'invited',
       };
       const idx = SIDE_TO_IDX[p.team_side ?? ''];
       if (idx !== undefined && !slots[idx]) {
@@ -105,7 +108,7 @@ function Avatar({ name, size = 36, ring }: { name: string; size?: number; ring?:
       backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center',
       borderWidth: ring ? 2 : 0, borderColor: ring ?? 'transparent',
     }}>
-      <Text style={{ color: '#fff', fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
+      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -152,15 +155,17 @@ function CourtSlot({
 
   return (
     <View style={[s.cell, {
-      borderStyle: 'solid', borderColor: player.isMe ? '#f59e0b' : 'transparent',
-      backgroundColor: 'rgba(255,255,255,0.95)',
+      borderStyle: 'solid',
+      borderColor: player.isMe ? Colors.warning : player.isInvited ? Colors.border : 'transparent',
+      backgroundColor: player.isInvited ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.95)',
+      opacity: player.isInvited ? 0.65 : 1,
     }]}>
-      <Avatar name={player.name} size={30} ring={player.isMe ? '#f59e0b' : undefined} />
-      <Text style={{ fontSize: 9, fontWeight: '900', color: '#0f172a', marginTop: 3 }} numberOfLines={1}>
+      <Avatar name={player.name} size={30} ring={player.isMe ? Colors.warning : undefined} />
+      <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textPrimary, marginTop: 3 }} numberOfLines={1}>
         {player.isMe ? 'Toi' : player.name.split(' ')[0]}
       </Text>
-      <Text style={{ fontSize: 7.5, color: '#64748b' }}>
-        {SIDE_SHORT[side]} · {formatPadelLevel(player.elo)}
+      <Text style={{ fontSize: 7.5, color: Colors.textSecondary }}>
+        {player.isInvited ? `⏳ Invité` : `${SIDE_SHORT[side]} · ${formatPadelLevel(player.elo)}`}
       </Text>
     </View>
   );
@@ -177,7 +182,10 @@ interface Props {
   onCreatorChangeSide: (gameId: string, side: string) => Promise<void>;
   onApprovePending: (participantId: string, gameId: string, participantPlayerId: string, currentApprovals: string[]) => Promise<void>;
   onDeclinePending: (participantId: string) => Promise<void>;
+  onAcceptInvitation: (participantId: string, gameId: string) => Promise<void>;
+  onDeclineInvitation: (participantId: string, gameId: string) => Promise<void>;
   onLeave: (gameId: string, participantId: string, wasAccepted: boolean) => void;
+  onCancelGame: (gameId: string) => void;
 }
 
 // ─── Calendar + Share helpers ─────────────────────────────────
@@ -230,8 +238,10 @@ async function shareGame(game: EnrichedGame) {
 
 // ─── Main component ───────────────────────────────────────────
 export default function GameDetailsSheet({
-  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onLeave,
+  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onLeave, onCancelGame,
 }: Props) {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [mySlot, setMySlot] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isWaitlisted, setIsWaitlisted] = useState(false);
@@ -249,13 +259,17 @@ export default function GameDetailsSheet({
 
   const isCreator    = game.creator_id === playerId;
   const myParticipant = (game.participants ?? []).find((p: any) => p.player_id === playerId);
-  const alreadyIn    = !!myParticipant && ['accepted', 'pending', 'waitlist'].includes((myParticipant as any)?.status);
-  const isAccepted   = (myParticipant as any)?.status === 'accepted';
+  const myStatus     = (myParticipant as any)?.status;
+  const alreadyIn    = !!myParticipant && ['accepted', 'pending', 'waitlist', 'invited'].includes(myStatus);
+  const isAccepted   = myStatus === 'accepted';
+  const isInvited    = myStatus === 'invited';
   const canParticipate = !isCreator && !alreadyIn;
 
   const pendingPlayers = (game.participants ?? []).filter((p: any) => p.status === 'pending');
+  const invitedPlayers = (game.participants ?? []).filter((p: any) => p.status === 'invited');
   const acceptedCount  = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
-  const isFull         = 1 + acceptedCount >= 4;
+  const heldCount      = acceptedCount + invitedPlayers.length;
+  const isFull         = 1 + heldCount >= 4;
   const waitlistCount  = (game.participants ?? []).filter((p: any) => p.status === 'waitlist').length;
   const requiredVotes  = Math.min(1 + acceptedCount, 3);
 
@@ -293,36 +307,62 @@ export default function GameDetailsSheet({
   // ─── CTA button ───────────────────────────────────────────
   function renderCTA() {
     if (isCreator || isAccepted) {
-      const currentSide = isCreator
-        ? (game.creator_side ?? 'A_GAU')
-        : (myParticipant as any)?.team_side ?? null;
-      return (
-        <View style={{ gap: 8 }}>
-          <View style={[sty.ctaBtn, { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }]}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b' }}>
-              {currentSide
-                ? `✓ Éq. ${SIDE_TEAM[currentSide]} · ${SIDE_POS[currentSide]} — touche un slot libre pour changer`
-                : '↔ Touche un slot libre pour changer de place'}
-            </Text>
-          </View>
-          {isAccepted && myParticipant && (
-            <TouchableOpacity
-              onPress={() => onLeave(game.id, (myParticipant as any).id, true)}
-              style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '900', color: '#dc2626' }}>Quitter la partie</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
+      if (isCreator) {
+        return (
+          <TouchableOpacity
+            onPress={() => onCancelGame(game.id)}
+            style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+          >
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Annuler la partie</Text>
+          </TouchableOpacity>
+        );
+      }
+      if (isAccepted && myParticipant) {
+        return (
+          <TouchableOpacity
+            onPress={() => onLeave(game.id, (myParticipant as any).id, true)}
+            style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+          >
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Quitter la partie</Text>
+          </TouchableOpacity>
+        );
+      }
+      return null;
     }
     if (alreadyIn) {
-      const isPending = (myParticipant as any)?.status === 'pending';
-      const isWait    = (myParticipant as any)?.status === 'waitlist';
+      if (isInvited && myParticipant) {
+        const isChallenge = !!game.is_challenge;
+        return (
+          <View style={{ flex: 1, gap: 8 }}>
+            <View style={{ height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,193,26,0.14)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
+              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brandDeep }}>
+                {isChallenge ? '⚡ Tu as été défié !' : '✉️ Tu es invité'}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => onDeclineInvitation((myParticipant as any).id, game.id)}
+                style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
+              >
+                <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Refuser</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onAcceptInvitation((myParticipant as any).id, game.id)}
+                style={[sty.ctaBtn, { backgroundColor: Colors.success, elevation: 6, shadowColor: Colors.success, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
+              >
+                <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
+                  {isChallenge ? '⚡ Relever le défi' : '✓ Accepter'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+      const isPending = myStatus === 'pending';
       return (
-        <View style={{ gap: 8 }}>
-          <View style={[sty.ctaBtn, { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' }]}>
-            <Text style={{ fontSize: 13, fontWeight: '900', color: '#d97706' }}>
+        <View style={{ flex: 1, gap: 8 }}>
+          <View style={{ height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' }}>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#B45309' }}>
               {isPending ? '⏳ Demande envoyée' : "⏳ Liste d'attente"}
             </Text>
           </View>
@@ -331,7 +371,7 @@ export default function GameDetailsSheet({
               onPress={() => onLeave(game.id, (myParticipant as any).id, false)}
               style={[sty.ctaBtn, { backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca' }]}
             >
-              <Text style={{ fontSize: 13, fontWeight: '900', color: '#dc2626' }}>
+              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>
                 {isPending ? 'Retirer ma candidature' : "Quitter la liste d'attente"}
               </Text>
             </TouchableOpacity>
@@ -342,11 +382,11 @@ export default function GameDetailsSheet({
     if (isFull) return isWaitlisted
       ? (
         <View style={[sty.ctaBtn, { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' }]}>
-          <Text style={{ fontSize: 13, fontWeight: '900', color: '#059669' }}>✓ Sur la liste d'attente</Text>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.success }}>✓ Sur la liste d'attente</Text>
         </View>
       ) : (
-        <TouchableOpacity onPress={handleWaitlist} style={[sty.ctaBtn, { backgroundColor: '#ef4444', elevation: 6, shadowColor: '#ef4444', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
-          <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>⏳ Rejoindre la liste d'attente</Text>
+        <TouchableOpacity onPress={handleWaitlist} style={[sty.ctaBtn, { backgroundColor: Colors.danger, elevation: 6, shadowColor: Colors.danger, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>⏳ Rejoindre la liste d'attente</Text>
         </TouchableOpacity>
       );
     if (mySlot) return (
@@ -355,8 +395,8 @@ export default function GameDetailsSheet({
         elevation: 6, shadowColor: theme.btnColor, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       }]}>
         {isJoining
-          ? <ActivityIndicator color="#fff" />
-          : <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>
+          ? <ActivityIndicator color={Colors.textOnDark} />
+          : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
               {outOfLevel
                 ? `Envoyer une demande — Éq. ${SIDE_TEAM[mySlot]} ${SIDE_SHORT[mySlot]}`
                 : `✓ Confirmer — Éq. ${SIDE_TEAM[mySlot]} ${SIDE_SHORT[mySlot]}`}
@@ -365,8 +405,8 @@ export default function GameDetailsSheet({
       </TouchableOpacity>
     );
     return (
-      <View style={[sty.ctaBtn, { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' }]}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: '#94a3b8' }}>
+      <View style={[sty.ctaBtn, { backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }]}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textMuted }}>
           ↑ Choisissez un emplacement{outOfLevel ? ' (demande)' : ''}
         </Text>
       </View>
@@ -374,18 +414,10 @@ export default function GameDetailsSheet({
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(11,17,33,0.6)', justifyContent: 'flex-end' }}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-
-        <View style={sty.sheet}>
-          {/* Drag handle */}
-          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4, backgroundColor: '#0b1121' }}>
-            <View style={{ width: 36, height: 4, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 2 }} />
-          </View>
-
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <View style={sty.sheet}>
           {/* ── Dark hero ── */}
-          <View style={{ backgroundColor: '#0b1121', paddingHorizontal: 16, paddingBottom: 14, position: 'relative', overflow: 'hidden' }}>
+          <View style={{ backgroundColor: Colors.heroBg, paddingHorizontal: 16, paddingTop: insets.top + 8, paddingBottom: 14, position: 'relative', overflow: 'hidden' }}>
             {/* Type strip */}
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: theme.stripColor }} />
             {/* Nav */}
@@ -414,25 +446,25 @@ export default function GameDetailsSheet({
                   </Svg>
                 </TouchableOpacity>
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
                     {typeLabel}
                   </Text>
                 </View>
               </View>
             </View>
             {/* Date + time */}
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 2 }}>{dateStr}</Text>
-            <Text style={{ fontSize: 34, fontWeight: '900', color: '#fff', letterSpacing: -1, marginBottom: 6 }}>{timeStr || '—'}</Text>
+            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 2 }}>{dateStr}</Text>
+            <Text style={{ fontSize: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, marginBottom: 6 }}>{timeStr || '—'}</Text>
             {/* Location + gender */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
               <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
-                <Path stroke="#94a3b8" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" d="M20 10c0 7-8 13-8 13S4 17 4 10a8 8 0 0 1 16 0Z" />
-                <Circle cx={12} cy={10} r={3} stroke="#94a3b8" strokeWidth={2.2} />
+                <Path stroke={Colors.textMuted} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" d="M20 10c0 7-8 13-8 13S4 17 4 10a8 8 0 0 1 16 0Z" />
+                <Circle cx={12} cy={10} r={3} stroke={Colors.textMuted} strokeWidth={2.2} />
               </Svg>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#cbd5e1', flex: 1 }} numberOfLines={1}>{game.location}</Text>
+              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.border, flex: 1 }} numberOfLines={1}>{game.location}</Text>
               {(game as any).gender_pref && (
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: '900' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
                     {(game as any).gender_pref === 'men' ? '♂ Hommes' : (game as any).gender_pref === 'women' ? '♀ Femmes' : '⚧ Mixte'}
                   </Text>
                 </View>
@@ -441,16 +473,16 @@ export default function GameDetailsSheet({
             {/* Meta strip */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#34d399' }} />
-                <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600' }}>Niv. {minLvl} – {maxLvl}</Text>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success }} />
+                <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '600' }}>Niv. {minLvl} – {maxLvl}</Text>
               </View>
               <View style={{
                 marginLeft: 'auto',
-                backgroundColor: isFull ? '#ef4444' : (3 - acceptedCount) <= 1 ? '#f59e0b' : '#22c55e',
+                backgroundColor: isFull ? Colors.danger : (3 - heldCount) <= 1 ? Colors.warning : Colors.success,
                 borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
               }}>
-                <Text style={{ color: isFull ? '#fff' : '#111', fontSize: 10, fontWeight: '900' }}>
-                  {isFull ? `Complet · ${waitlistCount} en attente` : `${3 - acceptedCount} place${(3 - acceptedCount) > 1 ? 's' : ''} libre${(3 - acceptedCount) > 1 ? 's' : ''}`}
+                <Text style={{ color: isFull ? Colors.textOnDark : Colors.textPrimary, fontSize: 10, fontWeight: '900' }}>
+                  {isFull ? `Complet · ${waitlistCount} en attente` : `${3 - heldCount} place${(3 - heldCount) > 1 ? 's' : ''} libre${(3 - heldCount) > 1 ? 's' : ''}`}
                 </Text>
               </View>
             </View>
@@ -466,8 +498,8 @@ export default function GameDetailsSheet({
                   <View style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 16, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                     <Text style={{ fontSize: 18 }}>🔒</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: '#b91c1c' }}>Partie complète</Text>
-                      <Text style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>Rejoignez la liste d'attente — vous serez prévenu si une place se libère.</Text>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#B91C1C' }}>Partie complète</Text>
+                      <Text style={{ fontSize: 11, color: Colors.danger, marginTop: 2 }}>Rejoignez la liste d'attente — vous serez prévenu si une place se libère.</Text>
                     </View>
                   </View>
                 )}
@@ -475,7 +507,7 @@ export default function GameDetailsSheet({
                   <View style={{ backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a', borderRadius: 16, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                     <Text style={{ fontSize: 18 }}>⚠️</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: '#92400e' }}>Niveau hors fourchette</Text>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#B45309' }}>Niveau hors fourchette</Text>
                       <Text style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>
                         Requis {minLvl}–{maxLvl}, le vôtre est {formatPadelLevel(myElo)}. Vous pouvez quand même envoyer une demande.
                       </Text>
@@ -487,11 +519,11 @@ export default function GameDetailsSheet({
 
             {/* ── Court visualization ── */}
             <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
-              <View style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 18, padding: 14 }}>
+              <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 18, padding: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 1 }}>Le terrain</Text>
+                  <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 1 }}>Le terrain</Text>
                   {courtHint ? (
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: isFull ? '#dc2626' : mySlot ? '#059669' : '#94a3b8', flexShrink: 1, marginLeft: 8 }} numberOfLines={1}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: isFull ? Colors.danger : mySlot ? Colors.success : Colors.textMuted, flexShrink: 1, marginLeft: 8 }} numberOfLines={1}>
                       {courtHint}
                     </Text>
                   ) : null}
@@ -576,38 +608,12 @@ export default function GameDetailsSheet({
               </View>
             </View>
 
-            {/* Group stats */}
-            {filled.length > 0 && (() => {
-              const totalMatches = filled.reduce((a, s) => a + (s.player.wins ?? 0) + (s.player.losses ?? 0), 0);
-              const avgWin = Math.round(
-                filled.reduce((a, s) => {
-                  const t = (s.player.wins ?? 0) + (s.player.losses ?? 0);
-                  return a + (t > 0 ? (s.player.wins ?? 0) / t * 100 : 0);
-                }, 0) / filled.length
-              );
-              return (
-                <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 10 }}>
-                  {[
-                    { label: 'Win rate', value: `${avgWin}%`, sub: 'moyen' },
-                    { label: 'Matchs', value: String(totalMatches), sub: 'cumulés' },
-                    { label: 'Inscrits', value: `${filled.length}/4`, sub: 'confirmés' },
-                  ].map((s, i) => (
-                    <View key={i} style={{ flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 14, padding: 10, alignItems: 'center' }}>
-                      <Text style={{ fontSize: 8, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>{s.label}</Text>
-                      <Text style={{ fontSize: 17, fontWeight: '900', color: theme.accentHex, marginTop: 2 }}>{s.value}</Text>
-                      <Text style={{ fontSize: 8.5, color: '#94a3b8', marginTop: 1 }}>{s.sub}</Text>
-                    </View>
-                  ))}
-                </View>
-              );
-            })()}
-
             {/* Pending candidates — creator / accepted only */}
             {pendingPlayers.length > 0 && (isCreator || isAccepted) && (
               <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' }} />
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.danger }} />
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
                     {pendingPlayers.length} candidature{pendingPlayers.length > 1 ? 's' : ''}
                   </Text>
                 </View>
@@ -616,47 +622,47 @@ export default function GameDetailsSheet({
                     const approvals = p.approvals ?? [];
                     const hasVoted  = approvals.includes(playerId);
                     return (
-                      <View key={p.id} style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, padding: 12 }}>
+                      <View key={p.id} style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 12 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                           <Avatar name={p.player?.name ?? '?'} size={40} />
                           <View style={{ flex: 1 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f172a' }}>{p.player?.name}</Text>
-                              <View style={{ backgroundColor: '#f1f5f9', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-                                <Text style={{ fontSize: 9, fontWeight: '900', color: '#64748b' }}>Niv.{formatPadelLevel(p.player?.elo_score ?? 0)}</Text>
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.player?.name}</Text>
+                              <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary }}>Niv.{formatPadelLevel(p.player?.elo_score ?? 0)}</Text>
                               </View>
                             </View>
-                            <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+                            <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
                               {approvals.length}/{requiredVotes} approbation{approvals.length > 1 ? 's' : ''}
                             </Text>
                           </View>
                           {isFull ? (
-                            <View style={{ backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#94a3b8' }}>En attente</Text>
+                            <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted }}>En attente</Text>
                             </View>
                           ) : hasVoted ? (
                             <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
-                              <Text style={{ fontSize: 10, fontWeight: '900', color: '#059669' }}>Voté ✓</Text>
+                              <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.success }}>Voté ✓</Text>
                             </View>
                           ) : (
                             <View style={{ flexDirection: 'row', gap: 6 }}>
                               <TouchableOpacity
                                 onPress={() => onApprovePending(p.id, game.id, p.player_id, approvals)}
-                                style={{ width: 36, height: 36, backgroundColor: '#22c55e', borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>✓</Text>
+                                style={{ width: 36, height: 36, backgroundColor: Colors.success, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>✓</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() => onDeclinePending(p.id)}
-                                style={{ width: 36, height: 36, backgroundColor: '#f1f5f9', borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ color: '#64748b', fontWeight: '900' }}>✕</Text>
+                                style={{ width: 36, height: 36, backgroundColor: Colors.bgCardAlt, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ color: Colors.textSecondary, fontWeight: '900' }}>✕</Text>
                               </TouchableOpacity>
                             </View>
                           )}
                         </View>
                         {/* Approval progress bar */}
-                        <View style={{ backgroundColor: '#f1f5f9', borderRadius: 99, height: 5, overflow: 'hidden' }}>
+                        <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 99, height: 5, overflow: 'hidden' }}>
                           <View style={{
-                            height: '100%', backgroundColor: '#22c55e', borderRadius: 99,
+                            height: '100%', backgroundColor: Colors.success, borderRadius: 99,
                             width: `${Math.min(approvals.length / requiredVotes * 100, 100)}%`,
                           }} />
                         </View>
@@ -671,8 +677,8 @@ export default function GameDetailsSheet({
             {filled.length > 0 && (
               <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>Les joueurs</Text>
-                  <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600' }}>
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Les joueurs</Text>
+                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
                     {filled.length} confirmé{filled.length > 1 ? 's' : ''} · {emptySlots.length} libre{emptySlots.length > 1 ? 's' : ''}
                   </Text>
                 </View>
@@ -682,17 +688,21 @@ export default function GameDetailsSheet({
                     const winRate = total > 0 ? Math.round((p.wins ?? 0) / total * 100) : 0;
                     const isTeamA = SIDE_TEAM[side] === 'A';
                     return (
-                      <View key={side} style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 18, padding: 14 }}>
+                      <TouchableOpacity
+                        key={side}
+                        onPress={() => router.push(`/player/${p.id}` as any)}
+                        activeOpacity={0.8}
+                        style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.bgCardAlt, borderRadius: 18, padding: 14 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: total > 0 ? 10 : 0 }}>
-                          <Avatar name={p.name} size={44} ring={p.isMe ? '#f59e0b' : undefined} />
+                          <Avatar name={p.name} size={44} ring={p.isMe ? Colors.warning : undefined} />
                           <View style={{ flex: 1 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <Text style={{ fontSize: 14, fontWeight: '900', color: '#0f172a' }}>{p.isMe ? 'Toi' : p.name}</Text>
-                              <View style={{ backgroundColor: '#f1f5f9', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-                                <Text style={{ fontSize: 9, fontWeight: '900', color: '#64748b' }}>Niv.{formatPadelLevel(p.elo)}</Text>
+                              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.isMe ? 'Toi' : p.name}</Text>
+                              <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary }}>Niv.{formatPadelLevel(p.elo)}</Text>
                               </View>
                             </View>
-                            <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+                            <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
                               {p.isCreator ? '👑 Créateur' : 'Participant'}
                             </Text>
                           </View>
@@ -701,50 +711,43 @@ export default function GameDetailsSheet({
                             borderWidth: 1, borderColor: isTeamA ? '#c7d2fe' : '#ddd6fe',
                             borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6, alignItems: 'center',
                           }}>
-                            <Text style={{ fontSize: 8, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>Éq. {SIDE_TEAM[side]}</Text>
+                            <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Éq. {SIDE_TEAM[side]}</Text>
                             <Text style={{ fontSize: 10, fontWeight: '900', color: isTeamA ? '#4338ca' : '#6d28d9' }}>{SIDE_POS[side]}</Text>
                           </View>
                         </View>
                         {total > 0 && (
                           <View style={{ flexDirection: 'row', gap: 8 }}>
-                            <View style={{ flex: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 10, padding: 8, alignItems: 'center' }}>
-                              <Text style={{ fontSize: 8, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase' }}>Matchs</Text>
-                              <Text style={{ fontSize: 15, fontWeight: '900', color: '#0f172a' }}>{total}</Text>
+                            <View style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.bgCardAlt, borderRadius: 10, padding: 8, alignItems: 'center' }}>
+                              <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase' }}>Matchs</Text>
+                              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{total}</Text>
                             </View>
-                            <View style={{ flex: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 10, padding: 8, alignItems: 'center' }}>
-                              <Text style={{ fontSize: 8, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase' }}>Victoires</Text>
-                              <Text style={{ fontSize: 15, fontWeight: '900', color: '#0f172a' }}>
-                                {winRate}<Text style={{ fontSize: 10, color: '#94a3b8' }}>%</Text>
+                            <View style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.bgCardAlt, borderRadius: 10, padding: 8, alignItems: 'center' }}>
+                              <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase' }}>Victoires</Text>
+                              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+                                {winRate}<Text style={{ fontSize: 10, color: Colors.textMuted }}>%</Text>
                               </Text>
                             </View>
                           </View>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>
               </View>
             )}
 
-            {/* Info note */}
-            <View style={{ paddingHorizontal: 14, paddingTop: 12 }}>
-              <View style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                <Text style={{ fontSize: 14 }}>💡</Text>
-                <Text style={{ fontSize: 11, color: '#94a3b8', fontWeight: '600', flex: 1 }}>
-                  Annulation gratuite jusqu'à 24h avant la partie.
-                </Text>
-              </View>
-            </View>
           </ScrollView>
 
-          {/* ── Sticky CTA ── */}
-          <View style={sty.ctaBar}>
-            <TouchableOpacity onPress={onClose} style={sty.ctaBack}>
-              <Text style={{ fontSize: 14, fontWeight: '900', color: '#64748b' }}>←</Text>
-            </TouchableOpacity>
-            {renderCTA()}
-          </View>
-        </View>
+          {/* ── Sticky CTA — only when there is an action ── */}
+          {(() => {
+            const cta = renderCTA();
+            if (!cta) return null;
+            return (
+              <View style={[sty.ctaBar, { paddingBottom: insets.bottom + 10 }]}>
+                {cta}
+              </View>
+            );
+          })()}
       </View>
     </Modal>
   );
@@ -753,11 +756,9 @@ export default function GameDetailsSheet({
 // ─── Styles ───────────────────────────────────────────────────
 const sty = StyleSheet.create({
   sheet: {
-    backgroundColor: '#f8fafc',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    height: '88%', overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 40,
-    shadowOffset: { width: 0, height: -8 }, elevation: 30,
+    flex: 1,
+    backgroundColor: Colors.bg,
+    overflow: 'hidden',
   },
   ctaBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -768,7 +769,7 @@ const sty = StyleSheet.create({
   },
   ctaBack: {
     width: 50, height: 50, borderRadius: 14, borderWidth: 1,
-    borderColor: '#e2e8f0', backgroundColor: '#fff',
+    borderColor: Colors.border, backgroundColor: Colors.bgCard,
     alignItems: 'center', justifyContent: 'center',
   },
   ctaBtn: {
