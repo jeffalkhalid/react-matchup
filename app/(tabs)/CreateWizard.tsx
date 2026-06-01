@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Modal, TextInput,
   Alert, ActivityIndicator, StyleSheet, Dimensions, KeyboardAvoidingView, Platform,
+  Share, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
@@ -24,6 +25,8 @@ export interface WizardResult {
 interface Props {
   visible: boolean;
   onClose: () => void;
+  /** Appelé depuis l'écran "Partie publiée" — permet de basculer le Lobby sur l'onglet À venir. Fallback: onClose. */
+  onPublishedDone?: () => void;
   onPublish: (data: WizardResult) => Promise<string>;
   player: { id: string; name: string; elo_score: number; gender?: string } | null;
   initialGameType?: GameType;
@@ -49,6 +52,15 @@ const FR_DAYS_SHORT   = ['Lu','Ma','Me','Je','Ve','Sa','Di'];
 // ─── Helpers ──────────────────────────────────────────────────
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// True when the chosen day (YYYY-MM-DD) + time (HH:MM) is already in the past.
+// Used to forbid organising a match earlier than now when the day is today.
+function isPastSlot(day: string, time: string): boolean {
+  if (!day || !time) return false;
+  const dt = new Date(`${day}T${time}`);
+  if (isNaN(dt.getTime())) return false;
+  return dt.getTime() < Date.now();
 }
 
 function buildDays(n: number): Array<{ label: string; val: string }> {
@@ -174,7 +186,7 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
 }
 
 // ─── Main component ───────────────────────────────────────────
-export default function CreateWizard({ visible, onClose, onPublish, player, initialGameType, initialInvite, initialInvites }: Props) {
+export default function CreateWizard({ visible, onClose, onPublishedDone, onPublish, player, initialGameType, initialInvite, initialInvites }: Props) {
   const insets = useSafeAreaInsets();
   const ALL_DAYS   = buildDays(92);
   const QUICK_DAYS = ALL_DAYS.slice(0, 7);
@@ -182,6 +194,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
   // UI state
   const [step,        setStep]        = useState(0);
   const [published,   setPublished]   = useState(false);
+  const [publishedGameId, setPublishedGameId] = useState<string | null>(null);
   const [submitting,  setSubmitting]  = useState(false);
   const [showAbandon, setShowAbandon] = useState(false);
   const [showCal,     setShowCal]     = useState(false);
@@ -218,6 +231,12 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
     setFormState(f => ({ ...f, [k]: v }));
   }, []);
 
+  // Select a day; drop the chosen time if it would now be in the past (e.g. when
+  // switching to "Aujourd'hui" after having picked an earlier slot on another day).
+  const pickDay = useCallback((val: string) => {
+    setFormState(f => ({ ...f, day: val, time: isPastSlot(val, f.time) ? '' : f.time }));
+  }, []);
+
   const t = getTheme(form.gameType);
 
   // Reset on open
@@ -226,7 +245,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
     const lv = player ? eloToLevel(player.elo_score) : 4.0;
     const mn = Math.max(1.0, Math.round((lv - 0.5) * 2) / 2);
     const mx = Math.min(8.0, Math.round((lv + 0.5) * 2) / 2);
-    setStep(0); setPublished(false); setSubmitting(false);
+    setStep(0); setPublished(false); setPublishedGameId(null); setSubmitting(false);
     setShowAbandon(false); setShowCal(false); setVenueOpen(false); setVenueSearch('');
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
     const gameType = initialGameType ?? 'Compétitif';
@@ -301,7 +320,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
 
   // Step validation
   const canNext = [
-    !!form.day && !!form.time && !!form.location,
+    !!form.day && !!form.time && !!form.location && !isPastSlot(form.day, form.time),
     !!form.gameType && form.minLevel <= form.maxLevel,
     true,
   ][step] ?? true;
@@ -331,9 +350,13 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
 
   async function handlePublish() {
     if (submitting) return;
+    if (isPastSlot(form.day, form.time)) {
+      Alert.alert('Heure dépassée', "L'heure choisie est déjà passée. Choisis un créneau à venir.");
+      return;
+    }
     setSubmitting(true);
     try {
-      await onPublish({
+      const newId = await onPublish({
         gameType:       form.gameType,
         genre:          form.genre,
         matchDate:      form.day,
@@ -345,9 +368,39 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         creatorSide:    form.mySlot ? SLOT_TO_SIDE[form.mySlot] : 'A_GAU',
         confirmedPlayers: Object.entries(form.invites).map(([slot, p]) => ({ ...p, team_side: SLOT_TO_SIDE[slot] })),
       });
+      setPublishedGameId(newId ?? null);
       setPublished(true);
     } catch { /* onPublish shows Alert */ }
     finally { setSubmitting(false); }
+  }
+
+  // ─── Partage + Ajout au calendrier (écran "Partie publiée") ────
+  async function shareCreatedGame() {
+    const start = new Date(`${form.day}T${form.time}:00`);
+    const dateStr = start.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const link = publishedGameId ? `\n🔗 https://matchup-padel.vercel.app/lobby?game=${publishedGameId}` : '';
+    const msg =
+      `Match Padel – ${form.gameType}\n` +
+      `📅 ${dateStr} à ${form.time}\n` +
+      `📍 ${form.location}\n` +
+      `📊 Niveau : ${form.minLevel.toFixed(2)} – ${form.maxLevel.toFixed(2)}${link}`;
+    try { await Share.share({ message: msg }); } catch { /* cancelled */ }
+  }
+
+  function addCreatedGameToCalendar() {
+    const start = new Date(`${form.day}T${form.time}:00`);
+    const end = new Date(start.getTime() + 90 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: `Match Padel – ${form.location}`,
+      dates: `${fmt(start)}/${fmt(end)}`,
+      location: form.location,
+      details: 'Match Padel',
+    });
+    Linking.openURL(`https://calendar.google.com/calendar/render?${params}`);
   }
 
   // ─── Step 0: When & Where ──────────────────────────────────
@@ -399,7 +452,12 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
               />
               {venueSearch ? <TouchableOpacity onPress={() => setVenueSearch('')}><Text style={{ color: Colors.textMuted }}>✕</Text></TouchableOpacity> : null}
             </View>
-            <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ maxHeight: 200 }}
+              showsVerticalScrollIndicator
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
               {filteredClubs.map(club => {
                 const active = form.location === club;
                 return (
@@ -431,7 +489,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
           {QUICK_DAYS.map(d => {
             const active = form.day === d.val;
             return (
-              <TouchableOpacity key={d.val} onPress={() => { set('day', d.val); setShowCal(false); }}
+              <TouchableOpacity key={d.val} onPress={() => { pickDay(d.val); setShowCal(false); }}
                 style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
                   borderWidth: 2, borderColor: active ? t.accent : Colors.border,
                   backgroundColor: active ? t.selectBg : Colors.bgCard,
@@ -454,7 +512,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         </View>
 
         {showCal && (
-          <MiniCalendar selectedVal={form.day} onSelect={v => { set('day', v); setShowCal(false); }} t={t} allDays={ALL_DAYS} />
+          <MiniCalendar selectedVal={form.day} onSelect={v => { pickDay(v); setShowCal(false); }} t={t} allDays={ALL_DAYS} />
         )}
 
         {/* Selected day pill (when from calendar) */}
@@ -465,7 +523,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
             <Text style={{ fontSize: 12, fontWeight: '900', color: t.selectColor, flex: 1 }}>
               {ALL_DAYS.find(d => d.val === form.day)?.label || form.day}
             </Text>
-            <TouchableOpacity onPress={() => set('day', QUICK_DAYS[0].val)}>
+            <TouchableOpacity onPress={() => pickDay(QUICK_DAYS[0].val)}>
               <Text style={{ color: t.selectColor, fontWeight: '900' }}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -476,13 +534,17 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
           {TIMES.map(tm => {
             const active = form.time === tm;
+            const past   = isPastSlot(form.day, tm);
             return (
-              <TouchableOpacity key={tm} onPress={() => set('time', tm)}
+              <TouchableOpacity key={tm} disabled={past} onPress={() => set('time', tm)}
                 style={{ width: '23%', paddingVertical: 9, borderRadius: 10,
                   borderWidth: 1.5, borderColor: active ? t.eloBorder : Colors.border,
                   backgroundColor: active ? t.selectBg : Colors.bgCard, alignItems: 'center',
+                  opacity: past ? 0.35 : 1,
                 }}>
-                <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600', color: active ? t.selectColor : Colors.textPrimary }}>{tm}</Text>
+                <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600',
+                  color: active ? t.selectColor : Colors.textPrimary,
+                  textDecorationLine: past ? 'line-through' : 'none' }}>{tm}</Text>
               </TouchableOpacity>
             );
           })}
@@ -802,7 +864,6 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: Colors.bg, paddingTop: insets.top }}>
           <View style={{ alignItems: 'center', padding: 32, paddingBottom: 16 }}>
-            <Text style={{ fontSize: 52, marginBottom: 12 }}>🎾</Text>
             <Text style={{ fontSize: 26, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6 }}>
               Partie <Text style={{ color: Colors.brand }}>publiée !</Text>
             </Text>
@@ -833,11 +894,27 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
             </View>
           </ScrollView>
           <View style={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16, gap: 10 }}>
-            <TouchableOpacity onPress={onClose} style={{
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={shareCreatedGame} style={{
+                flex: 1, padding: 13, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
+                backgroundColor: Colors.bgCard, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+              }}>
+                <Text style={{ fontSize: 15 }}>📤</Text>
+                <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiExtraBold, fontWeight: '800', fontSize: 13 }}>Partager</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={addCreatedGameToCalendar} style={{
+                flex: 1, padding: 13, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
+                backgroundColor: Colors.bgCard, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+              }}>
+                <Text style={{ fontSize: 15 }}>📅</Text>
+                <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiExtraBold, fontWeight: '800', fontSize: 13 }}>Calendrier</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={onPublishedDone ?? onClose} style={{
               padding: 14, borderRadius: 14, backgroundColor: t.btnBg, alignItems: 'center',
               shadowColor: t.btnBg, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 6,
             }}>
-              <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Retour au Lobby 🎾</Text>
+              <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Retour au Lobby</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -939,7 +1016,7 @@ export default function CreateWizard({ visible, onClose, onPublish, player, init
               }}>
               {submitting
                 ? <ActivityIndicator color={Colors.textMuted} />
-                : <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Publier la partie 🎾</Text>
+                : <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14 }}>Publier la partie</Text>
               }
             </TouchableOpacity>
           )}

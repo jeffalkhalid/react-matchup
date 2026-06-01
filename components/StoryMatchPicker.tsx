@@ -3,12 +3,13 @@ import { View, Text, Modal, TouchableOpacity, FlatList, ActivityIndicator } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { Colors, Fonts } from '../lib/theme';
-import type { StoryMatch } from './StoryCanvas';
+import { parseSets, type StoryMatchData } from './story/storyTheme';
 
 interface MatchRow {
   id: string;
   score_text: string | null;
   created_at: string;
+  is_challenge: boolean | null;
   winner_id: string | null;
   loser_id: string | null;
   winner_id_2: string | null;
@@ -24,7 +25,7 @@ interface Props {
   visible: boolean;
   playerId: string;
   onClose: () => void;
-  onPick: (match: StoryMatch) => void;
+  onPick: (match: StoryMatchData) => void;
 }
 
 export default function StoryMatchPicker({ visible, playerId, onClose, onPick }: Props) {
@@ -37,7 +38,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
     setLoading(true);
     supabase
       .from('matches')
-      .select(`id, score_text, created_at, winner_id, loser_id, winner_id_2, loser_id_2,
+      .select(`id, score_text, created_at, is_challenge, winner_id, loser_id, winner_id_2, loser_id_2,
         winner:winner_id(name), loser:loser_id(name),
         winner_2:winner_id_2(name), loser_2:loser_id_2(name),
         game:game_id(location, match_date)`)
@@ -52,15 +53,19 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
   }, [visible, playerId]);
 
   const handlePick = (m: MatchRow) => {
+    const won = m.winner_id === playerId || m.winner_id_2 === playerId;
+    const dateSrc = m.game?.match_date ?? m.created_at;
+    // score_text est stocké côté vainqueur ; on l'oriente côté joueur (mon score d'abord).
+    const raw = parseSets(m.score_text);
+    const sets = won ? raw : raw.map(([a, b]) => [b, a] as [number, number]);
     onPick({
-      score_text: m.score_text,
-      created_at: m.created_at,
-      winner_name: m.winner?.name ?? '?',
-      winner_2_name: m.winner_2?.name ?? null,
-      loser_name: m.loser?.name ?? '?',
-      loser_2_name: m.loser_2?.name ?? null,
-      location: m.game?.location ?? null,
-      match_date: m.game?.match_date ?? null,
+      result: won ? 'win' : 'loss',
+      sets,
+      winners: [m.winner?.name, m.winner_2?.name].filter(Boolean) as string[],
+      losers: [m.loser?.name, m.loser_2?.name].filter(Boolean) as string[],
+      location: m.game?.location ?? undefined,
+      date: dateSrc ? new Date(dateSrc).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : undefined,
+      type: m.is_challenge ? 'Défi' : 'Compétitif',
     });
   };
 

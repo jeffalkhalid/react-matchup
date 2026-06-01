@@ -4,6 +4,7 @@ import { TouchableOpacity, Text, View } from 'react-native';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
+import { isMatchPast } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
 import { Colors } from '../../lib/theme';
 import FeatureGuide from '../../components/FeatureGuide';
@@ -129,26 +130,43 @@ export default function TabLayout() {
     let cancelled = false;
     let gameIds: string[] = [];
     const unreadByGame = new Map<string, number>();
+    // Archived games are excluded from the badge (badge = active chats only).
+    const archivedIds = new Set<string>();
 
     const recomputeTotal = () => {
       if (cancelled) return;
       let total = 0;
-      unreadByGame.forEach(v => { total += v; });
+      unreadByGame.forEach((v, gid) => { if (!archivedIds.has(gid)) total += v; });
       setChatBadge(total);
     };
 
     const load = async () => {
       const [{ data: parts }, { data: created }] = await Promise.all([
-        supabase.from('game_participants').select('game_id').eq('player_id', player.id).eq('status', 'accepted'),
-        supabase.from('open_games').select('id').eq('creator_id', player.id),
+        supabase.from('game_participants').select('game:game_id(id, match_date)').eq('player_id', player.id).eq('status', 'accepted'),
+        supabase.from('open_games').select('id, match_date').eq('creator_id', player.id),
       ]);
+      const matchDateById = new Map<string, string | null>();
       const ids = new Set<string>();
-      (parts ?? []).forEach((p: any) => { if (p.game_id) ids.add(p.game_id); });
-      (created ?? []).forEach((g: any) => { if (g.id) ids.add(g.id); });
+      (parts ?? []).forEach((p: any) => {
+        const g = p.game;
+        if (g?.id) { ids.add(g.id); matchDateById.set(g.id, g.match_date ?? null); }
+      });
+      (created ?? []).forEach((g: any) => {
+        if (g.id) { ids.add(g.id); matchDateById.set(g.id, g.match_date ?? null); }
+      });
       gameIds = [...ids];
       unreadByGame.clear();
+      archivedIds.clear();
 
       if (gameIds.length === 0) { recomputeTotal(); return; }
+
+      // Validated score OR match past (+24h grace) → archived, excluded from badge.
+      const { data: validated } = await supabase
+        .from('matches').select('game_id').in('game_id', gameIds).eq('status', 'validated');
+      const validatedIds = new Set((validated ?? []).map((m: any) => m.game_id).filter(Boolean));
+      gameIds.forEach(gid => {
+        if (validatedIds.has(gid) || isMatchPast(matchDateById.get(gid))) archivedIds.add(gid);
+      });
 
       const { data: reads } = await supabase
         .from('game_chat_reads')

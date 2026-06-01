@@ -11,7 +11,6 @@ import {
   simulateElo,
   type EloSimResult,
 } from '../../lib/elo';
-import { rankFromPoints } from '../../lib/frmt-match';
 import { Colors, Fonts } from '../../lib/theme';
 
 type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender';
@@ -401,7 +400,6 @@ function GamesTab({ games, loading, deletingId, onDelete, onRefresh }: {
 
       {games.length === 0 ? (
         <View style={sty.emptyCard}>
-          <Text style={{ fontSize: 40, marginBottom: 10 }}>🎾</Text>
           <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.textMuted, textAlign: 'center', fontFamily: Fonts.uiBlack }}>Aucune partie en cours</Text>
         </View>
       ) : (
@@ -504,11 +502,23 @@ export default function AdminScreen() {
 
   const loadFrmt = useCallback(async () => {
     setFrmtLoading(true);
-    const [{ data: rankings }, { data: players }] = await Promise.all([
-      supabase.from('frmt_rankings').select('*, player:player_id(id,name)').order('ranking_position', { ascending: true, nullsFirst: false }),
-      supabase.from('players').select('id,name').order('name'),
-    ]);
-    setFrmtEntries(rankings ?? []);
+    // Pagination par pages de 1000 : PostgREST plafonne un select() simple à
+    // 1000 lignes. Le classement FRMT dépasse 1000 (Messieurs ~2300), donc on
+    // boucle sur .range() jusqu'à épuisement, sinon le panel tronque en silence.
+    const PAGE = 1000;
+    const allRankings: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('frmt_rankings')
+        .select('*, player:player_id(id,name)')
+        .order('ranking_position', { ascending: true, nullsFirst: false })
+        .range(from, from + PAGE - 1);
+      if (error || !data?.length) break;
+      allRankings.push(...data);
+      if (data.length < PAGE) break;
+    }
+    const { data: players } = await supabase.from('players').select('id,name').order('name');
+    setFrmtEntries(allRankings);
     setAllPlayers(players ?? []);
     setFrmtLoading(false);
   }, []);
@@ -621,10 +631,12 @@ export default function AdminScreen() {
 
   const handleLink = async (entryId: string, entry: any, playerId: string) => {
     await supabase.from('frmt_rankings').update({ player_id: playerId }).eq('id', entryId);
-    const rank = rankFromPoints(entry.ranking_points);
-    const upd: Record<string, unknown> = { frmt_verified: true };
-    if (rank) upd.frmt_rank = rank;
-    await supabase.from('players').update(upd).eq('id', playerId);
+    // Vrai classement FRMT (position + points), pas un palier dérivé des points.
+    await supabase.from('players').update({
+      frmt_verified: true,
+      frmt_position: entry.ranking_position ?? null,
+      frmt_points: entry.ranking_points ?? null,
+    }).eq('id', playerId);
     await loadFrmt();
   };
 
@@ -680,7 +692,7 @@ export default function AdminScreen() {
             { key: 'disputes' as AdminTab, label: '⚖️ Litiges',  badge: disputes.length },
             { key: 'gender'   as AdminTab, label: '⚧ Genre',     badge: genderReqs.length },
             { key: 'frmt'     as AdminTab, label: '🏆 FRMT',     badge: 0 },
-            { key: 'games'    as AdminTab, label: '🎾 Parties',  badge: 0 },
+            { key: 'games'    as AdminTab, label: 'Parties',  badge: 0 },
           ]).map(t => {
             const active = tab === t.key;
             return (

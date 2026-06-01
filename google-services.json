@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "911592155984",
+    "project_id": "pag-match",
+    "storage_bucket": "pag-match.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:911592155984:android:e39e8bf589f741f0cfda55",
+        "android_client_info": {
+          "package_name": "com.pagmatch.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCva9dahG6uZWPDNFN6gwozaJ6vYMLcC4Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -24,8 +24,10 @@ export interface Player {
   handedness?: Handedness;
   court_side?: CourtSide;
   level?: number;
-  frmt_rank?: string;
+  frmt_rank?: string;        // rang auto-déclaré au signup (joueur non lié/non vérifié)
   frmt_verified?: boolean;
+  frmt_position?: number | null; // vraie position au classement FRMT (joueur lié)
+  frmt_points?: number | null;   // vrais points FRMT (joueur lié)
   is_admin?: boolean;
   clubs?: string[];
   playing_days?: string[];
@@ -102,6 +104,7 @@ export interface Challenge {
   created_at: string;
   challenger?: Player;
   challenged?: Player;
+  game?: OpenGame | null;
 }
 
 export interface Message {

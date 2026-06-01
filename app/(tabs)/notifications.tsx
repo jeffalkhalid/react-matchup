@@ -78,7 +78,7 @@ const IconX = ({ size = 14, color = Colors.textMuted }) => (
 // ─── Types ────────────────────────────────────────────────────
 interface NotifItem {
   id: string;
-  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score';
+  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve';
   title: string;
   subtitle: string;
   route: string;
@@ -126,10 +126,11 @@ export default function NotificationsScreen() {
       { data: eloHistory },
       { count: toScoreCount },
       { data: invitations },
+      { data: myGames },
     ] = await Promise.all([
       supabase
         .from('challenges')
-        .select('id, challenger:players!challenger_id(name)')
+        .select('id, game_id, challenger:players!challenger_id(name)')
         .eq('challenged_id', player.id)
         .eq('status', 'pending'),
       supabase
@@ -168,6 +169,12 @@ export default function NotificationsScreen() {
         .select('id, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
         .eq('player_id', player.id)
         .eq('status', 'invited'),
+      // Mes parties (créateur ou participant validé) — pour les demandes à valider.
+      supabase
+        .from('open_games')
+        .select('id, location, status, match_date')
+        .neq('status', 'cancelled')
+        .or(orParts),
     ]);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
@@ -194,16 +201,54 @@ export default function NotificationsScreen() {
       return leagueChanged || levelIncreased;
     });
 
+    // Anti-doublon : un défi crée à la fois une ligne `challenges` ET un
+    // game_participants 'invited' sur la même partie. On exclut l'invitation
+    // si un défi existe déjà pour cette partie (la ligne `challenges` la couvre).
+    const challengeGameIds = new Set((challenges ?? []).map((c: any) => c.game_id).filter(Boolean));
+
     // Filter active invitations: skip those whose game is closed/cancelled or already past
     const activeInvites = (invitations ?? []).filter((inv: any) => {
       const g = inv.game;
       if (!g) return false;
+      if (g.id && challengeGameIds.has(g.id)) return false;
       if (g.status === 'closed' || g.status === 'cancelled') return false;
       if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
       return true;
     });
 
+    // Demandes à valider — candidatures 'pending' sur mes parties (créateur ou
+    // participant validé) que je n'ai pas encore approuvées. Lien → carte détail.
+    const myGameById = new Map((myGames ?? []).map((g: any) => [g.id, g]));
+    const validReqGameIds = (myGames ?? []).filter((g: any) => {
+      if (g.status === 'closed' || g.status === 'cancelled') return false;
+      if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
+      return true;
+    }).map((g: any) => g.id);
+
+    let pendingReqItems: NotifItem[] = [];
+    if (validReqGameIds.length > 0) {
+      const { data: reqs } = await supabase
+        .from('game_participants')
+        .select('id, game_id, player_id, approvals, player:player_id(name)')
+        .in('game_id', validReqGameIds)
+        .eq('status', 'pending');
+      pendingReqItems = (reqs ?? [])
+        .filter((r: any) => r.player_id !== player.id && !(r.approvals ?? []).includes(player.id))
+        .map((r: any) => {
+          const g = myGameById.get(r.game_id);
+          const where = g?.location ? ` à ${g.location}` : '';
+          return {
+            id: `req-${r.id}`,
+            type: 'to_approve' as const,
+            title: 'Demande à valider',
+            subtitle: `${r.player?.name ?? 'Un joueur'} veut rejoindre la partie${where}`,
+            route: `/(tabs)/lobby?gameId=${r.game_id}`,
+          };
+        });
+    }
+
     const result: NotifItem[] = [
+      ...pendingReqItems,
       ...activeInvites.map((inv: any) => {
         const isChall = !!inv.game?.is_challenge;
         const who = inv.game?.creator?.name ?? '?';
@@ -270,6 +315,7 @@ export default function NotificationsScreen() {
   const iconFor = (type: NotifItem['type']) => {
     if (type === 'challenge')  return <IconSwords size={18} color={Colors.brandDeep} />;
     if (type === 'invitation') return <IconSwords size={18} color="#0891b2" />;
+    if (type === 'to_approve') return <IconCheckSquare size={18} color="#7c3aed" />;
     if (type === 'badge')      return <IconMedal size={18} color={Colors.success} />;
     if (type === 'levelup')    return <IconTrendingUp size={18} color="#b45309" />;
     if (type === 'to_score')   return <IconCheckSquare size={18} color="#0891b2" />;
@@ -279,6 +325,7 @@ export default function NotificationsScreen() {
   const bgFor = (type: NotifItem['type']) => {
     if (type === 'challenge')  return { bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)' };
     if (type === 'invitation') return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
+    if (type === 'to_approve') return { bg: 'rgba(124,58,237,0.10)', border: 'rgba(124,58,237,0.40)' };
     if (type === 'badge')      return { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)' };
     if (type === 'levelup')    return { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)' };
     if (type === 'to_score')   return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
@@ -288,6 +335,7 @@ export default function NotificationsScreen() {
   const textFor = (type: NotifItem['type']) => {
     if (type === 'challenge')  return { title: Colors.brandDeep, sub: '#A16207' };
     if (type === 'invitation') return { title: '#155e75', sub: '#0e7490' };
+    if (type === 'to_approve') return { title: '#5b21b6', sub: '#7c3aed' };
     if (type === 'badge')     return { title: '#065f46', sub: '#059669' };
     if (type === 'levelup')   return { title: '#92400e', sub: '#b45309' };
     if (type === 'to_score')  return { title: '#155e75', sub: '#0e7490' };

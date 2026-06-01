@@ -47,6 +47,7 @@ function RootNavigator() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="archived-chats" options={{ presentation: 'card' }} />
       <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
     </Stack>
   );

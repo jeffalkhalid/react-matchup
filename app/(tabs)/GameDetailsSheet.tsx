@@ -232,7 +232,7 @@ async function shareGame(game: EnrichedGame) {
     }).filter(Boolean);
   const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
   const url = `https://matchup-padel.vercel.app/lobby?game=${game.id}`;
-  const msg = `🎾 Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
+  const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
 
@@ -273,8 +273,22 @@ export default function GameDetailsSheet({
   const waitlistCount  = (game.participants ?? []).filter((p: any) => p.status === 'waitlist').length;
   const requiredVotes  = Math.min(1 + acceptedCount, 3);
 
+  // Ma position dans la file d'attente (FIFO sur created_at), 1-indexée.
+  const myWaitlistPosition = myStatus === 'waitlist'
+    ? (() => {
+        const wl = (game.participants ?? [])
+          .filter((p: any) => p.status === 'waitlist')
+          .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
+        const idx = wl.findIndex((p: any) => p.player_id === playerId);
+        return idx >= 0 ? idx + 1 : null;
+      })()
+    : null;
+  const ordinal = (n: number) => (n === 1 ? '1ʳᵉ' : `${n}ᵉ`);
+
   const fit       = (() => { const min = game.min_elo ?? 0, max = game.max_elo ?? 9999; if (myElo >= min && myElo <= max) return 'fit'; const m = Math.min(Math.abs(myElo - min), Math.abs(myElo - max)); return m <= 100 ? 'close' : 'outside'; })();
-  const outOfLevel = fit === 'outside';
+  // Le « niveau hors fourchette » n'a de sens que pour qui peut encore rejoindre.
+  // Si je suis déjà dans la partie (créateur ou participant), on ne l'affiche pas.
+  const outOfLevel = fit === 'outside' && canParticipate;
 
   const gameDate = game.match_date ? new Date(game.match_date) : null;
   const dateStr  = gameDate ? gameDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
@@ -363,7 +377,9 @@ export default function GameDetailsSheet({
         <View style={{ flex: 1, gap: 8 }}>
           <View style={{ height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' }}>
             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#B45309' }}>
-              {isPending ? '⏳ Demande envoyée' : "⏳ Liste d'attente"}
+              {isPending
+                ? '⏳ Demande envoyée'
+                : `⏳ Liste d'attente${myWaitlistPosition ? ` · ${ordinal(myWaitlistPosition)} position` : ''}`}
             </Text>
           </View>
           {myParticipant && (

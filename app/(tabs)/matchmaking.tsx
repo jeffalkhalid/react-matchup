@@ -9,7 +9,7 @@ import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
-import { Colors, eloToLevel, Fonts } from '../../lib/theme';
+import { Colors, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
 import type { Player, Challenge } from '../../types';
 import { Pill, type PillVariant } from '../../components/Pill';
 
@@ -336,6 +336,20 @@ function IncomingCard({ challenge, detail, onAction }: {
   };
   const st = statusInfo[challenge.status] ?? statusInfo.pending;
 
+  // Détails de la partie liée au défi (heure, terrain, format, niveau)
+  const game = challenge.game;
+  const gameDate = game?.match_date ? new Date(game.match_date) : null;
+  const gameDateLabel = gameDate
+    ? gameDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+    : null;
+  const gameTimeLabel = gameDate
+    ? gameDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : null;
+  const gameFormatLabel = game
+    ? (game.is_challenge ? 'Défi' : (game.game_format as string) === 'friendly' ? 'Amical' : 'Compétitif')
+    : null;
+  const gameSpots = game?.spots_available ?? 0;
+
   const handle = async (action: 'accepted' | 'declined') => {
     setActing(action);
     await onAction(challenge.id, action);
@@ -366,6 +380,29 @@ function IncomingCard({ challenge, detail, onAction }: {
                 <Text style={{ fontSize: 11.5, color: Colors.textSecondary, fontStyle: 'italic' }}>"{challenge.message}"</Text>
               </View>
             ) : null}
+            {gameDate && (
+              <View style={{ backgroundColor: Colors.bg, borderRadius: 12, padding: 10, marginBottom: 8, gap: 6, borderWidth: 1, borderColor: Colors.bgCardAlt }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                  <Text style={{ fontSize: 12 }}>📅</Text>
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiExtraBold, fontWeight: '800', color: Colors.textPrimary, textTransform: 'capitalize' }} numberOfLines={1}>
+                    {gameDateLabel} · {gameTimeLabel}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                  <Text style={{ fontSize: 12 }}>📍</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>
+                    {game?.location || 'Lieu à confirmer'}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+                  {gameFormatLabel && <Pill variant="ink">{gameFormatLabel}</Pill>}
+                  <Pill variant="neutral">Niv. {formatPadelLevel(game?.min_elo ?? 0)}–{formatPadelLevel(game?.max_elo ?? 1750)}</Pill>
+                  <Pill variant={gameSpots > 0 ? 'success' : 'danger'}>
+                    {gameSpots === 0 ? 'Complet' : `${gameSpots} place${gameSpots > 1 ? 's' : ''}`}
+                  </Pill>
+                </View>
+              </View>
+            )}
             {((challenge.shared_clubs?.length ?? 0) > 0 || (challenge.shared_days?.length ?? 0) > 0) && (
               <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
                 {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} variant="info">📍 {c}</Pill>)}
@@ -438,7 +475,7 @@ export default function MatchmakingScreen() {
         .limit(50),
       // Défis reçus : uniquement en attente et non expirés
       supabase.from('challenges')
-        .select('*, challenger:challenger_id(*)')
+        .select('*, challenger:challenger_id(*), game:game_id(id, location, match_date, game_format, is_challenge, min_elo, max_elo, spots_available)')
         .eq('challenged_id', player.id)
         .eq('status', 'pending')
         .gt('expires_at', nowIso)

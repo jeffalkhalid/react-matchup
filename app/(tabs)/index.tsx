@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal,
   ActivityIndicator, Animated, LayoutAnimation, Easing,
-  Platform, UIManager, Alert, StyleSheet,
+  Platform, UIManager, Alert, StyleSheet, Image,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import Svg, {
   Defs, LinearGradient as SvgLinearGradient, Stop,
 } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
 import { Colors, formatPadelLevel, getLeague, getLeagueLabel, Fonts } from '../../lib/theme';
@@ -375,7 +376,7 @@ function PendingBanner({ matches, onValidate, onContest, onAcceptCounter, onEsca
 // ─── Badge emoji lookup (subset) ─────────────────────────────
 const BADGE_EMOJI: Record<string, string> = {
   'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🎾',
+  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🥅',
   'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
   'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
 };
@@ -451,15 +452,22 @@ function BadgePromptBanner({ matches, onOpen }: {
 }
 
 // ─── Profile hero card — centered vertical layout ─────────────
-function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPress }: {
+function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, compact = false, onBellPress }: {
   name: string; elo: number; matchCount: number; badgeCount: number;
-  notifCount: number; onBellPress: () => void;
+  notifCount: number; compact?: boolean; onBellPress: () => void;
 }) {
   const leagueType = getLeague(elo);
   const leagueLabel = 'Ligue ' + getLeagueLabel(leagueType);
   const leagueHex = Colors.league[leagueType];
   const level = formatPadelLevel(elo);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Compact mode frees vertical space for the action grid when notification
+  // banners are stacked above the hero.
+  const avatarSize = compact ? 50 : 68;
+  const statSize   = compact ? 42 : 48;
+  const nameSize   = compact ? 22 : 28;
+  const levelSize  = compact ? 15 : 17;
 
   useEffect(() => {
     Animated.loop(
@@ -473,7 +481,7 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPr
   return (
     <View style={{
       backgroundColor: Colors.heroBg, borderRadius: 24, overflow: 'hidden',
-      paddingTop: 22, paddingBottom: 20, paddingHorizontal: 20,
+      paddingTop: compact ? 14 : 22, paddingBottom: compact ? 12 : 20, paddingHorizontal: 20,
       alignItems: 'center',
       shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
       shadowOffset: { width: 0, height: 8 }, elevation: 7,
@@ -493,7 +501,7 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPr
       }} />
 
       {/* Avatar */}
-      <GradientAvatar letter={name.charAt(0)} size={68} />
+      <GradientAvatar letter={name.charAt(0)} size={avatarSize} />
 
       {/* League badge */}
       <View style={{
@@ -501,7 +509,7 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPr
         backgroundColor: 'rgba(148,163,184,0.12)',
         borderWidth: 1, borderColor: 'rgba(148,163,184,0.22)',
         paddingHorizontal: 12, paddingVertical: 4,
-        borderRadius: 999, marginTop: 12, marginBottom: 5,
+        borderRadius: 999, marginTop: compact ? 8 : 12, marginBottom: 5,
       }}>
         <Animated.View style={{
           width: 5, height: 5, borderRadius: 999,
@@ -517,7 +525,7 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPr
 
       {/* Name */}
       <Text style={{
-        fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark,
+        fontSize: nameSize, fontFamily: Fonts.welcome, color: Colors.textOnDark,
         letterSpacing: 0.2, textAlign: 'center', marginBottom: 3,
       }}>
         {name}
@@ -525,33 +533,36 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPr
 
       {/* Level */}
       <Text style={{
-        fontSize: 17, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand,
-        textAlign: 'center', marginBottom: 3,
+        fontSize: levelSize, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand,
+        textAlign: 'center', marginBottom: compact ? 0 : 3,
       }}>
         Niveau {level}
       </Text>
 
-      {/* Subtitle */}
-      <Text style={{
-        fontSize: 12, color: Colors.textMuted, fontWeight: '500',
-        textAlign: 'center', marginBottom: 16,
-      }}>
-        Prêt à jouer ?
-      </Text>
+      {/* Subtitle — hidden in compact mode to save a line */}
+      {!compact && (
+        <Text style={{
+          fontSize: 12, color: Colors.textMuted, fontWeight: '500',
+          textAlign: 'center', marginBottom: 16,
+        }}>
+          Prêt à jouer ?
+        </Text>
+      )}
 
       {/* Divider */}
       <View style={{
         height: 1, width: '100%',
-        backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 16,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        marginTop: compact ? 12 : 0, marginBottom: compact ? 12 : 16,
       }} />
 
       {/* Stats */}
-      <View style={{ flexDirection: 'row', gap: 48 }}>
+      <View style={{ flexDirection: 'row', gap: compact ? 36 : 48 }}>
         {[
           { label: 'MATCHS', value: matchCount, color: Colors.textOnDark,    bg: 'rgba(255,255,255,0.08)',    border: 'rgba(255,255,255,0.14)' },
           { label: 'BADGES', value: badgeCount, color: '#fb923c', bg: 'rgba(251,146,60,0.13)',     border: 'rgba(251,146,60,0.28)'  },
         ].map(s => (
-          <View key={s.label} style={{ alignItems: 'center', gap: 6 }}>
+          <View key={s.label} style={{ alignItems: 'center', gap: compact ? 4 : 6 }}>
             <Text style={{
               fontSize: 9, fontWeight: '700', color: Colors.textSecondary,
               textTransform: 'uppercase', letterSpacing: 1.2,
@@ -559,11 +570,11 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, onBellPr
               {s.label}
             </Text>
             <View style={{
-              width: 48, height: 48, borderRadius: 999,
+              width: statSize, height: statSize, borderRadius: 999,
               backgroundColor: s.bg, borderWidth: 1, borderColor: s.border,
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Text style={{ fontSize: 18, fontFamily: Fonts.uiBlack, fontWeight: '900', color: s.color }}>
+              <Text style={{ fontSize: compact ? 16 : 18, fontFamily: Fonts.uiBlack, fontWeight: '900', color: s.color }}>
                 {s.value}
               </Text>
             </View>
@@ -706,10 +717,10 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
 // ─── Main screen ──────────────────────────────────────────────
 export default function HomeScreen() {
   const { player, refresh } = usePlayer();
+  const { total: notifTotal, reload: reloadNotifs } = useNotificationCount();
   const [pendingMatches, setPendingMatches] = useState<Match[]>([]);
   const [badgeCount, setBadgeCount] = useState(0);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
-  const [invitationCount, setInvitationCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
   const [badgeDefs, setBadgeDefs] = useState<any[]>([]);
@@ -810,21 +821,6 @@ export default function HomeScreen() {
 
     setUpcomingGames((upcoming as OpenGame[]) ?? []);
 
-    // Active invitations (status='invited' on a non-past, non-cancelled game)
-    const { data: invites } = await supabase
-      .from('game_participants')
-      .select('id, game:game_id(status, match_date)')
-      .eq('player_id', player.id)
-      .eq('status', 'invited');
-    const activeInvites = (invites ?? []).filter((inv: any) => {
-      const g = inv.game;
-      if (!g) return false;
-      if (g.status === 'closed' || g.status === 'cancelled') return false;
-      if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
-      return true;
-    });
-    setInvitationCount(activeInvites.length);
-
     setLoading(false);
   }, [player]);
 
@@ -833,7 +829,8 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => {
     fetchData();
-  }, [fetchData]));
+    reloadNotifs();
+  }, [fetchData, reloadNotifs]));
 
   useEffect(() => {
     if (openBadge === '1' && !loading && badgeMatches.length > 0 && !autoOpenedBadge.current) {
@@ -936,7 +933,8 @@ export default function HomeScreen() {
   if (!player) return null;
 
   const matchCount = player.win_count + player.loss_count;
-  const totalNotifs = pendingMatches.length + badgeMatches.length + invitationCount;
+  // Bell total comes from the shared hook so Home and Profile always match.
+  const totalNotifs = notifTotal;
   const now = new Date();
   const visibleUpcoming = upcomingGames.filter(g => !g.match_date || new Date(g.match_date) > now);
 
@@ -948,6 +946,27 @@ export default function HomeScreen() {
         paddingTop: insets.top + 8,
         paddingBottom: 8,
       }}>
+        {/* Header — logo PAG MATCH (identique au splash de chargement) */}
+        <View style={{ alignItems: 'center', marginBottom: 12 }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: Colors.heroBg,
+            paddingHorizontal: 18, paddingVertical: 9,
+            borderRadius: 999,
+          }}>
+            <Image
+              source={require('../../assets/auth/splash-racket.png')}
+              style={{ width: 26, height: 26 }}
+              resizeMode="contain"
+            />
+            <Image
+              source={require('../../assets/auth/splash-wordmark.png')}
+              style={{ width: 118, height: 26, marginLeft: -8 }}
+              resizeMode="contain"
+            />
+          </View>
+        </View>
+
         {loading ? (
           <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
         ) : (
@@ -1035,6 +1054,7 @@ export default function HomeScreen() {
               matchCount={matchCount}
               badgeCount={badgeCount}
               notifCount={totalNotifs}
+              compact={pendingMatches.length > 0 || badgeMatches.length > 0}
               onBellPress={() => router.push('/notifications' as any)}
             />
             <View style={{ flex: 1, marginTop: 12 }}>

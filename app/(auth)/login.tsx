@@ -118,13 +118,15 @@ function Lockup({ width, tokens }: { width: number; tokens: AuthThemeTokens }) {
 // ─── Field Input (52px height, 14px radius, focus halo jaune) ──────────
 function FieldInput({
   label, value, onChangeText, placeholder, icon, focused, onFocus, onBlur,
-  secureTextEntry, rightElement, keyboardType, autoComplete, error, errorMessage,
+  secureTextEntry, rightElement, keyboardType, autoComplete, textContentType,
+  importantForAutofill, error, errorMessage,
   tokens,
 }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder: string; icon: React.ReactNode; focused: boolean;
   onFocus: () => void; onBlur: () => void; secureTextEntry?: boolean;
   rightElement?: React.ReactNode; keyboardType?: any; autoComplete?: any;
+  textContentType?: any; importantForAutofill?: any;
   error?: boolean; errorMessage?: string;
   tokens: AuthThemeTokens;
 }) {
@@ -166,6 +168,8 @@ function FieldInput({
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           autoComplete={autoComplete}
+          textContentType={textContentType}
+          importantForAutofill={importantForAutofill}
           autoCapitalize="none"
           style={{
             flex: 1, color: tokens.textPrimary, fontSize: 15,
@@ -340,6 +344,8 @@ export default function LoginScreen() {
                 onBlur={() => setEmailFocused(false)}
                 keyboardType="email-address"
                 autoComplete="email"
+                textContentType="username"
+                importantForAutofill="yes"
                 error={emailError}
                 errorMessage="Adresse email invalide."
                 tokens={tokens}
@@ -355,6 +361,9 @@ export default function LoginScreen() {
                 onFocus={() => setPwFocused(true)}
                 onBlur={() => setPwFocused(false)}
                 secureTextEntry={!showPassword}
+                autoComplete="current-password"
+                textContentType="password"
+                importantForAutofill="yes"
                 rightElement={
                   <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={{ padding: 6 }} hitSlop={8}>
                     {showPassword

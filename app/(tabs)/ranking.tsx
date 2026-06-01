@@ -9,6 +9,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../../lib/theme';
+import { formatFrmtRanking } from '../../lib/frmt-match';
 import type { Player } from '../../types';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -530,16 +531,18 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
               <Text style={{ color: Colors.brandDeep, fontSize: 9, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Vous</Text>
             </View>
           )}
-          {player.frmt_verified && player.frmt_rank && (
-            <View style={{ backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: '#bbf7d0' }}>
-              <Text style={{ color: '#16a34a', fontSize: 9, fontWeight: '900' }}>{player.frmt_rank} ✓</Text>
-            </View>
-          )}
-          {!player.frmt_verified && player.frmt_rank && (
-            <View style={{ backgroundColor: '#fffbeb', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: '#fde68a' }}>
-              <Text style={{ color: '#d97706', fontSize: 9, fontWeight: '900' }}>{player.frmt_rank}</Text>
-            </View>
-          )}
+          {(() => {
+            const frmt = formatFrmtRanking(player);
+            if (!frmt) return null;
+            const c = frmt.verified
+              ? { bg: '#f0fdf4', bd: '#bbf7d0', fg: '#16a34a' }
+              : { bg: '#fffbeb', bd: '#fde68a', fg: '#d97706' };
+            return (
+              <View style={{ backgroundColor: c.bg, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: c.bd }}>
+                <Text style={{ color: c.fg, fontSize: 9, fontWeight: '900' }}>{frmt.text}{frmt.verified ? ' ✓' : ''}</Text>
+              </View>
+            );
+          })()}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           <View style={{ backgroundColor: leagueHex + '18', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1 }}>

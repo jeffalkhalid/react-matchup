@@ -5,14 +5,16 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Line, Polyline, Polygon } from 'react-native-svg';
+import Svg, { Path, Circle, Line, Polyline, Polygon, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import { usePlayer } from '../../../hooks/usePlayer';
 import { supabase } from '../../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../../lib/theme';
+import { formatFrmtRanking } from '../../../lib/frmt-match';
 import type { Player, EloHistory } from '../../../types';
 import StoryMatchPicker from '../../../components/StoryMatchPicker';
-import StoryComposer from '../../../components/StoryComposer';
-import type { StoryMatch } from '../../../components/StoryCanvas';
+import StoryComposerV2 from '../../../components/StoryComposerV2';
+import type { StoryMode } from '../../../components/story/StoryStyles';
+import type { StoryPlayer, StoryMatchData, InviteData } from '../../../components/story/storyTheme';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -43,7 +45,7 @@ const BADGES_INFO: Record<string, { icon: string; label: string }> = {
   'Le Phénix':    { icon: '🔥', label: 'Le Phénix' },
   'Le Mur':       { icon: '🧱', label: 'Le Mur' },
   "L'Essuie-glace": { icon: '🏃', label: "L'Essuie-glace" },
-  'Roi du Filet': { icon: '🎾', label: 'Roi du Filet' },
+  'Roi du Filet': { icon: '🥅', label: 'Roi du Filet' },
   'Le Cerveau':   { icon: '🧠', label: 'Le Cerveau' },
   'Le Capitaine': { icon: '⭐', label: 'Le Capitaine' },
   'Fair-Play':    { icon: '🤝', label: 'Fair-Play' },
@@ -55,7 +57,7 @@ const BADGES_INFO: Record<string, { icon: string; label: string }> = {
   COMEBACK:       { icon: '🔥', label: 'Le Phénix' },
   WALL:           { icon: '🧱', label: 'Le Mur' },
   RUNNER:         { icon: '🏃', label: "L'Essuie-glace" },
-  NET_KING:       { icon: '🎾', label: 'Roi du Filet' },
+  NET_KING:       { icon: '🥅', label: 'Roi du Filet' },
   BRAIN:          { icon: '🧠', label: 'Le Cerveau' },
   CAPTAIN:        { icon: '⭐', label: 'Le Capitaine' },
   FAIR_PLAY:      { icon: '🤝', label: 'Fair-Play' },
@@ -439,6 +441,109 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
   );
 }
 
+// ── Thème clair « épuré » (handoff) ───────────────────────────────────
+// Tokens dérivés de la charte existante — aucune couleur nouvelle.
+const LIGHT = {
+  page: Colors.bg,
+  card: Colors.bgCard,
+  border: Colors.border,
+  text: Colors.textPrimary,
+  sub: Colors.textSecondary,
+  muted: Colors.textMuted,
+  divider: Colors.bgCardAlt,
+  chip: Colors.bgCardAlt,
+  accent: Colors.brandDeep,
+};
+
+const cardStyle = {
+  backgroundColor: LIGHT.card, borderWidth: 1, borderColor: LIGHT.border, borderRadius: 18,
+} as const;
+
+function Kicker({ children, style }: { children: React.ReactNode; style?: any }) {
+  return (
+    <Text style={[{ fontSize: 11, fontWeight: '700', letterSpacing: 1.6, color: LIGHT.muted, textTransform: 'uppercase' }, style]}>
+      {children}
+    </Text>
+  );
+}
+
+function IconCamera({ color = LIGHT.sub, size = 19 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2z" />
+      <Circle cx={12} cy={13} r={3.6} />
+    </Svg>
+  );
+}
+
+// Avatar carré arrondi à dégradé ligue→or, initiales en Anton (design épuré).
+function GradientAvatar({ name, color, size = 76 }: { name: string; color: string; size?: number }) {
+  const gid = 'avgrad';
+  return (
+    <View style={{ width: size, height: size, borderRadius: Math.round(size * 0.31), overflow: 'hidden' }}>
+      <Svg width={size} height={size} style={{ position: 'absolute' }}>
+        <Defs>
+          <SvgLinearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={color} />
+            <Stop offset="1" stopColor={Colors.brandDeep} />
+          </SvgLinearGradient>
+        </Defs>
+        <Rect width={size} height={size} fill={`url(#${gid})`} />
+      </Svg>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: Fonts.display, fontSize: Math.round(size * 0.45), color: '#0A0A0A' }}>{getInitials(name)}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── Ligne d'historique compacte (design épuré) ────────────────────────
+function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
+  match: MatchRow; playerId: string; isSelf: boolean; divider: boolean;
+  onShare?: () => void; onRematch?: () => void;
+}) {
+  const win = match.winner_id === playerId || match.winner_id_2 === playerId;
+  const meIds   = win ? [match.winner_id, match.winner_id_2] : [match.loser_id, match.loser_id_2];
+  const meNames = win ? [match.winner?.name, match.winner_2?.name] : [match.loser?.name, match.loser_2?.name];
+  const oppNames = (win ? [match.loser?.name, match.loser_2?.name] : [match.winner?.name, match.winner_2?.name]).filter(Boolean) as string[];
+  const pIdx = meIds.findIndex(id => id && id !== playerId);
+  const partner = pIdx >= 0 ? meNames[pIdx] : null;
+  const accent = win ? Colors.success : Colors.danger;
+  const dateRaw = match.game?.match_date ?? match.created_at;
+  const dateStr = new Date(dateRaw).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={isSelf ? 0.6 : 1}
+      onPress={isSelf ? onShare : undefined}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: divider ? 1 : 0, borderTopColor: LIGHT.divider }}
+    >
+      <View style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: accent + '1c', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: accent }}>{win ? 'V' : 'D'}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 12.5, lineHeight: 16, color: LIGHT.sub }} numberOfLines={1}>
+          <Text style={{ fontWeight: '700', color: LIGHT.text }}>Toi{partner ? ` & ${partner}` : ''}</Text>
+          <Text style={{ color: LIGHT.muted }}>  vs  </Text>
+          {oppNames.join(' & ') || '—'}
+        </Text>
+        <Text style={{ fontSize: 11, color: LIGHT.muted, marginTop: 3 }} numberOfLines={1}>
+          {[match.game?.location, dateStr].filter(Boolean).join(' · ')}
+        </Text>
+      </View>
+      {match.score_text ? (
+        <Text style={{ fontSize: 14, fontWeight: '800', letterSpacing: 0.3, color: accent }}>{match.score_text}</Text>
+      ) : null}
+      {isSelf && onRematch && (
+        <TouchableOpacity onPress={onRematch} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={{ paddingLeft: 2 }}>
+          <Text style={{ fontSize: 15 }}>🔄</Text>
+        </TouchableOpacity>
+      )}
+      {isSelf && <IconCamera color={LIGHT.muted} size={15} />}
+    </TouchableOpacity>
+  );
+}
+
 // ── Main screen ──────────────────────────────────────────────────────
 export default function PlayerProfileScreen() {
   const { id }           = useLocalSearchParams<{ id: string }>();
@@ -455,12 +560,15 @@ export default function PlayerProfileScreen() {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [matchSearch, setMatchSearch] = useState('');
+  const [showAllMatches, setShowAllMatches] = useState(false);
   const [editOpen,   setEditOpen]   = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm,   setEditForm]   = useState({ name: '', court_side: '', playing_days: [] as string[], frmt_rank: '', preferred_court: '' });
   const [genderReqOpen, setGenderReqOpen] = useState(false);
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
-  const [storyMatch, setStoryMatch] = useState<StoryMatch | null>(null);
+  const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerMode, setComposerMode] = useState<StoryMode>('profil');
   const [genderReqPending, setGenderReqPending] = useState<{ requested_gender: string; created_at: string } | null>(null);
   const [genderReqChoice, setGenderReqChoice] = useState<'male' | 'female' | 'other' | ''>('');
   const [genderReqReason, setGenderReqReason] = useState('');
@@ -720,368 +828,280 @@ export default function PlayerProfileScreen() {
       })
     : matches;
 
+  const handleDefier = () => {
+    const sideParam = profile.court_side ? `&pside=${encodeURIComponent(profile.court_side)}` : '';
+    router.push((`/(tabs)/lobby?create=1&challenge=1&with=${profile.id}&pname=${encodeURIComponent(profile.name)}&pelo=${profile.elo_score}${sideParam}`) as any);
+  };
+
+  // Ouvre le composer de story directement (mode Match) avec ce match pré-rempli.
+  const shareMatch = (m: MatchRow) => {
+    const won = m.winner_id === id || m.winner_id_2 === id;
+    const dateSrc = m.game?.match_date ?? m.created_at;
+    const d = eloChangeByMatch[m.id];
+    // score_text est stocké côté vainqueur ; on l'oriente côté joueur (mon score d'abord).
+    const raw = parseSets(m.score_text);
+    const sets = won ? raw : raw.map(([a, b]) => [b, a] as [number, number]);
+    setStoryMatch({
+      result: won ? 'win' : 'loss',
+      sets,
+      winners: [m.winner?.name, m.winner_2?.name].filter(Boolean) as string[],
+      losers: [m.loser?.name, m.loser_2?.name].filter(Boolean) as string[],
+      location: m.game?.location ?? undefined,
+      date: dateSrc ? new Date(dateSrc).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : undefined,
+      type: m.is_challenge ? 'Défi' : 'Compétitif',
+      eloDelta: d != null ? `${d >= 0 ? '+' : ''}${d.toFixed(2)}` : undefined,
+    });
+    setComposerMode('match');
+    setComposerOpen(true);
+  };
+
+  // Préférences en lignes label/valeur (design épuré) — seules les valeurs présentes.
+  const clubLabel = Array.isArray((profile as any).clubs) && (profile as any).clubs.length ? (profile as any).clubs.join(' · ') : null;
+  const genderLabel = profile.gender === 'male' ? 'Homme' : profile.gender === 'female' ? 'Femme' : profile.gender === 'other' ? 'Autre' : null;
+  const prefRows: [string, string][] = ([
+    ['Sexe', genderLabel],
+    ['Club', clubLabel],
+    ['Côté de jeu', profile.court_side ? (COURT_SIDE_LABEL[profile.court_side] ?? profile.court_side) : null],
+    ['Terrain', profile.preferred_court ?? null],
+    ['Disponibilités', playingDays.length ? playingDays.join(' · ') : null],
+    ['Partenaire favori', bestPartner ?? null],
+    ['Bête noire', worstNemesis ?? null],
+    ['Classement FRMT', (() => { const f = formatFrmtRanking(profile); return f ? `${f.text}${f.verified ? ' ✓' : ''}` : null; })()],
+  ] as [string, string | null][]).filter((r): r is [string, string] => !!r[1]);
+
+  // Historique : 3 par défaut, tout si recherche active ou « Voir tout ».
+  const visibleMatches = (matchSearch.trim() || showAllMatches) ? filteredMatches : filteredMatches.slice(0, 3);
+
+  // ── Données pour le composer de story (V2) ────────────────────────
+  const storyPlayer: StoryPlayer = {
+    name: profile.name,
+    league,
+    level: curLevel,
+    rank: rankPos ?? 0,
+    frmtRank: formatFrmtRanking(profile)?.text ?? undefined,
+    frmtVerified: profile.frmt_verified ?? undefined,
+    fiability: fib,
+    fiabilityLabel: fibLabel,
+    wins, losses, winRate, streak,
+    recentForm: recentForm as ('W' | 'L')[],
+    club: clubLabel ?? undefined,
+  };
+  const storyInvite: InviteData = {
+    cta: 'Rejoins-moi sur',
+    link: 'pagmatch.com', // lien court affiché ; l'UUID joueur reste encodé dans le QR
+    appUrl: 'Télécharger l’app',
+    // TODO: remplacer par un vrai deep link / lien de parrainage (Branch/Firebase).
+    // Placeholder pour l'instant — voir handoff stories §QR & lien app.
+    qrValue: `https://pagmatch.com/u/${profile.id}?ref=story`,
+    showApp: true, showQR: true,
+  };
+
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: LIGHT.page }}>
+    {/* ── Top bar claire (sticky) ──────────────────────────────── */}
+    <View style={{
+      paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 12,
+      backgroundColor: LIGHT.card, borderBottomWidth: 1, borderBottomColor: LIGHT.border,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    }}>
+      <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}
+        style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
+        <IconBack color={LIGHT.text} />
+      </TouchableOpacity>
+      <Text style={{ fontSize: 16, fontWeight: '700', color: LIGHT.text }}>Profil</Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {isSelf ? (
+          <>
+            <TouchableOpacity onPress={() => { setComposerMode('profil'); setComposerOpen(true); }} activeOpacity={0.7}
+              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
+              <IconCamera color={LIGHT.sub} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={openEdit} activeOpacity={0.7}
+              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
+              <IconEdit color={LIGHT.text} size={18} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TouchableOpacity onPress={toggleFav} activeOpacity={0.7}
+            style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: isFav ? 'rgba(245,158,11,0.14)' : LIGHT.chip, borderWidth: 1, borderColor: isFav ? Colors.warning : LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
+            <IconStar filled={isFav} color={isFav ? Colors.warning : LIGHT.sub} />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+
     <ScrollView
-      style={{ flex: 1, backgroundColor: Colors.bg }}
-      contentContainerStyle={{ paddingBottom: 40 }}
+      style={{ flex: 1, backgroundColor: LIGHT.page }}
+      contentContainerStyle={{ paddingBottom: isSelf ? 40 : 120 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
-      {/* ── Top bar ─────────────────────────────────────────────── */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 14,
-        backgroundColor: Colors.heroBg,
-      }}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}
-          activeOpacity={0.7}
-        >
-          <IconBack color={Colors.textOnDark} />
-        </TouchableOpacity>
-
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {!isSelf && (
-            <>
-              <TouchableOpacity
-                onPress={toggleFav}
-                style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: isFav ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}
-                activeOpacity={0.7}
-              >
-                <IconStar filled={isFav} color={isFav ? Colors.warning : 'rgba(255,255,255,0.7)'} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  const sideParam = profile.court_side ? `&pside=${encodeURIComponent(profile.court_side)}` : '';
-                  router.push((`/(tabs)/lobby?create=1&challenge=1&with=${profile.id}&pname=${encodeURIComponent(profile.name)}&pelo=${profile.elo_score}${sideParam}`) as any);
-                }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 36, paddingHorizontal: 12, borderRadius: 12, backgroundColor: Colors.primary }}
-                activeOpacity={0.8}
-              >
-                <Text style={{ color: Colors.textOnDark, fontSize: 12 }}>⚡</Text>
-                <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Défier</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {isSelf && (
-            <>
-              <TouchableOpacity
-                onPress={() => setStoryPickerOpen(true)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 36, paddingHorizontal: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
-                activeOpacity={0.7}
-              >
-                <Text style={{ fontSize: 13 }}>📸</Text>
-                <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Story</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={openEdit}
-                style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}
-                activeOpacity={0.7}
-              >
-                <IconEdit color={Colors.textOnDark} size={17} />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* ── Hero zone (seamless with nav bar) ───────────────────── */}
-      <View style={{ backgroundColor: Colors.heroBg, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 42, alignItems: 'center' }}>
-        <View style={{ width: 82, height: 82, borderRadius: 41, borderWidth: 3, borderColor: leagueColor, backgroundColor: leagueColor + '22', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 30, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(profile.name)}</Text>
-        </View>
-        <Text style={{ fontSize: 32, color: Colors.textOnDark, letterSpacing: -0.5, textAlign: 'center', fontFamily: Fonts.welcome }}>
+      {/* ── Identité (claire, centrée) ───────────────────────────── */}
+      <View style={{ alignItems: 'center', paddingHorizontal: 20, paddingTop: 24, paddingBottom: 4 }}>
+        <GradientAvatar name={profile.name} color={leagueColor} size={76} />
+        <Text style={{ fontSize: 26, fontWeight: '800', letterSpacing: -0.6, color: LIGHT.text, marginTop: 14 }} numberOfLines={1}>
           {profile.name}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <View style={{ backgroundColor: leagueColor + '25', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: leagueColor }}>
-            <Text style={{ color: leagueColor, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }}>{getLeagueLabel(league)}</Text>
+        <View style={{ flexDirection: 'row', gap: 7, marginTop: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <View style={{ backgroundColor: leagueColor + '1f', borderWidth: 1, borderColor: leagueColor + '55', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: leagueColor }}>● {getLeagueLabel(league)} · Niv. {curLevel.toFixed(2)}</Text>
           </View>
           {rankPos && (
-            <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '700' }}>Rang #{rankPos}</Text>
+            <View style={{ backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: LIGHT.sub }}>Rang #{rankPos}</Text>
             </View>
           )}
-          {profile.frmt_verified && profile.frmt_rank && (
-            <View style={{ backgroundColor: '#f0fdf4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: '#bbf7d0' }}>
-              <Text style={{ color: '#16a34a', fontSize: 10, fontWeight: '900' }}>🏆 {profile.frmt_rank} ✓</Text>
-            </View>
-          )}
+          {(() => {
+            const f = formatFrmtRanking(profile);
+            if (!f || !f.verified) return null;
+            return (
+              <View style={{ backgroundColor: Colors.success + '16', borderWidth: 1, borderColor: Colors.success + '44', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.success }}>FRMT {f.text} ✓</Text>
+              </View>
+            );
+          })()}
         </View>
       </View>
 
-      {/* ── Floating profile card ────────────────────────────────── */}
-      <View style={{ marginHorizontal: 16, marginTop: -22, borderRadius: 24, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, padding: 20, shadowColor: Colors.textPrimary, shadowOpacity: 0.08, shadowRadius: 20, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
+      {/* ── Carte « Niveau padel » ───────────────────────────────── */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+        <View style={[cardStyle, { padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }]}>
           <View>
-            <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Niveau padel</Text>
-            <Text style={{ fontSize: 48, fontWeight: '900', color: leagueColor, letterSpacing: -2, lineHeight: 52, fontFamily: Fonts.uiBlack }}>
+            <Kicker style={{ marginBottom: 2 }}>Niveau padel</Kicker>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 50, lineHeight: 52, color: LIGHT.accent, letterSpacing: -1 }}>
               {formatPadelLevel(profile.elo_score)}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end', gap: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 12, color: Colors.textSecondary }}>Fiabilité {fib}%</Text>
-              <View style={{ backgroundColor: fibColor + '20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
-                <Text style={{ color: fibColor, fontSize: 10, fontWeight: '700' }}>{fibLabel}</Text>
+          <View style={{ flex: 1, maxWidth: 150 }}>
+            {nextLvl && (
+              <>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: LIGHT.sub }}>→ Niv. {nextLvl.toFixed(1)}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: LIGHT.accent }}>{Math.round(lvlPct * 100)}%</Text>
+                </View>
+                <View style={{ height: 6, borderRadius: 3, backgroundColor: LIGHT.divider }}>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: LIGHT.accent, width: `${Math.round(lvlPct * 100)}%` as any }} />
+                </View>
+              </>
+            )}
+            <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: LIGHT.sub }}>Fiabilité {fib}%</Text>
+              <View style={{ backgroundColor: fibColor + '16', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5, color: fibColor }}>{fibLabel}</Text>
               </View>
             </View>
-            {nextLvl && (
-              <View style={{ width: 130 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontSize: 9, color: Colors.textMuted }}>→ Niv. {nextLvl.toFixed(1)}</Text>
-                  <Text style={{ fontSize: 9, color: leagueColor, fontWeight: '700' }}>{Math.round(lvlPct * 100)}%</Text>
-                </View>
-                <View style={{ height: 5, borderRadius: 3, backgroundColor: Colors.bgCardAlt }}>
-                  <View style={{ height: 5, borderRadius: 3, backgroundColor: leagueColor, width: `${Math.round(lvlPct * 100)}%` as any }} />
-                </View>
-              </View>
-            )}
           </View>
         </View>
+      </View>
 
-        {recentForm.length > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
-            <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 }}>Forme</Text>
-            <View style={{ flexDirection: 'row', gap: 4, flex: 1 }}>
-              {recentForm.map((r, i) => (
-                <View key={i} style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: r === 'W' ? Colors.success : Colors.danger, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: Colors.textOnDark, fontSize: 9, fontWeight: '900' }}>{r}</Text>
-                </View>
-              ))}
-            </View>
-            {streak >= 3 && <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.warning }}>🔥 {streak}</Text>}
+      {/* ── Carte « Bilan + Forme » ──────────────────────────────── */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
+        <View style={[cardStyle, { overflow: 'hidden' }]}>
+          <View style={{ flexDirection: 'row', paddingVertical: 18 }}>
+            {([
+              ['Matchs', String(totalM), LIGHT.text],
+              ['Victoires', String(wins), Colors.success],
+              ['Défaites', String(losses), Colors.danger],
+              ['Win', `${winRate}%`, LIGHT.accent],
+            ] as [string, string, string][]).map(([label, value, color], i) => (
+              <View key={label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: i ? 1 : 0, borderLeftColor: LIGHT.divider }}>
+                <Text style={{ fontFamily: Fonts.display, fontSize: 26, lineHeight: 28, color }}>{value}</Text>
+                <Kicker style={{ marginTop: 2 }}>{label}</Kicker>
+              </View>
+            ))}
           </View>
-        )}
-
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
-          {[
-            { label: 'Matchs',    value: totalM, color: Colors.textPrimary, bg: Colors.bg, border: Colors.border },
-            { label: 'Victoires', value: wins,   color: Colors.success, bg: '#f0fdf4', border: '#bbf7d0' },
-            { label: 'Défaites',  value: losses, color: Colors.danger, bg: '#fff5f5', border: '#fecaca' },
-          ].map(s => (
-            <View key={s.label} style={{ flex: 1, alignItems: 'center', backgroundColor: s.bg, borderRadius: 14, paddingVertical: 12, borderWidth: 1, borderColor: s.border }}>
-              <Text style={{ fontSize: 26, fontWeight: '900', color: s.color, lineHeight: 30, fontFamily: Fonts.uiBlack }}>{s.value}</Text>
-              <Text style={{ fontSize: 9, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 }}>{s.label}</Text>
+          {recentForm.length > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 14, borderTopWidth: 1, borderTopColor: LIGHT.divider }}>
+              <Kicker>Forme</Kicker>
+              <View style={{ flexDirection: 'row', gap: 5, flex: 1 }}>
+                {recentForm.map((r, i) => (
+                  <View key={i} style={{ width: 22, height: 22, borderRadius: 7, backgroundColor: r === 'W' ? Colors.success : Colors.danger, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: Colors.textOnDark, fontSize: 10, fontWeight: '900' }}>{r}</Text>
+                  </View>
+                ))}
+              </View>
+              {streak >= 3 && <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.warning }}>🔥 {streak}</Text>}
             </View>
-          ))}
+          )}
         </View>
       </View>
 
       {/* ── ELO Chart ───────────────────────────────────────────── */}
       {eloHistory.length >= 2 && (
-        <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: Colors.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 14 }}>Évolution du niveau</Text>
-          <EloLineChart history={eloHistory} />
-        </View>
-      )}
-
-
-      {/* ── Stats ───────────────────────────────────────────────── */}
-      <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: Colors.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 16 }}>Statistiques</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
-            <View>
-              <Text style={{ fontSize: 22, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>{totalM}</Text>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 1 }}>Totaux</Text>
+        <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
+          <View style={[cardStyle, { padding: 18 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <Kicker>Évolution du niveau</Kicker>
             </View>
-            <View>
-              <Text style={{ fontSize: 22, fontWeight: '900', color: Colors.success, fontFamily: Fonts.uiBlack }}>{wins}</Text>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.success, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 1 }}>Remportés</Text>
-            </View>
-            {bestPartner && (
-              <View>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.brandDeep, fontFamily: Fonts.uiBlack }} numberOfLines={1}>{bestPartner}</Text>
-                <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 1 }}>Partenaire</Text>
-              </View>
-            )}
-            {worstNemesis && (
-              <View>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.danger, fontFamily: Fonts.uiBlack }} numberOfLines={1}>{worstNemesis}</Text>
-                <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 1 }}>Bête noire</Text>
-              </View>
-            )}
-          </View>
-          <WinRateRing rate={winRate} />
-        </View>
-      </View>
-
-      {/* ── Dernier match ───────────────────────────────────────── */}
-      {lastMatch && (
-        <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: Colors.bgCard, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2 }}>Dernier Match</Text>
-          </View>
-          <View style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: lastIsWin ? '#fef9c3' : '#fee2e2', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 13, fontWeight: '900', color: lastIsWin ? '#713f12' : '#7f1d1d' }}>
-                {lastIsWin ? 'Victoire !' : 'Défaite'}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 11, color: Colors.textMuted }}>{relativeDate(lastMatch.created_at)}</Text>
-                <Text style={{ fontSize: 22 }}>{lastIsWin ? '🏆' : '💪'}</Text>
-              </View>
-            </View>
-
-            <View style={{ padding: 16 }}>
-              {[myLastTeam, theirTeam].map((team, ti) => {
-                const isMine = ti === 0;
-                return (
-                  <View key={ti}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <View style={{ flexDirection: 'row' }}>
-                        {team.map((name, ni) => (
-                          <View key={ni} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isMine ? Colors.primary : Colors.textMuted, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.bgCard, marginLeft: ni > 0 ? -8 : 0 }}>
-                            <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900' }}>{getInitials(name)}</Text>
-                          </View>
-                        ))}
-                      </View>
-                      <Text style={{ flex: 1, fontSize: 13, fontWeight: isMine ? '900' : '500', color: isMine ? Colors.textPrimary : Colors.textMuted }} numberOfLines={1}>
-                        {team.join(' & ')}
-                      </Text>
-                      <View style={{ flexDirection: 'row', gap: 12 }}>
-                        {lastSets.map(([w, l], si) => {
-                          const score = isMine ? (lastIsWin ? w : l) : (lastIsWin ? l : w);
-                          return (
-                            <Text key={si} style={{ fontSize: 18, fontWeight: '900', color: isMine ? Colors.textPrimary : Colors.border, width: 20, textAlign: 'center' }}>
-                              {score}
-                            </Text>
-                          );
-                        })}
-                      </View>
-                    </View>
-                    {ti === 0 && <View style={{ height: 1, backgroundColor: Colors.bgCardAlt, marginVertical: 8 }} />}
-                  </View>
-                );
-              })}
-              {lastSets.length > 0 && (
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 4 }}>
-                  {lastSets.map((_, si) => (
-                    <Text key={si} style={{ fontSize: 9, fontWeight: '700', color: Colors.border, textTransform: 'uppercase', letterSpacing: 1, width: 20, textAlign: 'center' }}>
-                      S{si + 1}
-                    </Text>
-                  ))}
-                </View>
-              )}
-            </View>
-        </View>
-      )}
-
-      {/* ── Préférences ─────────────────────────────────────────── */}
-      {showPrefs && (
-        <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: Colors.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 14 }}>Préférences</Text>
-          <View style={{ gap: 10 }}>
-            {profile.court_side && (
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18 }}>🎾</Text>
-                </View>
-                <View>
-                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 }}>Côté préféré</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.textPrimary, marginTop: 1 }}>
-                    {COURT_SIDE_LABEL[profile.court_side] ?? profile.court_side}
-                  </Text>
-                </View>
-              </View>
-            )}
-            {playingDays.length > 0 && (
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border, flexDirection: 'row', alignItems: 'flex-start', gap: 14 }}>
-                <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18 }}>📅</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>Jours préférés</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {playingDays.map(day => (
-                      <View key={day} style={{ backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#bbf7d0' }}>
-                        <Text style={{ color: '#16a34a', fontSize: 12, fontWeight: '700' }}>{day}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-            {profile.frmt_rank && (
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#fffbeb', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18 }}>🏆</Text>
-                </View>
-                <View>
-                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 }}>Classement FRMT</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}>{profile.frmt_rank}</Text>
-                    {profile.frmt_verified && (
-                      <View style={{ backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, borderWidth: 1, borderColor: '#bbf7d0' }}>
-                        <Text style={{ color: '#16a34a', fontSize: 9, fontWeight: '900' }}>Vérifié</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </View>
-            )}
-            {profile.preferred_court && (
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18 }}>🏟️</Text>
-                </View>
-                <View>
-                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 }}>Terrain préféré</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.textPrimary, marginTop: 1 }}>{profile.preferred_court}</Text>
-                </View>
-              </View>
-            )}
+            <EloLineChart history={eloHistory} />
           </View>
         </View>
       )}
 
-      {/* ── Palmarès ────────────────────────────────────────────── */}
+
+      {/* ── Préférences (lignes label / valeur, épuré) ──────────── */}
+      {prefRows.length > 0 && (
+        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+          <Kicker style={{ marginBottom: 8, marginLeft: 2 }}>Préférences</Kicker>
+          <View style={[cardStyle, { paddingHorizontal: 16 }]}>
+            {prefRows.map(([label, value], i) => (
+              <View key={label} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, gap: 12, borderTopWidth: i ? 1 : 0, borderTopColor: LIGHT.divider }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: LIGHT.sub }}>{label}</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: LIGHT.text, flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>{value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* ── Palmarès (badges karma + achievements, conservé) ────── */}
       {showPalm && (
-        <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: Colors.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 14 }}>Palmarès</Text>
+        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+          <Kicker style={{ marginBottom: 8, marginLeft: 2 }}>Palmarès</Kicker>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {sortedKarma.map(([key, count]) => {
-                const info = BADGES_INFO[key];
-                if (!info) return null;
-                return (
-                  <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }}>
-                    <Text style={{ fontSize: 20 }}>{info.icon}</Text>
-                    <View>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary }}>{info.label}</Text>
-                      <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>×{count}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-              {achvBadges.map((b, i) => (
-                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }}>
-                  <Text style={{ fontSize: 20 }}>{b.emoji}</Text>
+            {sortedKarma.map(([key, count]) => {
+              const info = BADGES_INFO[key];
+              if (!info) return null;
+              return (
+                <View key={key} style={[cardStyle, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }]}>
+                  <Text style={{ fontSize: 20 }}>{info.icon}</Text>
                   <View>
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary }}>{b.name}</Text>
-                    <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>{b.desc}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: LIGHT.text }}>{info.label}</Text>
+                    <Text style={{ fontSize: 10, color: LIGHT.accent, fontWeight: '800' }}>×{count}</Text>
                   </View>
                 </View>
-              ))}
-            </View>
+              );
+            })}
+            {achvBadges.map((b, i) => (
+              <View key={i} style={[cardStyle, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }]}>
+                <Text style={{ fontSize: 20 }}>{b.emoji}</Text>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: LIGHT.text }}>{b.name}</Text>
+                  <Text style={{ fontSize: 10, color: LIGHT.muted, fontWeight: '600' }}>{b.desc}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       )}
 
-      {/* ── Match history ───────────────────────────────────────── */}
-      <View style={{ marginHorizontal: 16, marginTop: 16 }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 12 }}>
-          Historique · {matches.length} match{matches.length !== 1 ? 's' : ''}
-        </Text>
+      {/* ── Historique des matchs (compact, épuré) ──────────────── */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, marginLeft: 2 }}>
+          <Kicker>Historique des matchs · {matches.length}</Kicker>
+          {isSelf && matches.length > 0 && (
+            <Text style={{ fontSize: 10.5, fontWeight: '700', color: LIGHT.muted }}>Tape pour partager 📸</Text>
+          )}
+        </View>
 
         {matches.length > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, marginBottom: 10, height: 42 }}>
-            <Text style={{ fontSize: 15, marginRight: 8, color: Colors.textMuted }}>🔍</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: LIGHT.card, borderRadius: 12, borderWidth: 1, borderColor: LIGHT.border, paddingHorizontal: 12, marginBottom: 10, height: 42 }}>
+            <Text style={{ fontSize: 15, marginRight: 8, color: LIGHT.muted }}>🔍</Text>
             <TextInput
               value={matchSearch}
               onChangeText={setMatchSearch}
               placeholder="Rechercher un joueur…"
-              placeholderTextColor={Colors.textMuted}
-              style={{ flex: 1, fontSize: 14, color: Colors.textPrimary }}
+              placeholderTextColor={LIGHT.muted}
+              style={{ flex: 1, fontSize: 14, color: LIGHT.text }}
               clearButtonMode="while-editing"
               autoCorrect={false}
             />
@@ -1089,31 +1109,60 @@ export default function PlayerProfileScreen() {
         )}
 
         {filteredMatches.length === 0 ? (
-          <View style={{ backgroundColor: Colors.bgCard, borderRadius: 20, padding: 40, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-            <Text style={{ fontSize: 26, marginBottom: 8 }}>🎾</Text>
-            <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.textPrimary }}>
+          <View style={[cardStyle, { padding: 36, alignItems: 'center' }]}>
+            <Text style={{ fontSize: 15, fontWeight: '800', color: LIGHT.text }}>
               {matchSearch.trim() ? 'Aucun résultat' : 'Aucun match joué'}
             </Text>
-            <Text style={{ fontSize: 13, color: Colors.textMuted, marginTop: 4 }}>
+            <Text style={{ fontSize: 13, color: LIGHT.muted, marginTop: 4 }}>
               {matchSearch.trim() ? `Aucun match avec "${matchSearch}"` : "L'historique est encore vierge."}
             </Text>
           </View>
         ) : (
-          <View style={{ gap: 10 }}>
-            {filteredMatches.map(m => (
-              <MatchCard
+          <View style={[cardStyle, { paddingHorizontal: 16 }]}>
+            {visibleMatches.map((m, i) => (
+              <HistoryRow
                 key={m.id}
                 match={m}
                 playerId={id as string}
-                eloDelta={eloChangeByMatch[m.id]}
-                onPlayerPress={(pid) => pid !== id && router.push(`/player/${pid}` as any)}
-                onRematch={isSelf ? (matchId) => router.push(`/(tabs)/lobby?rematch=${matchId}` as any) : undefined}
+                isSelf={isSelf}
+                divider={i > 0}
+                onShare={() => shareMatch(m)}
+                onRematch={isSelf ? () => router.push(`/(tabs)/lobby?rematch=${m.id}` as any) : undefined}
               />
             ))}
+            {!matchSearch.trim() && filteredMatches.length > 3 && (
+              <TouchableOpacity
+                onPress={() => setShowAllMatches(s => !s)}
+                activeOpacity={0.7}
+                style={{ paddingVertical: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: LIGHT.divider }}
+              >
+                <Text style={{ fontSize: 12.5, fontWeight: '800', letterSpacing: 0.3, color: LIGHT.accent }}>
+                  {showAllMatches ? 'Voir moins' : `Voir tout · ${filteredMatches.length}`}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
     </ScrollView>
+
+    {/* ── Barre « Défier » collée en bas (autre joueur) ───────────── */}
+    {!isSelf && (
+      <View style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        backgroundColor: LIGHT.card, borderTopWidth: 1, borderTopColor: LIGHT.border,
+        paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 16,
+        shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 28, shadowOffset: { width: 0, height: -10 }, elevation: 12,
+      }}>
+        <TouchableOpacity onPress={handleDefier} activeOpacity={0.85}
+          style={{ height: 52, borderRadius: 16, backgroundColor: Colors.brand, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, shadowColor: Colors.brand, shadowOpacity: 0.4, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+            <Polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </Svg>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: '#0A0A0A', letterSpacing: 0.2 }}>Défier {profile.name.split(' ')[0]}</Text>
+        </TouchableOpacity>
+      </View>
+    )}
 
     {/* ── Edit profile modal ──────────────────────────────────── */}
     <Modal visible={editOpen} transparent animationType="slide" onRequestClose={() => setEditOpen(false)}>
@@ -1358,13 +1407,17 @@ export default function PlayerProfileScreen() {
           onClose={() => setStoryPickerOpen(false)}
           onPick={(m) => { setStoryPickerOpen(false); setStoryMatch(m); }}
         />
-        <StoryComposer
-          visible={storyMatch !== null}
+        <StoryComposerV2
+          visible={composerOpen}
+          player={storyPlayer}
           match={storyMatch}
-          onClose={() => setStoryMatch(null)}
+          invite={storyInvite}
+          initialMode={composerMode}
+          onClose={() => setComposerOpen(false)}
+          onRequestMatch={() => setStoryPickerOpen(true)}
         />
       </>
     )}
-    </>
+    </View>
   );
 }

@@ -11,12 +11,14 @@ interface NotifyOptions {
 export async function notifyPlayers({ playerIds, title, body, data }: NotifyOptions): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    console.log('[notifyPlayers] called', { count: playerIds?.length, hasSession: !!session, title });
+    if (!session) { console.log('[notifyPlayers] no session → abort'); return; }
 
-    await supabase.functions.invoke('send-push', {
+    const res = await supabase.functions.invoke('send-push', {
       body: { playerIds, title, body, data },
     });
-  } catch {
-    // Swallow silently — push failure must never break the UX
+    console.log('[notifyPlayers] invoke result', { data: res.data, error: res.error });
+  } catch (e) {
+    console.log('[notifyPlayers] invoke threw', String(e));
   }
 }

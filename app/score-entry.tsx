@@ -17,11 +17,11 @@ const SCORE_OPTS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const BADGE_FALLBACK: Record<string, string> = {
   'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🎾',
+  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🥅',
   'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
   'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
   CANNON: '💥', SMASH: '🎯', COMEBACK: '🔥', WALL: '🧱',
-  RUNNER: '🏃', NET_KING: '🎾', BRAIN: '🧠', CAPTAIN: '⭐',
+  RUNNER: '🏃', NET_KING: '🥅', BRAIN: '🧠', CAPTAIN: '⭐',
   FAIR_PLAY: '🤝', GOOD_VIBES: '😄', DRINKS: '🍻', PUNCTUAL: '⏰',
   'El Cañón': '💥', 'Bon Délire': '😄', 'Essuie-glace': '🏃',
 };
@@ -497,14 +497,13 @@ export default function ScoreEntryScreen() {
     let t1Sets = 0, t2Sets = 0;
     activeSets.forEach(s => s.t1 > s.t2 ? t1Sets++ : t2Sets++);
 
+    // Pas de match nul : un match doit avoir un vainqueur, sinon le score
+    // serait enregistré avec un gagnant arbitraire (opponents[0]) et le
+    // trigger ELO distribuerait des points à tort.
     if (t1Sets === t2Sets) {
       Alert.alert(
-        'Match nul',
-        'Ce match est sans impact sur le classement. Voulez-vous continuer ?',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Continuer', onPress: () => doSubmit(game, activeSets, t1Sets, t2Sets) },
-        ]
+        'Match nul impossible',
+        'Un match doit avoir un vainqueur. Ajoute un set décisif pour départager les équipes (nombre impair de sets gagnés).',
       );
       return;
     }

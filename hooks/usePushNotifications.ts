@@ -28,7 +28,8 @@ export function usePushNotifications() {
 
   // ── Register token ────────────────────────────────────────────
   useEffect(() => {
-    if (!player || IS_EXPO_GO) return;
+    if (!player) { console.log('[push] pas de player → skip'); return; }
+    if (IS_EXPO_GO) { console.log('[push] Expo Go → enregistrement impossible (build natif requis)'); return; }
 
     (async () => {
       try {
@@ -48,22 +49,26 @@ export function usePushNotifications() {
           const { status } = await Notifications.requestPermissionsAsync();
           finalStatus = status;
         }
-        if (finalStatus !== 'granted') return;
+        console.log('[push] permission =', finalStatus);
+        if (finalStatus !== 'granted') { console.log('[push] permission refusée → stop'); return; }
 
+        console.log('[push] projectId =', process.env.EXPO_PUBLIC_PROJECT_ID);
         const tokenData = await Notifications.getExpoPushTokenAsync({
           projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
         });
         const token = tokenData.data;
+        console.log('[push] token obtenu =', token);
         if (token === savedToken.current) return;
         savedToken.current = token;
 
         // Save to DB — only if changed
-        await supabase
+        const { error } = await supabase
           .from('players')
           .update({ push_token: token })
           .eq('id', player.id);
-      } catch {
-        // Firebase not configured — push notifications unavailable
+        console.log('[push] save DB', error ? `ERREUR: ${error.message}` : 'OK');
+      } catch (e) {
+        console.log('[push] EXCEPTION (FCM/Firebase pas dans le build ?):', String(e));
       }
     })();
   }, [player?.id]);

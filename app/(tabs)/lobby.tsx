@@ -453,7 +453,7 @@ async function shareGame(game: EnrichedGame) {
     }).filter(Boolean);
   const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
   const url = `https://matchup-padel.vercel.app/lobby?game=${game.id}`;
-  const msg = `🎾 Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
+  const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
 
@@ -511,6 +511,14 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
           {variant === 'upcoming' && game.my_status === 'accepted' && (
             <Pill variant="success">✓ Inscrit</Pill>
           )}
+          {variant === 'upcoming' && game.my_status === 'waitlist' && (() => {
+            const wl = (game.participants ?? [])
+              .filter((p: any) => p.status === 'waitlist')
+              .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
+            const idx = wl.findIndex((p: any) => p.player_id === playerId);
+            const pos = idx >= 0 ? idx + 1 : null;
+            return <Pill variant="warning">⏳ {pos ? `${pos === 1 ? '1ʳᵉ' : `${pos}ᵉ`} en attente` : "Liste d'attente"}</Pill>;
+          })()}
           {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (game.pending_count ?? 0) > 0 && (
             <Pill variant="warning">
               {game.pending_count} demande{(game.pending_count ?? 0) > 1 ? 's' : ''}
@@ -650,7 +658,7 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
 // ─── Badge fallback emojis ────────────────────────────────────
 const BADGE_FALLBACK: Record<string, string> = {
   'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🎾',
+  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🥅',
   'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
   'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
   CANNON: '💥', SMASH: '🎯', COMEBACK: '🔥', WALL: '🧱',
@@ -1083,11 +1091,32 @@ function EmptyState({ text, sub }: { text: string; sub?: string }) {
       backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
       borderStyle: 'dashed', borderRadius: 18,
     }}>
-      <Text style={{ fontSize: 32, marginBottom: 8 }}>🎾</Text>
       <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary, fontSize: 14, textAlign: 'center' }}>{text}</Text>
       {sub ? <Text style={{ color: Colors.textMuted, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>{sub}</Text> : null}
     </View>
   );
+}
+
+// Applique les filtres de l'Explorer (mode urgent, type, recherche).
+// Factorisé pour que le badge de l'onglet ET la liste utilisent EXACTEMENT
+// la même logique → le compteur reflète les filtres actifs.
+function filterExploreGames(
+  games: EnrichedGame[], filterMode: FilterMode, typeFilter: TypeFilter, search: string,
+): EnrichedGame[] {
+  let arr = games;
+  if (filterMode === 'urgent') arr = arr.filter(g => {
+    const h = g.match_date ? hoursUntil(g.match_date) : 0;
+    return g.spots_available === 1 && h > 0 && h <= 6;
+  });
+  if (typeFilter !== 'all') arr = arr.filter(g => getGameType(g) === typeFilter);
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    arr = arr.filter(g =>
+      (g.location ?? '').toLowerCase().includes(q) ||
+      ((g.creator as any)?.name ?? '').toLowerCase().includes(q),
+    );
+  }
+  return arr;
 }
 
 // ─── Explorer tab ─────────────────────────────────────────────
@@ -1101,22 +1130,13 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
   onChangeSide: (participantId: string, side: string) => void;
   onCreatorChangeSide: (gameId: string, side: string) => void;
 }) {
-  const filtered = useMemo(() => {
-    let arr = [...games];
-    if (filterMode === 'urgent') arr = arr.filter(g => {
-      const h = g.match_date ? hoursUntil(g.match_date) : 0;
-      return g.spots_available === 1 && h > 0 && h <= 6;
-    });
-    if (typeFilter !== 'all') arr = arr.filter(g => getGameType(g) === typeFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      arr = arr.filter(g =>
-        (g.location ?? '').toLowerCase().includes(q) ||
-        ((g.creator as any)?.name ?? '').toLowerCase().includes(q)
-      );
-    }
-    return arr;
-  }, [games, filterMode, typeFilter, search, myElo]);
+  const filtered = useMemo(
+    () => filterExploreGames(games, filterMode, typeFilter, search),
+    [games, filterMode, typeFilter, search],
+  );
+
+  const hasActiveFilter = filterMode !== 'all' || typeFilter !== 'all' || search.trim().length > 0;
+  const resetFilters = () => { setFilterMode('all'); setTypeFilter('all'); setSearch(''); };
 
   const recommended = useMemo(() => games.filter(g => getEloFit(g, myElo) === 'fit'), [games, myElo]);
   const urgentCount = useMemo(() => games.filter(g => {
@@ -1124,8 +1144,18 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
     return g.spots_available === 1 && h > 0 && h <= 6;
   }).length, [games]);
 
-  const countLabel = filterMode === 'urgent' ? `urgente${filtered.length > 1 ? 's' : ''}`
-    : `disponible${filtered.length > 1 ? 's' : ''}`;
+  // "Pour toi" is shown above the main list; drop those games from the main
+  // list so the same match never appears twice. Masqué dès qu'un filtre est
+  // actif → la liste filtrée s'affiche à plat (et l'état vide peut apparaître).
+  const showForYou = !hasActiveFilter && recommended.length > 0;
+  const recommendedIds = useMemo(() => new Set(recommended.map(g => g.id)), [recommended]);
+  const mainList = useMemo(
+    () => showForYou ? filtered.filter(g => !recommendedIds.has(g.id)) : filtered,
+    [filtered, showForYou, recommendedIds],
+  );
+
+  const countLabel = filterMode === 'urgent' ? `urgente${mainList.length > 1 ? 's' : ''}`
+    : `disponible${mainList.length > 1 ? 's' : ''}`;
 
   return (
     <View style={{ paddingBottom: 100 }}>
@@ -1163,8 +1193,8 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         <TypeChip active={typeFilter === 'challenge'} onPress={() => setTypeFilter('challenge')}>Défi</TypeChip>
       </ScrollView>
 
-      {/* "Pour toi" horizontal scroll */}
-      {filterMode === 'all' && recommended.length > 0 && (
+      {/* "Pour toi" — pile verticale des parties à ton niveau */}
+      {showForYou && (
         <View style={{ marginBottom: 16 }}>
           <Text style={{
             fontSize: 11, fontWeight: '900', color: Colors.success,
@@ -1183,25 +1213,46 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         </View>
       )}
 
-      {/* Main list */}
-      <View style={{ paddingHorizontal: 14 }}>
-        <Text style={{
-          fontSize: 11, fontWeight: '900', color: Colors.textSecondary,
-          letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8,
-        }}>
-          {filtered.length} partie{filtered.length > 1 ? 's' : ''} {countLabel}
-        </Text>
-        {filtered.length === 0
-          ? <EmptyState text="Aucune partie ne correspond" sub="Essaie de réinitialiser les filtres ou crée la tienne" />
-          : <View style={{ gap: 10 }}>
-              {filtered.map(g => (
-                <GameCard key={g.id} game={g} variant="explore" myElo={myElo} playerId={playerId}
-                  onApply={onApply} onChangeSide={onChangeSide} onCreatorChangeSide={onCreatorChangeSide}
-                  onPress={() => onOpenGame(g)} />
-              ))}
-            </View>
-        }
-      </View>
+      {/* Main list — hidden entirely when "Pour toi" already covers every game */}
+      {(mainList.length > 0 || !showForYou) && (
+        <View style={{ paddingHorizontal: 14 }}>
+          <Text style={{
+            fontSize: 11, fontWeight: '900', color: Colors.textSecondary,
+            letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8,
+          }}>
+            {mainList.length} partie{mainList.length > 1 ? 's' : ''} {countLabel}
+          </Text>
+          {mainList.length === 0
+            ? (hasActiveFilter && games.length > 0
+                ? (
+                  <View style={{
+                    paddingVertical: 32, paddingHorizontal: 16, alignItems: 'center',
+                    backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+                    borderStyle: 'dashed', borderRadius: 18,
+                  }}>
+                    <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary, fontSize: 14, textAlign: 'center' }}>
+                      Aucune partie ne correspond aux filtres
+                    </Text>
+                    <Text style={{ color: Colors.textMuted, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>
+                      {games.length} partie{games.length > 1 ? 's' : ''} disponible{games.length > 1 ? 's' : ''} au total
+                    </Text>
+                    <TouchableOpacity onPress={resetFilters} activeOpacity={0.85}
+                      style={{ marginTop: 14, backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+                      <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontSize: 13 }}>Réinitialiser les filtres</Text>
+                    </TouchableOpacity>
+                  </View>
+                )
+                : <EmptyState text="Aucune partie disponible" sub="Crée la tienne pour lancer le jeu" />)
+            : <View style={{ gap: 10 }}>
+                {mainList.map(g => (
+                  <GameCard key={g.id} game={g} variant="explore" myElo={myElo} playerId={playerId}
+                    onApply={onApply} onChangeSide={onChangeSide} onCreatorChangeSide={onCreatorChangeSide}
+                    onPress={() => onOpenGame(g)} />
+                ))}
+              </View>
+          }
+        </View>
+      )}
     </View>
   );
 }
@@ -1225,11 +1276,13 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
   const accepted = games.filter(g => !g.is_creator && g.my_status === 'accepted').filter(byType);
   const invited  = games.filter(g => !g.is_creator && g.my_status === 'invited').filter(byType);
   const pending  = games.filter(g => !g.is_creator && g.my_status === 'pending').filter(byType);
+  const waitlisted = games.filter(g => !g.is_creator && g.my_status === 'waitlist').filter(byType);
 
   const showCreated = roleFilter === 'all' || roleFilter === 'creator' || roleFilter === 'playing';
   const showAccepted = roleFilter === 'all' || roleFilter === 'playing';
   const showInvited = roleFilter === 'all' || roleFilter === 'pending';
   const showPending = roleFilter === 'all' || roleFilter === 'pending';
+  const showWaitlist = roleFilter === 'all' || roleFilter === 'pending';
 
   const cardProps = { playerId, onChangeSide, onCreatorChangeSide };
 
@@ -1291,7 +1344,12 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
           {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} />)}
         </Section>
       )}
-      {created.length + accepted.length + invited.length + pending.length === 0 && (
+      {showWaitlist && waitlisted.length > 0 && (
+        <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted}>
+          {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
+        </Section>
+      )}
+      {created.length + accepted.length + invited.length + pending.length + waitlisted.length === 0 && (
         <EmptyState text="Aucune partie à venir" sub={typeFilter !== 'all' ? 'Aucun match de ce type' : 'Explore le lobby ou crée la tienne'} />
       )}
     </View>
@@ -1306,6 +1364,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
   onRematch: (matchId: string) => void;
 }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [search, setSearch] = useState('');
 
   const byType = (m: Match) => {
     if (typeFilter === 'all') return true;
@@ -1314,11 +1373,47 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
     return !m.is_challenge && (m.game_format as string) !== 'friendly';
   };
 
-  const toScore = matches.filter(m => needsMyValidation(m, playerId)).filter(byType);
-  const past = matches.filter(m => m.status === 'validated').filter(byType);
+  // Recherche libre : nom d'un joueur (partenaire ou adversaire) ou lieu du match.
+  const q = search.trim().toLowerCase();
+  const matchSearch = (m: Match) => {
+    if (!q) return true;
+    const names = [m.winner?.name, m.winner_2?.name, m.loser?.name, m.loser_2?.name];
+    return names.some(n => (n ?? '').toLowerCase().includes(q))
+      || (m.game?.location ?? '').toLowerCase().includes(q);
+  };
+  const gameSearch = (g: EnrichedGame) => {
+    if (!q) return true;
+    const names = [(g.creator as any)?.name, ...(g.participants ?? []).map((p: any) => p.player?.name)];
+    return names.some((n: any) => (n ?? '').toLowerCase().includes(q))
+      || (g.location ?? '').toLowerCase().includes(q);
+  };
+
+  const toScore = matches.filter(m => needsMyValidation(m, playerId)).filter(byType).filter(matchSearch);
+  const past = matches.filter(m => m.status === 'validated').filter(byType).filter(matchSearch);
+  const pastGames = pastCompleteGames.filter(gameSearch);
 
   return (
     <View style={{ padding: 14, paddingBottom: 100 }}>
+      {/* Search bar */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        marginBottom: 12, backgroundColor: Colors.bgCard, borderRadius: 12,
+        borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
+      }}>
+        <IconSearch size={16} color={Colors.textMuted} />
+        <TextInput
+          value={search} onChangeText={setSearch}
+          placeholder="Rechercher un joueur, un lieu…"
+          placeholderTextColor={Colors.textMuted}
+          style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <IconX size={14} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* Type chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 8, marginBottom: 14 }}>
@@ -1328,9 +1423,9 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
         <TypeChip active={typeFilter === 'challenge'} onPress={() => setTypeFilter('challenge')}>Défi</TypeChip>
       </ScrollView>
 
-      {pastCompleteGames.length > 0 && (
-        <Section title="À scorer" count={pastCompleteGames.length} color={Colors.warning}>
-          {pastCompleteGames.map(g => (
+      {pastGames.length > 0 && (
+        <Section title="À scorer" count={pastGames.length} color={Colors.warning}>
+          {pastGames.map(g => (
             <GameCard key={g.id} game={g} variant="upcoming" myElo={0}
               playerId={playerId} hideActions scorable
               onPress={() => onOpenGame(g)}
@@ -1348,10 +1443,10 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
           {past.map(m => <MatchCard key={m.id} match={m} playerId={playerId} onPress={() => onOpenMatch(m)} onRematch={onRematch} />)}
         </Section>
       )}
-      {pastCompleteGames.length + toScore.length + past.length === 0 && (
+      {pastGames.length + toScore.length + past.length === 0 && (
         <EmptyState
-          text={matches.length === 0 ? 'Aucun match joué encore' : 'Aucun match de ce type'}
-          sub={matches.length === 0 ? 'Rejoins une partie depuis Explorer !' : undefined}
+          text={q ? 'Aucun résultat' : matches.length === 0 ? 'Aucun match joué encore' : 'Aucun match de ce type'}
+          sub={q ? 'Essaie un autre nom de joueur ou de lieu' : matches.length === 0 ? 'Rejoins une partie depuis Explorer !' : undefined}
         />
       )}
     </View>
@@ -1396,7 +1491,7 @@ export default function LobbyScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
 
-    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, player:player_id(id, name, elo_score, win_count, loss_count))';
+    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, player:player_id(id, name, elo_score, win_count, loss_count))';
 
     const [explorerRes, createdRes, matchesRes] = await Promise.all([
       supabase
@@ -1428,17 +1523,68 @@ export default function LobbyScreen() {
       pending_count: (g.participants ?? []).filter((p: any) => p.status === 'pending').length,
     }));
 
-    // Games where I'm a participant (not as creator) — all statuses except declined
-    const { data: partEntries } = await supabase
-      .from('game_participants')
-      .select(`status, game:game_id(${GAME_SELECT})`)
-      .eq('player_id', player.id)
-      .in('status', ['accepted', 'pending', 'waitlist', 'invited']);
-
     const createdIds = new Set(creatorGames.map(g => g.id));
-    const participantGames: EnrichedGame[] = (partEntries ?? [])
-      .map((e: any) => ({ ...e.game, is_creator: false, my_status: e.status }))
-      .filter((g: any) => g?.id && !createdIds.has(g.id));
+
+    // Games where I'm a participant (not as creator). Fetched in two reliable
+    // steps to avoid the nested `game:game_id(...)` embed, which can silently
+    // drop a game (and hide my invitation from "À venir").
+    //   1) my participation rows (status only)
+    //   2) the matching games, via the same query used for created games
+    // A manually-declined row (auto_declined = false) stays hidden; an
+    // auto-declined invitation (hidden by the ±4h overlap trigger) is re-offered
+    // as 'invited' once its game is still joinable.
+    const { data: partRows } = await supabase
+      .from('game_participants')
+      .select('game_id, status, auto_declined')
+      .eq('player_id', player.id)
+      .in('status', ['accepted', 'pending', 'waitlist', 'invited', 'declined']);
+
+    const myStatusByGame = new Map<string, 'accepted' | 'pending' | 'waitlist' | 'invited'>();
+    for (const r of partRows ?? []) {
+      if (createdIds.has(r.game_id)) continue;
+      if (r.status === 'declined') {
+        if (!r.auto_declined) continue;       // manual refusal → keep hidden
+        myStatusByGame.set(r.game_id, 'invited'); // re-offer auto-declined invitation
+      } else {
+        myStatusByGame.set(r.game_id, r.status);
+      }
+    }
+
+    const partGameIds = [...myStatusByGame.keys()];
+    let participantGames: EnrichedGame[] = [];
+    if (partGameIds.length > 0) {
+      const { data: partGameData } = await supabase
+        .from('open_games')
+        .select(GAME_SELECT)
+        .in('id', partGameIds);
+      const nowMsPart = Date.now();
+      participantGames = (partGameData ?? [])
+        .filter((g: any) => {
+          // Drop re-offered invitations whose game is no longer joinable.
+          if (myStatusByGame.get(g.id) === 'invited'
+              && (g.status === 'closed' || g.status === 'cancelled'
+                  || (g.match_date && new Date(g.match_date).getTime() < nowMsPart))) {
+            // Only drop if it came from a declined row (real invitations stay).
+            const row = (partRows ?? []).find((r: any) => r.game_id === g.id);
+            if (row?.status === 'declined') return false;
+          }
+          return true;
+        })
+        .map((g: any) => {
+          const my = myStatusByGame.get(g.id);
+          // For a re-offered invitation my own row is 'declined' in the DB —
+          // surface it as 'invited' so the accept/refuse buttons render.
+          const participants = my === 'invited'
+            ? (g.participants ?? []).map((p: any) =>
+                p.player_id === player.id ? { ...p, status: 'invited' } : p)
+            : g.participants;
+          return {
+            ...g, participants, is_creator: false, my_status: my,
+            // Les participants validés voient aussi le nombre de demandes en attente.
+            pending_count: (participants ?? []).filter((p: any) => p.status === 'pending').length,
+          };
+        });
+    }
 
     // Explorer: exclude games the player created or already applied to
     const alreadyInIds = new Set([
@@ -1591,15 +1737,27 @@ export default function LobbyScreen() {
       Alert.alert('✅ Accepté !', 'Ton niveau correspond — tu es directement dans la partie !');
       setOpenGameId(null);
     } else if (newStatus === 'pending') {
-      if (game?.creator_id) {
+      // La validation requiert TOUS les joueurs en place (créateur + participants
+      // validés) — on les notifie tous, avec un lien vers la carte détail du match.
+      const approverIds = [
+        game?.creator_id,
+        ...(game?.participants?.filter((p: any) => p.status === 'accepted').map((p: any) => p.player_id) ?? []),
+      ].filter((id: string | undefined): id is string => !!id && id !== player.id);
+      if (approverIds.length > 0) {
         notifyPlayers({
-          playerIds: [game.creator_id],
+          playerIds: approverIds,
           title: '📋 Nouvelle demande',
-          body: `${player.name} veut rejoindre ta partie`,
+          body: `${player.name} veut rejoindre la partie${game?.location ? ` à ${game.location}` : ''} — valide sa demande`,
           data: { type: 'lobby', gameId },
         });
       }
-      Alert.alert('Demande envoyée !', 'Le créateur doit accepter ta demande.');
+      Alert.alert('Demande envoyée !', 'Les participants doivent accepter ta demande.');
+      setOpenGameId(null);
+    } else if (newStatus === 'waitlist') {
+      Alert.alert(
+        "Liste d'attente",
+        "La partie est complète — tu es sur la liste d'attente. Tu seras prévenu·e dès qu'une place se libère.",
+      );
       setOpenGameId(null);
     }
     fetchData();
@@ -2064,6 +2222,11 @@ export default function LobbyScreen() {
   if (!player) return null;
 
   const upcomingBadge = upcomingGames.length;
+  // Badge Explorer = nombre de parties APRÈS application des filtres (Option A).
+  const exploreBadge = useMemo(
+    () => filterExploreGames(games, filterMode, typeFilter, search).length,
+    [games, filterMode, typeFilter, search],
+  );
   const scoresToValidate = matches.filter(m => needsMyValidation(m, player.id)).length;
 
   return (
@@ -2103,7 +2266,7 @@ export default function LobbyScreen() {
         {/* Tabs — pill style */}
         <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
           {([
-            { id: 'explorer',  label: 'Explorer',   count: games.length },
+            { id: 'explorer',  label: 'Explorer',   count: exploreBadge },
             { id: 'upcoming',  label: 'À venir',    count: upcomingBadge },
             { id: 'history',   label: 'Historique', count: pastCompleteGames.length },
           ] as { id: TabKey; label: string; count: number }[]).map(t => {
@@ -2230,6 +2393,7 @@ export default function LobbyScreen() {
       <CreateWizard
         visible={showCreate}
         onClose={() => { setShowCreate(false); setChallengeWith(null); setRematchInvites(null); setRematchGameType(undefined); }}
+        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setRematchInvites(null); setRematchGameType(undefined); setTab('upcoming'); }}
         onPublish={handlePublish}
         player={player}
         initialGameType={rematchGameType ?? (challengeWith ? 'Défi' : undefined)}

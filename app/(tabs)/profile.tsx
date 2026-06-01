@@ -6,6 +6,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, Fonts } from '../../lib/theme';
 
@@ -94,74 +95,23 @@ export default function ProfileScreen() {
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
 
-  const [challengeCount, setChallengeCount] = useState(0);
-  const [pendingMatchCount, setPendingMatchCount] = useState(0);
-  const [unreadChatCount, setUnreadChatCount] = useState(0);
-  const [invitationCount, setInvitationCount] = useState(0);
+  // Shared notification counts (same total as the Home bell). Unread chat
+  // messages are intentionally excluded — they live on the Chats tab badge.
+  const {
+    challenges: challengeCount,
+    toValidate: pendingMatchCount,
+    invitations: invitationCount,
+    trophies: trophyCount,
+    toScore: toScoreCount,
+    total: totalNotif,
+    reload: reloadNotifs,
+  } = useNotificationCount();
 
-  const fetchData = useCallback(async () => {
-    if (!player) return;
-
-    const [cRes, mRes] = await Promise.all([
-      supabase.from('challenges').select('id', { count: 'exact', head: true }).eq('challenged_id', player.id).eq('status', 'pending'),
-      supabase.from('matches')
-        .select('id, created_by, winner_id, winner_id_2, loser_id, loser_id_2')
-        .or(`winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`)
-        .eq('status', 'pending'),
-    ]);
-
-    setChallengeCount(cRes.count ?? 0);
-
-    // Mirror notifications.tsx: exclude matches submitted by me OR by my doubles partner
-    const visiblePending = (mRes.data ?? []).filter((m: any) => {
-      if (m.created_by === player.id) return false;
-      const cb = m.created_by;
-      if (
-        (cb === m.winner_id   && m.winner_id_2 === player.id) ||
-        (cb === m.winner_id_2 && m.winner_id   === player.id) ||
-        (cb === m.loser_id    && m.loser_id_2  === player.id) ||
-        (cb === m.loser_id_2  && m.loser_id    === player.id)
-      ) return false;
-      return true;
-    });
-    setPendingMatchCount(visiblePending.length);
-
-    // Active invitations (status='invited' on a non-past, non-cancelled game)
-    const { data: invites } = await supabase
-      .from('game_participants')
-      .select('id, game:game_id(status, match_date)')
-      .eq('player_id', player.id)
-      .eq('status', 'invited');
-    const activeInvites = (invites ?? []).filter((inv: any) => {
-      const g = inv.game;
-      if (!g) return false;
-      if (g.status === 'closed' || g.status === 'cancelled') return false;
-      if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
-      return true;
-    });
-    setInvitationCount(activeInvites.length);
-
-    // Unread chats
-    const { data: reads } = await supabase.from('game_chat_reads').select('game_id, last_read_at').eq('player_id', player.id);
-    const readMap = Object.fromEntries((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
-    const { data: parts } = await supabase.from('game_participants').select('game_id').eq('player_id', player.id).eq('status', 'accepted');
-    const { data: created } = await supabase.from('open_games').select('id').eq('creator_id', player.id).in('status', ['open', 'closed']);
-    const gameIds = [...new Set([...(parts ?? []).map((p: any) => p.game_id), ...(created ?? []).map((g: any) => g.id)])];
-
-    let total = 0;
-    await Promise.all(gameIds.slice(0, 15).map(async (gid) => {
-      const lastRead = readMap[gid] ?? '1970-01-01';
-      const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('game_id', gid).gt('created_at', lastRead).neq('player_id', player.id);
-      total += count ?? 0;
-    }));
-    setUnreadChatCount(total);
-  }, [player]);
-
-  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+  useFocusEffect(useCallback(() => { reloadNotifs(); }, [reloadNotifs]));
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refresh(), fetchData()]);
+    await Promise.all([refresh(), reloadNotifs()]);
     setRefreshing(false);
   };
 
@@ -177,7 +127,6 @@ export default function ProfileScreen() {
   const league = getLeague(player.elo_score);
   const level = eloToLevel(player.elo_score);
   const leagueColor = Colors.league[league];
-  const totalNotif = challengeCount + pendingMatchCount + unreadChatCount + invitationCount;
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.heroBg }}>
@@ -237,8 +186,9 @@ export default function ProfileScreen() {
         {/* ── White content ── */}
         <View style={{ backgroundColor: Colors.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, minHeight: 400 }}>
 
-          {/* Notifications */}
-          {(challengeCount > 0 || pendingMatchCount > 0 || unreadChatCount > 0 || invitationCount > 0) && (
+          {/* Notifications — same categories & total as the Home bell.
+              Unread chat messages are NOT here (they're on the Chats tab). */}
+          {totalNotif > 0 && (
             <>
               <SectionHeader title="Notifications" />
               {invitationCount > 0 && (
@@ -256,10 +206,15 @@ export default function ProfileScreen() {
                   sub="Un adversaire a soumis un résultat" color="#d97706" bg="#fffbeb"
                   onPress={() => router.push('/(tabs)/index' as any)} />
               )}
-              {unreadChatCount > 0 && (
-                <NotifRow emoji="💬" title={`${unreadChatCount} message${unreadChatCount > 1 ? 's' : ''} non lu${unreadChatCount > 1 ? 's' : ''}`}
-                  sub="Dans tes matchs actifs" color="#4f46e5" bg="#eef2ff"
-                  onPress={() => router.push('/(tabs)/chats' as any)} />
+              {toScoreCount > 0 && (
+                <NotifRow emoji="✍️" title={`${toScoreCount} match${toScoreCount > 1 ? 's' : ''} à scorer`}
+                  sub="Saisis le score de tes parties jouées" color="#0d9488" bg="rgba(13,148,136,0.10)"
+                  onPress={() => router.push('/(tabs)/lobby?tab=history' as any)} />
+              )}
+              {trophyCount > 0 && (
+                <NotifRow emoji="🏅" title={`${trophyCount} match${trophyCount > 1 ? 's' : ''} à noter`}
+                  sub="Distribue tes trophées" color="#b45309" bg="rgba(251,146,60,0.13)"
+                  onPress={() => router.push('/(tabs)?openBadge=1' as any)} />
               )}
             </>
           )}
