@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal,
   ActivityIndicator, Animated, LayoutAnimation, Easing,
-  Platform, UIManager, Alert, StyleSheet, Image,
+  Platform, UIManager, StyleSheet, Image,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,9 +13,10 @@ import Svg, {
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
-import { notifyPlayers } from '../../lib/notify';
 import { Colors, formatPadelLevel, getLeague, getLeagueLabel, Fonts } from '../../lib/theme';
-import type { Match, OpenGame } from '../../types';
+import { formatFrmtRanking } from '../../lib/frmt-match';
+import { CommunityCard } from '../../components/community/CommunityCard';
+import type { OpenGame } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -212,22 +213,6 @@ function NotificationBell({ count, onPress }: { count: number; onPress: () => vo
   );
 }
 
-const IconAlertTriangle = ({ size = 18, color = '#92400e' }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-    <Path stroke={color} d="M12 9v4"/>
-    <Path stroke={color} d="M12 17h.01"/>
-  </Svg>
-);
-
-const IconChevronUp = ({ size = 14, color = '#fbbf24' }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M18 15l-6-6-6 6"/>
-  </Svg>
-);
-
 // ─── Gradient avatar ─────────────────────────────────────────
 function GradientAvatar({ letter, size = 68 }: { letter: string; size?: number }) {
   const r = Math.round(size * 0.28);
@@ -254,125 +239,6 @@ function GradientAvatar({ letter, size = 68 }: { letter: string; size?: number }
   );
 }
 
-// ─── Pending banner ───────────────────────────────────────────
-function PendingBanner({ matches, onValidate, onContest, onAcceptCounter, onEscalate }: {
-  matches: Match[];
-  onValidate: (m: Match) => void;
-  onContest:  (m: Match) => void;
-  onAcceptCounter: (m: Match) => void;
-  onEscalate: (m: Match) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (matches.length === 0) return null;
-
-  const toggle = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded(v => !v);
-  };
-
-  return (
-    <View style={{ marginBottom: 10 }}>
-      <TouchableOpacity
-        onPress={toggle}
-        activeOpacity={0.85}
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 14, paddingVertical: 11,
-          backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 14,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <IconAlertTriangle size={16} color="#92400e" />
-          <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#78350F', fontSize: 13 }}>
-            {matches.length} match{matches.length > 1 ? 's' : ''} à traiter
-          </Text>
-          <View style={{
-            backgroundColor: '#F59E0B', width: 18, height: 18, borderRadius: 999,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Text style={{ color: Colors.textOnDark, fontSize: 9, fontWeight: '900' }}>{matches.length}</Text>
-          </View>
-        </View>
-        <Animated.View style={{ transform: [{ rotate: expanded ? '0deg' : '180deg' }] }}>
-          <IconChevronUp size={13} color="#fbbf24" />
-        </Animated.View>
-      </TouchableOpacity>
-
-      {expanded && (
-        <View style={{
-          marginTop: 4, borderWidth: 1, borderColor: '#FEF3C7',
-          borderRadius: 14, backgroundColor: Colors.bgCard, overflow: 'hidden',
-        }}>
-          {matches.map((m, i) => {
-            const winnerNames = [m.winner?.name, m.winner_2?.name].filter(Boolean).join(' & ') || '?';
-            const loserNames  = [m.loser?.name,  m.loser_2?.name ].filter(Boolean).join(' & ') || '?';
-            const isCounter = m.status === 'counter_proposed';
-            return (
-              <View key={m.id} style={{
-                padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
-                borderBottomWidth: i < matches.length - 1 ? 1 : 0, borderBottomColor: '#f8fafc',
-              }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, alignItems: 'baseline' }}>
-                    <Text style={{ fontWeight: '900', color: '#059669', fontSize: 11 }}>{winnerNames}</Text>
-                    <Text style={{ color: Colors.textMuted, fontSize: 9 }}>bat</Text>
-                    <Text style={{ fontWeight: '900', color: Colors.danger, fontSize: 11 }}>{loserNames}</Text>
-                    {m.score_text ? (
-                      <Text style={{ color: Colors.textSecondary, fontWeight: '700', fontSize: 10, fontStyle: 'italic' }}>— {m.score_text}</Text>
-                    ) : null}
-                  </View>
-                  {isCounter && (
-                    <Text style={{ color: '#B45309', fontWeight: '800', fontSize: 10, marginTop: 3 }}>
-                      ⚠️ Score contesté — proposé : {m.counter_score_text ?? '?'}
-                    </Text>
-                  )}
-                </View>
-                <View style={{ flexDirection: 'row', gap: 5 }}>
-                  {isCounter ? (
-                    <>
-                      <TouchableOpacity onPress={() => onAcceptCounter(m)} style={{
-                        height: 30, paddingHorizontal: 9, borderRadius: 10,
-                        backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <Text style={{ fontSize: 12 }}>✅</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => onEscalate(m)} style={{
-                        height: 30, paddingHorizontal: 9, borderRadius: 10,
-                        backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <Text style={{ fontSize: 12 }}>⚖️</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity onPress={() => onValidate(m)} style={{
-                        height: 30, paddingHorizontal: 9, borderRadius: 10,
-                        backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <Text style={{ fontSize: 12 }}>✅</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => onContest(m)} style={{
-                        height: 30, paddingHorizontal: 9, borderRadius: 10,
-                        backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <Text style={{ fontSize: 12 }}>✏️</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
 // ─── Badge emoji lookup (subset) ─────────────────────────────
 const BADGE_EMOJI: Record<string, string> = {
   'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
@@ -381,93 +247,19 @@ const BADGE_EMOJI: Record<string, string> = {
   'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
 };
 
-// ─── Badge prompt banner ──────────────────────────────────────
-function BadgePromptBanner({ matches, onOpen }: {
-  matches: any[];
-  onOpen: (m: any) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (matches.length === 0) return null;
-
-  const toggle = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded(v => !v);
-  };
-
-  return (
-    <View style={{ marginBottom: 10 }}>
-      <TouchableOpacity onPress={toggle} activeOpacity={0.85} style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 14, paddingVertical: 11,
-        backgroundColor: '#EDE9FE', borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 14,
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 15 }}>🏅</Text>
-          <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#5B21B6', fontSize: 13 }}>
-            {matches.length} match{matches.length > 1 ? 's' : ''} à noter
-          </Text>
-          <View style={{ backgroundColor: '#7C3AED', width: 18, height: 18, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: Colors.textOnDark, fontSize: 9, fontWeight: '900' }}>{matches.length}</Text>
-          </View>
-        </View>
-        <Animated.View style={{ transform: [{ rotate: expanded ? '0deg' : '180deg' }] }}>
-          <IconChevronUp size={13} color="#7C3AED" />
-        </Animated.View>
-      </TouchableOpacity>
-
-      {expanded && (
-        <View style={{ marginTop: 4, borderWidth: 1, borderColor: '#EDE9FE', borderRadius: 14, backgroundColor: Colors.bgCard, overflow: 'hidden' }}>
-          {matches.map((m, i) => {
-            const winnerNames = [m.winner?.name, m.winner_2?.name].filter(Boolean).join(' & ') || '?';
-            const loserNames  = [m.loser?.name,  m.loser_2?.name ].filter(Boolean).join(' & ') || '?';
-            return (
-              <View key={m.id} style={{
-                padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
-                borderBottomWidth: i < matches.length - 1 ? 1 : 0, borderBottomColor: '#f8fafc',
-              }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, alignItems: 'baseline' }}>
-                    <Text style={{ fontWeight: '900', color: '#059669', fontSize: 11 }}>{winnerNames}</Text>
-                    <Text style={{ color: Colors.textMuted, fontSize: 9 }}>bat</Text>
-                    <Text style={{ fontWeight: '900', color: Colors.danger, fontSize: 11 }}>{loserNames}</Text>
-                    {m.score_text
-                      ? <Text style={{ color: Colors.textSecondary, fontWeight: '700', fontSize: 10, fontStyle: 'italic' }}>— {m.score_text}</Text>
-                      : null}
-                  </View>
-                </View>
-                <TouchableOpacity onPress={() => onOpen(m)} style={{
-                  height: 30, paddingHorizontal: 12, borderRadius: 10,
-                  backgroundColor: '#EDE9FE', borderWidth: 1, borderColor: '#DDD6FE',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#5B21B6' }}>🏅 Noter</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
-// ─── Profile hero card — centered vertical layout ─────────────
-function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, compact = false, onBellPress }: {
-  name: string; elo: number; matchCount: number; badgeCount: number;
-  notifCount: number; compact?: boolean; onBellPress: () => void;
+// ─── Hero compact — identité horizontale + bande de stats (handoff) ───
+function ProfileBanner({ name, elo, wins, losses, badgeCount, notifCount, frmt, onBellPress }: {
+  name: string; elo: number; wins: number; losses: number; badgeCount: number;
+  notifCount: number; frmt?: { text: string; verified: boolean } | null;
+  onBellPress: () => void;
 }) {
   const leagueType = getLeague(elo);
   const leagueLabel = 'Ligue ' + getLeagueLabel(leagueType);
   const leagueHex = Colors.league[leagueType];
   const level = formatPadelLevel(elo);
+  const total = wins + losses;
+  const winPct = total > 0 ? Math.round((wins / total) * 100) : 0;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Compact mode frees vertical space for the action grid when notification
-  // banners are stacked above the hero.
-  const avatarSize = compact ? 50 : 68;
-  const statSize   = compact ? 42 : 48;
-  const nameSize   = compact ? 22 : 28;
-  const levelSize  = compact ? 15 : 17;
 
   useEffect(() => {
     Animated.loop(
@@ -478,106 +270,57 @@ function ProfileBanner({ name, elo, matchCount, badgeCount, notifCount, compact 
     ).start();
   }, []);
 
+  const stats: { label: string; value: number | string; color: string }[] = [
+    { label: 'MATCHS',    value: total,          color: Colors.textOnDark },
+    { label: 'VICTOIRES', value: wins,           color: Colors.textOnDark },
+    { label: 'WIN',       value: `${winPct}%`,   color: Colors.brand },
+    { label: 'BADGES',    value: badgeCount,     color: '#fb923c' },
+  ];
+
   return (
     <View style={{
-      backgroundColor: Colors.heroBg, borderRadius: 24, overflow: 'hidden',
-      paddingTop: compact ? 14 : 22, paddingBottom: compact ? 12 : 20, paddingHorizontal: 20,
-      alignItems: 'center',
+      flex: 1, minHeight: 150, justifyContent: 'center',
+      backgroundColor: Colors.heroBg, borderRadius: 22, overflow: 'hidden',
+      paddingHorizontal: 18, paddingVertical: 16,
       shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
       shadowOffset: { width: 0, height: 8 }, elevation: 7,
     }}>
       <NotificationBell count={notifCount} onPress={onBellPress} />
 
-      {/* Glow orbs — pointerEvents none pour ne pas bloquer la cloche */}
-      <View pointerEvents="none" style={{
-        position: 'absolute', top: -60, right: -40,
-        width: 180, height: 180, borderRadius: 90,
-        backgroundColor: 'rgba(99,102,241,0.22)',
-      }} />
-      <View pointerEvents="none" style={{
-        position: 'absolute', bottom: -60, left: -40,
-        width: 180, height: 180, borderRadius: 90,
-        backgroundColor: 'rgba(16,185,129,0.22)',
-      }} />
+      {/* Glow orbs */}
+      <View pointerEvents="none" style={{ position: 'absolute', top: -50, right: -30, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.16)' }} />
+      <View pointerEvents="none" style={{ position: 'absolute', bottom: -60, left: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.06)' }} />
 
-      {/* Avatar */}
-      <GradientAvatar letter={name.charAt(0)} size={avatarSize} />
-
-      {/* League badge */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        backgroundColor: 'rgba(148,163,184,0.12)',
-        borderWidth: 1, borderColor: 'rgba(148,163,184,0.22)',
-        paddingHorizontal: 12, paddingVertical: 4,
-        borderRadius: 999, marginTop: compact ? 8 : 12, marginBottom: 5,
-      }}>
-        <Animated.View style={{
-          width: 5, height: 5, borderRadius: 999,
-          backgroundColor: leagueHex, opacity: pulseAnim,
-        }} />
-        <Text style={{
-          fontSize: 9, fontWeight: '900', color: leagueHex,
-          textTransform: 'uppercase', letterSpacing: 1.5,
-        }}>
-          {leagueLabel}
-        </Text>
+      {/* Identity row — paddingRight pour laisser la cloche (absolue) respirer */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingRight: 44 }}>
+        <GradientAvatar letter={name.charAt(0)} size={56} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+            <Animated.View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: leagueHex, opacity: pulseAnim }} />
+            <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: '900', color: leagueHex, textTransform: 'uppercase', letterSpacing: 1.5 }}>
+              {leagueLabel}
+            </Text>
+            {frmt ? (
+              <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: '900', color: frmt.verified ? '#34d399' : '#fbbf24', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                {`· FRMT ${frmt.text}${frmt.verified ? ' ✓' : ''}`}
+              </Text>
+            ) : null}
+          </View>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 23, color: Colors.textOnDark, letterSpacing: 0.3 }}>
+            {name}
+          </Text>
+          <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 15, color: Colors.brand, marginTop: 4 }}>
+            Niveau {level}
+          </Text>
+        </View>
       </View>
 
-      {/* Name */}
-      <Text style={{
-        fontSize: nameSize, fontFamily: Fonts.welcome, color: Colors.textOnDark,
-        letterSpacing: 0.2, textAlign: 'center', marginBottom: 3,
-      }}>
-        {name}
-      </Text>
-
-      {/* Level */}
-      <Text style={{
-        fontSize: levelSize, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand,
-        textAlign: 'center', marginBottom: compact ? 0 : 3,
-      }}>
-        Niveau {level}
-      </Text>
-
-      {/* Subtitle — hidden in compact mode to save a line */}
-      {!compact && (
-        <Text style={{
-          fontSize: 12, color: Colors.textMuted, fontWeight: '500',
-          textAlign: 'center', marginBottom: 16,
-        }}>
-          Prêt à jouer ?
-        </Text>
-      )}
-
-      {/* Divider */}
-      <View style={{
-        height: 1, width: '100%',
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        marginTop: compact ? 12 : 0, marginBottom: compact ? 12 : 16,
-      }} />
-
-      {/* Stats */}
-      <View style={{ flexDirection: 'row', gap: compact ? 36 : 48 }}>
-        {[
-          { label: 'MATCHS', value: matchCount, color: Colors.textOnDark,    bg: 'rgba(255,255,255,0.08)',    border: 'rgba(255,255,255,0.14)' },
-          { label: 'BADGES', value: badgeCount, color: '#fb923c', bg: 'rgba(251,146,60,0.13)',     border: 'rgba(251,146,60,0.28)'  },
-        ].map(s => (
-          <View key={s.label} style={{ alignItems: 'center', gap: compact ? 4 : 6 }}>
-            <Text style={{
-              fontSize: 9, fontWeight: '700', color: Colors.textSecondary,
-              textTransform: 'uppercase', letterSpacing: 1.2,
-            }}>
-              {s.label}
-            </Text>
-            <View style={{
-              width: statSize, height: statSize, borderRadius: 999,
-              backgroundColor: s.bg, borderWidth: 1, borderColor: s.border,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Text style={{ fontSize: compact ? 16 : 18, fontFamily: Fonts.uiBlack, fontWeight: '900', color: s.color }}>
-                {s.value}
-              </Text>
-            </View>
+      {/* Stats strip */}
+      <View style={{ flexDirection: 'row', marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
+        {stats.map((s, i) => (
+          <View key={s.label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(255,255,255,0.08)' }}>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 24, letterSpacing: -0.5, color: s.color }}>{s.value}</Text>
+            <Text style={{ fontFamily: Fonts.uiBold, fontSize: 8.5, fontWeight: '700', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 5 }}>{s.label}</Text>
           </View>
         ))}
       </View>
@@ -594,7 +337,7 @@ const cardStyles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 10,
     borderWidth: 1.5,
     borderColor: '#B8C8D8',
@@ -605,12 +348,12 @@ const cardStyles = StyleSheet.create({
     elevation: 6,
   },
   iconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   badge: {
     position: 'absolute',
@@ -637,8 +380,8 @@ const cardStyles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 10,
     textAlign: 'center',
-    lineHeight: 14,
-    marginTop: 3,
+    lineHeight: 13,
+    marginTop: 2,
   },
 });
 
@@ -663,8 +406,8 @@ function ActionCard({ icon, iconBg, title, sub, badge, onPress }: {
           )}
         </View>
 
-        <Text style={cardStyles.title}>{title}</Text>
-        {sub ? <Text style={cardStyles.sub}>{sub}</Text> : null}
+        <Text numberOfLines={1} style={cardStyles.title}>{title}</Text>
+        {sub ? <Text numberOfLines={2} style={cardStyles.sub}>{sub}</Text> : null}
       </TouchableOpacity>
     </View>
   );
@@ -677,8 +420,8 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
 }) {
   const nextGame = upcomingGames[0];
   return (
-    <View style={{ flex: 1, gap: 12 }}>
-      <View style={{ flex: 1, flexDirection: 'row', gap: 12 }}>
+    <View style={{ gap: 12 }}>
+      <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
         <ActionCard
           icon={<IconRadar size={24} color="#4f46e5" />}
           iconBg="#e0e7ff"
@@ -692,7 +435,7 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
           onPress={() => onNavigate('/score-entry')}
         />
       </View>
-      <View style={{ flex: 1, flexDirection: 'row', gap: 12 }}>
+      <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
         <ActionCard
           icon={<IconTrophy size={24} color="#f59e0b" />}
           iconBg="#fef3c7"
@@ -707,7 +450,7 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
           sub={nextGame?.match_date && nextGame?.location
             ? formatNextGame(nextGame.match_date, nextGame.location)
             : undefined}
-          onPress={() => onNavigate('/(tabs)/lobby?tab=upcoming&role=playing')}
+          onPress={() => onNavigate('/(tabs)/lobby?tab=upcoming')}
         />
       </View>
     </View>
@@ -718,7 +461,6 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
 export default function HomeScreen() {
   const { player, refresh } = usePlayer();
   const { total: notifTotal, reload: reloadNotifs } = useNotificationCount();
-  const [pendingMatches, setPendingMatches] = useState<Match[]>([]);
   const [badgeCount, setBadgeCount] = useState(0);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -744,19 +486,11 @@ export default function HomeScreen() {
     const playerOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
 
     const [
-      { data: pending },
       { count: badges },
       { data: participations },
       { data: recentMatches },
       { data: alreadyVoted },
     ] = await Promise.all([
-      supabase
-        .from('matches')
-        .select('*, winner:winner_id(name), winner_2:winner_id_2(name), loser:loser_id(name), loser_2:loser_id_2(name)')
-        .or(playerOr)
-        .in('status', ['pending', 'counter_proposed'])
-        .order('created_at', { ascending: false })
-        .limit(5),
       supabase
         .from('reputation_votes')
         .select('id', { count: 'exact', head: true })
@@ -779,26 +513,6 @@ export default function HomeScreen() {
         .eq('giver_id', player.id),
     ]);
 
-    // Quels matchs me demandent une action ?
-    //  • pending          → ce sont les ADVERSAIRES qui valident/contestent
-    //                       (pas l'auteur du score ni son partenaire)
-    //  • counter_proposed → c'est l'AUTEUR original qui répond à la
-    //                       contre-proposition (accepter / mettre en litige)
-    const allPending = (pending as Match[]) ?? [];
-    const visiblePending = allPending.filter(m => {
-      if (!player) return false;
-      if (m.status === 'counter_proposed') return m.created_by === player.id;
-      if (m.created_by === player.id) return false;
-      const cb = m.created_by;
-      if (
-        (cb === m.winner_id   && m.winner_id_2 === player.id) ||
-        (cb === m.winner_id_2 && m.winner_id   === player.id) ||
-        (cb === m.loser_id    && m.loser_id_2  === player.id) ||
-        (cb === m.loser_id_2  && m.loser_id    === player.id)
-      ) return false;
-      return true;
-    });
-    setPendingMatches(visiblePending);
     setBadgeCount(badges ?? 0);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
@@ -839,70 +553,6 @@ export default function HomeScreen() {
       router.setParams({ openBadge: undefined });
     }
   }, [openBadge, loading, badgeMatches]);
-
-  const handleValidate = async (match: Match) => {
-    const { error } = await supabase
-      .from('matches')
-      .update({ status: 'validated' })
-      .eq('id', match.id);
-    if (error) { Alert.alert('Erreur', 'Impossible de valider ce match.'); return; }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setPendingMatches(prev => prev.filter(m => m.id !== match.id));
-  };
-
-  const handleContest = (match: Match) => {
-    router.push((`/score-entry?matchId=${match.id}`) as any);
-  };
-
-  // counter_proposed : l'auteur accepte le score alternatif proposé par l'adversaire.
-  // → match validé avec le score corrigé ; le trigger DB distribue l'ELO.
-  const handleAcceptCounter = async (match: Match) => {
-    const { error } = await supabase
-      .from('matches')
-      .update({ status: 'validated', score_text: match.counter_score_text ?? match.score_text })
-      .eq('id', match.id);
-    if (error) { Alert.alert('Erreur', 'Impossible de valider le score proposé.'); return; }
-    if (match.counter_by) {
-      notifyPlayers({
-        playerIds: [match.counter_by],
-        title: '✅ Score validé',
-        body: `${player!.name} a accepté ton score corrigé.`,
-        data: { type: 'match', matchId: match.id },
-      });
-    }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setPendingMatches(prev => prev.filter(m => m.id !== match.id));
-  };
-
-  // counter_proposed : désaccord persistant → mise en litige (arbitrage admin).
-  const handleEscalate = (match: Match) => {
-    Alert.alert(
-      'Ouvrir un litige ?',
-      "Tu n'es pas d'accord avec le score proposé. Un administrateur tranchera.",
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Mettre en litige', style: 'destructive', onPress: async () => {
-            const { error } = await supabase
-              .from('matches')
-              .update({ status: 'disputed' })
-              .eq('id', match.id);
-            if (error) { Alert.alert('Erreur', "Impossible d'ouvrir le litige."); return; }
-            if (match.counter_by) {
-              notifyPlayers({
-                playerIds: [match.counter_by],
-                title: '⚖️ Litige ouvert',
-                body: 'Le score est en désaccord — un administrateur va trancher.',
-                data: { type: 'match', matchId: match.id },
-              });
-            }
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setPendingMatches(prev => prev.filter(m => m.id !== match.id));
-          },
-        },
-      ],
-    );
-  };
 
   const openBadgeModal = (m: any) => {
     setBadgeModalMatch(m);
@@ -971,16 +621,7 @@ export default function HomeScreen() {
           <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
         ) : (
           <>
-            <PendingBanner
-              matches={pendingMatches}
-              onValidate={handleValidate}
-              onContest={handleContest}
-              onAcceptCounter={handleAcceptCounter}
-              onEscalate={handleEscalate}
-            />
-            <BadgePromptBanner matches={badgeMatches} onOpen={openBadgeModal} />
-
-            {/* Badge modal */}
+            {/* Badge modal — déclenché depuis la cloche via ?openBadge=1 */}
             <Modal visible={!!badgeModalMatch} animationType="slide" presentationStyle="pageSheet">
               <View style={{ flex: 1, backgroundColor: Colors.bg }}>
                 <View style={{ backgroundColor: Colors.heroBg, paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 24 }}>
@@ -1048,20 +689,26 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            <ProfileBanner
-              name={player.name}
-              elo={player.elo_score}
-              matchCount={matchCount}
-              badgeCount={badgeCount}
-              notifCount={totalNotifs}
-              compact={pendingMatches.length > 0 || badgeMatches.length > 0}
-              onBellPress={() => router.push('/notifications' as any)}
-            />
             <View style={{ flex: 1, marginTop: 12 }}>
+              <ProfileBanner
+                name={player.name}
+                elo={player.elo_score}
+                wins={player.win_count}
+                losses={player.loss_count}
+                badgeCount={badgeCount}
+                notifCount={totalNotifs}
+                frmt={formatFrmtRanking(player)}
+                onBellPress={() => router.push('/notifications' as any)}
+              />
+            </View>
+            <View style={{ marginTop: 12 }}>
               <ActionsGrid
                 upcomingGames={visibleUpcoming}
                 onNavigate={(path) => router.push(path as any)}
               />
+              <View style={{ marginTop: 12 }}>
+                <CommunityCard />
+              </View>
             </View>
           </>
         )}

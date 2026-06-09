@@ -1,5 +1,5 @@
 import '../global.css';
-import { Stack, useSegments, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { useFonts, Anton_400Regular } from '@expo-google-fonts/anton';
@@ -21,34 +21,29 @@ export const unstable_settings = {
 };
 
 function RootNavigator() {
-  const { player, loading } = usePlayer();
-  const segments = useSegments();
-  const router = useRouter();
+  const { player } = usePlayer();
   usePushNotifications();
 
-  useEffect(() => {
-    if (loading) return;
-    
-    // Protected route groups
-    const inProtectedRoute = segments[0] === '(tabs)' || segments[0] === 'chat';
-
-    if (!player && inProtectedRoute) {
-      // Direct the user back to the landing page.
-      if (router.canDismiss()) {
-        router.dismissAll();
-      }
-      router.replace('/');
-    }
-  }, [player, loading, segments, router]);
-
+  // Auth gating DÉCLARATIF via <Stack.Protected>. Quand `player` passe à null
+  // (déconnexion), expo-router démonte les écrans protégés et retombe tout seul
+  // sur `index` (initialRouteName). On évite ainsi l'ancien `router.replace('/')`
+  // impératif dans un useEffect qui, sur Android (New Arch + native-stack
+  // react-native-screens), réduisait transitoirement la pile native à zéro écran
+  // → l'activité se terminait et l'app se fermait « comme un crash ».
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.bg } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="archived-chats" options={{ presentation: 'card' }} />
-      <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
+      {/* Écrans légaux : publics (accessibles depuis l'inscription, hors guard). */}
+      <Stack.Screen name="legal/confidentialite" options={{ presentation: 'card' }} />
+      <Stack.Screen name="legal/cgu" options={{ presentation: 'card' }} />
+      <Stack.Protected guard={!!player}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="community" />
+        <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="archived-chats" options={{ presentation: 'card' }} />
+        <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
+      </Stack.Protected>
     </Stack>
   );
 }

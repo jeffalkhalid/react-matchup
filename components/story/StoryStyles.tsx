@@ -147,7 +147,7 @@ function Ticket({ width, match: m, invite }: Base & { match: StoryMatchData }) {
   );
   return (
     <View style={{ width, height: H, backgroundColor: '#0A0A0A', alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ width: s(920), backgroundColor: Colors.bgCream, borderRadius: s(36), overflow: 'hidden' }}>
+      <View style={{ width: s(920), backgroundColor: Colors.bgCard, borderRadius: s(36), overflow: 'hidden' }}>
         <View style={{ backgroundColor: '#0A0A0A', paddingVertical: s(46), paddingHorizontal: s(56), flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Wordmark s={s} />
           <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(22), letterSpacing: s(3), color: win ? Colors.brand : Colors.danger }}>{win ? 'VICTOIRE' : 'DÉFAITE'}</Text>
@@ -290,7 +290,7 @@ function EditorialLight({ width, player: p, invite }: Base & { player: StoryPlay
   const total = p.wins + p.losses;
   const parts = p.name.split(' '); const first = parts[0]; const last = parts.slice(1).join(' ');
   return (
-    <View style={{ width, height: H, backgroundColor: Colors.bgCream, paddingHorizontal: s(92), paddingTop: s(120), paddingBottom: s(100) }}>
+    <View style={{ width, height: H, backgroundColor: Colors.bgCard, paddingHorizontal: s(92), paddingTop: s(120), paddingBottom: s(100) }}>
       {/* top meta */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Wordmark s={s} light={false} h={52} />

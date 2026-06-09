@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, Image,
   StyleSheet, Dimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { usePlayer } from '../hooks/usePlayer';
 import { Colors, Spacing, FontSize, Radius, Fonts } from '../lib/theme';
@@ -14,6 +14,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function IndexScreen() {
   const { player, loading } = usePlayer();
   const router = useRouter();
+  const segments = useSegments();
   const [splashDone, setSplashDone] = useState(false);
 
   const videoPlayer = useVideoPlayer(require('../assets/padel-mobile.mp4'), p => {
@@ -24,23 +25,41 @@ export default function IndexScreen() {
 
   useEffect(() => {
     if (loading || !splashDone) return;
-    if (player) router.replace('/(tabs)');
-  }, [player, loading, splashDone]);
+    // Ne rediriger que si l'index est réellement la route active (segments
+    // vides). Sinon, sur un cold start via deep link (ex. reset-password),
+    // l'index monté « dessous » arracherait l'utilisateur de l'écran ouvert.
+    if (player && (segments as string[]).length === 0) router.replace('/(tabs)');
+  }, [player, loading, splashDone, segments]);
 
   if (loading || !splashDone) {
     return <AnimatedSplash onFinish={() => setSplashDone(true)} />;
+  }
+
+  // Utilisateur connecté : le useEffect ci-dessus va rediriger vers /(tabs).
+  // On NE rend PAS le hero marketing entre-temps, sinon son image fallback
+  // (padel.png — la raquette violette/rose) flashe en plein écran le temps
+  // d'une frame avant la navigation. On garde un fond sombre neutre.
+  if (player && (segments as string[]).length === 0) {
+    return <View style={{ flex: 1, backgroundColor: Colors.bgDark }} />;
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bgDark }}>
       {/* HERO */}
       <View style={{ height: SCREEN_HEIGHT, position: 'relative' }}>
-        {/* Fallback image (s'affiche si la vidéo ne charge pas) */}
-        <Image
-          source={require('../assets/padel.png')}
-          style={StyleSheet.absoluteFillObject}
-          resizeMode="cover"
-        />
+        {/* Fallback (le temps que la vidéo démarre) : fond sombre + logo de
+            l'app, au lieu de l'ancienne image padel.png (raquette violette
+            off-brand qui flashait au démarrage). */}
+        <View style={[StyleSheet.absoluteFillObject, {
+          backgroundColor: Colors.bgDark,
+          alignItems: 'center', justifyContent: 'center',
+        }]}>
+          <Image
+            source={require('../assets/pagmatch-logo.png')}
+            style={{ width: 160, height: 160 }}
+            resizeMode="contain"
+          />
+        </View>
         {/* Vidéo de fond */}
         <VideoView
           player={videoPlayer}

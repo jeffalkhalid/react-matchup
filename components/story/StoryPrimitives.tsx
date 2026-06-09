@@ -50,8 +50,8 @@ export function BigSets({ sets, accent, mine = '#fff', theirs = 'rgba(255,255,25
       {sets.map(([a, b], i) => (
         <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: s(15) }}>
           <Text style={{ fontFamily: Fonts.display, fontSize: size, color: mine, letterSpacing: -size * 0.02 }}>{a}</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.42, color: accent, marginHorizontal: s(6) }}>–</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.78, color: theirs }}>{b}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.5, color: accent, marginHorizontal: s(6) }}>–</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: size, color: theirs }}>{b}</Text>
         </View>
       ))}
     </View>

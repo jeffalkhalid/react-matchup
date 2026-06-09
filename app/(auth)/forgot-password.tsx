@@ -107,7 +107,12 @@ export default function ForgotPasswordScreen() {
     setError(null);
     setLoading(true);
     try {
-      const { error: rErr } = await supabase.auth.resetPasswordForEmail(trimmed);
+      // redirectTo = deep link de l'app → ouvre l'écran reset-password avec un
+      // `?code=…` (PKCE). Cette URL doit être autorisée dans Supabase →
+      // Authentication → URL Configuration → Redirect URLs.
+      const { error: rErr } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo: 'pagmatch://reset-password',
+      });
       if (rErr) {
         setError('Envoi impossible. Réessaie dans un instant.');
         setLoading(false);

@@ -1,13 +1,16 @@
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { TouchableOpacity, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 import { isMatchPast } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
 import { Colors } from '../../lib/theme';
-import FeatureGuide from '../../components/FeatureGuide';
+import HelpCenter from '../../components/HelpCenter';
+import OnboardingCarousel from '../../components/OnboardingCarousel';
+import { GUIDE_KEY } from '../../lib/guideTheme';
 
 const IconHome = ({ color, size = 22 }: { color: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -79,21 +82,19 @@ function CreateTabButton({ ...rest }: any) {
     <TouchableOpacity
       {...rest}
       onPress={() => router.push('/(tabs)/lobby?create=1' as any)}
-      style={{ alignItems: 'center', justifyContent: 'center', top: -14 }}
+      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }}
       activeOpacity={0.85}
     >
       <View style={{
-        width: 44, height: 44, borderRadius: 999,
+        width: 36, height: 36, borderRadius: 999,
         backgroundColor: Colors.primary,
         alignItems: 'center', justifyContent: 'center',
-        shadowColor: Colors.primary, shadowOpacity: 0.35, shadowRadius: 12,
-        shadowOffset: { width: 0, height: 6 }, elevation: 8,
-        borderWidth: 4, borderColor: Colors.bgCard,
-        marginTop: -20,
+        shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 }, elevation: 5,
       }}>
         <IconPlus size={20} />
       </View>
-      <Text style={{ color: Colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 }}>
+      <Text style={{ color: Colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 }}>
         Créer
       </Text>
     </TouchableOpacity>
@@ -106,6 +107,17 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [challengeCount, setChallengeCount] = useState(0);
   const [chatBadge, setChatBadge] = useState(0);
+  // null = lecture du flag en cours · false = afficher l'onboarding · true = vu.
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(GUIDE_KEY).then(v => setHasSeenOnboarding(!!v));
+  }, []);
+
+  const finishOnboarding = () => {
+    AsyncStorage.setItem(GUIDE_KEY, '1');
+    setHasSeenOnboarding(true);
+  };
 
   // Auth redirect is handled by the root _layout.tsx navigator — don't redirect here
   // as router.replace('/') from within tabs resolves to (tabs)/index, not app/index.tsx
@@ -234,7 +246,7 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
-          height: 58 + insets.bottom,
+          height: 64 + insets.bottom,
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
           shadowColor: Colors.textPrimary,
@@ -296,7 +308,10 @@ export default function TabLayout() {
       <Tabs.Screen name="notifications" options={{ href: null }} />
       <Tabs.Screen name="admin" options={{ href: null }} />
     </Tabs>
-    <FeatureGuide />
+    {/* Bouton « ? » + centre d'aide — toujours monté, par-dessus les tabs */}
+    <HelpCenter />
+    {/* Onboarding plein écran — uniquement au premier lancement, avant les tabs */}
+    {hasSeenOnboarding === false && <OnboardingCarousel onDone={finishOnboarding} />}
     </View>
   );
 }

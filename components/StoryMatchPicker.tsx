@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Modal, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, FlatList, ActivityIndicator, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { Colors, Fonts } from '../lib/theme';
@@ -47,7 +47,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
       .order('created_at', { ascending: false })
       .limit(30)
       .then(({ data }) => {
-        setMatches((data ?? []) as MatchRow[]);
+        setMatches((data ?? []) as unknown as MatchRow[]);
         setLoading(false);
       });
   }, [visible, playerId]);
@@ -92,7 +92,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
           <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} size="large" />
         ) : matches.length === 0 ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-            <Text style={{ fontSize: 32, marginBottom: 8 }}>🎾</Text>
+            <Image source={require('../assets/auth/splash-racket.png')} style={{ width: 40, height: 40, marginBottom: 8 }} resizeMode="contain" />
             <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center' }}>
               Aucun match validé encore
             </Text>

@@ -7,6 +7,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
+import { lobbyGameLink } from '../../lib/community';
 import { Pill } from '../../components/Pill';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -102,15 +103,21 @@ function getTheme(type: GameType) {
 }
 
 // ─── Avatar ───────────────────────────────────────────────────
-const AV_COLORS = ['#4f46e5','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#ec4899','#8b5cf6'];
-function hashColor(name: string) {
+// Charte jaune/noir : on alterne ink ↔ brand selon le nom,
+// pour garder de la variété entre joueurs sans sortir de la charte.
+const AV_PALETTE = [
+  { bg: Colors.primary, fg: Colors.textOnDark },   // noir, texte blanc
+  { bg: Colors.brand,   fg: Colors.textOnBrand },  // jaune, texte noir
+];
+function hashTone(name: string) {
   const h = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  return AV_COLORS[h % AV_COLORS.length];
+  return AV_PALETTE[h % AV_PALETTE.length];
 }
 function Avatar({ name, size = 32 }: { name: string; size?: number }) {
+  const tone = hashTone(name);
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: tone.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ color: tone.fg, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -212,7 +219,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   // Form
   const myLevel = player ? eloToLevel(player.elo_score) : 4.0;
   const defaultMin = Math.max(1.0, Math.round((myLevel - 0.5) * 2) / 2);
-  const defaultMax = Math.min(8.0, Math.round((myLevel + 0.5) * 2) / 2);
+  const defaultMax = Math.min(9.0, Math.round((myLevel + 0.5) * 2) / 2);
 
   const [form, setFormState] = useState({
     day:            QUICK_DAYS[1]?.val ?? '',
@@ -244,7 +251,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (!visible) return;
     const lv = player ? eloToLevel(player.elo_score) : 4.0;
     const mn = Math.max(1.0, Math.round((lv - 0.5) * 2) / 2);
-    const mx = Math.min(8.0, Math.round((lv + 0.5) * 2) / 2);
+    const mx = Math.min(9.0, Math.round((lv + 0.5) * 2) / 2);
     setStep(0); setPublished(false); setPublishedGameId(null); setSubmitting(false);
     setShowAbandon(false); setShowCal(false); setVenueOpen(false); setVenueSearch('');
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
@@ -378,7 +385,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   async function shareCreatedGame() {
     const start = new Date(`${form.day}T${form.time}:00`);
     const dateStr = start.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    const link = publishedGameId ? `\n🔗 https://matchup-padel.vercel.app/lobby?game=${publishedGameId}` : '';
+    const link = publishedGameId ? `\n🔗 ${lobbyGameLink(publishedGameId)}` : '';
     const msg =
       `Match Padel – ${form.gameType}\n` +
       `📅 ${dateStr} à ${form.time}\n` +
@@ -583,7 +590,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 onPress={() => {
                   const lv = player ? eloToLevel(player.elo_score) : 4.0;
                   const mn = Math.max(1.0, +(lv - 0.5).toFixed(2));
-                  const mx = Math.min(8.0, +(lv + 0.5).toFixed(2));
+                  const mx = Math.min(9.0, +(lv + 0.5).toFixed(2));
                   if (opt.val === 'Compétitif') setFormState(f => ({ ...f, gameType: opt.val, minLevel: mn, maxLevel: mx }));
                   else if (opt.val === 'Défi')  setFormState(f => ({ ...f, gameType: opt.val, minLevel: mx }));
                   else set('gameType', opt.val);
@@ -645,7 +652,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   {form.minLevel.toFixed(2)}
                 </Text>
                 {!lockMin && (
-                  <TouchableOpacity onPress={() => set('minLevel', Math.min(8.0, +(form.minLevel + 0.1).toFixed(2)))}
+                  <TouchableOpacity onPress={() => set('minLevel', Math.min(9.0, +(form.minLevel + 0.1).toFixed(2)))}
                     style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
@@ -669,7 +676,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   {form.maxLevel.toFixed(2)}
                 </Text>
                 {!lockMax && (
-                  <TouchableOpacity onPress={() => set('maxLevel', Math.min(8.0, +(form.maxLevel + 0.1).toFixed(2)))}
+                  <TouchableOpacity onPress={() => set('maxLevel', Math.min(9.0, +(form.maxLevel + 0.1).toFixed(2)))}
                     style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
@@ -680,8 +687,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           {/* Range bar */}
           <View style={{ height: 5, borderRadius: 99, backgroundColor: Colors.bgCardAlt, overflow: 'hidden' }}>
             <View style={{ position: 'absolute', height: '100%', borderRadius: 99, backgroundColor: t.btnBg,
-              left: `${((form.minLevel - 1) / 7) * 100}%`,
-              right: `${100 - ((form.maxLevel - 1) / 7) * 100}%`,
+              left: `${((form.minLevel - 1) / 8) * 100}%`,
+              right: `${100 - ((form.maxLevel - 1) / 8) * 100}%`,
             }} />
           </View>
           {lockMin && (
@@ -752,7 +759,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                         }}
                         activeOpacity={0.7}
                         style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: isMe ? Colors.primary : inv ? hashColor(inv.name) : t.libreBg,
+                          backgroundColor: isMe ? Colors.primary : inv ? Colors.brand : t.libreBg,
                           borderWidth: isEmpty ? 2 : isMe ? 2.5 : 0,
                           borderStyle: isEmpty ? 'dashed' : 'solid',
                           borderColor: isEmpty ? t.libreBorder : isMe ? Colors.bgCard : 'transparent',
@@ -760,7 +767,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                         {isMe
                           ? <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>{(player?.name || '?').charAt(0).toUpperCase()}</Text>
                           : inv
-                            ? <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
+                            ? <Text style={{ color: Colors.textOnBrand, fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
                             : <Text style={{ color: t.libreColor, fontSize: 20, fontWeight: '300' }}>+</Text>
                         }
                       </TouchableOpacity>

@@ -1,6 +1,10 @@
-export type Gender = 'male' | 'female' | 'mixed';
+// NB: la colonne players.gender stocke 'other' (pas 'mixed'). 'mixed' reste utilisé
+// par OpenGame.gender_pref (dette de typage connue — domaines confondus).
+export type Gender = 'male' | 'female' | 'mixed' | 'other';
 export type CourtSide = 'left' | 'right' | 'both';
 export type Handedness = 'right' | 'left';
+// Côté/place sur le terrain tel que stocké en DB (game_participants.team_side, open_games.creator_side).
+export type TeamSide = 'A_GAU' | 'A_DRO' | 'B_GAU' | 'B_DRO';
 export type MatchStatus = 'pending' | 'counter_proposed' | 'validated' | 'disputed';
 export type GameFormat = 'singles' | 'doubles';
 export type ChallengeStatus = 'pending' | 'accepted' | 'declined' | 'expired' | 'played';
@@ -76,6 +80,7 @@ export interface OpenGame {
   game_format: GameFormat;
   gender_pref?: Gender;
   notes?: string;
+  creator_side?: TeamSide;
   created_at: string;
   creator?: Player;
   participants?: GameParticipant[];
@@ -159,4 +164,76 @@ export interface CompatScore {
   clubs: number;
   days: number;
   sides: number;
+}
+
+// ─── Communauté & flux sociaux ───────────────────────────────
+
+// Joueur enrichi pour les listes sociales (suivi, suggestions, recherche).
+export interface SocialPlayer extends Player {
+  league: League;
+  level: number;        // niveau padel 1.0–8.0
+  following: boolean;   // est-ce que JE le suis ?
+  mutual?: number;      // amis en commun
+  reason?: string;      // raison de suggestion ("4 amis en commun", "Joue à …")
+}
+
+export type ActivityType = 'match_win' | 'match_loss' | 'badge' | 'promotion';
+
+export interface ActivityEvent {
+  id: string;
+  player_id: string;
+  type: ActivityType;
+  match_id?: string | null;
+  payload: {
+    partner?: string | null;
+    vs?: string | null;
+    score?: string | null;
+    badge_emoji?: string | null;
+    badge_label?: string | null;
+    promo_league?: League | null;
+    promo_label?: string | null;
+  };
+  reactions: Record<string, string[]>;   // { "🔥": [player_id, ...] }
+  created_at: string;
+  // Hydraté côté client :
+  actor?: Pick<Player, 'id' | 'name' | 'elo_score'>;
+  league?: League;
+  comment_count?: number;
+}
+
+export type CommentsPolicy = 'everyone' | 'friends' | 'nobody';
+
+export interface ActivityComment {
+  id: string;
+  event_id: string;
+  player_id: string;
+  content: string;
+  created_at: string;
+  reactions: Record<string, string[]>;   // { "🔥": [player_id, ...] }
+  // Hydraté côté client :
+  actor?: Pick<Player, 'id' | 'name' | 'elo_score'>;
+  league?: League;
+}
+
+export interface GameAlert {
+  id: string;
+  player_id: string;
+  days: string[];          // ['Lun','Mar',…]
+  slots: string[];         // ['morning','noon','afternoon','evening']
+  courts: string[];        // noms de clubs (vide = tous)
+  formats: string[];       // ['friendly','competitive'] (vide = tous)
+  lvl_min: number;         // niveau padel
+  lvl_max: number;
+  friend_ids: string[];
+  push_on: boolean;
+  only_friends: boolean;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReferralStats {
+  code: string;
+  joined: number;          // nombre d'amis parrainés ayant rejoint
+  goal: number;            // palier du trophée parrain
 }

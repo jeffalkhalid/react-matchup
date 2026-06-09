@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
+import { getHiddenPlayerIds, reportContent, blockUser } from '../../lib/moderation';
 import type { Message } from '../../types';
 import { Colors, Fonts } from '../../lib/theme';
 
@@ -62,9 +63,10 @@ interface MsgItemProps {
   onOpenFullPicker: (msgId: string) => void;
   quickEmojis: string[];
   readers: Participant[];
+  onReport: (m: Message) => void;
 }
 
-function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, setReactingId, myId, addReaction, onOpenFullPicker, quickEmojis, readers }: MsgItemProps) {
+function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, setReactingId, myId, addReaction, onOpenFullPicker, quickEmojis, readers, onReport }: MsgItemProps) {
   const time = new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const senderChanged = !prevMessage || prevMessage.player_id !== m.player_id;
   const showAvatar = !isMe && senderChanged;
@@ -97,8 +99,10 @@ function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, se
             </Text>
           )}
 
-          {/* Bubble (tap = emoji picker) */}
+          {/* Bubble (tap = emoji picker ; appui long sur message d'autrui = signaler) */}
           <TouchableOpacity onPress={() => setReactingId(isReacting ? null : m.id)} activeOpacity={0.85}
+            onLongPress={isMe ? undefined : () => onReport(m)}
+            delayLongPress={350}
             style={{
               backgroundColor: isMe ? Colors.primary : Colors.bgCard,
               borderRadius: 18,
@@ -205,6 +209,7 @@ export default function ChatScreen() {
 
   const [game, setGame] = useState<GameInfo | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -224,6 +229,50 @@ export default function ChatScreen() {
       } catch { /* ignore */ }
     });
   }, []);
+
+  // Modération : ids des utilisateurs bloqués (bidirectionnel) → messages masqués.
+  useEffect(() => {
+    if (!player?.id) return;
+    getHiddenPlayerIds(player.id).then(setHiddenIds).catch(() => {});
+  }, [player?.id]);
+
+  const visibleMessages = useMemo(
+    () => messages.filter(m => !hiddenIds.has(m.player_id)),
+    [messages, hiddenIds],
+  );
+
+  const handleReportMessage = (m: Message) => {
+    if (!player?.id || m.player_id === player.id) return;
+    Alert.alert('Ce message', undefined, [
+      {
+        text: 'Signaler', style: 'destructive',
+        onPress: async () => {
+          try {
+            await reportContent({
+              reporterId: player.id, targetType: 'message', targetId: m.id,
+              reportedPlayerId: m.player_id, reason: null,
+            });
+            Alert.alert('Merci', 'Message signalé à la modération.');
+          } catch {
+            Alert.alert('Erreur', "Le signalement n'a pas pu être envoyé.");
+          }
+        },
+      },
+      {
+        text: 'Bloquer cet utilisateur', style: 'destructive',
+        onPress: async () => {
+          try {
+            await blockUser(player.id, m.player_id);
+            setHiddenIds(prev => new Set(prev).add(m.player_id));
+            Alert.alert('Bloqué', 'Vous ne verrez plus les messages de cet utilisateur.');
+          } catch {
+            Alert.alert('Erreur', 'Action impossible. Réessaie.');
+          }
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
 
   // Quick bar: les "recent" en premier, complétés par les défauts (deduplication conservée)
   const quickEmojis = useMemo(() => {
@@ -371,7 +420,7 @@ export default function ChatScreen() {
     const nextList = prevList.includes(myId)
       ? prevList.filter(id => id !== myId)
       : [...prevList, myId];
-    const nextReactions: Record<string, string[] | number> = { ...prevReactions };
+    const nextReactions: Record<string, string[]> = { ...prevReactions };
     if (nextList.length === 0) delete nextReactions[emoji];
     else nextReactions[emoji] = nextList;
 
@@ -506,7 +555,7 @@ export default function ChatScreen() {
         ) : (
           <FlatList
             ref={listRef}
-            data={messages}
+            data={visibleMessages}
             keyExtractor={item => item.id}
             contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
             onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
@@ -525,8 +574,9 @@ export default function ChatScreen() {
             renderItem={({ item, index }) => (
               <MessageItem
                 message={item}
-                prevMessage={messages[index - 1]}
+                prevMessage={visibleMessages[index - 1]}
                 isMe={item.player_id === player?.id}
+                onReport={handleReportMessage}
                 allPlayers={allPlayers}
                 reactingId={reactingId}
                 setReactingId={setReactingId}

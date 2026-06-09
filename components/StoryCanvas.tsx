@@ -70,8 +70,8 @@ function AvatarPile({ names, size = 56, ring }: { names: string[]; size?: number
 
 // ─── Background layer ─────────────────────────────────────────
 function Background({ mode, theme }: { mode: BgMode; theme: typeof THEMES[ThemeKey] }) {
-  // Photo background
-  if (typeof mode === 'object' && mode.photo) {
+  // Photo background — on retourne pour tout mode objet (sinon palette[mode] indexerait avec un objet).
+  if (typeof mode === 'object') {
     return (
       <>
         <Image source={{ uri: mode.photo }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
@@ -119,7 +119,7 @@ function Brand({ accent }: { accent: string }) {
         backgroundColor: accent + '22', borderWidth: 1.5, borderColor: accent + '88',
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Text style={{ fontSize: 20 }}>🎾</Text>
+        <Image source={require('../assets/auth/splash-racket.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
       </View>
       <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: 'rgba(255,255,255,0.75)', letterSpacing: 3 }}>
         PAGMATCH

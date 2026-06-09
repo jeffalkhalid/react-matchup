@@ -446,6 +446,24 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
                 {formatPadelLevel(p.elo_score)}
               </Text>
 
+              {/* Classement FRMT */}
+              {(() => {
+                const frmt = formatFrmtRanking(p);
+                if (!frmt) return null;
+                const short = frmt.text.split(' · ')[0]; // compact : "#47" ou "P500"
+                return (
+                  <View style={{
+                    backgroundColor: frmt.verified ? 'rgba(16,185,129,0.15)' : 'rgba(251,146,60,0.15)',
+                    borderWidth: 1, borderColor: frmt.verified ? 'rgba(16,185,129,0.4)' : 'rgba(251,146,60,0.4)',
+                    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, marginBottom: 6,
+                  }}>
+                    <Text style={{ fontSize: 8.5, fontWeight: '900', color: frmt.verified ? '#34d399' : '#fbbf24', letterSpacing: 0.3 }}>
+                      FRMT {short}{frmt.verified ? ' ✓' : ''}
+                    </Text>
+                  </View>
+                );
+              })()}
+
               {/* Podium block */}
               <View style={{
                 width: '90%', height: blockH,

@@ -81,14 +81,21 @@ export function getLeagueLabel(league: League): string {
   return labels[league];
 }
 
+// Échelle concave : bandes d'ELO qui s'élargissent vers le haut → plus on
+// monte, plus un niveau coûte cher (ex. 7→8 = 350 ELO vs 2→3 = 150). Le bas
+// est calé sur la réalité d'entrée (plancher signup ELO 800 ≈ niveau 1.7,
+// vrai débutant, pas niveau 3). Étendu à 9.0 pour tuer la saturation et
+// différencier l'élite. À re-caler une fois sur les vérifiés FRMT (cf.
+// project_elo_level_scaling). Le matching lit l'ELO brut — ne jamais
+// re-convertir un niveau en ELO ailleurs qu'à la création de match.
 const PADEL_ANCHORS: [number, number][] = [
-  [0, 1.0], [650, 2.0], [800, 3.0], [950, 4.0],
-  [1100, 5.0], [1250, 6.0], [1500, 7.0], [1750, 8.0],
+  [700, 1.0], [850, 2.0], [1000, 3.0], [1200, 4.0],
+  [1400, 5.0], [1650, 6.0], [1950, 7.0], [2300, 8.0], [2700, 9.0],
 ];
 
 export function eloToLevel(elo: number): number {
-  if (elo <= 0) return 1.0;
-  if (elo >= 1750) return 8.0;
+  if (elo <= 700) return 1.0;
+  if (elo >= 2700) return 9.0;
   for (let i = 0; i < PADEL_ANCHORS.length - 1; i++) {
     const [eloLow, lvLow] = PADEL_ANCHORS[i];
     const [eloHigh, lvHigh] = PADEL_ANCHORS[i + 1];
@@ -97,12 +104,12 @@ export function eloToLevel(elo: number): number {
       return Math.round((lvLow + t * (lvHigh - lvLow)) * 100) / 100;
     }
   }
-  return 8.0;
+  return 9.0;
 }
 
 export function padelLevelToElo(level: number): number {
-  if (level <= 1.0) return 0;
-  if (level >= 8.0) return 1750;
+  if (level <= 1.0) return 700;
+  if (level >= 9.0) return 2700;
   for (let i = 0; i < PADEL_ANCHORS.length - 1; i++) {
     const [eloLow, lvLow] = PADEL_ANCHORS[i];
     const [eloHigh, lvHigh] = PADEL_ANCHORS[i + 1];
@@ -111,7 +118,7 @@ export function padelLevelToElo(level: number): number {
       return Math.round(eloLow + t * (eloHigh - eloLow));
     }
   }
-  return 1750;
+  return 2700;
 }
 
 export function formatPadelLevel(elo: number): string {

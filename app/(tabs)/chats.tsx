@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  ActivityIndicator, ScrollView,
+  ActivityIndicator, ScrollView, Image,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { usePlayer } from '../../hooks/usePlayer';
@@ -91,8 +91,23 @@ export default function ChatsScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Header */}
       <View style={{ backgroundColor: Colors.heroBg, paddingTop: 56, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md }}>
-        <Text style={{ color: Colors.textOnDark, fontSize: 28, marginBottom: 2, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
-        <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', marginBottom: Spacing.md }}>
+        {/* Brand lockup — raquette + wordmark PAGMATCH */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+          <Image
+            source={require('../../assets/auth/splash-racket.png')}
+            style={{ width: 22, height: 22 }}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('../../assets/auth/splash-wordmark.png')}
+            style={{ width: 100, height: 22, marginLeft: -7 }}
+            resizeMode="contain"
+          />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
+          <Text style={{ color: Colors.textOnDark, fontSize: 28, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center' }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
+        </View>
+        <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.md }}>
           {active.length} match{active.length !== 1 ? 's' : ''} actif{active.length !== 1 ? 's' : ''}
           {totalUnread > 0 ? `  ·  ${totalUnread} non lu${totalUnread > 1 ? 's' : ''}` : ''}
         </Text>

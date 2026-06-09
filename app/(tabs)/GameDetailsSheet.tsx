@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts } from '../../lib/theme';
+import { lobbyGameLink } from '../../lib/community';
 import type { OpenGame } from '../../types';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -96,19 +97,30 @@ function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
 }
 
 // ─── Avatar ───────────────────────────────────────────────────
-const AV_COLORS = ['#4f46e5','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#ec4899','#8b5cf6'];
-function hashColor(name: string) {
+// Charte jaune/noir : par défaut on alterne ink ↔ brand selon le nom,
+// pour garder de la variété entre joueurs sans sortir de la charte.
+const AV_PALETTE = [
+  { bg: Colors.primary, fg: Colors.textOnDark },   // noir, texte blanc
+  { bg: Colors.brand,   fg: Colors.textOnBrand },  // jaune, texte noir
+];
+function hashTone(name: string) {
   const h = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  return AV_COLORS[h % AV_COLORS.length];
+  return AV_PALETTE[h % AV_PALETTE.length];
 }
-function Avatar({ name, size = 36, ring }: { name: string; size?: number; ring?: string }) {
+// Couleurs équipe (charte) — A = ink, B = brand
+const TEAM_BG = { A: Colors.primary,    B: Colors.brand };
+const TEAM_FG = { A: Colors.textOnDark, B: Colors.textOnBrand };
+function Avatar({ name, size = 36, ring, team }: { name: string; size?: number; ring?: string; team?: 'A' | 'B' }) {
+  const tone = hashTone(name);
+  const bg = team ? TEAM_BG[team] : tone.bg;
+  const fg = team ? TEAM_FG[team] : tone.fg;
   return (
     <View style={{
       width: size, height: size, borderRadius: size / 2,
-      backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center',
+      backgroundColor: bg, alignItems: 'center', justifyContent: 'center',
       borderWidth: ring ? 2 : 0, borderColor: ring ?? 'transparent',
     }}>
-      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
+      <Text style={{ color: fg, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -160,7 +172,7 @@ function CourtSlot({
       backgroundColor: player.isInvited ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.95)',
       opacity: player.isInvited ? 0.65 : 1,
     }]}>
-      <Avatar name={player.name} size={30} ring={player.isMe ? Colors.warning : undefined} />
+      <Avatar name={player.name} size={30} ring={player.isMe ? Colors.warning : undefined} team={SIDE_TEAM[side] as 'A' | 'B'} />
       <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textPrimary, marginTop: 3 }} numberOfLines={1}>
         {player.isMe ? 'Toi' : player.name.split(' ')[0]}
       </Text>
@@ -231,7 +243,7 @@ async function shareGame(game: EnrichedGame) {
       return `${pl?.name ?? ''}${lv}`;
     }).filter(Boolean);
   const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
-  const url = `https://matchup-padel.vercel.app/lobby?game=${game.id}`;
+  const url = lobbyGameLink(game.id);
   const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
@@ -245,6 +257,10 @@ export default function GameDetailsSheet({
   const [mySlot, setMySlot] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isWaitlisted, setIsWaitlisted] = useState(false);
+  // Hauteur réelle de la barre CTA (varie selon l'état : 1 bouton vs bandeau + boutons
+  // dans les états « en attente / invité »). Sert à réserver le bon espace bas dans le
+  // ScrollView pour que la dernière section (Les joueurs) ne reste pas sous la barre.
+  const [ctaH, setCtaH] = useState(0);
 
   useEffect(() => { setMySlot(null); }, [game.id]);
 
@@ -267,6 +283,9 @@ export default function GameDetailsSheet({
 
   const pendingPlayers = (game.participants ?? []).filter((p: any) => p.status === 'pending');
   const invitedPlayers = (game.participants ?? []).filter((p: any) => p.status === 'invited');
+  const waitlistPlayers = (game.participants ?? [])
+    .filter((p: any) => p.status === 'waitlist')
+    .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
   const acceptedCount  = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
   const heldCount      = acceptedCount + invitedPlayers.length;
   const isFull         = 1 + heldCount >= 4;
@@ -378,7 +397,7 @@ export default function GameDetailsSheet({
           <View style={{ height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' }}>
             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#B45309' }}>
               {isPending
-                ? '⏳ Demande envoyée'
+                ? `⏳ Demande envoyée · ${((myParticipant as any)?.approvals?.length ?? 0)}/${requiredVotes} vote${requiredVotes > 1 ? 's' : ''}`
                 : `⏳ Liste d'attente${myWaitlistPosition ? ` · ${ordinal(myWaitlistPosition)} position` : ''}`}
             </Text>
           </View>
@@ -505,7 +524,7 @@ export default function GameDetailsSheet({
           </View>
 
           {/* ── Scrollable body ── */}
-          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: (ctaH || insets.bottom) + 16 }}>
 
             {/* Status banners */}
             {(isFull || outOfLevel) && (
@@ -689,6 +708,47 @@ export default function GameDetailsSheet({
               </View>
             )}
 
+            {/* Waitlist — visible par tous (créateur, acceptés, et autres) pour transparence */}
+            {waitlistPlayers.length > 0 && (
+              <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.warning }} />
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+                    Liste d'attente · {waitlistPlayers.length}
+                  </Text>
+                </View>
+                <View style={{ gap: 6 }}>
+                  {waitlistPlayers.map((p: any, i: number) => {
+                    const isMine = p.player_id === playerId;
+                    return (
+                      <View key={p.id} style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 10,
+                        backgroundColor: isMine ? 'rgba(245,158,11,0.10)' : Colors.bgCard,
+                        borderWidth: 1, borderColor: isMine ? 'rgba(245,158,11,0.40)' : Colors.border,
+                        borderRadius: 12, padding: 10,
+                      }}>
+                        <View style={{
+                          width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.bgCardAlt,
+                          alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>{i + 1}</Text>
+                        </View>
+                        <Avatar name={p.player?.name ?? '?'} size={30} ring={isMine ? Colors.warning : undefined} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
+                            {isMine ? 'Toi' : p.player?.name}
+                          </Text>
+                          <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
+                            Niv. {formatPadelLevel(p.player?.elo_score ?? 0)} · {i === 0 ? 'Prochain à entrer' : `${i + 1}ᵉ en attente`}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
             {/* ── Players section ── */}
             {filled.length > 0 && (
               <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
@@ -710,7 +770,7 @@ export default function GameDetailsSheet({
                         activeOpacity={0.8}
                         style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.bgCardAlt, borderRadius: 18, padding: 14 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: total > 0 ? 10 : 0 }}>
-                          <Avatar name={p.name} size={44} ring={p.isMe ? Colors.warning : undefined} />
+                          <Avatar name={p.name} size={44} ring={p.isMe ? Colors.warning : undefined} team={isTeamA ? 'A' : 'B'} />
                           <View style={{ flex: 1 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.isMe ? 'Toi' : p.name}</Text>
@@ -759,7 +819,10 @@ export default function GameDetailsSheet({
             const cta = renderCTA();
             if (!cta) return null;
             return (
-              <View style={[sty.ctaBar, { paddingBottom: insets.bottom + 10 }]}>
+              <View
+                style={[sty.ctaBar, { paddingBottom: insets.bottom + 10 }]}
+                onLayout={e => setCtaH(e.nativeEvent.layout.height)}
+              >
                 {cta}
               </View>
             );

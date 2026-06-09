@@ -38,8 +38,17 @@ Deno.serve(async (req) => {
 
     if (!tokens.length) return new Response('ok');
 
-    // Send to Expo push service
-    const messages = tokens.map(to => ({ to, title, body, data, sound: 'default', badge: 1 }));
+    // Send to Expo push service.
+    // `priority: 'high'` + `channelId` sont requis pour le heads-up (pop-up)
+    // Android : sans eux la notif arrive (icône) mais sans bannière. Le canal
+    // 'default' est créé côté app avec une importance MAX (usePushNotifications).
+    const messages = tokens.map(to => ({
+      to, title, body, data,
+      sound: 'default',
+      badge: 1,
+      priority: 'high',
+      channelId: 'default',
+    }));
     await fetch(EXPO_PUSH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Encoding': 'gzip, deflate' },

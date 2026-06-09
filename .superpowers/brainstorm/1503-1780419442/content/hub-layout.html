@@ -1,0 +1,59 @@
+<h2>Hub du centre d'aide — disposition des rubriques</h2>
+<p class="subtitle">Même en-tête + carte « Dépannage » en pivot. La différence = liste vs grille pour les rubriques. Clique ton choix.</p>
+
+<style>
+  .phone{width:300px;background:#fff;border:1px solid #e2e8f0;border-radius:22px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.08);margin:0 auto}
+  .ph-pad{padding:16px}
+  .kick{font-size:10px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#a1a1aa;margin-bottom:4px}
+  .h-title{font-size:22px;font-weight:800;color:#0a0a0a;letter-spacing:-.4px}
+  .pivot{margin-top:14px;border-radius:16px;padding:14px;background:linear-gradient(140deg,rgba(124,58,237,.12),rgba(220,38,38,.12));border:1px solid rgba(124,58,237,.33);display:flex;gap:10px;align-items:center}
+  .pivot-ic{width:38px;height:38px;border-radius:12px;background:linear-gradient(140deg,#7C3AED,#DC2626);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .pivot b{font-size:13.5px;color:#0a0a0a}.pivot small{font-size:11px;color:#52525b;display:block;margin-top:2px}
+  .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f1f0ee}
+  .pill{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto}
+  .row b{font-size:13.5px;color:#0a0a0a}.row small{font-size:11px;color:#52525b;display:block;margin-top:1px}
+  .chev{margin-left:auto;color:#cbd5e1}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .cell{border:1px solid #ececec;border-radius:14px;padding:10px;text-align:center}
+  .cell .pill{margin:0 auto 6px}
+  .cell b{font-size:12px;color:#0a0a0a}
+  .tu{background:#2563eb;color:#fff;font-size:8px;font-weight:900;border-radius:99px;padding:2px 6px;margin-left:6px;text-transform:uppercase}
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="list" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#f8fafc">
+      <div class="phone"><div class="ph-pad">
+        <div class="kick">Centre d'aide</div>
+        <div class="h-title">Comment ça marche</div>
+        <div class="pivot"><div class="pivot-ic">🆘</div><div><b>Un souci&nbsp;? Dépannage &amp; FAQ</b><small>ELO bloqué, partie disparue…</small></div></div>
+        <div class="kick" style="margin-top:14px">Les rubriques</div>
+        <div class="row"><div class="pill" style="background:rgba(37,99,235,.1)">📋</div><div><b>Lobby<span class="tu">Tu es ici</span></b><small>Trouver / créer une partie</small></div><div class="chev">›</div></div>
+        <div class="row"><div class="pill" style="background:rgba(79,70,229,.1)">🔎</div><div><b>Recherche</b><small>Trouver les bons joueurs</small></div><div class="chev">›</div></div>
+        <div class="row"><div class="pill" style="background:rgba(217,119,6,.11)">⚡</div><div><b>Défis</b><small>Défier n'importe qui</small></div><div class="chev">›</div></div>
+        <div class="row" style="border:none"><div class="pill" style="background:rgba(5,150,105,.1)">🏆</div><div><b>Classement</b><small>Grimper les ligues</small></div><div class="chev">›</div></div>
+      </div></div>
+    </div>
+    <div class="card-body"><h3>A — Liste (défaut handoff)</h3><p>Une rubrique par ligne : pastille + titre + sous-titre. Plus lisible, plus de contexte par item.</p></div>
+  </div>
+
+  <div class="card" data-choice="grid" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#f8fafc">
+      <div class="phone"><div class="ph-pad">
+        <div class="kick">Centre d'aide</div>
+        <div class="h-title">Comment ça marche</div>
+        <div class="pivot"><div class="pivot-ic">🆘</div><div><b>Un souci&nbsp;? Dépannage &amp; FAQ</b><small>ELO bloqué, partie disparue…</small></div></div>
+        <div class="kick" style="margin-top:14px">Les rubriques</div>
+        <div class="grid">
+          <div class="cell"><div class="pill" style="background:rgba(37,99,235,.1)">📋</div><b>Lobby</b></div>
+          <div class="cell"><div class="pill" style="background:rgba(79,70,229,.1)">🔎</div><b>Recherche</b></div>
+          <div class="cell"><div class="pill" style="background:rgba(217,119,6,.11)">⚡</div><b>Défis</b></div>
+          <div class="cell"><div class="pill" style="background:rgba(5,150,105,.1)">🏆</div><b>Classement</b></div>
+          <div class="cell"><div class="pill" style="background:rgba(8,145,178,.11)">💬</div><b>Chats</b></div>
+          <div class="cell"><div class="pill" style="background:rgba(180,83,9,.11)">🎖️</div><b>Badges</b></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="card-body"><h3>B — Grille 2 colonnes</h3><p>Plus compact, tout visible sans scroller. Moins de place pour les sous-titres / le badge « Tu es ici ».</p></div>
+  </div>
+</div>
