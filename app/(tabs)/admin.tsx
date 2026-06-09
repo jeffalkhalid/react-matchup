@@ -563,7 +563,7 @@ export default function AdminScreen() {
       allRankings.push(...data);
       if (data.length < PAGE) break;
     }
-    const { data: players } = await supabase.from('players').select('id,name').order('name');
+    const { data: players } = await supabase.from('players').select('id,name').is('deleted_at', null).order('name');
     setFrmtEntries(allRankings);
     setAllPlayers(players ?? []);
     setFrmtLoading(false);

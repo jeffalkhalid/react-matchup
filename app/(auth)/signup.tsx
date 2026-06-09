@@ -10,7 +10,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
 import { LEGAL } from '../../lib/legal';
-import { Fonts } from '../../lib/theme';
+import { Fonts, formatPadelLevel } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
 
 const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY!;
@@ -26,23 +26,10 @@ const TRAILS = require('../../assets/auth/splash-trails.png');
 const DECO_TRAILS = require('../../assets/auth/deco-trails.png');
 
 // ── ELO helpers ────────────────────────────────────────────────────────────
-const PADEL_ANCHORS: [number, number][] = [
-  [0, 1.0], [650, 2.0], [800, 3.0], [950, 4.0],
-  [1100, 5.0], [1250, 6.0], [1500, 7.0], [1750, 8.0],
-];
-function formatPadelLevel(elo: number): string {
-  if (elo <= 0) return '1.00';
-  if (elo >= 1750) return '8.00';
-  for (let i = 0; i < PADEL_ANCHORS.length - 1; i++) {
-    const [eL, lL] = PADEL_ANCHORS[i];
-    const [eH, lH] = PADEL_ANCHORS[i + 1];
-    if (elo >= eL && elo < eH) {
-      const t = (elo - eL) / (eH - eL);
-      return (Math.round((lL + t * (lH - lL)) * 100) / 100).toFixed(2);
-    }
-  }
-  return '8.00';
-}
+// formatPadelLevel vient de lib/theme (échelle CANONIQUE, partagée avec l'app).
+// ⚠️ Ne PAS redéfinir une échelle locale ici : calculateInitialScore() produit
+// déjà des ELO sur l'échelle theme (ex. Novice→800 = niveau 1.7). Une échelle
+// locale divergente affichait un faux niveau à l'inscription (3.0 au lieu de 1.7).
 function parseFrmtRankNumber(rank: string): number | null {
   const m = rank.trim().replace(/\s/g, '').match(/^[Pp]?(\d+)$/);
   if (!m) return null;

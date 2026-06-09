@@ -663,7 +663,7 @@ export default function PlayerProfileScreen() {
         ? supabase.from('player_favorites').select('id').eq('player_id', self.id).eq('favorite_id', id).maybeSingle()
         : Promise.resolve({ data: null }),
       profileData
-        ? supabase.from('players').select('id', { count: 'exact', head: true }).gt('elo_score', profileData.elo_score)
+        ? supabase.from('players').select('id', { count: 'exact', head: true }).is('deleted_at', null).gt('elo_score', profileData.elo_score)
         : Promise.resolve({ count: 0 }),
     ]);
 

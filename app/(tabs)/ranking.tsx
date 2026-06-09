@@ -82,7 +82,7 @@ export default function RankingScreen() {
 
   const load = async (showLoading = false) => {
     if (showLoading) setLoading(true);
-    const { data } = await supabase.from('players').select('*').order('elo_score', { ascending: false });
+    const { data } = await supabase.from('players').select('*').is('deleted_at', null).order('elo_score', { ascending: false });
     setAllPlayers(data ?? []);
     if (me) {
       const { data: favData } = await supabase
