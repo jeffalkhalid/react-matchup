@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -21,56 +21,58 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Demande la permission push, récupère le token Expo et l'enregistre en DB.
+// Idempotent : un second appel sur permission déjà accordée ne re-prompte pas.
+// Réutilisé par le hook (au montage) ET par l'écran final de l'onboarding (« Activer & jouer »).
+export async function registerForPushAsync(playerId: string): Promise<'granted' | 'denied' | 'skipped'> {
+  if (IS_EXPO_GO) { console.log('[push] Expo Go → enregistrement impossible (build natif requis)'); return 'skipped'; }
+  try {
+    // Android requires a notification channel
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: Colors.brand,
+      });
+    }
+
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    console.log('[push] permission =', finalStatus);
+    if (finalStatus !== 'granted') { console.log('[push] permission refusée → stop'); return 'denied'; }
+
+    console.log('[push] projectId =', process.env.EXPO_PUBLIC_PROJECT_ID);
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+    });
+    const token = tokenData.data;
+    console.log('[push] token obtenu =', token);
+
+    const { error } = await supabase
+      .from('players')
+      .update({ push_token: token })
+      .eq('id', playerId);
+    console.log('[push] save DB', error ? `ERREUR: ${error.message}` : 'OK');
+    return 'granted';
+  } catch (e) {
+    console.log('[push] EXCEPTION (FCM/Firebase pas dans le build ?):', String(e));
+    return 'skipped';
+  }
+}
+
 export function usePushNotifications() {
   const { player } = usePlayer();
   const router     = useRouter();
-  const savedToken = useRef<string | null>(null);
 
   // ── Register token ────────────────────────────────────────────
   useEffect(() => {
     if (!player) { console.log('[push] pas de player → skip'); return; }
-    if (IS_EXPO_GO) { console.log('[push] Expo Go → enregistrement impossible (build natif requis)'); return; }
-
-    (async () => {
-      try {
-        // Android requires a notification channel
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'default',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: Colors.brand,
-          });
-        }
-
-        const { status: existing } = await Notifications.getPermissionsAsync();
-        let finalStatus = existing;
-        if (existing !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-        console.log('[push] permission =', finalStatus);
-        if (finalStatus !== 'granted') { console.log('[push] permission refusée → stop'); return; }
-
-        console.log('[push] projectId =', process.env.EXPO_PUBLIC_PROJECT_ID);
-        const tokenData = await Notifications.getExpoPushTokenAsync({
-          projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-        });
-        const token = tokenData.data;
-        console.log('[push] token obtenu =', token);
-        if (token === savedToken.current) return;
-        savedToken.current = token;
-
-        // Save to DB — only if changed
-        const { error } = await supabase
-          .from('players')
-          .update({ push_token: token })
-          .eq('id', player.id);
-        console.log('[push] save DB', error ? `ERREUR: ${error.message}` : 'OK');
-      } catch (e) {
-        console.log('[push] EXCEPTION (FCM/Firebase pas dans le build ?):', String(e));
-      }
-    })();
+    registerForPushAsync(player.id);
   }, [player?.id]);
 
   // ── Navigate on notification tap ─────────────────────────────

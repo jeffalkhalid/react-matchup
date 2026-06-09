@@ -10,5 +10,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // PKCE : flux recommandé pour le mobile. Le lien de récupération renvoie
+    // un `?code=…` qu'on échange via exchangeCodeForSession (le code verifier
+    // est stocké dans AsyncStorage lors de l'appel resetPasswordForEmail).
+    flowType: 'pkce',
   },
 });

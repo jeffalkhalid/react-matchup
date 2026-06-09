@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, TextInput, Alert, StyleSheet, Modal,
-  Share, Linking,
+  Share, Linking, Image,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,8 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, padelLevelToElo, Fonts } from '../../lib/theme';
 import { notifyPlayers } from '../../lib/notify';
+import { notifyMatchingAlerts, lobbyGameLink } from '../../lib/community';
+import { getHiddenPlayerIds } from '../../lib/moderation';
 import type { OpenGame, Match } from '../../types';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
@@ -64,7 +66,7 @@ function hoursUntil(iso: string): number {
 }
 
 // Raised by the eject_overlapping_candidatures DB trigger when the
-// target player is already organizer of another match within ±4h.
+// target player is already organizer of another match within ±2h.
 function isCreatorConflict(error: unknown): boolean {
   const msg = (error as { message?: string } | null)?.message;
   return typeof msg === 'string' && msg.includes('CREATOR_CONFLICT');
@@ -125,19 +127,30 @@ const IconFire = ({ size = 12, color = Colors.danger }) => (
 );
 
 // ─── Avatar ──────────────────────────────────────────────────
-const AV_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899', '#8b5cf6'];
-function hashColor(name: string): string {
+// Charte jaune/noir : par défaut on alterne ink ↔ brand selon le nom,
+// pour garder de la variété entre joueurs sans sortir de la charte.
+const AV_PALETTE = [
+  { bg: Colors.primary, fg: Colors.textOnDark },   // noir, texte blanc
+  { bg: Colors.brand,   fg: Colors.textOnBrand },  // jaune, texte noir
+];
+function hashTone(name: string) {
   const h = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  return AV_COLORS[h % AV_COLORS.length];
+  return AV_PALETTE[h % AV_PALETTE.length];
 }
-function Avatar({ name, size = 28, ring }: { name: string; size?: number; ring?: string }) {
+// Couleurs équipe (charte) — A = ink, B = brand
+const TEAM_BG  = { A: Colors.primary,    B: Colors.brand };
+const TEAM_FG  = { A: Colors.textOnDark, B: Colors.textOnBrand };
+function Avatar({ name, size = 28, ring, team }: { name: string; size?: number; ring?: string; team?: 'A' | 'B' }) {
+  const tone = hashTone(name);
+  const bg = team ? TEAM_BG[team] : tone.bg;
+  const fg = team ? TEAM_FG[team] : tone.fg;
   return (
     <View style={{
       width: size, height: size, borderRadius: Math.round(size * 0.3),
-      backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center',
+      backgroundColor: bg, alignItems: 'center', justifyContent: 'center',
       borderWidth: ring ? 2 : 0, borderColor: ring ?? 'transparent',
     }}>
-      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.42), fontWeight: '900' }}>
+      <Text style={{ color: fg, fontSize: Math.round(size * 0.42), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -286,9 +299,10 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
     const nameLabel = s ? (s.isMe ? 'Toi' : (s.name?.split(' ')[0] ?? '?')) : null;
 
     if (s) {
+      const team: 'A' | 'B' = side.startsWith('A_') ? 'A' : 'B';
       return (
         <View key={idx} style={{ alignItems: 'center', gap: 2, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
-          <Avatar name={s.name} size={30} ring={s.isMe ? Colors.warning : undefined} />
+          <Avatar name={s.name} size={30} ring={s.isMe ? Colors.warning : undefined} team={team} />
           <Text
             numberOfLines={1}
             style={{
@@ -373,12 +387,12 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
 }
 
 // ─── Avatar row ───────────────────────────────────────────────
-function AvatarRow({ players, slots }: { players: Array<{ name: string }>; slots: number }) {
+function AvatarRow({ players, slots }: { players: Array<{ name: string; team?: 'A' | 'B' }>; slots: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {players.map((p, i) => (
         <View key={i} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: players.length - i }}>
-          <Avatar name={p.name} size={28} ring={Colors.bgCard} />
+          <Avatar name={p.name} size={28} ring={Colors.bgCard} team={p.team} />
         </View>
       ))}
       {Array.from({ length: slots }).map((_, i) => (
@@ -452,7 +466,7 @@ async function shareGame(game: EnrichedGame) {
       return `${pl?.name ?? ''}${lv}`;
     }).filter(Boolean);
   const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
-  const url = `https://matchup-padel.vercel.app/lobby?game=${game.id}`;
+  const url = lobbyGameLink(game.id);
   const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
@@ -476,9 +490,13 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   const isUrgent = game.spots_available === 1 && hoursLeft > 0 && hoursLeft <= 6;
   const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
   const creatorObj = game.creator as { name: string } | undefined;
-  const allPlayers: Array<{ name: string }> = [
-    ...(creatorObj ? [creatorObj] : []),
-    ...accepted.map(p => p.player as { name: string }).filter(Boolean),
+  const teamOf = (side?: string): 'A' | 'B' | undefined => side ? (side.startsWith('B') ? 'B' : 'A') : undefined;
+  const allPlayers: Array<{ name: string; team?: 'A' | 'B' }> = [
+    ...(creatorObj?.name ? [{ name: creatorObj.name, team: teamOf((game as any).creator_side) }] : []),
+    ...accepted.flatMap(p => {
+      const nm = (p.player as { name: string } | undefined)?.name;
+      return nm ? [{ name: nm, team: teamOf((p as any).team_side) }] : [];
+    }),
   ];
   const levelRange = (game.min_elo || game.max_elo)
     ? `Niv. ${fmtLevel(game.min_elo ?? 0)}–${fmtLevel(game.max_elo ?? 9999)}`
@@ -502,9 +520,13 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
             {(game as any).gender_pref === 'mixed' && <Pill variant="neutral">⚧ Mixte</Pill>}
           </View>
           {variant === 'explore' && <EloFitPill fit={fit} />}
-          {variant === 'upcoming' && game.my_status === 'pending' && (
-            <Pill variant="warning">En attente</Pill>
-          )}
+          {variant === 'upcoming' && game.my_status === 'pending' && (() => {
+            const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId);
+            const got = (mine as any)?.approvals?.length ?? 0;
+            const acceptedCount = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
+            const required = Math.min(1 + acceptedCount, 3);
+            return <Pill variant="warning">En attente · {got}/{required}</Pill>;
+          })()}
           {variant === 'upcoming' && game.my_status === 'invited' && (
             <Pill variant="warning">{game.is_challenge ? '⚡ Défi reçu' : '✉️ Invité'}</Pill>
           )}
@@ -1010,8 +1032,10 @@ function MatchCard({ match, playerId, onPress, onRematch }: {
   onRematch?: (matchId: string) => void;
 }) {
   const won = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const winnerTeam = [match.winner, match.winner_2].filter(Boolean) as { name: string }[];
-  const loserTeam  = [match.loser,  match.loser_2 ].filter(Boolean) as { name: string }[];
+  const winnerTeam = ([match.winner, match.winner_2].filter(Boolean) as { name: string }[])
+    .map(p => ({ name: p.name, team: 'A' as const }));
+  const loserTeam  = ([match.loser,  match.loser_2 ].filter(Boolean) as { name: string }[])
+    .map(p => ({ name: p.name, team: 'B' as const }));
   const winnerNames = winnerTeam.map(p => p.name).join(' & ') || '?';
   const loserNames  = loserTeam .map(p => p.name).join(' & ') || '?';
   const canRematch = onRematch && match.status === 'validated';
@@ -1457,7 +1481,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
 export default function LobbyScreen() {
   const { player } = usePlayer();
   const insets = useSafeAreaInsets();
-  const { create, tab: tabParam, role: roleParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, rematch: rematchParam } = useLocalSearchParams<{ create?: string; tab?: string; role?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; rematch?: string }>();
+  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, rematch: rematchParam } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; rematch?: string }>();
   const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>('explorer');
@@ -1531,7 +1555,7 @@ export default function LobbyScreen() {
     //   1) my participation rows (status only)
     //   2) the matching games, via the same query used for created games
     // A manually-declined row (auto_declined = false) stays hidden; an
-    // auto-declined invitation (hidden by the ±4h overlap trigger) is re-offered
+    // auto-declined invitation (hidden by the ±2h overlap trigger) is re-offered
     // as 'invited' once its game is still joinable.
     const { data: partRows } = await supabase
       .from('game_participants')
@@ -1601,7 +1625,9 @@ export default function LobbyScreen() {
     // Une partie "ouverte" dont la date de match est passée ne doit plus s'afficher dans l'explorer,
     // même si `cleanup_expired_games` n'a pas encore tourné côté DB.
     const notExpired = (g: any) => !g.match_date || new Date(g.match_date).getTime() >= nowMs;
-    setGames((explorerRes.data ?? []).filter((g: any) => !alreadyInIds.has(g.id) && genderAllowed(g) && notExpired(g)) as EnrichedGame[]);
+    // Modération : masquer les parties créées par un utilisateur bloqué (2 sens).
+    const hidden = await getHiddenPlayerIds(player.id);
+    setGames((explorerRes.data ?? []).filter((g: any) => !alreadyInIds.has(g.id) && genderAllowed(g) && notExpired(g) && !hidden.has(g.creator_id)) as EnrichedGame[]);
 
     const allUpcoming = [...creatorGames, ...participantGames];
     const now = new Date();
@@ -1654,13 +1680,12 @@ export default function LobbyScreen() {
   useEffect(() => {
     if (tabParam === 'upcoming') {
       setTab('upcoming');
-      if (roleParam === 'playing') setRoleFilter('playing');
       router.setParams({ tab: undefined, role: undefined });
     } else if (tabParam === 'history') {
       setTab('history');
       router.setParams({ tab: undefined });
     }
-  }, [tabParam, roleParam]);
+  }, [tabParam]);
 
   // Auto-ouvre la sheet de validation quand on arrive depuis une notif "Score à valider".
   // Attend que `matches` soit chargé pour éviter d'ouvrir sur un état vide qui se fermerait juste après.
@@ -1769,8 +1794,8 @@ export default function LobbyScreen() {
     const matchDate = new Date(`${data.matchDate}T${data.matchTime}:00`);
     const matchDateIso = matchDate.toISOString();
 
-    // ── Conflict pre-check (±4h window) — warn but allow override
-    const OVERLAP_MS = 4 * 60 * 60 * 1000;
+    // ── Conflict pre-check (±2h window) — warn but allow override
+    const OVERLAP_MS = 2 * 60 * 60 * 1000;
     const fromIso = new Date(matchDate.getTime() - OVERLAP_MS).toISOString();
     const toIso   = new Date(matchDate.getTime() + OVERLAP_MS).toISOString();
 
@@ -1811,19 +1836,19 @@ export default function LobbyScreen() {
       if (nCreated > 0 && nJoined === 0) {
         // Pur conflit organisateur
         body =
-          `Tu organises déjà ${nCreated > 1 ? `${nCreated} parties` : 'une partie'} au même créneau (±4h) :\n\n` +
+          `Tu organises déjà ${nCreated > 1 ? `${nCreated} parties` : 'une partie'} au même créneau (±2h) :\n\n` +
           `${createdLines.join('\n')}\n\n` +
           `En publiant celle-ci, tu auras ${nCreated + 1} parties à gérer simultanément — tu devras en annuler une plus tard depuis sa fiche.`;
       } else if (nCreated === 0 && nJoined > 0) {
         // Pur conflit candidature/inscription
         body =
-          `Tu es déjà engagé sur ${nJoined > 1 ? `${nJoined} parties` : 'une partie'} au même créneau (±4h) :\n\n` +
+          `Tu es déjà engagé sur ${nJoined > 1 ? `${nJoined} parties` : 'une partie'} au même créneau (±2h) :\n\n` +
           `${joinedLines.join('\n')}\n\n` +
           `En publiant, ces engagements seront automatiquement retirés.`;
       } else {
         // Mixte
         body =
-          `Tu as ${nCreated + nJoined} parties au même créneau (±4h) :\n\n` +
+          `Tu as ${nCreated + nJoined} parties au même créneau (±2h) :\n\n` +
           `Tu organises :\n${createdLines.join('\n')}\n\n` +
           `Tu participes :\n${joinedLines.join('\n')}\n\n` +
           `En publiant, tes engagements seront retirés. Les parties que tu organises restent — à toi de les annuler si besoin.`;
@@ -1895,6 +1920,10 @@ export default function LobbyScreen() {
         );
       }
     }
+
+    // Pousse une notif aux joueurs dont une alerte correspond à cette partie
+    // (moteur de matching DB find_matching_alerts → send-push). Fire-and-forget.
+    notifyMatchingAlerts(game.id, data.location);
 
     fetchData();
     return game.id;
@@ -2238,29 +2267,31 @@ export default function LobbyScreen() {
         borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
       }}>
 
+        {/* Brand lockup — raquette + wordmark PAGMATCH */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+          <Image
+            source={require('../../assets/auth/splash-racket.png')}
+            style={{ width: 22, height: 22 }}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('../../assets/auth/splash-wordmark.png')}
+            style={{ width: 100, height: 22, marginLeft: -7 }}
+            resizeMode="contain"
+          />
+        </View>
         {/* Title row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <View>
-            <Text style={{ fontSize: 26, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+          <View style={{ flexShrink: 1 }}>
+            <Text style={{ fontSize: 26, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center' }}>
               Le <Text style={{ color: Colors.brand }}>Lobby</Text>
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 2 }}>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>
               Niv. {fmtLevel(myElo)} · {games.length > 0
                 ? `${games.length} partie${games.length > 1 ? 's' : ''} disponible${games.length > 1 ? 's' : ''}`
                 : 'aucune partie disponible'}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => setShowCreate(true)}
-            activeOpacity={0.85}
-            style={{
-              backgroundColor: Colors.brand, borderRadius: 16,
-              paddingHorizontal: 14, paddingVertical: 10,
-              shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
-            }}
-          >
-            <Text style={{ color: Colors.textOnBrand, fontSize: 13, fontFamily: Fonts.uiBlack }}>➕ Créer</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Tabs — pill style */}
@@ -2357,20 +2388,7 @@ export default function LobbyScreen() {
         </ScrollView>
       )}
 
-      {/* ── FAB ── */}
-      <TouchableOpacity
-        onPress={() => setShowCreate(true)}
-        activeOpacity={0.88}
-        style={{
-          position: 'absolute', right: 18, bottom: insets.bottom + 24, zIndex: 30,
-          width: 56, height: 56, borderRadius: 18, backgroundColor: Colors.primary,
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: Colors.primary, shadowOpacity: 0.45, shadowRadius: 20,
-          shadowOffset: { width: 0, height: 8 }, elevation: 10,
-        }}
-      >
-        <IconPlus size={26} color={Colors.textOnDark} />
-      </TouchableOpacity>
+      {/* FAB retiré : la création se fait via l'onglet « Créer » de la barre d'onglets. */}
 
       {openGame && (
         <GameDetailsSheet

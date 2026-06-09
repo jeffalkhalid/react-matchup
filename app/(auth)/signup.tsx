@@ -1,22 +1,23 @@
 import { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  Platform, ScrollView, ActivityIndicator, Alert,
-  KeyboardAvoidingView, Image, Dimensions,
+  Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Image, Dimensions, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
-import HCaptcha from '@hcaptcha/react-native-hcaptcha';
+import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
+import { LEGAL } from '../../lib/legal';
 import { Fonts } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
 
-const HCAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_HCAPTCHA_SITE_KEY!;
-// Captcha désactivé pendant la phase de test — migration prévue vers
-// Cloudflare Turnstile. ⚠️ Penser à désactiver aussi "Captcha protection"
-// dans Supabase → Auth → Settings, sinon l'API rejette les requêtes sans token.
-const CAPTCHA_ENABLED = false;
+const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY!;
+// Captcha (Cloudflare Turnstile) ACTIF. Clés en place (.env + Supabase Auth).
+// ⚠️ Si désactivation un jour : repasser à false ICI ET dans login.tsx,
+// ET désactiver "Captcha protection" dans Supabase → Auth → Settings.
+const CAPTCHA_ENABLED = true;
 const COLLECT_FRMT_IDENTITY = true;
 const TOTAL_STEPS = 5;
 
@@ -360,11 +361,12 @@ export default function SignupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { tokens, isDark } = useAuthTheme();
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaRef = useRef<any>(null);
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState<FormData>(INITIAL);
 
@@ -397,20 +399,28 @@ export default function SignupScreen() {
 
   const getHonestyFactor = () => {
     const MIN_OBJ: Record<string, number> = {
-      Novice: 0, Débutant: 0, Amateur: 50, Intermédiaire: 100, Avancé: 200, Expert: 300,
+      Novice: 0, Débutant: 50, Amateur: 100, Intermédiaire: 175, Avancé: 275, Expert: 375,
     };
     const minObj = MIN_OBJ[formData.estimatedLevel] ?? 0;
     if (minObj === 0) return 1;
     const obj = getObjSignal();
-    return obj >= minObj ? 1 : Math.max(0.5, obj / minObj);
+    return obj >= minObj ? 1 : Math.max(0.3, obj / minObj);
   };
 
   const calculateInitialScore = () => {
+    // Bonus = ELO au-dessus du plancher 800 si déclaration validée (honnêteté 1).
+    // Calé pour atterrir : Novice→800(niv1.7), Déb→920(2.5), Amateur→1050(3.3),
+    // Inter→1220(4.1), Avancé→1380(4.9), Expert→1525(5.5 = plafond auto-déclaré).
     const LEVEL_BONUS: Record<string, number> = {
-      Novice: 0, Débutant: 100, Amateur: 200, Intermédiaire: 400, Avancé: 600, Expert: 800,
+      Novice: 0, Débutant: 120, Amateur: 250, Intermédiaire: 420, Avancé: 580, Expert: 725,
     };
     const selfBonus = LEVEL_BONUS[formData.estimatedLevel] ?? 0;
-    const selfScore = Math.min(800 + getObjSignal() + Math.round(selfBonus * getHonestyFactor()), 1350);
+    // Le NIVEAU déclaré est le seul driver. L'activité (getObjSignal) ne s'ajoute
+    // PAS : elle sert uniquement à VALIDER le niveau via getHonestyFactor (une
+    // déclaration non soutenue par l'activité est revue à la baisse).
+    // Plafond = niveau 5.5 (ELO 1525, cf. PADEL_ANCHORS) : sans FRMT vérifié on
+    // ne dépasse pas un bon amateur ; l'élite se prouve sur le terrain ou via FRMT.
+    const selfScore = Math.min(800 + Math.round(selfBonus * getHonestyFactor()), 1525);
     let frmtBonus = 0;
     if (formData.hasFrmtRank === 'yes') {
       const n = parseFrmtRankNumber(formData.frmtRank);
@@ -444,7 +454,9 @@ export default function SignupScreen() {
   };
 
   const handleCreateAccount = async () => {
-    if ((CAPTCHA_ENABLED && !captchaToken) || !formData.name.trim() || !formData.email || !formData.password) return;
+    // Garde de sécurité (défense en profondeur, en plus du bouton désactivé) :
+    // âge confirmé + captcha + champs requis avant toute création de compte.
+    if ((CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || !formData.password) return;
     setIsSubmitting(true);
     try {
       const { count: nameCount, error: nameErr } = await supabase
@@ -452,33 +464,36 @@ export default function SignupScreen() {
       if (nameErr) throw nameErr;
       if ((nameCount ?? 0) > 0) throw new Error('pseudo_taken');
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email, password: formData.password,
-        ...(CAPTCHA_ENABLED && captchaToken ? { options: { captchaToken } } : {}),
-      });
-      if (authError) throw authError;
-      if (!authData.user?.identities || authData.user.identities.length === 0) throw new Error('email_taken');
-
-      const { count: existing } = await supabase
-        .from('players').select('id', { count: 'exact', head: true }).eq('user_id', authData.user.id);
-      if ((existing ?? 0) > 0) throw new Error('email_taken');
-
-      const payload: Record<string, unknown> = {
-        user_id: authData.user.id, name: formData.name.trim(),
-        elo_score: calculateInitialScore(), fiability_pct: 50,
+      // La fiche `players` est créée côté serveur par le trigger DEFINER
+      // handle_new_user (cf. supabase/migrations/signup_player_trigger.sql),
+      // qui lit ces métadonnées dans auth.users.raw_user_meta_data. Raison :
+      // avec confirmation email active, signUp ne renvoie pas de session, donc
+      // un insert client serait bloqué par la RLS (rôle anon).
+      const meta: Record<string, unknown> = {
+        name: formData.name.trim(),
+        elo_score: calculateInitialScore(), fiability_pct: 10,
         handedness: formData.handedness || null,
         court_side: formData.preferredSide || null,
         gender: formData.gender === 'Homme' ? 'male' : formData.gender === 'Femme' ? 'female' : null,
       };
       if (formData.hasFrmtRank === 'yes') {
         const n = parseFrmtRankNumber(formData.frmtRank);
-        if (n) payload.frmt_rank = String(n);
+        if (n) meta.frmt_rank = String(n);
       }
       if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && formData.frmtFirstName.trim() && formData.frmtLastName.trim()) {
-        payload.frmt_full_name = `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`;
+        meta.frmt_full_name = `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`;
       }
-      const { error: profileError } = await supabase.from('players').insert([payload]);
-      if (profileError) throw profileError;
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email, password: formData.password,
+        options: {
+          data: meta,
+          ...(CAPTCHA_ENABLED && captchaToken ? { captchaToken } : {}),
+        },
+      });
+      if (authError) throw authError;
+      if (!authData.user?.identities || authData.user.identities.length === 0) throw new Error('email_taken');
+
       setIsSuccess(true);
     } catch (err: unknown) {
       const raw = (err as Error).message;
@@ -502,7 +517,7 @@ export default function SignupScreen() {
   ];
 
   const screenW = Dimensions.get('window').width;
-  const lockupW = screenW * 0.5;
+  const lockupW = screenW * 0.42;
 
   const cardShadow = isDark
     ? { shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 36, shadowOffset: { width: 0, height: 12 }, elevation: 14 }
@@ -580,11 +595,45 @@ export default function SignupScreen() {
       </View>
     );
     if (step === 5) {
-      const finalDisabled = isSubmitting || (CAPTCHA_ENABLED && !captchaToken) || !formData.name.trim() || !formData.email || formData.password.length < 6;
+      const finalDisabled = isSubmitting || (CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || formData.password.length < 6;
       return (
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          {backBtn}
-          {nextBtn("S'inscrire", handleCreateAccount, finalDisabled, isSubmitting)}
+        <View style={{ gap: 12 }}>
+          {/* Confirmation d'âge (obligatoire) — exigence légale (loi 09-08 / stores). */}
+          <TouchableOpacity onPress={() => setAgeConfirmed(v => !v)} activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{
+              width: 22, height: 22, borderRadius: 6, borderWidth: 1.5,
+              borderColor: ageConfirmed ? AUTH_BRAND : tokens.fieldBorder,
+              backgroundColor: ageConfirmed ? AUTH_BRAND : 'transparent',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              {ageConfirmed && <Text style={{ color: '#0A0A0A', fontSize: 13, fontFamily: Fonts.uiBlack }}>✓</Text>}
+            </View>
+            <Text style={{ flex: 1, fontSize: 12.5, lineHeight: 17, color: tokens.textSecondary, fontFamily: Fonts.ui }}>
+              Je certifie avoir au moins {LEGAL.minAge} ans.
+            </Text>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {backBtn}
+            {nextBtn("S'inscrire", handleCreateAccount, finalDisabled, isSubmitting)}
+          </View>
+          <Text style={{ fontSize: 11, lineHeight: 16, color: tokens.placeholder, fontFamily: Fonts.ui, textAlign: 'center' }}>
+            En vous inscrivant, vous acceptez nos{' '}
+            <Text
+              onPress={() => router.push('/legal/cgu' as any)}
+              style={{ color: AUTH_BRAND, fontFamily: Fonts.uiBold }}
+            >
+              conditions d’utilisation
+            </Text>
+            {' '}et notre{' '}
+            <Text
+              onPress={() => router.push('/legal/confidentialite' as any)}
+              style={{ color: AUTH_BRAND, fontFamily: Fonts.uiBold }}
+            >
+              politique de confidentialité
+            </Text>
+            .
+          </Text>
         </View>
       );
     }
@@ -594,7 +643,7 @@ export default function SignupScreen() {
   const currentTitle = stepTitles[step - 1];
 
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? tokens.bg : '#FFFFFF' }}>
       {/* Décor traits bord gauche */}
       <View pointerEvents="none" style={{
         position: 'absolute', left: -12, top: '21%',
@@ -603,15 +652,14 @@ export default function SignupScreen() {
         <Image source={DECO_TRAILS} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
       </View>
 
-      {/* HCaptcha — masqué tant que CAPTCHA_ENABLED est false (phase de test) */}
+      {/* Turnstile — masqué tant que CAPTCHA_ENABLED est false (clés non posées) */}
       {CAPTCHA_ENABLED && (
-        <HCaptcha
+        <TurnstileCaptcha
           ref={captchaRef}
-          siteKey={HCAPTCHA_SITE_KEY}
-          baseUrl="https://hcaptcha.com"
+          siteKey={TURNSTILE_SITE_KEY}
+          url={process.env.EXPO_PUBLIC_SUPABASE_URL}
           onMessage={handleCaptchaMessage}
           languageCode="fr"
-          size="invisible"
         />
       )}
 
@@ -620,17 +668,18 @@ export default function SignupScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={{
             flexGrow: 1,
-            paddingTop: insets.top + 56,
-            paddingBottom: insets.bottom + 26,
+            paddingTop: insets.top + 20,
+            paddingBottom: insets.bottom + 16,
             paddingHorizontal: 30,
           }}
-          showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {/* ── Lockup logo ── */}
-          <View style={{ alignItems: 'center', marginBottom: 14 }}>
+          <View style={{ alignItems: 'center', marginBottom: 10 }}>
             <Lockup width={lockupW} tokens={tokens} />
           </View>
 
@@ -643,7 +692,7 @@ export default function SignupScreen() {
                 fontSize: 22,
                 color: tokens.textPrimary,
                 marginTop: 0,
-                marginBottom: 14,
+                marginBottom: 10,
                 includeFontPadding: false,
               }}>
                 {currentTitle.prefix}
@@ -652,7 +701,7 @@ export default function SignupScreen() {
               </Text>
 
               {/* Progression */}
-              <View style={{ marginBottom: 16 }}>
+              <View style={{ marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                   {stepLabels.map((label, i) => (
                     <Text key={label} style={{
@@ -682,14 +731,14 @@ export default function SignupScreen() {
             <View style={[{
               backgroundColor: tokens.cardBg,
               borderRadius: 20,
-              paddingVertical: 18,
+              paddingVertical: 14,
               paddingHorizontal: 16,
               borderWidth: 1.5,
               borderColor: tokens.cardBorder,
             }, cardShadow]}>
               {/* STEP 1 */}
               {step === 1 && (
-                <View style={{ gap: 16 }}>
+                <View style={{ gap: 12 }}>
                   <Text style={{
                     color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19,
                   }}>
@@ -734,27 +783,34 @@ export default function SignupScreen() {
 
               {/* STEP 2 */}
               {step === 2 && (
-                <View style={{ gap: 16 }}>
-                  <Text style={{
-                    color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19,
+                <View style={{ gap: 12 }}>
+                  <View style={{
+                    backgroundColor: 'rgba(255,193,26,0.10)',
+                    borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
+                    borderRadius: 12, padding: 12, flexDirection: 'row', gap: 9,
                   }}>
-                    Sois honnête — l'algo a besoin de vraies infos.
-                  </Text>
+                    <View style={{ marginTop: 1 }}>
+                      <IconAlertCircle size={15} color={AUTH_BRAND} />
+                    </View>
+                    <Text style={{ flex: 1, color: tokens.label, fontFamily: Fonts.ui, fontSize: 12.5, lineHeight: 18 }}>
+                      <Text style={{ fontFamily: Fonts.uiExtraBold, color: tokens.textPrimary }}>Sois honnête sur ton niveau.</Text> Il s'ajuste vite : dès tes premiers matchs, ton score se cale tout seul. Et le scoring est <Text style={{ fontFamily: Fonts.uiExtraBold, color: AUTH_ERROR_TEXT }}>très pénalisant</Text> si tu te surestimes — un faux niveau élevé te fait perdre gros jusqu'à retomber à ta vraie place.
+                    </Text>
+                  </View>
 
                   <View>
                     <Label text="Niveau estimé" tokens={tokens} />
                     <View style={{ gap: 8 }}>
                       <Row>
-                        <SelectCard label="Novice" value="Novice" field="estimatedLevel" formData={formData} onSet={set} description="1.0 – 2.5" tokens={tokens} />
-                        <SelectCard label="Débutant" value="Débutant" field="estimatedLevel" formData={formData} onSet={set} description="2.5 – 3.5" tokens={tokens} />
+                        <SelectCard label="Novice" value="Novice" field="estimatedLevel" formData={formData} onSet={set} description="1.5 – 2.0" tokens={tokens} />
+                        <SelectCard label="Débutant" value="Débutant" field="estimatedLevel" formData={formData} onSet={set} description="2.0 – 2.5" tokens={tokens} />
                       </Row>
                       <Row>
-                        <SelectCard label="Amateur" value="Amateur" field="estimatedLevel" formData={formData} onSet={set} description="3.5 – 4.5" tokens={tokens} />
-                        <SelectCard label="Intermédiaire" value="Intermédiaire" field="estimatedLevel" formData={formData} onSet={set} description="4.5 – 5.5" tokens={tokens} />
+                        <SelectCard label="Amateur" value="Amateur" field="estimatedLevel" formData={formData} onSet={set} description="2.5 – 3.3" tokens={tokens} />
+                        <SelectCard label="Intermédiaire" value="Intermédiaire" field="estimatedLevel" formData={formData} onSet={set} description="3.3 – 4.1" tokens={tokens} />
                       </Row>
                       <Row>
-                        <SelectCard label="Avancé" value="Avancé" field="estimatedLevel" formData={formData} onSet={set} description="5.5 – 6.5" tokens={tokens} />
-                        <SelectCard label="Expert" value="Expert" field="estimatedLevel" formData={formData} onSet={set} description="6.5 – 8.0" tokens={tokens} />
+                        <SelectCard label="Avancé" value="Avancé" field="estimatedLevel" formData={formData} onSet={set} description="4.1 – 4.9" tokens={tokens} />
+                        <SelectCard label="Expert" value="Expert" field="estimatedLevel" formData={formData} onSet={set} description="4.9 – 5.5" tokens={tokens} />
                       </Row>
                     </View>
                   </View>
@@ -785,7 +841,7 @@ export default function SignupScreen() {
 
               {/* STEP 3 */}
               {step === 3 && (
-                <View style={{ gap: 16 }}>
+                <View style={{ gap: 12 }}>
                   <Text style={{
                     color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19,
                   }}>
@@ -868,7 +924,7 @@ export default function SignupScreen() {
 
               {/* STEP 4 */}
               {step === 4 && (
-                <View style={{ gap: 16 }}>
+                <View style={{ gap: 12 }}>
                   <Text style={{
                     color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19,
                   }}>
@@ -906,7 +962,7 @@ export default function SignupScreen() {
 
               {/* STEP 5 */}
               {step === 5 && (
-                <View style={{ gap: 16 }}>
+                <View style={{ gap: 12 }}>
                   {/* Récap niveau */}
                   <View style={{ alignItems: 'center', paddingVertical: 4 }}>
                     <View style={{
@@ -997,7 +1053,7 @@ export default function SignupScreen() {
                     label="Mot de passe"
                     value={formData.password}
                     onChangeText={v => set('password', v)}
-                    placeholder="6 caractères min."
+                    placeholder="8 caractères min."
                     icon={<IconLock size={18} color={pwFocused ? AUTH_BRAND : tokens.fieldIcon} />}
                     focused={pwFocused}
                     onFocus={() => setPwFocused(true)}
@@ -1034,7 +1090,7 @@ export default function SignupScreen() {
                       <Text style={{ flex: 1, color: tokens.label, fontSize: 12.5, fontFamily: Fonts.uiSemi }}>
                         Je ne suis pas un robot
                       </Text>
-                      <Text style={{ fontSize: 8, color: tokens.placeholder, fontFamily: Fonts.uiBold }}>hCaptcha</Text>
+                      <Text style={{ fontSize: 8, color: tokens.placeholder, fontFamily: Fonts.uiBold }}>Turnstile</Text>
                     </TouchableOpacity>
                   )}
                   {captchaToken && (
@@ -1054,8 +1110,19 @@ export default function SignupScreen() {
               )}
 
               {/* Bottom nav inside card */}
-              <View style={{ marginTop: 20 }}>
+              <View style={{ marginTop: 14 }}>
                 {renderBottomNav()}
+                {step <= 3 && !canProceed(step) && (
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                    gap: 6, marginTop: 10,
+                  }}>
+                    <IconAlertCircle size={12} color={tokens.label} />
+                    <Text style={{ color: tokens.label, fontSize: 12, fontFamily: Fonts.uiSemi, textAlign: 'center' }}>
+                      Sélectionne tous les champs pour continuer
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           )}
@@ -1119,12 +1186,12 @@ export default function SignupScreen() {
             </View>
           )}
 
-          <View style={{ flex: 1, minHeight: 24 }} />
+          <View style={{ flex: 1 }} />
 
           {/* Bas — Annuler / retour accueil */}
           <TouchableOpacity
             onPress={() => router.replace('/')}
-            style={{ alignItems: 'center', marginTop: 16 }}
+            style={{ alignItems: 'center', marginTop: 12 }}
             activeOpacity={0.6}
             hitSlop={8}
           >

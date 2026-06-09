@@ -10,19 +10,22 @@ export function rankFromPoints(points: number | null | undefined): string | null
 }
 
 // Affichage du classement FRMT.
-// - Joueur lié & vérifié : vrai classement scrapé "#47 · 6500 pts" (verified).
-// - Sinon, rang auto-déclaré au signup (frmt_rank), sans le ✓.
-// Renvoie null si rien à afficher.
+// On n'affiche QUE les classements VÉRIFIÉS (joueur lié au scraper FRMT par un
+// admin). Les rangs auto-déclarés au signup (`frmt_rank`) ne sont pas fiables
+// — un joueur peut déclarer un classement qu'il n'a pas — donc on les masque.
+// Renvoie null si rien de vérifié à afficher.
 export function formatFrmtRanking(p: {
   frmt_verified?: boolean | null;
   frmt_position?: number | null;
   frmt_points?: number | null;
   frmt_rank?: string | null;
 }): { text: string; verified: boolean } | null {
-  if (p.frmt_verified && p.frmt_position != null) {
+  if (!p.frmt_verified) return null;
+  if (p.frmt_position != null) {
     const pts = p.frmt_points != null ? ` · ${p.frmt_points} pts` : '';
     return { text: `#${p.frmt_position}${pts}`, verified: true };
   }
-  if (p.frmt_rank) return { text: p.frmt_rank, verified: !!p.frmt_verified };
+  // Vérifié mais sans position connue : on retombe sur le rang scrapé.
+  if (p.frmt_rank) return { text: p.frmt_rank, verified: true };
   return null;
 }

@@ -78,11 +78,17 @@ const IconX = ({ size = 14, color = Colors.textMuted }) => (
 // ─── Types ────────────────────────────────────────────────────
 interface NotifItem {
   id: string;
-  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve';
+  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined';
   title: string;
   subtitle: string;
   route: string;
 }
+
+// Notifs "info" sans action requise : supprimables définitivement (persistées
+// dans la table dismissed_notifications). Les autres types disparaissent en
+// traitant l'action correspondante.
+const DISMISSIBLE: ReadonlySet<NotifItem['type']> = new Set(['joined', 'levelup']);
+const isDismissible = (t: NotifItem['type']) => DISMISSIBLE.has(t);
 
 // ─── Screen ───────────────────────────────────────────────────
 export default function NotificationsScreen() {
@@ -127,6 +133,7 @@ export default function NotificationsScreen() {
       { count: toScoreCount },
       { data: invitations },
       { data: myGames },
+      { data: dismissedRows },
     ] = await Promise.all([
       supabase
         .from('challenges')
@@ -150,7 +157,7 @@ export default function NotificationsScreen() {
         .eq('giver_id', player.id),
       supabase
         .from('elo_history')
-        .select('elo_score, elo_change')
+        .select('elo_score, elo_change, match_id')
         .eq('player_id', player.id)
         .gt('elo_change', 0)
         .gte('created_at', sevenDaysAgo)
@@ -175,7 +182,14 @@ export default function NotificationsScreen() {
         .select('id, location, status, match_date')
         .neq('status', 'cancelled')
         .or(orParts),
+      // Notifs "info" déjà supprimées par l'utilisateur (joined / levelup).
+      supabase
+        .from('dismissed_notifications')
+        .select('notif_key')
+        .eq('player_id', player.id),
     ]);
+
+    const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
     const unvotedCount = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id)).length;
@@ -226,6 +240,7 @@ export default function NotificationsScreen() {
     }).map((g: any) => g.id);
 
     let pendingReqItems: NotifItem[] = [];
+    let joinedItems: NotifItem[] = [];
     if (validReqGameIds.length > 0) {
       const { data: reqs } = await supabase
         .from('game_participants')
@@ -245,10 +260,34 @@ export default function NotificationsScreen() {
             route: `/(tabs)/lobby?gameId=${r.game_id}`,
           };
         });
+
+      // Joined events — accepted participants sur mes parties dans les 7 derniers jours,
+      // que ce soit auto-accept, invitation acceptée ou candidature approuvée.
+      const { data: joined } = await supabase
+        .from('game_participants')
+        .select('id, game_id, player_id, approvals, created_at, player:player_id(name)')
+        .in('game_id', validReqGameIds)
+        .eq('status', 'accepted')
+        .neq('player_id', player.id)
+        .gte('created_at', sevenDaysAgo)
+        .order('created_at', { ascending: false });
+      joinedItems = (joined ?? []).map((j: any) => {
+        const g = myGameById.get(j.game_id);
+        const where = g?.location ? ` à ${g.location}` : '';
+        const wasApproved = (j.approvals ?? []).length > 0;
+        return {
+          id: `joined-${j.id}`,
+          type: 'joined' as const,
+          title: wasApproved ? '✅ Candidature acceptée' : '👋 Nouveau joueur',
+          subtitle: `${j.player?.name ?? 'Un joueur'} a rejoint la partie${where}`,
+          route: `/(tabs)/lobby?gameId=${j.game_id}`,
+        };
+      });
     }
 
     const result: NotifItem[] = [
       ...pendingReqItems,
+      ...joinedItems,
       ...activeInvites.map((inv: any) => {
         const isChall = !!inv.game?.is_challenge;
         const who = inv.game?.creator?.name ?? '?';
@@ -290,7 +329,7 @@ export default function NotificationsScreen() {
         route: '/(tabs)?openBadge=1',
       }] : []),
       ...(levelUpEntry ? [{
-        id: 'levelup',
+        id: `levelup-${levelUpEntry.match_id ?? 'last'}`,
         type: 'levelup' as const,
         title: 'Montée de niveau 🎉',
         subtitle: (() => {
@@ -304,9 +343,34 @@ export default function NotificationsScreen() {
       }] : []),
     ];
 
-    setItems(result);
+    // Retirer les notifs "info" déjà supprimées par l'utilisateur.
+    setItems(result.filter(it => !(isDismissible(it.type) && dismissedKeys.has(it.id))));
     setLoading(false);
   }, [player]);
+
+  // Suppression persistante d'une notif "info" (joined / levelup).
+  const dismissOne = useCallback(async (item: NotifItem) => {
+    setItems(prev => prev.filter(i => i.id !== item.id));
+    if (!player) return;
+    await supabase
+      .from('dismissed_notifications')
+      .upsert({ player_id: player.id, notif_key: item.id }, { onConflict: 'player_id,notif_key' });
+  }, [player]);
+
+  // "Effacer les infos" — supprime toutes les notifs "info" affichées, laisse
+  // intactes celles qui exigent une action.
+  const dismissAllInfo = useCallback(async () => {
+    const infoItems = items.filter(i => isDismissible(i.type));
+    if (infoItems.length === 0) return;
+    setItems(prev => prev.filter(i => !isDismissible(i.type)));
+    if (!player) return;
+    await supabase
+      .from('dismissed_notifications')
+      .upsert(
+        infoItems.map(i => ({ player_id: player.id, notif_key: i.id })),
+        { onConflict: 'player_id,notif_key' },
+      );
+  }, [items, player]);
 
   useFocusEffect(useCallback(() => {
     fetchNotifs();
@@ -316,6 +380,7 @@ export default function NotificationsScreen() {
     if (type === 'challenge')  return <IconSwords size={18} color={Colors.brandDeep} />;
     if (type === 'invitation') return <IconSwords size={18} color="#0891b2" />;
     if (type === 'to_approve') return <IconCheckSquare size={18} color="#7c3aed" />;
+    if (type === 'joined')     return <IconMedal size={18} color={Colors.success} />;
     if (type === 'badge')      return <IconMedal size={18} color={Colors.success} />;
     if (type === 'levelup')    return <IconTrendingUp size={18} color="#b45309" />;
     if (type === 'to_score')   return <IconCheckSquare size={18} color="#0891b2" />;
@@ -326,6 +391,7 @@ export default function NotificationsScreen() {
     if (type === 'challenge')  return { bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)' };
     if (type === 'invitation') return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
     if (type === 'to_approve') return { bg: 'rgba(124,58,237,0.10)', border: 'rgba(124,58,237,0.40)' };
+    if (type === 'joined')     return { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)' };
     if (type === 'badge')      return { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)' };
     if (type === 'levelup')    return { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)' };
     if (type === 'to_score')   return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
@@ -336,6 +402,7 @@ export default function NotificationsScreen() {
     if (type === 'challenge')  return { title: Colors.brandDeep, sub: '#A16207' };
     if (type === 'invitation') return { title: '#155e75', sub: '#0e7490' };
     if (type === 'to_approve') return { title: '#5b21b6', sub: '#7c3aed' };
+    if (type === 'joined')     return { title: '#065f46', sub: '#059669' };
     if (type === 'badge')     return { title: '#065f46', sub: '#059669' };
     if (type === 'levelup')   return { title: '#92400e', sub: '#b45309' };
     if (type === 'to_score')  return { title: '#155e75', sub: '#0e7490' };
@@ -371,24 +438,24 @@ export default function NotificationsScreen() {
           Tes <Text style={{ color: Colors.brand }}>notifications</Text>
         </Text>
         {items.length > 0 && (
-          <>
-            <View style={{
-              backgroundColor: Colors.danger, borderRadius: 999,
-              paddingHorizontal: 8, paddingVertical: 2,
-            }}>
-              <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{items.length}</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setItems([])}
-              activeOpacity={0.7}
-              style={{
-                paddingHorizontal: 10, paddingVertical: 6,
-                borderRadius: 8, backgroundColor: Colors.bgCardAlt,
-              }}
-            >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary, fontFamily: Fonts.uiBold }}>Tout effacer</Text>
-            </TouchableOpacity>
-          </>
+          <View style={{
+            backgroundColor: Colors.danger, borderRadius: 999,
+            paddingHorizontal: 8, paddingVertical: 2,
+          }}>
+            <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{items.length}</Text>
+          </View>
+        )}
+        {items.some(i => isDismissible(i.type)) && (
+          <TouchableOpacity
+            onPress={dismissAllInfo}
+            activeOpacity={0.7}
+            style={{
+              paddingHorizontal: 10, paddingVertical: 6,
+              borderRadius: 8, backgroundColor: Colors.bgCardAlt,
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary, fontFamily: Fonts.uiBold }}>Effacer les infos</Text>
+          </TouchableOpacity>
         )}
       </View>
 
@@ -450,18 +517,20 @@ export default function NotificationsScreen() {
                   </Text>
                 </View>
                 <IconChevronRight size={16} color={Colors.border} />
-                <TouchableOpacity
-                  onPress={() => setItems(prev => prev.filter(i => i.id !== item.id))}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={{
-                    width: 28, height: 28, borderRadius: 8,
-                    backgroundColor: 'rgba(0,0,0,0.06)',
-                    alignItems: 'center', justifyContent: 'center',
-                    marginLeft: 4,
-                  }}
-                >
-                  <IconX size={14} color={Colors.textSecondary} />
-                </TouchableOpacity>
+                {isDismissible(item.type) && (
+                  <TouchableOpacity
+                    onPress={() => dismissOne(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{
+                      width: 28, height: 28, borderRadius: 8,
+                      backgroundColor: 'rgba(0,0,0,0.06)',
+                      alignItems: 'center', justifyContent: 'center',
+                      marginLeft: 4,
+                    }}
+                  >
+                    <IconX size={14} color={Colors.textSecondary} />
+                  </TouchableOpacity>
+                )}
               </TouchableOpacity>
             );
           })}

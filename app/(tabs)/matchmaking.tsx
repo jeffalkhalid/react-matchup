@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, StyleSheet,
+  ActivityIndicator, StyleSheet, Image,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
+import { getHiddenPlayerIds } from '../../lib/moderation';
 import { Colors, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
 import type { Player, Challenge } from '../../types';
 import { Pill, type PillVariant } from '../../components/Pill';
@@ -202,7 +203,7 @@ function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (
     <View style={{ flexDirection: 'row', backgroundColor: Colors.bgCardAlt, borderRadius: 12, padding: 3, gap: 2, marginBottom: 14 }}>
       {([
         { val: 'compat' as SortMode, label: '⚡ Compatibilité' },
-        { val: 'elo'    as SortMode, label: '📊 Niveau ELO'    },
+        { val: 'elo'    as SortMode, label: '📊 Niveau'    },
       ]).map(t => {
         const active = mode === t.val;
         const disabled = t.val === 'compat' && computing;
@@ -488,14 +489,17 @@ export default function MatchmakingScreen() {
         .gt('expires_at', nowIso),
     ]);
 
-    const allPlayers = (playersRes.data ?? []) as Player[];
+    // Modération : ne pas suggérer / afficher les utilisateurs bloqués (2 sens).
+    const hidden = await getHiddenPlayerIds(player.id);
+
+    const allPlayers = ((playersRes.data ?? []) as Player[]).filter(p => !hidden.has(p.id));
     const sorted = [...allPlayers]
       .sort((a, b) => Math.abs(a.elo_score - player.elo_score) - Math.abs(b.elo_score - player.elo_score))
       .slice(0, 20);
 
     setSuggestions(sorted);
 
-    const challenges = (incomingRes.data ?? []) as Challenge[];
+    const challenges = ((incomingRes.data ?? []) as Challenge[]).filter(c => !hidden.has(c.challenger_id));
     setIncoming(challenges);
     setChallengedIds(new Set(((sentRes.data ?? []) as any[]).map((c: any) => c.challenged_id)));
     setLoading(false);
@@ -591,18 +595,34 @@ export default function MatchmakingScreen() {
         paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16,
         borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
       }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
-          <View>
-            <Text style={{ fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
+        {/* Brand lockup — raquette + wordmark PAGMATCH */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+          <Image
+            source={require('../../assets/auth/splash-racket.png')}
+            style={{ width: 22, height: 22 }}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('../../assets/auth/splash-wordmark.png')}
+            style={{ width: 100, height: 22, marginLeft: -7 }}
+            resizeMode="contain"
+          />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+          <View style={{ flex: 1 }} />
+          <View style={{ flexShrink: 1 }}>
+            <Text style={{ fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
               Les <Text style={{ color: Colors.brand }}>Défis</Text>
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2 }}>Défis & joueurs compatibles</Text>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis & joueurs compatibles</Text>
           </View>
-          {pendingCount > 0 && (
-            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brandDeep }}>{pendingCount}</Text>
-            </View>
-          )}
+          <View style={{ flex: 1, alignItems: 'flex-end' }}>
+            {pendingCount > 0 && (
+              <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brandDeep }}>{pendingCount}</Text>
+              </View>
+            )}
+          </View>
         </View>
         <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
           {([

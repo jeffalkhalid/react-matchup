@@ -94,6 +94,7 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showComments, setShowComments] = useState(false);
 
   // Shared notification counts (same total as the Home bell). Unread chat
   // messages are intentionally excluded — they live on the Chats tab badge.
@@ -245,8 +246,19 @@ export default function ProfileScreen() {
           <Card style={{ marginBottom: 8 }}>
             <NavRow icon="✏️" label="Modifier le profil" onPress={() => setShowEdit(true)} />
             <Divider />
+            <NavRow icon="💬" label="Qui peut commenter mes activités" onPress={() => setShowComments(true)} />
+            <Divider />
             <NavRow icon="🚪" label="Se déconnecter" danger onPress={handleSignOut} />
           </Card>
+
+          {/* Légal */}
+          <SectionHeader title="Légal" />
+          <Card style={{ marginBottom: 8 }}>
+            <NavRow icon="🔒" label="Politique de confidentialité" onPress={() => router.push('/legal/confidentialite' as any)} />
+            <Divider />
+            <NavRow icon="📄" label="Conditions d'utilisation" onPress={() => router.push('/legal/cgu' as any)} />
+          </Card>
+
           <Card>
             <NavRow icon="🗑️" label="Supprimer mon compte" danger subtle onPress={() => setShowDelete(true)} />
           </Card>
@@ -254,7 +266,14 @@ export default function ProfileScreen() {
       </ScrollView>
 
       <EditProfileModal visible={showEdit} onClose={() => setShowEdit(false)} player={player} onSaved={refresh} />
-      <DeleteAccountModal visible={showDelete} onClose={() => setShowDelete(false)} playerName={player.name} onConfirm={async () => { await supabase.from('players').delete().eq('id', player.id); signOut(); }} />
+      <CommentsPolicyModal visible={showComments} onClose={() => setShowComments(false)} player={player} onSaved={refresh} />
+      <DeleteAccountModal visible={showDelete} onClose={() => setShowDelete(false)} playerName={player.name} onConfirm={async () => {
+        // Purge serveur (données perso + anonymisation + suppression du compte auth)
+        // via RPC SECURITY DEFINER — cf. supabase/migrations/account_deletion.sql.
+        const { error } = await supabase.rpc('delete_my_account');
+        if (error) { Alert.alert('Suppression impossible', error.message); return; }
+        signOut();
+      }} />
     </View>
   );
 }
@@ -447,6 +466,54 @@ function DeleteAccountModal({ visible, onClose, playerName, onConfirm }: {
           </View>
         </View>
       </View>
+    </Modal>
+  );
+}
+
+// ─── Comments policy modal ────────────────────────────────────
+function CommentsPolicyModal({ visible, onClose, player, onSaved }: {
+  visible: boolean; onClose: () => void; player: any; onSaved: () => void;
+}) {
+  const options: { key: 'everyone' | 'friends' | 'nobody'; label: string; sub: string }[] = [
+    { key: 'everyone', label: 'Tout le monde', sub: 'Tous les joueurs peuvent commenter.' },
+    { key: 'friends', label: 'Amis', sub: 'Seuls tes amis (suivis dans un sens) peuvent commenter.' },
+    { key: 'nobody', label: 'Personne', sub: 'Personne ne peut commenter tes activités.' },
+  ];
+  const current = (player?.comments_policy ?? 'friends') as 'everyone' | 'friends' | 'nobody';
+
+  const choose = async (key: 'everyone' | 'friends' | 'nobody') => {
+    const { error } = await supabase.from('players').update({ comments_policy: key }).eq('id', player.id);
+    if (error) { Alert.alert('Erreur', "Le réglage n'a pas pu être enregistré."); return; }
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} onPress={onClose}
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}}
+          style={{ backgroundColor: Colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, paddingBottom: 34 }}>
+          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 16, color: Colors.textPrimary, marginBottom: 4 }}>
+            Qui peut commenter mes activités
+          </Text>
+          <View style={{ marginTop: 10, gap: 8 }}>
+            {options.map(o => {
+              const on = o.key === current;
+              return (
+                <TouchableOpacity key={o.key} onPress={() => choose(o.key)} activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: on ? Colors.primary : Colors.border, backgroundColor: on ? Colors.primary + '12' : Colors.bgCard }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: Colors.textPrimary }}>{o.label}</Text>
+                    <Text style={{ fontFamily: Fonts.ui, fontSize: 12, color: Colors.textSecondary, marginTop: 2 }}>{o.sub}</Text>
+                  </View>
+                  {on && <Text style={{ fontSize: 16, color: Colors.primary }}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 }

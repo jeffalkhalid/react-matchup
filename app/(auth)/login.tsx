@@ -1,23 +1,29 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
   Platform, ScrollView, ActivityIndicator, Image, Dimensions,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
-import { Hcaptcha } from '@hcaptcha/react-native-hcaptcha';
+import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
 import { usePlayer } from '../../hooks/usePlayer';
 import { Fonts } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
 
-const HCAPTCHA_SITE_KEY = process.env.EXPO_PUBLIC_HCAPTCHA_SITE_KEY!;
-// Captcha désactivé pendant la phase de test — migration prévue vers
-// Cloudflare Turnstile. ⚠️ Penser à désactiver aussi "Captcha protection"
-// dans Supabase → Auth → Settings, sinon l'API rejette les requêtes sans token.
-const CAPTCHA_ENABLED = false;
+const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY!;
+// Captcha (Cloudflare Turnstile) ACTIF. Clés en place (.env + Supabase Auth).
+// ⚠️ Si désactivation un jour : repasser à false ICI ET dans signup.tsx,
+// ET désactiver "Captcha protection" dans Supabase → Auth → Settings.
+const CAPTCHA_ENABLED = true;
 const SUPABASE_URL      = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+
+// Dernier email utilisé — pré-rempli au prochain lancement (l'email n'est pas
+// un secret → AsyncStorage). Le mot de passe, lui, reste géré par le
+// gestionnaire de mots de passe du téléphone (autofill OS).
+const LAST_EMAIL_KEY = 'auth:last_email';
 
 const RACKET = require('../../assets/auth/splash-racket.png');
 const TRAILS = require('../../assets/auth/splash-trails.png');
@@ -192,7 +198,7 @@ function FieldInput({
 }
 
 function getAuthErrorMessage(message: string): string {
-  if (message.includes('captcha') || message.includes('hcaptcha'))
+  if (message.includes('captcha'))
     return 'Coche "Je suis un humain" avant de te connecter.';
   if (message.includes('Invalid login credentials') || message.includes('invalid_credentials'))
     return 'Email ou mot de passe incorrect.';
@@ -230,6 +236,13 @@ export default function LoginScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
 
+  // Pré-remplit l'email du dernier compte connecté.
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_EMAIL_KEY)
+      .then(saved => { if (saved) setEmail(saved); })
+      .catch(() => {});
+  }, []);
+
   const handleCaptchaMessage = (event: any) => {
     const data: string = event.nativeEvent?.data ?? '';
     if (data === 'cancel' || data === 'error' || data === 'expired') {
@@ -264,6 +277,8 @@ export default function LoginScreen() {
         setLoading(false);
         return;
       }
+      // Mémorise l'email pour le pré-remplir au prochain lancement.
+      AsyncStorage.setItem(LAST_EMAIL_KEY, email.trim()).catch(() => {});
       await refresh();
       router.replace('/(tabs)');
     } catch {
@@ -414,7 +429,7 @@ export default function LoginScreen() {
                 <Text style={{ flex: 1, color: tokens.label, fontSize: 12.5, fontFamily: Fonts.uiSemi }}>
                   Je ne suis pas un robot
                 </Text>
-                <Text style={{ fontSize: 8, color: tokens.placeholder, fontFamily: Fonts.uiBold }}>hCaptcha</Text>
+                <Text style={{ fontSize: 8, color: tokens.placeholder, fontFamily: Fonts.uiBold }}>Turnstile</Text>
               </TouchableOpacity>
             )}
             {captchaToken && (
@@ -433,10 +448,9 @@ export default function LoginScreen() {
             )}
 
             {CAPTCHA_ENABLED && (
-              <Hcaptcha
+              <TurnstileCaptcha
                 ref={captchaRef}
-                siteKey={HCAPTCHA_SITE_KEY}
-                size="invisible"
+                siteKey={TURNSTILE_SITE_KEY}
                 url={SUPABASE_URL}
                 languageCode="fr"
                 onMessage={handleCaptchaMessage}
@@ -463,7 +477,7 @@ export default function LoginScreen() {
             {/* CTA Se connecter */}
             <TouchableOpacity
               onPress={handleLogin}
-              disabled={loading}
+              disabled={loading || (CAPTCHA_ENABLED && !captchaToken)}
               activeOpacity={0.88}
               style={{
                 marginTop: 16,
@@ -474,7 +488,7 @@ export default function LoginScreen() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
-                opacity: loading ? 0.7 : 1,
+                opacity: (loading || (CAPTCHA_ENABLED && !captchaToken)) ? 0.6 : 1,
               }}
             >
               {loading ? (

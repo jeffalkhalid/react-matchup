@@ -13,7 +13,7 @@ import {
 } from '../../lib/elo';
 import { Colors, Fonts } from '../../lib/theme';
 
-type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender';
+type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -26,19 +26,18 @@ function fmtDate(iso: string | null) {
 function EloSimCard({ sim }: { sim: EloSimResult }) {
   return (
     <View style={sty.simCard}>
-      <Text style={sty.simLabel}>🔬 Simulation moteur ELO</Text>
+      <Text style={sty.simLabel}>🔬 Simulation moteur ELO — K par joueur</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-        <View style={sty.simBadge}>
-          <Text style={sty.simBadgeText}>K = {sim.kFactor}</Text>
-        </View>
         {sim.antiFarmMultiplier < 1 && (
           <View style={[sty.simBadge, { borderColor: '#f59e0b55', backgroundColor: '#f59e0b15' }]}>
             <Text style={[sty.simBadgeText, { color: Colors.warning }]}>Anti-farming ×{sim.antiFarmMultiplier}</Text>
           </View>
         )}
-        <View style={[sty.simBadge, { borderColor: '#64748b55', backgroundColor: '#64748b15' }]}>
-          <Text style={[sty.simBadgeText, { color: '#cbd5e1' }]}>Δ = ±{sim.delta} pts</Text>
-        </View>
+        {sim.marginMultiplier !== 1 && (
+          <View style={[sty.simBadge, { borderColor: '#8b5cf655', backgroundColor: '#8b5cf615' }]}>
+            <Text style={[sty.simBadgeText, { color: '#a78bfa' }]}>Marge ×{sim.marginMultiplier}</Text>
+          </View>
+        )}
       </View>
       {sim.players.map(p => (
         <View key={p.id} style={sty.simRow}>
@@ -49,6 +48,9 @@ function EloSimCard({ sim }: { sim: EloSimResult }) {
             )}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={[sty.simBadge, { paddingVertical: 1, paddingHorizontal: 5 }]}>
+              <Text style={[sty.simBadgeText, { fontSize: 9 }]}>K{p.kFactor}</Text>
+            </View>
             <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '700' }}>{p.oldElo}</Text>
             <Text style={{ fontSize: 10, color: Colors.textSecondary }}>→</Text>
             <Text style={{ fontSize: 12, color: Colors.textOnDark, fontWeight: '900' }}>{p.newElo}</Text>
@@ -91,11 +93,11 @@ function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForc
     <View style={{ gap: 14 }}>
       {matches.map(match => {
         const sim: EloSimResult | null = match.winner ? simulateElo([
-          { id: match.winner.id, name: match.winner.name, elo_score: match.winner.elo_score ?? 1000, win_count: match.winner.win_count ?? 0, loss_count: match.winner.loss_count ?? 0, last_match_at: match.winner.last_match_at ?? null, isWinner: true },
-          ...(match.winner_2 ? [{ id: match.winner_2.id, name: match.winner_2.name, elo_score: match.winner_2.elo_score ?? 1000, win_count: match.winner_2.win_count ?? 0, loss_count: match.winner_2.loss_count ?? 0, last_match_at: match.winner_2.last_match_at ?? null, isWinner: true }] : []),
-          { id: match.loser.id, name: match.loser.name, elo_score: match.loser.elo_score ?? 1000, win_count: match.loser.win_count ?? 0, loss_count: match.loser.loss_count ?? 0, last_match_at: match.loser.last_match_at ?? null, isWinner: false },
-          ...(match.loser_2 ? [{ id: match.loser_2.id, name: match.loser_2.name, elo_score: match.loser_2.elo_score ?? 1000, win_count: match.loser_2.win_count ?? 0, loss_count: match.loser_2.loss_count ?? 0, last_match_at: match.loser_2.last_match_at ?? null, isWinner: false }] : []),
-        ]) : null;
+          { id: match.winner.id, name: match.winner.name, elo_score: match.winner.elo_score ?? 1000, win_count: match.winner.win_count ?? 0, loss_count: match.winner.loss_count ?? 0, last_match_at: match.winner.last_match_at ?? null, fiability_pct: match.winner.fiability_pct ?? 50, isWinner: true },
+          ...(match.winner_2 ? [{ id: match.winner_2.id, name: match.winner_2.name, elo_score: match.winner_2.elo_score ?? 1000, win_count: match.winner_2.win_count ?? 0, loss_count: match.winner_2.loss_count ?? 0, last_match_at: match.winner_2.last_match_at ?? null, fiability_pct: match.winner_2.fiability_pct ?? 50, isWinner: true }] : []),
+          { id: match.loser.id, name: match.loser.name, elo_score: match.loser.elo_score ?? 1000, win_count: match.loser.win_count ?? 0, loss_count: match.loser.loss_count ?? 0, last_match_at: match.loser.last_match_at ?? null, fiability_pct: match.loser.fiability_pct ?? 50, isWinner: false },
+          ...(match.loser_2 ? [{ id: match.loser_2.id, name: match.loser_2.name, elo_score: match.loser_2.elo_score ?? 1000, win_count: match.loser_2.win_count ?? 0, loss_count: match.loser_2.loss_count ?? 0, last_match_at: match.loser_2.last_match_at ?? null, fiability_pct: match.loser_2.fiability_pct ?? 50, isWinner: false }] : []),
+        ], match.score_text) : null;
 
         return (
           <View key={match.id} style={sty.disputeCard}>
@@ -173,14 +175,16 @@ function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForc
 }
 
 // ─── FRMT tab ─────────────────────────────────────────────────
-function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink }: {
+function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: {
   entries: any[];
   allPlayers: any[];
   loading: boolean;
   onLink: (entryId: string, entry: any, playerId: string) => Promise<void>;
   onUnlink: (entryId: string) => Promise<void>;
+  onRefresh: () => Promise<void> | void;
 }) {
   const [search, setSearch] = useState('');
+  const [scraping, setScraping] = useState(false);
   const [catFilter, setCatFilter] = useState<'all' | 'Masculin' | 'Féminin'>('all');
   const [linkedFilter, setLinkedFilter] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [page, setPage] = useState(1);
@@ -217,10 +221,49 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink }: {
     setPickerSearch('');
   };
 
+  // Déclenche le scraper FRMT (GitHub Actions, via l'edge function). C'est
+  // asynchrone : l'Action tourne 3-5 min, on ne récupère pas le résultat ici.
+  const handleScrape = async () => {
+    setScraping(true);
+    const { error } = await supabase.functions.invoke('trigger-frmt-scrape');
+    setScraping(false);
+    if (error) { Alert.alert('Erreur', error.message ?? 'Déclenchement impossible.'); return; }
+    Alert.alert('✅ Scrape lancé', 'Le classement se met à jour dans ~3-5 min. Reviens rafraîchir.');
+  };
+
+  // Date du dernier scrape = max(scraped_at) des entrées chargées.
+  const lastScrape = entries.reduce<string | null>((max, e) => {
+    const t = e.scraped_at as string | undefined;
+    return t && (!max || t > max) ? t : max;
+  }, null);
+  const lastScrapeLabel = lastScrape
+    ? new Date(lastScrape).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+
   if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
 
   return (
     <>
+      {/* Scrape + dernier scrape */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <TouchableOpacity
+          onPress={handleScrape}
+          disabled={scraping}
+          style={[sty.scrapeBtn, scraping && { opacity: 0.6 }]}
+        >
+          {scraping
+            ? <ActivityIndicator color={Colors.textOnBrand} size="small" />
+            : <Text style={sty.scrapeBtnText}>🔄 Lancer un scrape</Text>}
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: Fonts.uiBlack }}>Dernier scrape</Text>
+          <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack }}>{lastScrapeLabel}</Text>
+        </View>
+        <TouchableOpacity onPress={() => onRefresh()} style={sty.refreshBtn}>
+          <Text style={{ fontSize: 16 }}>⟳</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Stats */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
         {[
@@ -478,6 +521,9 @@ export default function AdminScreen() {
   const [genderLoading, setGenderLoading] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
 
+  const [reports, setReports] = useState<any[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+
   // Auth guard
   useEffect(() => {
     if (player && !player.is_admin) {
@@ -490,7 +536,7 @@ export default function AdminScreen() {
   const loadDisputes = useCallback(async () => {
     const { data } = await supabase
       .from('matches')
-      .select('*, winner:winner_id(id,name,elo_score,win_count,loss_count,last_match_at), winner_2:winner_id_2(id,name,elo_score,win_count,loss_count,last_match_at), loser:loser_id(id,name,elo_score,win_count,loss_count,last_match_at), loser_2:loser_id_2(id,name,elo_score,win_count,loss_count,last_match_at), creator:created_by(name)')
+      .select('*, winner:winner_id(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), winner_2:winner_id_2(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), loser:loser_id(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), loser_2:loser_id_2(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), creator:created_by(name)')
       .eq('status', 'disputed')
       .order('created_at', { ascending: false });
     const m = data ?? [];
@@ -544,10 +590,34 @@ export default function AdminScreen() {
     setGenderLoading(false);
   }, []);
 
-  useEffect(() => { if (player?.is_admin) { loadDisputes(); loadGenderReqs(); } }, [player, loadDisputes, loadGenderReqs]);
+  const loadReports = useCallback(async () => {
+    setReportsLoading(true);
+    const { data } = await supabase
+      .from('content_reports')
+      .select('id, target_type, target_id, reason, status, created_at, reporter:reporter_id(name), reported:reported_player_id(id, name)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    setReports(data ?? []);
+    setReportsLoading(false);
+  }, []);
+
+  useEffect(() => { if (player?.is_admin) { loadDisputes(); loadGenderReqs(); loadReports(); } }, [player, loadDisputes, loadGenderReqs, loadReports]);
   useEffect(() => { if (tab === 'frmt' && player?.is_admin) loadFrmt(); }, [tab, player, loadFrmt]);
   useEffect(() => { if (tab === 'games' && player?.is_admin) loadGames(); }, [tab, player, loadGames]);
   useEffect(() => { if (tab === 'gender' && player?.is_admin) loadGenderReqs(); }, [tab, player, loadGenderReqs]);
+  useEffect(() => { if (tab === 'reports' && player?.is_admin) loadReports(); }, [tab, player, loadReports]);
+
+  const handleResolveReport = async (report: any, status: 'actioned' | 'dismissed') => {
+    if (!player) return;
+    setResolvingId(report.id);
+    const { error } = await supabase
+      .from('content_reports')
+      .update({ status, reviewed_by: player.id, reviewed_at: new Date().toISOString() })
+      .eq('id', report.id);
+    setResolvingId(null);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    await loadReports();
+  };
 
   const handleGenderApprove = async (req: any) => {
     if (!player) return;
@@ -690,6 +760,7 @@ export default function AdminScreen() {
         <View style={{ flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, padding: 3, gap: 2 }}>
           {([
             { key: 'disputes' as AdminTab, label: '⚖️ Litiges',  badge: disputes.length },
+            { key: 'reports'  as AdminTab, label: '🚩 Signalements', badge: reports.length },
             { key: 'gender'   as AdminTab, label: '⚧ Genre',     badge: genderReqs.length },
             { key: 'frmt'     as AdminTab, label: '🏆 FRMT',     badge: 0 },
             { key: 'games'    as AdminTab, label: 'Parties',  badge: 0 },
@@ -730,6 +801,7 @@ export default function AdminScreen() {
             loading={frmtLoading}
             onLink={handleLink}
             onUnlink={handleUnlink}
+            onRefresh={loadFrmt}
           />
         )}
         {tab === 'games' && (
@@ -749,6 +821,15 @@ export default function AdminScreen() {
             onApprove={handleGenderApprove}
             onReject={handleGenderReject}
             onRefresh={loadGenderReqs}
+          />
+        )}
+        {tab === 'reports' && (
+          <ReportsTab
+            reports={reports}
+            loading={reportsLoading}
+            resolvingId={resolvingId}
+            onResolve={handleResolveReport}
+            onOpenPlayer={(id) => router.push(`/player/${id}` as any)}
           />
         )}
       </ScrollView>
@@ -847,6 +928,77 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
   );
 }
 
+// ─── Reports tab (modération UGC) ─────────────────────────────
+function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: {
+  reports: any[]; loading: boolean; resolvingId: string | null;
+  onResolve: (report: any, status: 'actioned' | 'dismissed') => void;
+  onOpenPlayer: (id: string) => void;
+}) {
+  const typeLabel = (t: string) => ({
+    message: '💬 Message', story: '📸 Story', activity: '📣 Activité',
+    comment: '💭 Commentaire', player: '👤 Profil',
+  }[t] ?? t);
+
+  if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
+  if (reports.length === 0) {
+    return (
+      <View style={sty.emptyCard}>
+        <Text style={{ fontSize: 32, marginBottom: 8 }}>🚩</Text>
+        <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textOnDark, fontSize: 14, textAlign: 'center' }}>
+          Aucun signalement en attente
+        </Text>
+        <Text style={{ color: Colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 4 }}>
+          Les contenus et profils signalés apparaîtront ici.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 12 }}>
+      {reports.map(r => (
+        <View key={r.id} style={{ backgroundColor: '#1e293b', borderRadius: 18, borderWidth: 1.5, borderColor: '#ef444433', padding: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>{typeLabel(r.target_type)}</Text>
+            <Text style={{ fontSize: 10, color: Colors.textMuted }}>
+              {new Date(r.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          </View>
+
+          <Text style={{ fontSize: 12, color: Colors.textSecondary, marginBottom: 4 }}>
+            Signalé par <Text style={{ fontFamily: Fonts.uiBold, color: Colors.textOnDark }}>{r.reporter?.name ?? '?'}</Text>
+          </Text>
+          {r.reported?.name ? (
+            <TouchableOpacity onPress={() => r.reported?.id && onOpenPlayer(r.reported.id)} activeOpacity={0.7}>
+              <Text style={{ fontSize: 12, color: Colors.textSecondary, marginBottom: 4 }}>
+                Visé : <Text style={{ fontFamily: Fonts.uiBold, color: Colors.brand }}>{r.reported.name} ›</Text>
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+          <Text style={{ fontSize: 10, color: Colors.textMuted, marginBottom: r.reason ? 8 : 12 }}>ref : {r.target_id}</Text>
+          {r.reason ? (
+            <View style={{ backgroundColor: '#0f172a', borderRadius: 10, padding: 10, marginBottom: 12 }}>
+              <Text style={{ fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' }}>{r.reason}</Text>
+            </View>
+          ) : null}
+
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity disabled={resolvingId === r.id} onPress={() => onResolve(r, 'actioned')} activeOpacity={0.7}
+              style={{ flex: 1, alignItems: 'center', backgroundColor: '#ef444415', borderRadius: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#ef444440' }}>
+              <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.danger, fontFamily: Fonts.uiBlack }}>
+                {resolvingId === r.id ? '…' : 'Traité'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity disabled={resolvingId === r.id} onPress={() => onResolve(r, 'dismissed')} activeOpacity={0.7}
+              style={{ flex: 1, alignItems: 'center', backgroundColor: '#334155', borderRadius: 10, paddingVertical: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack }}>Rejeter</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────
 const sty = StyleSheet.create({
   emptyCard: {
@@ -895,6 +1047,15 @@ const sty = StyleSheet.create({
   statBox: {
     flex: 1, backgroundColor: '#1e293b', borderRadius: 14, padding: 12, alignItems: 'center',
     borderWidth: 1, borderColor: '#334155', gap: 2,
+  },
+  scrapeBtn: {
+    backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+    alignItems: 'center', justifyContent: 'center', minWidth: 150,
+  },
+  scrapeBtnText: { fontSize: 13, fontWeight: '900', color: Colors.textOnBrand, fontFamily: Fonts.uiBlack },
+  refreshBtn: {
+    backgroundColor: '#1e293b', borderRadius: 12, borderWidth: 1, borderColor: '#334155',
+    width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
   },
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

@@ -10,7 +10,10 @@ import { usePlayer } from '../../../hooks/usePlayer';
 import { supabase } from '../../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../../lib/theme';
 import { formatFrmtRanking } from '../../../lib/frmt-match';
-import type { Player, EloHistory } from '../../../types';
+import { blockUser, unblockUser, isBlocked, reportContent } from '../../../lib/moderation';
+import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction } from '../../../lib/community';
+import { ActivityCard } from '../../../components/community/ActivityCard';
+import type { Player, EloHistory, ActivityEvent } from '../../../types';
 import StoryMatchPicker from '../../../components/StoryMatchPicker';
 import StoryComposerV2 from '../../../components/StoryComposerV2';
 import type { StoryMode } from '../../../components/story/StoryStyles';
@@ -467,6 +470,31 @@ function Kicker({ children, style }: { children: React.ReactNode; style?: any })
   );
 }
 
+// Jauge circulaire de fiabilité — anneau coloré, % au centre.
+function ReliabilityRing({ pct, color, size = 76, stroke = 8 }: {
+  pct: number; color: string; size?: number; stroke?: number;
+}) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  const r       = (size - stroke) / 2;
+  const c       = 2 * Math.PI * r;
+  const offset  = c * (1 - clamped / 100);
+  const mid     = size / 2;
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={{ position: 'absolute' }}>
+        <Circle cx={mid} cy={mid} r={r} stroke={LIGHT.divider} strokeWidth={stroke} fill="none" />
+        <Circle
+          cx={mid} cy={mid} r={r} stroke={color} strokeWidth={stroke} fill="none"
+          strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+          transform={`rotate(-90 ${mid} ${mid})`}
+        />
+      </Svg>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 24, color, letterSpacing: -0.5 }}>{Math.round(clamped)}</Text>
+      <Text style={{ fontSize: 9, fontWeight: '800', color: LIGHT.muted, marginTop: -1 }}>%</Text>
+    </View>
+  );
+}
+
 function IconCamera({ color = LIGHT.sub, size = 19 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -556,7 +584,9 @@ export default function PlayerProfileScreen() {
   const [eloHistory, setEloHistory] = useState<EloHistory[]>([]);
   const [reputation, setReputation] = useState<{ badge_type: string }[]>([]);
   const [isFav,      setIsFav]      = useState(false);
+  const [blocked,    setBlocked]    = useState(false);
   const [rankPos,    setRankPos]    = useState<number | null>(null);
+  const [activity,   setActivity]   = useState<ActivityEvent[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [matchSearch, setMatchSearch] = useState('');
@@ -575,6 +605,40 @@ export default function PlayerProfileScreen() {
   const [genderReqSubmitting, setGenderReqSubmitting] = useState(false);
 
   const isSelf = self?.id === id;
+
+  const reactToActivity = async (eventId: string) => {
+    const myId = self?.id ?? '';
+    if (!myId) return;
+    setActivity(prev => prev.map(e => {
+      if (e.id !== eventId) return e;
+      const fire = e.reactions?.['🔥'] ?? [];
+      const has = fire.includes(myId);
+      const next = has ? fire.filter(idx => idx !== myId) : [...fire, myId];
+      const reactions = { ...e.reactions };
+      if (next.length) reactions['🔥'] = next; else delete reactions['🔥'];
+      return { ...e, reactions };
+    }));
+    const updated = await toggleReaction(eventId);
+    if (updated) setActivity(prev => prev.map(e => e.id === eventId ? { ...e, reactions: updated } : e));
+  };
+
+  const reportActivityEvent = (e: ActivityEvent) => {
+    const myId = self?.id ?? '';
+    Alert.alert('Cette activité', undefined, [
+      {
+        text: 'Signaler', style: 'destructive',
+        onPress: async () => {
+          try {
+            await reportContent({ reporterId: myId, targetType: 'activity', targetId: e.id, reportedPlayerId: e.player_id });
+            Alert.alert('Merci', 'Activité signalée à la modération.');
+          } catch {
+            Alert.alert('Erreur', "Le signalement n'a pas pu être envoyé.");
+          }
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
 
   const fetchData = async () => {
     // Phase 1 — profile
@@ -603,11 +667,13 @@ export default function PlayerProfileScreen() {
         : Promise.resolve({ count: 0 }),
     ]);
 
-    setMatches(((matchesRes.data ?? []) as MatchRow[]).filter(isDoubles));
+    // Supabase renvoie les relations FK comme tableaux ; cast via unknown (forme runtime ≠ MatchRow).
+    setMatches(((matchesRes.data ?? []) as unknown as MatchRow[]).filter(isDoubles));
     setEloHistory(historyRes.data ?? []);
     setReputation(repRes.data ?? []);
     setIsFav(!!favRes.data);
     setRankPos((rankRes.count ?? 0) + 1);
+    getPlayerActivity(id).then(setActivity);
 
     // Pending gender-change request (only relevant on own profile)
     if (self?.id === id) {
@@ -666,6 +732,59 @@ export default function PlayerProfileScreen() {
       await supabase.from('player_favorites').insert({ player_id: self.id, favorite_id: id });
     }
     setIsFav(f => !f);
+  };
+
+  // ── Modération (blocage / signalement) ────────────────────────────
+  useEffect(() => {
+    if (!self?.id || isSelf) { setBlocked(false); return; }
+    isBlocked(self.id, id).then(setBlocked).catch(() => {});
+  }, [self?.id, id, isSelf]);
+
+  const handleBlockToggle = async () => {
+    if (!self?.id || isSelf) return;
+    try {
+      if (blocked) {
+        await unblockUser(self.id, id);
+        setBlocked(false);
+        Alert.alert('Débloqué', 'Cet utilisateur est débloqué.');
+      } else {
+        await blockUser(self.id, id);
+        setBlocked(true);
+        if (isFav) {
+          await supabase.from('player_favorites').delete().eq('player_id', self.id).eq('favorite_id', id);
+          setIsFav(false);
+        }
+        Alert.alert('Bloqué', 'Vous ne verrez plus les contenus de cet utilisateur.');
+      }
+    } catch {
+      Alert.alert('Erreur', 'Action impossible. Réessaie.');
+    }
+  };
+
+  const handleReportProfile = () => {
+    if (!self?.id || isSelf) return;
+    Alert.alert('Signaler ce profil', 'Confirmer le signalement de ce profil à la modération ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Signaler', style: 'destructive',
+        onPress: async () => {
+          try {
+            await reportContent({ reporterId: self.id, targetType: 'player', targetId: id, reportedPlayerId: id });
+            Alert.alert('Merci', 'Signalement envoyé à la modération.');
+          } catch {
+            Alert.alert('Erreur', "Le signalement n'a pas pu être envoyé.");
+          }
+        },
+      },
+    ]);
+  };
+
+  const openModerationMenu = () => {
+    Alert.alert('Modération', undefined, [
+      { text: blocked ? 'Débloquer' : 'Bloquer', style: blocked ? 'default' : 'destructive', onPress: handleBlockToggle },
+      { text: 'Signaler ce profil', onPress: handleReportProfile },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   };
 
   // ── Derived ───────────────────────────────────────────────────────
@@ -729,6 +848,7 @@ export default function PlayerProfileScreen() {
   const nextLvl    = thresholds.find(l => l > curLevel + 0.001) ?? null;
   const prevLvl    = [...thresholds].reverse().find(l => l <= curLevel + 0.001) ?? 1.0;
   const lvlPct     = nextLvl ? (curLevel - prevLvl) / (nextLvl - prevLvl) : 1.0;
+  const lvlToNext  = nextLvl ? Math.max(0.01, nextLvl - curLevel) : 0;
 
   // Fiability
   const fib      = profile.fiability_pct ?? 50;
@@ -888,11 +1008,11 @@ export default function PlayerProfileScreen() {
   };
   const storyInvite: InviteData = {
     cta: 'Rejoins-moi sur',
-    link: 'pagmatch.com', // lien court affiché ; l'UUID joueur reste encodé dans le QR
+    link: SHARE_LABEL, // libellé de marque affiché sur la story (décoratif)
     appUrl: 'Télécharger l’app',
-    // TODO: remplacer par un vrai deep link / lien de parrainage (Branch/Firebase).
-    // Placeholder pour l'instant — voir handoff stories §QR & lien app.
-    qrValue: `https://pagmatch.com/u/${profile.id}?ref=story`,
+    // QR fonctionnel → fiche joueur de l'app web (route /player/[id]).
+    // Passe par SHARE_BASE (centralisé) → bascule domaine = 1 ligne dans community.ts.
+    qrValue: playerStoryLink(profile.id),
     showApp: true, showQR: true,
   };
 
@@ -922,10 +1042,16 @@ export default function PlayerProfileScreen() {
             </TouchableOpacity>
           </>
         ) : (
-          <TouchableOpacity onPress={toggleFav} activeOpacity={0.7}
-            style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: isFav ? 'rgba(245,158,11,0.14)' : LIGHT.chip, borderWidth: 1, borderColor: isFav ? Colors.warning : LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
-            <IconStar filled={isFav} color={isFav ? Colors.warning : LIGHT.sub} />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity onPress={toggleFav} activeOpacity={0.7}
+              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: isFav ? 'rgba(245,158,11,0.14)' : LIGHT.chip, borderWidth: 1, borderColor: isFav ? Colors.warning : LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
+              <IconStar filled={isFav} color={isFav ? Colors.warning : LIGHT.sub} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={openModerationMenu} activeOpacity={0.7}
+              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 20, lineHeight: 20, color: LIGHT.text, marginTop: -4 }}>⋯</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
     </View>
@@ -964,30 +1090,41 @@ export default function PlayerProfileScreen() {
 
       {/* ── Carte « Niveau padel » ───────────────────────────────── */}
       <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-        <View style={[cardStyle, { padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }]}>
-          <View>
+        <View style={[cardStyle, { padding: 18, flexDirection: 'row', alignItems: 'center', gap: 18 }]}>
+
+          {/* Colonne gauche : niveau + barre de progression enrichie */}
+          <View style={{ flex: 1 }}>
             <Kicker style={{ marginBottom: 2 }}>Niveau padel</Kicker>
             <Text style={{ fontFamily: Fonts.display, fontSize: 50, lineHeight: 52, color: LIGHT.accent, letterSpacing: -1 }}>
               {formatPadelLevel(profile.elo_score)}
             </Text>
-          </View>
-          <View style={{ flex: 1, maxWidth: 150 }}>
-            {nextLvl && (
-              <>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: LIGHT.sub }}>→ Niv. {nextLvl.toFixed(1)}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: LIGHT.accent }}>{Math.round(lvlPct * 100)}%</Text>
+
+            {nextLvl ? (
+              <View style={{ marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: LIGHT.sub }}>Vers niveau {nextLvl.toFixed(1)}</Text>
+                  <Text style={{ fontFamily: Fonts.display, fontSize: 15, lineHeight: 16, color: LIGHT.accent }}>{Math.round(lvlPct * 100)}%</Text>
                 </View>
-                <View style={{ height: 6, borderRadius: 3, backgroundColor: LIGHT.divider }}>
-                  <View style={{ height: 6, borderRadius: 3, backgroundColor: LIGHT.accent, width: `${Math.round(lvlPct * 100)}%` as any }} />
+                <View style={{ height: 9, borderRadius: 5, backgroundColor: LIGHT.divider, overflow: 'hidden' }}>
+                  <View style={{ height: 9, borderRadius: 5, backgroundColor: LIGHT.accent, width: `${Math.max(4, Math.round(lvlPct * 100))}%` as any }} />
                 </View>
-              </>
-            )}
-            <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: LIGHT.sub }}>Fiabilité {fib}%</Text>
-              <View style={{ backgroundColor: fibColor + '16', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-                <Text style={{ fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5, color: fibColor }}>{fibLabel}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: LIGHT.sub, marginTop: 6 }}>
+                  Plus que <Text style={{ fontWeight: '800', color: LIGHT.text }}>{lvlToNext.toFixed(2)}</Text> pour le niveau {nextLvl.toFixed(1)}
+                </Text>
               </View>
+            ) : (
+              <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.success }}>🏆 Niveau maximum atteint</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Colonne droite : jauge circulaire de fiabilité, bien mise en avant */}
+          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <ReliabilityRing pct={fib} color={fibColor} />
+            <Kicker style={{ marginTop: 8, fontSize: 9.5 }}>Fiabilité</Kicker>
+            <View style={{ backgroundColor: fibColor + '16', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, marginTop: 4 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.5, color: fibColor }}>{fibLabel}</Text>
             </View>
           </View>
         </View>
@@ -1079,6 +1216,25 @@ export default function PlayerProfileScreen() {
                   <Text style={{ fontSize: 10, color: LIGHT.muted, fontWeight: '600' }}>{b.desc}</Text>
                 </View>
               </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* ── Activité (interactive : 🔥 + commentaires) ──────────── */}
+      {activity.length > 0 && (
+        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+          <Kicker style={{ marginBottom: 8, marginLeft: 2 }}>Activité</Kicker>
+          <View style={{ gap: 14 }}>
+            {activity.map(e => (
+              <ActivityCard
+                key={e.id}
+                e={e}
+                myId={self?.id ?? ''}
+                onReact={isSelf ? undefined : () => reactToActivity(e.id)}
+                onPressComments={() => router.push(`/community/comments/${e.id}` as any)}
+                onReport={isSelf ? undefined : () => reportActivityEvent(e)}
+              />
             ))}
           </View>
         </View>

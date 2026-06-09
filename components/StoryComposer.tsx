@@ -26,7 +26,7 @@ const THEME_DOTS: Array<{ key: ThemeKey; label: string; color: string }> = [
 ];
 
 const BG_TEMPLATES: Array<{ key: Exclude<BgMode, object>; label: string; emoji: string }> = [
-  { key: 'court',  label: 'Court',   emoji: '🎾' },
+  { key: 'court',  label: 'Court',   emoji: '🟩' },
   { key: 'sombre', label: 'Sombre',  emoji: '🌃' },
   { key: 'brand',  label: 'Brand',   emoji: '🟨' },
   { key: 'amical', label: 'Amical',  emoji: '🟢' },

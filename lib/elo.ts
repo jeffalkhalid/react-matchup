@@ -1,8 +1,11 @@
 // Port of web lib/elo.ts — used by admin panel
 
+// Plancher de fiabilité à 10% (clamp 10..100) → K plafonne à 59, plancher 16.
+// Réplique public.elo_k_factor (elo_per_player_k.sql).
 export function getKFactor(totalMatches: number, fiabilityPct?: number): number {
   if (fiabilityPct !== undefined) {
-    return Math.round(16 + 48 * (1 - fiabilityPct / 100));
+    const f = Math.min(100, Math.max(10, fiabilityPct));
+    return Math.round(16 + 48 * (1 - f / 100));
   }
   if (totalMatches < 10)  return 40;
   if (totalMatches < 30)  return 32;
@@ -10,8 +13,9 @@ export function getKFactor(totalMatches: number, fiabilityPct?: number): number 
   return 16;
 }
 
+// Fiabilité +5 par match, plancher 10, plafond 100.
 export function getNewFiabilityPct(current: number): number {
-  return Math.min(current + 5, 100);
+  return Math.min(Math.max(10, current) + 5, 100);
 }
 
 export function getInactivityDecay(lastMatchAt: string | null): number {
@@ -70,6 +74,7 @@ export interface EloPlayerInput {
   win_count: number;
   loss_count: number;
   last_match_at: string | null;
+  fiability_pct: number;
   isWinner: boolean;
 }
 
@@ -79,21 +84,27 @@ export interface EloSimPlayer {
   oldElo: number;
   decayFactor: number;
   decayedElo: number;
+  kFactor: number;   // K propre au joueur (sur SA fiabilité)
+  delta: number;     // ampleur du mouvement de CE joueur
   newElo: number;
   change: number;
   isWinner: boolean;
 }
 
 export interface EloSimResult {
-  delta: number;
-  kFactor: number;
+  // Niveau match (communs aux 4 joueurs)
   antiFarmMultiplier: number;
+  marginMultiplier: number;
   winnerTeamElo: number;
   loserTeamElo: number;
+  // K et delta sont désormais PAR JOUEUR (cf. players[].kFactor / .delta)
   players: EloSimPlayer[];
 }
 
-export function simulateElo(players: EloPlayerInput[]): EloSimResult {
+// K-factor par joueur : chaque joueur bouge selon SA propre fiabilité.
+// Réplique fidèlement le trigger public.fn_distribute_elo_on_validate
+// (elo_per_player_k.sql) : attendu/anti/marge au niveau équipe, K per-joueur.
+export function simulateElo(players: EloPlayerInput[], scoreText?: string | null): EloSimResult {
   const winners = players.filter(p => p.isWinner);
   const losers  = players.filter(p => !p.isWinner);
 
@@ -112,29 +123,39 @@ export function simulateElo(players: EloPlayerInput[]): EloSimResult {
     ? (dLosers[0].decayedElo + dLosers[1].decayedElo) / 2
     : dLosers[0]?.decayedElo ?? 1000;
 
-  const w1 = dWinners[0];
-  const matchCount = (w1?.win_count ?? 0) + (w1?.loss_count ?? 0);
-  const kFactor = getKFactor(matchCount);
+  const expectedWin = 1 / (1 + Math.pow(10, (loserTeamElo - winnerTeamElo) / 400));
   const diff = winnerTeamElo - loserTeamElo;
   const antiFarmMultiplier = diff > 300 ? 0.5 : diff > 150 ? 0.75 : 1.0;
-  const delta = computeEloExchange(winnerTeamElo, loserTeamElo, matchCount);
+  const marginMultiplier = getMarginMultiplier(scoreText);
+  // Facteur commun ; seul le K varie d'un joueur à l'autre.
+  const factor = (1 - expectedWin) * antiFarmMultiplier;
+
+  const kFor     = (fiab: number) => getKFactor(0, fiab);
+  const deltaFor = (fiab: number) =>
+    Math.round(Math.max(1, Math.round(kFor(fiab) * factor)) * marginMultiplier);
 
   const simPlayers: EloSimPlayer[] = [
-    ...dWinners.map(p => ({
-      id: p.id, name: p.name, oldElo: p.elo_score,
-      decayFactor: p.decayFactor, decayedElo: p.decayedElo,
-      newElo: p.decayedElo + delta,
-      change: (p.decayedElo + delta) - p.elo_score,
-      isWinner: true,
-    })),
-    ...dLosers.map(p => ({
-      id: p.id, name: p.name, oldElo: p.elo_score,
-      decayFactor: p.decayFactor, decayedElo: p.decayedElo,
-      newElo: Math.max(100, p.decayedElo - delta),
-      change: Math.max(100, p.decayedElo - delta) - p.elo_score,
-      isWinner: false,
-    })),
+    ...dWinners.map(p => {
+      const kFactor = kFor(p.fiability_pct);
+      const delta   = deltaFor(p.fiability_pct);
+      const newElo  = p.decayedElo + delta;
+      return {
+        id: p.id, name: p.name, oldElo: p.elo_score,
+        decayFactor: p.decayFactor, decayedElo: p.decayedElo,
+        kFactor, delta, newElo, change: newElo - p.elo_score, isWinner: true,
+      };
+    }),
+    ...dLosers.map(p => {
+      const kFactor = kFor(p.fiability_pct);
+      const delta   = deltaFor(p.fiability_pct);
+      const newElo  = Math.max(100, p.decayedElo - delta);
+      return {
+        id: p.id, name: p.name, oldElo: p.elo_score,
+        decayFactor: p.decayFactor, decayedElo: p.decayedElo,
+        kFactor, delta, newElo, change: newElo - p.elo_score, isWinner: false,
+      };
+    }),
   ];
 
-  return { delta, kFactor, antiFarmMultiplier, winnerTeamElo, loserTeamElo, players: simPlayers };
+  return { antiFarmMultiplier, marginMultiplier, winnerTeamElo, loserTeamElo, players: simPlayers };
 }
