@@ -40,6 +40,7 @@ export interface Player {
   avatar_url?: string;
   season_points?: number;
   push_token?: string | null;
+  deleted_at?: string | null;
   created_at: string;
 }
 

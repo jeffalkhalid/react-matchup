@@ -90,6 +90,7 @@ export async function getSuggestions(me: Player, limit = 8): Promise<SocialPlaye
     const { data } = await supabase
       .from('players')
       .select('id')
+      .is('deleted_at', null)
       .overlaps('clubs', me.clubs)
       .limit(limit * 2);
     (data ?? []).forEach((r: any) => { if (!exclude.has(r.id)) candidateIds.add(r.id); });
@@ -100,6 +101,7 @@ export async function getSuggestions(me: Player, limit = 8): Promise<SocialPlaye
     const { data } = await supabase
       .from('players')
       .select('id, elo_score')
+      .is('deleted_at', null)
       .gte('elo_score', me.elo_score - 150)
       .lte('elo_score', me.elo_score + 150)
       .limit(limit * 2);
@@ -135,7 +137,7 @@ export async function searchPlayers(myId: string, q: string): Promise<SocialPlay
   const term = q.trim();
   if (term.length < 1) return [];
   const [{ data: players }, myFollowing] = await Promise.all([
-    supabase.from('players').select('*').ilike('name', `%${term}%`).neq('id', myId).limit(30),
+    supabase.from('players').select('*').is('deleted_at', null).ilike('name', `%${term}%`).neq('id', myId).limit(30),
     getFollowingIds(myId),
   ]);
   const followingSet = new Set(myFollowing);

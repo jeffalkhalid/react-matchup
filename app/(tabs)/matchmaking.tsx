@@ -471,6 +471,7 @@ export default function MatchmakingScreen() {
     const [playersRes, incomingRes, sentRes] = await Promise.all([
       supabase.from('players')
         .select('*')
+        .is('deleted_at', null)
         .neq('id', player.id)
         .order('elo_score', { ascending: false })
         .limit(50),

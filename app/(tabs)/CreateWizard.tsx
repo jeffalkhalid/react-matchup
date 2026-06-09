@@ -305,7 +305,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         });
         const topIds = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id]) => id);
         if (!topIds.length) return;
-        supabase.from('players').select('id,name,elo_score').in('id', topIds).then(({ data: players }) => {
+        supabase.from('players').select('id,name,elo_score').in('id', topIds).is('deleted_at', null).then(({ data: players }) => {
           if (players) setFreqPlayers(topIds.map(id => (players as any[]).find(p => p.id === id)).filter(Boolean));
         });
       });
@@ -317,6 +317,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     setSearching(true);
     const t = setTimeout(() => {
       supabase.from('players').select('id,name,elo_score')
+        .is('deleted_at', null)
         .ilike('name', `%${searchQ}%`)
         .neq('id', player?.id ?? '')
         .limit(6)
