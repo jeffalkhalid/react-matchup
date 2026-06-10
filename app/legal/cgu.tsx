@@ -121,7 +121,8 @@ export default function CguScreen() {
         </P>
       </Section>
 
-      <Section n={14} icon="✉️" title="Contact">
+      <Section n={14} icon="✉️" title="Éditeur & contact">
+        <P>L'application {LEGAL.appName} est éditée par <B>{LEGAL.editor}</B>.</P>
         <P>Une question sur ces CGU ? {link(LEGAL.contactEmail, mail)}.</P>
       </Section>
     </LegalLayout>

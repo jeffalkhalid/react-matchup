@@ -9,11 +9,12 @@ import type {
   Player, SocialPlayer, ActivityEvent, GameAlert, ReferralStats, League, ActivityComment,
 } from '../types';
 
-// Base des liens de partage. Cible actuelle : le web app (Vercel).
-// 🔜 Bascule prévue vers `https://pagmatch.com` (domaine de partage de l'app,
-//    custom domain Vercel sur matchup_padel) → UNE seule ligne à changer ici,
-//    tous les liens de partage passent par cette constante.
-export const SHARE_BASE = 'https://matchup-padel.vercel.app';
+// Base des liens de partage = domaine public unique `pagmatch.com`.
+// Tous les liens partagés pointent vers la page passerelle `/open` (projet
+// activegame-landing) : elle tente d'ouvrir l'app Android via le scheme
+// `pagmatch://`, et retombe sur la landing + bouton APK si l'app n'est pas
+// installée. UNE seule ligne à changer ici si le domaine évolue.
+export const SHARE_BASE = 'https://pagmatch.com';
 // Libellé de marque affiché en watermark des stories (décoratif).
 export const SHARE_LABEL = 'pagmatch.com';
 export const REFERRAL_GOAL = 3; // 3 amis parrainés = Trophée Parrain
@@ -371,22 +372,30 @@ export async function getReferralStats(player: Player): Promise<ReferralStats> {
   return { code, joined: count ?? 0, goal: REFERRAL_GOAL };
 }
 
+// Liens COURTS et lisibles (affichés sur la carte d'invitation + encodés en QR).
+// Une redirection Vercel (activegame-landing/vercel.json) les étend au clic vers
+// la passerelle `/open/?p=...`, qui ouvre l'app (scheme pagmatch://) ou retombe
+// sur la landing + APK. Préfixes : /u = invite, /g = partie, /p = profil joueur.
+
+// Lien de parrainage / invitation d'amis.
 export function referralLink(code: string): string {
-  return `${SHARE_BASE}/u/${code}`;
+  return `${SHARE_BASE}/u/${encodeURIComponent(code)}`;
 }
 
+// QR d'invitation (même cible que referralLink ; fonction distincte conservée
+// pour les usages QR éventuellement différenciés à l'avenir).
 export function referralQRValue(code: string): string {
-  return `${SHARE_BASE}/u/${code}?ref=invite`;
+  return `${SHARE_BASE}/u/${encodeURIComponent(code)}`;
 }
 
-// Lien de partage d'une partie ouverte (route /lobby du web app).
+// Lien de partage d'une partie ouverte → écran lobby (pagmatch://lobby?gameId=).
 export function lobbyGameLink(gameId: string): string {
-  return `${SHARE_BASE}/lobby?game=${gameId}`;
+  return `${SHARE_BASE}/g/${encodeURIComponent(gameId)}`;
 }
 
-// QR/lien d'une fiche joueur partagée en story (route /player du web app).
+// QR/lien d'une fiche joueur partagée en story → écran player (pagmatch://player/<id>).
 export function playerStoryLink(playerId: string): string {
-  return `${SHARE_BASE}/player/${playerId}?ref=story`;
+  return `${SHARE_BASE}/p/${encodeURIComponent(playerId)}`;
 }
 
 // ─── Matching alertes → push ─────────────────────────────────

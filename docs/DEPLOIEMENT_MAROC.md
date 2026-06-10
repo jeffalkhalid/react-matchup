@@ -84,7 +84,7 @@ Données décrites : e-mail, profil (nom/sexe/niveau ELO/historique/stats/FRMT),
 - [x] 🔴 Route enregistrée hors guard (`_layout.tsx`) → accessible **avant connexion**.
 - [x] 🔴 Liens in-app : écran d'inscription (`signup.tsx`, ligne de consentement) + réglages (`profile.tsx`, section « Légal »).
 - [x] 🔴 Placeholders **centralisés** dans `lib/legal.ts` (un seul fichier). `minAge` fixé à **18**.
-- [ ] 🔴 **Action utilisateur — renseigner `lib/legal.ts`** : `responsable`, `editor`, `contactEmail`, `supabaseRegion` (Dashboard → Project Settings → General). (`minAge`/`lastUpdate` déjà remplis.)
+- [x] 🔴 **`lib/legal.ts` COMPLET (2026-06-10)** : `responsable` + `editor` = **QUARTZTEC, SARL AU au capital de 100 000 MAD, RC de Casablanca n° 521941** ; `supabaseRegion` = **Union européenne (Irlande — eu-west-1)** ; `contactEmail`, `minAge`, `lastUpdate` OK. Mis à jour dans les DEUX `lib/legal.ts` (react-matchup + activegame-landing). Éditeur **nommé** dans la CGU (section 14 « Éditeur & contact »). Typecheck OK. Plus aucun placeholder. **Note juridique transfert hors Maroc : hébergement UE (Irlande/RGPD) = niveau de protection adéquat au sens des art. 43-44 loi 09-08 → favorable.** Reste à confirmer auprès de la CNDP si le transfert relève d'une simple déclaration ou d'une autorisation (cf. §2.3).
 - [x] 🔴 **URL publique pour les stores** : site vitrine **PAG MATCH — Padel Active Game** (Next.js) dans `Native/activegame-landing/` (dossier inchangé) → pages `/confidentialite` + `/cgu` + landing. `npm run build` OK. Reste : déployer (Vercel/Cloudflare Pages) + brancher **padelactivegame.com** → URLs finales `https://padelactivegame.com/confidentialite` et `/cgu` à reporter dans App Store Connect + Play Console.
 - [x] 🟠 Version **arabe** : abandonnée (décision utilisateur).
 
@@ -95,7 +95,8 @@ Données décrites : e-mail, profil (nom/sexe/niveau ELO/historique/stats/FRMT),
 - [x] 🟠 Dépendance produit signalement/blocage des CGU **satisfaite** : implémentée dans l'app (cf. §3.3 — modération MVP).
 
 ### 2.3 🟠 CNDP
-- [ ] 🟠 Se renseigner sur l'obligation de **déclaration CNDP** (cndp.ma) pour un traitement de données de résidents marocains.
+- [ ] 🟠 Se renseigner sur l'obligation de **déclaration CNDP** (cndp.ma) pour un traitement de données de résidents marocains. Déclaration au nom de **QUARTZTEC SARL AU** (RC Casablanca 521941).
+- [ ] 🟠 **Transfert hors Maroc → UE (Irlande, Supabase eu-west-1)** : à mentionner dans le dossier CNDP. UE = niveau de protection adéquat (RGPD, art. 43-44 loi 09-08) → favorable, mais **confirmer auprès de la CNDP si déclaration simple suffit ou si une autorisation de transfert est requise.**
 - [ ] 🟢 Faire valider politique + CGU + seuil d'âge par un **juriste marocain**.
 
 ### 2.4 🟠 Mineurs
@@ -110,13 +111,13 @@ Exigée par Apple **et** Google Play (et droit à l'effacement 09-08).
 - [x] 🔴 **Constat** : l'ancien code (`players.delete()`) échouait (FK matchs non-CASCADE) et ne supprimait jamais le compte auth (e-mail).
 - [x] 🔴 RPC `delete_my_account()` → `supabase/migrations/account_deletion.sql` (SECURITY DEFINER) : purge des données perso (favoris, blocages, alertes, suivis, chat_reads, notifs, demandes genre, push), **anonymisation** des contenus partagés (profil → « Compte supprimé », messages), puis `DELETE FROM auth.users` (libère l'e-mail). Typecheck OK.
 - [x] 🔴 Client câblé : `profile.tsx` appelle `supabase.rpc('delete_my_account')` puis `signOut()`.
-- [ ] 🔴 **À APPLIQUER** : `account_deletion.sql` en staging puis prod, et **tester** (créer un compte jetable avec matchs → supprimer → vérifier purge perso + impossibilité de reconnexion + ELO des adversaires intact).
+- [x] 🔴 **APPLIQUÉE EN PROD (2026-06-10).** Reste à **tester** (créer un compte jetable avec matchs → supprimer → vérifier purge perso + impossibilité de reconnexion + ELO des adversaires intact).
 - [x] 🟠 **Choix produit confirmé (2026-06-05) : ANONYMISATION** (pas de hard-delete) — préserve l'ELO/historique des adversaires, conforme stores + 09-08. Décision actée, ne pas régresser.
 - [x] 🟠 **Marqueur `deleted_at` (2026-06-10)** : `soft_delete_deleted_at.sql` ajoute `players.deleted_at`, backfille les fantômes existants (`name = 'Compte supprimé'`), et la RPC le pose à l'anonymisation. **NE PAS filtrer sur `user_id IS NULL`** (les profils FRMT scrapés l'ont aussi). 9 requêtes de découverte filtrées `.is('deleted_at', null)` (classement, matchmaking, joueurs à inviter du CreateWizard, suggestions/recherche communauté, calcul de rang fiche joueur, liste FRMT admin) ; lookups par `id` laissés tels quels (un vieux match doit afficher « Compte supprimé »). Choix produit liés : réinscription repart de zéro, pseudo redevient libre. Typecheck OK.
-- [ ] 🟠 **À APPLIQUER** : `soft_delete_deleted_at.sql` en staging puis prod **AVANT** de livrer le build (sinon les requêtes `.is('deleted_at', null)` lèvent une erreur PostgREST : colonne inexistante). Vérifier ensuite qu'un compte supprimé ne ressort plus du classement ni des joueurs à inviter.
+- [x] 🟠 **APPLIQUÉE EN PROD (2026-06-10)** — la colonne `players.deleted_at` existe, les requêtes `.is('deleted_at', null)` ne planteront plus. Reste à vérifier qu'un compte supprimé ne ressort plus du classement ni des joueurs à inviter.
 - [ ] 🟢 Stockage médias : pas de table `stories` ni bucket utilisateur identifié (Stories = export image, cf. §3.3) → rien à purger côté storage pour l'instant ; revérifier si un bucket est ajouté.
 - [x] 🟢 **Durcissement inscription (2026-06-09)** : (a) `ageConfirmed` re-vérifié dans `handleCreateAccount` (plus seulement le bouton). (c) Migration `cleanup_unconfirmed_accounts.sql` : fonction DEFINER + job pg_cron quotidien (03:00 UTC) qui supprime les comptes email non confirmés > 7 j + leurs fiches `players` orphelines (0 match). (b unicité pseudo atomique = non fait, noté post-lancement.)
-- [ ] 🟢 **À APPLIQUER** : `cleanup_unconfirmed_accounts.sql` (+ activer l'extension **pg_cron** dans Supabase → Database → Extensions, sinon le job n'est pas planifié — la fonction reste appelable à la main).
+- [x] 🟢 **APPLIQUÉE EN PROD (2026-06-10).** ⚠️ Vérifier que l'extension **pg_cron** est bien activée (Supabase → Database → Extensions) et que le job quotidien 03:00 UTC est planifié (`SELECT * FROM cron.job;`), sinon la fonction reste seulement appelable à la main.
 
 ### 3.2 🔴 Déclarations de confidentialité des stores
 - [ ] 🔴 Google Play : formulaire **Data Safety** cohérent avec la politique.
@@ -132,7 +133,7 @@ MVP implémenté (typecheck `tsc --noEmit` = 0 erreur) :
 - [x] 🔴 **Bloquer** : menu « ⋯ » sur le profil joueur (`player/[id].tsx`) + filtrage des bloqués dans le chat, le feed communautaire (`friends.tsx`), le matchmaking (suggestions + défis reçus) et le lobby (parties).
 - [x] 🔴 **Signaler** : long-press message dans le chat, bouton « ⋯ » sur les activités (`ActivityCard`), menu profil joueur → insert `content_reports`.
 - [x] 🟠 Admin : onglet « 🚩 Signalements » dans `admin.tsx` (liste + Traité/Rejeter + ouverture du profil visé).
-- [ ] 🔴 **À APPLIQUER** : `moderation.sql` en staging puis prod (dépend de `current_player_id()` déjà en base ; `is_app_admin()` créé par la migration elle-même).
+- [x] 🔴 **APPLIQUÉE EN PROD (2026-06-10)** — tables `user_blocks` + `content_reports` + RLS en place.
 - [x] 🟢 Signalement des **Stories** : **non nécessaire** — vérifié qu'il n'existe ni table `stories` ni viewer in-app ; les Stories sont seulement exportées/partagées en image 9:16. Ce n'est donc pas de l'UGC consultable dans l'app → hors périmètre Apple 1.2. (`target_type:'story'` reste prévu en base, inoffensif, si un feed Stories est ajouté un jour.)
 - [ ] 🟢 Process : suppression sous 24h des contenus signalés (engagement CGU §5) — traiter via l'onglet admin.
 - [ ] 🟠 Champ **contact de modération** publié (e-mail) — via `[EMAIL_CONTACT]`.
