@@ -273,6 +273,9 @@ export default function LoginScreen() {
       });
       if (authError) {
         setCaptchaToken(null);
+        // Ré-arme le captcha (token usage unique) → un nouveau token se
+        // pré-chauffe en arrière-plan pour que le 2e essai reste rapide.
+        captchaRef.current?.reset();
         setError(getAuthErrorMessage(authError.message));
         setLoading(false);
         return;
@@ -283,6 +286,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch {
       setCaptchaToken(null);
+      captchaRef.current?.reset();
       setError('Une erreur inattendue est survenue. Réessaie.');
       setLoading(false);
     }

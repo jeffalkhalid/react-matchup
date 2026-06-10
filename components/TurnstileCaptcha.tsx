@@ -9,8 +9,9 @@
 //
 // API compatible avec l'ancien composant hCaptcha, pour minimiser les
 // changements dans login.tsx / signup.tsx :
-//   - ref.show()   → déclenche le challenge (turnstile.execute)
+//   - ref.show()   → relance le challenge (reset) et émet un nouveau token
 //   - ref.reset()  → réarme le widget (token usage unique)
+//   Le token est de toute façon émis automatiquement au rendu (pré-chauffe).
 //   - onMessage(event) → event.nativeEvent.data contient :
 //        * le token (string longue >35) en cas de succès
 //        * 'error' | 'expired' | 'cancel' sinon
@@ -32,8 +33,10 @@ type Props = {
   onMessage: (event: WebViewMessageEvent) => void;
 };
 
-// Le widget Turnstile s'exécute en mode "execute" (déféré) : rien ne tourne
-// tant que turnstile.execute() n'est pas appelé via show().
+// Le widget s'exécute AUTOMATIQUEMENT dès le rendu (pré-chauffe) : le token
+// arrive en arrière-plan sans attendre que l'utilisateur tape la case
+// → ressenti quasi instantané. `refresh-expired: auto` ré-émet un token frais
+// si le précédent expire (formulaire long).
 const buildHtml = (siteKey: string, lang: string) => `<!DOCTYPE html>
 <html>
 <head>
@@ -52,15 +55,14 @@ const buildHtml = (siteKey: string, lang: string) => `<!DOCTYPE html>
       widgetId = window.turnstile.render('#cf', {
         sitekey: '${siteKey}',
         language: '${lang}',
-        execution: 'execute',
         appearance: 'interaction-only',
+        'refresh-expired': 'auto',
         callback: function(token){ post(token); },
         'error-callback': function(){ post('error'); },
         'expired-callback': function(){ post('expired'); },
         'timeout-callback': function(){ post('expired'); }
       });
     }
-    function doExecute(){ if (window.turnstile && widgetId !== null) window.turnstile.execute(widgetId); }
     function doReset(){ if (window.turnstile && widgetId !== null) window.turnstile.reset(widgetId); }
     render();
   </script>
@@ -72,9 +74,9 @@ const TurnstileCaptcha = forwardRef<TurnstileCaptchaHandle, Props>(
     const webRef = useRef<WebView>(null);
 
     useImperativeHandle(ref, () => ({
-      // reset avant execute → garantit un token frais même après un échec
-      // (les tokens Turnstile sont à usage unique et expirent).
-      show: () => webRef.current?.injectJavaScript('doReset(); doExecute(); true;'),
+      // En exécution auto, reset() relance le challenge et émet un NOUVEAU token
+      // (utile après un échec de login — les tokens sont à usage unique).
+      show: () => webRef.current?.injectJavaScript('doReset(); true;'),
       reset: () => webRef.current?.injectJavaScript('doReset(); true;'),
     }));
 

@@ -1,8 +1,18 @@
 // Port of web lib/elo.ts — used by admin panel
 
+// Phase de placement : sur les PLACEMENT_MATCHES premiers matchs d'un joueur,
+// K élevé fixe pour caler vite une auto-estimation fausse, blowout amplifié et
+// delta plafonné. Source de vérité = elo_placement_phase.sql — garder synchro.
+export const PLACEMENT_MATCHES = 4;
+export const PLACEMENT_K = 85;
+export const PLACEMENT_MARGIN_BLOWOUT = 2.5; // remplace le ×1.5 d'un blowout en placement
+export const PLACEMENT_DELTA_CAP = 90;       // borne dure anti-overshoot en placement
+
 // Plancher de fiabilité à 10% (clamp 10..100) → K plafonne à 59, plancher 16.
-// Réplique public.elo_k_factor (elo_per_player_k.sql).
+// Réplique public.elo_k_factor (elo_per_player_k.sql). En placement (matchs
+// joués < PLACEMENT_MATCHES), le K fiabilité est court-circuité par PLACEMENT_K.
 export function getKFactor(totalMatches: number, fiabilityPct?: number): number {
+  if (totalMatches < PLACEMENT_MATCHES) return PLACEMENT_K;
   if (fiabilityPct !== undefined) {
     const f = Math.min(100, Math.max(10, fiabilityPct));
     return Math.round(16 + 48 * (1 - f / 100));
@@ -127,17 +137,27 @@ export function simulateElo(players: EloPlayerInput[], scoreText?: string | null
   const diff = winnerTeamElo - loserTeamElo;
   const antiFarmMultiplier = diff > 300 ? 0.5 : diff > 150 ? 0.75 : 1.0;
   const marginMultiplier = getMarginMultiplier(scoreText);
-  // Facteur commun ; seul le K varie d'un joueur à l'autre.
+  // Facteur commun ; seul le K (et la marge en placement) varie d'un joueur à l'autre.
   const factor = (1 - expectedWin) * antiFarmMultiplier;
 
-  const kFor     = (fiab: number) => getKFactor(0, fiab);
-  const deltaFor = (fiab: number) =>
-    Math.round(Math.max(1, Math.round(kFor(fiab) * factor)) * marginMultiplier);
+  // Mouvement PAR JOUEUR. En placement (matchs joués < PLACEMENT_MATCHES) :
+  // K=PLACEMENT_K, blowout (marge 1.5) amplifié à PLACEMENT_MARGIN_BLOWOUT, delta
+  // plafonné à PLACEMENT_DELTA_CAP. Réplique elo_placement_phase.sql.
+  const movement = (p: EloPlayerInput) => {
+    const totalMatches = (p.win_count ?? 0) + (p.loss_count ?? 0);
+    const isPlacement  = totalMatches < PLACEMENT_MATCHES;
+    const kFactor      = getKFactor(totalMatches, p.fiability_pct);
+    const margin       = isPlacement && marginMultiplier === 1.5
+      ? PLACEMENT_MARGIN_BLOWOUT
+      : marginMultiplier;
+    let delta = Math.round(Math.max(1, Math.round(kFactor * factor)) * margin);
+    if (isPlacement) delta = Math.min(delta, PLACEMENT_DELTA_CAP);
+    return { kFactor, delta };
+  };
 
   const simPlayers: EloSimPlayer[] = [
     ...dWinners.map(p => {
-      const kFactor = kFor(p.fiability_pct);
-      const delta   = deltaFor(p.fiability_pct);
+      const { kFactor, delta } = movement(p);
       const newElo  = p.decayedElo + delta;
       return {
         id: p.id, name: p.name, oldElo: p.elo_score,
@@ -146,8 +166,7 @@ export function simulateElo(players: EloPlayerInput[], scoreText?: string | null
       };
     }),
     ...dLosers.map(p => {
-      const kFactor = kFor(p.fiability_pct);
-      const delta   = deltaFor(p.fiability_pct);
+      const { kFactor, delta } = movement(p);
       const newElo  = Math.max(100, p.decayedElo - delta);
       return {
         id: p.id, name: p.name, oldElo: p.elo_score,

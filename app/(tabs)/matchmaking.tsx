@@ -7,6 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
 import { getHiddenPlayerIds } from '../../lib/moderation';
@@ -446,6 +447,7 @@ function IncomingCard({ challenge, detail, onAction }: {
 // ── Main screen ───────────────────────────────────────────────
 export default function MatchmakingScreen() {
   const { player } = usePlayer();
+  const { reload: reloadNotifs } = useNotificationCount();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -578,6 +580,9 @@ export default function MatchmakingScreen() {
 
     setIncoming(prev => prev.map(x => x.id === id ? { ...x, status: action } : x));
     showToast(action === 'accepted' ? '✅ Défi accepté ! Tu es inscrit à la partie.' : 'Défi décliné');
+    // Rafraîchit l'état notif PARTAGÉ → le badge Défi (navbar) et le badge avatar
+    // Profil se vident immédiatement, sans devoir rouvrir la cloche ou redémarrer.
+    reloadNotifs();
   };
 
   const sortedSuggestions = sortMode === 'compat' && compatMap.size > 0

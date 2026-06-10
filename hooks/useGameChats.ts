@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { usePlayer } from './usePlayer';
 
@@ -52,10 +52,14 @@ export function useGameChats() {
   const { player } = usePlayer();
   const [games, setGames] = useState<GameChat[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const loadGames = useCallback(async () => {
     if (!player) return;
-    setLoading(true);
+    // Stale-while-revalidate : on n'affiche le spinner qu'au tout premier
+    // chargement. Sur les focus suivants, on garde la liste précédente à
+    // l'écran et on rafraîchit en arrière-plan → plus de spinner à chaque visite.
+    if (!hasLoadedRef.current) setLoading(true);
 
     // Games created by the player
     const { data: created } = await supabase
@@ -100,29 +104,35 @@ export function useGameChats() {
       .from('game_chat_reads').select('game_id, last_read_at').eq('player_id', player.id);
     const readMap = Object.fromEntries((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
 
-    const enriched: GameChat[] = await Promise.all(
-      all.map(async (game) => {
-        const lastRead = readMap[game.id] ?? '1970-01-01';
-        const [{ count }, { data: latest }] = await Promise.all([
-          supabase
-            .from('messages').select('id', { count: 'exact', head: true })
-            .eq('game_id', game.id).gt('created_at', lastRead)
-            // Exclude my own messages — consistent with the tab badge.
-            .neq('player_id', player.id),
-          supabase
-            .from('messages').select('created_at')
-            .eq('game_id', game.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        ]);
-        return {
-          ...game,
-          unread: count ?? 0,
-          last_message_at: (latest as { created_at: string } | null)?.created_at ?? null,
-          archived: scoredIds.has(game.id) || isMatchPast(game.match_date),
-        };
-      })
-    );
+    // UNE seule requête pour le dernier message + le nombre de non-lus de TOUTES
+    // les parties, au lieu de 2 requêtes par partie (N+1). On ne tire que les 3
+    // colonnes nécessaires et on agrège en JS.
+    const lastByGame = new Map<string, string>();
+    const unreadByGame = new Map<string, number>();
+    if (ids.length > 0) {
+      const { data: msgs } = await supabase
+        .from('messages').select('game_id, created_at, player_id')
+        .in('game_id', ids).order('created_at', { ascending: false });
+      for (const m of (msgs ?? []) as any[]) {
+        // Trié du + récent au + ancien → le 1er vu par partie = son dernier message.
+        if (!lastByGame.has(m.game_id)) lastByGame.set(m.game_id, m.created_at);
+        // Non-lus : messages des autres postérieurs à mon dernier accusé de lecture.
+        const lastReadMs = new Date(readMap[m.game_id] ?? '1970-01-01').getTime();
+        if (m.player_id !== player.id && new Date(m.created_at).getTime() > lastReadMs) {
+          unreadByGame.set(m.game_id, (unreadByGame.get(m.game_id) ?? 0) + 1);
+        }
+      }
+    }
+
+    const enriched: GameChat[] = all.map((game) => ({
+      ...game,
+      unread: unreadByGame.get(game.id) ?? 0,
+      last_message_at: lastByGame.get(game.id) ?? null,
+      archived: scoredIds.has(game.id) || isMatchPast(game.match_date),
+    }));
 
     setGames(sortGames(enriched));
+    hasLoadedRef.current = true;
     setLoading(false);
   }, [player]);
 

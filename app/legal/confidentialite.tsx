@@ -30,14 +30,18 @@ export default function ConfidentialiteScreen() {
         <P>Uniquement ce qui sert à faire fonctionner le jeu et la communauté :</P>
         <Tags items={[
           'E-mail', 'Pseudo / nom', 'Niveau & ELO', 'Historique de matchs',
-          'Photos / vidéos (Stories)', 'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
+          'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
         ]} />
+        <P>
+          Les <B>Stories</B> sont générées sur votre appareil et partagées par vos soins : nous ne
+          collectons ni ne stockons aucune photo ou vidéo sur nos serveurs.
+        </P>
       </Section>
 
       <Section n={3} icon="🎯" title="Pourquoi nous l'utilisons">
         <Bullet>Créer et gérer votre compte et votre profil.</Bullet>
         <Bullet>Organiser les parties, le matchmaking, le classement ELO et les défis.</Bullet>
-        <Bullet>Faire vivre la messagerie, les Stories et la communauté.</Bullet>
+        <Bullet>Faire vivre la messagerie et la communauté.</Bullet>
         <Bullet>Vous envoyer les notifications liées à vos parties.</Bullet>
         <Bullet>Sécuriser le service et prévenir la fraude et les abus.</Bullet>
         <Bullet>Respecter nos obligations légales.</Bullet>
@@ -54,7 +58,7 @@ export default function ConfidentialiteScreen() {
 
       <Section n={5} icon="🤝" title="Avec qui nous les partageons">
         <P>Nous ne vendons pas vos données. Pour faire tourner le service, nous faisons appel à des prestataires de confiance :</P>
-        <SubRow letter="S" color="#10B981" name="Supabase" role="Base de données, comptes & médias" />
+        <SubRow letter="S" color="#10B981" name="Supabase" role="Base de données & comptes" />
         <SubRow letter="E" color="#3B82F6" name="Expo" role="Relais des notifications push" />
         <SubRow letter="G" color="#F59E0B" name="Google FCM" role="Notifications Android" />
         <SubRow letter="A" color="#52525B" name="Apple APNs" role="Notifications iOS" />

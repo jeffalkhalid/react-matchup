@@ -11,7 +11,9 @@ import {
 import { BarlowCondensed_900Black_Italic } from '@expo-google-fonts/barlow-condensed';
 import * as SplashScreen from 'expo-splash-screen';
 import { PlayerProvider, usePlayer } from '../hooks/usePlayer';
+import { NotificationProvider } from '../hooks/useNotificationCount';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import InAppBanner from '../components/InAppBanner';
 import { Colors } from '../lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -70,8 +72,12 @@ export default function RootLayout() {
 
   return (
     <PlayerProvider>
-      <StatusBar style="auto" backgroundColor="transparent" translucent />
-      <RootNavigator />
+      <NotificationProvider>
+        <StatusBar style="auto" backgroundColor="transparent" translucent />
+        <RootNavigator />
+        {/* Bannière notif in-app — par-dessus la navigation, sous les providers. */}
+        <InAppBanner />
+      </NotificationProvider>
     </PlayerProvider>
   );
 }

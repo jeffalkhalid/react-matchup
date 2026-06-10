@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { isMatchPast } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
 import { Colors } from '../../lib/theme';
@@ -105,7 +106,9 @@ export default function TabLayout() {
   const { player, loading } = usePlayer();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [challengeCount, setChallengeCount] = useState(0);
+  // Défis reçus — lus depuis l'état notif PARTAGÉ (NotificationProvider), donc le
+  // badge se vide dès qu'un défi est accepté/décliné, sans redémarrage de l'app.
+  const { challenges: challengeCount } = useNotificationCount();
   const [chatBadge, setChatBadge] = useState(0);
   // null = lecture du flag en cours · false = afficher l'onboarding · true = vu.
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
@@ -121,18 +124,6 @@ export default function TabLayout() {
 
   // Auth redirect is handled by the root _layout.tsx navigator — don't redirect here
   // as router.replace('/') from within tabs resolves to (tabs)/index, not app/index.tsx
-
-  useEffect(() => {
-    if (!player) return;
-
-    // Pending incoming challenges
-    supabase
-      .from('challenges')
-      .select('id', { count: 'exact', head: true })
-      .eq('challenged_id', player.id)
-      .eq('status', 'pending')
-      .then(({ count }) => setChallengeCount(count ?? 0));
-  }, [player]);
 
   // Chat badge: sum of per-game unread messages (mirrors chats.tsx logic),
   // kept live via realtime on `messages` and `game_chat_reads`.

@@ -28,8 +28,9 @@ Tables à protéger (source : `schema.sql`) :
   - Cast `auth.uid()::text` (user_id est TEXT). Carve-out admin pour les écritures admin (`admin.tsx`).
 - [x] 🔴 **Réconcilié avec le schéma mis à jour (2026-06-04)** : 5 tables déjà protégées par des migrations antérieures et **exclues** de cette migration → `follows`, `activity_events`, `activity_comments`, `game_alerts` (community_social.sql), `dismissed_notifications` (sa migration). `gender_change_requests` était sans RLS → **ajoutée**. (Correction : un 1er grep avec glob cassé avait faussement conclu « aucune RLS » ; en réalité le code communautaire l'activait déjà.)
 - [x] 🟠 ELO atomique : déjà couvert par le trigger serveur `fn_distribute_elo_on_validate`. ⚠️ Reste à confirmer que `admin.tsx` (handleForceValidate) n'écrit plus l'ELO à la main (sinon double comptage — cf. avertissement dans elo_on_validate.sql).
-- [ ] 🔴 **Appliquer en STAGING** (branche Supabase ou projet de test), pas en prod directement.
-- [ ] 🔴 **Plan de test de non-régression** (compte A + compte B, device réel) :
+- [x] 🔴 **`enable_rls_phase1.sql` APPLIQUÉE EN PROD le 2026-06-08** (staging sauté ; appliquée directement, régression reproduite sur device → cf. correctif signup ci-dessous). Tourne en prod depuis. Rollback dispo si besoin : `ALTER TABLE public.<table> DISABLE ROW LEVEL SECURITY;`.
+- [x] 🔴 **Audit code de compatibilité (2026-06-10)** : toutes les écritures de l'app RN respectent les policies (envoi message `player_id=moi`+membre, édition profil `isSelf`, push_token owner, ELO=trigger DEFINER, pas d'écriture client `elo_history`). **Seule dépendance** : les actions admin (link FRMT `admin.tsx:705`, édition fiches) exigent `is_admin = true` sur le compte admin — à confirmer.
+- [~] 🟠 **Smoke-test de non-régression** (hygiène — la prod tourne déjà sous RLS, pas une urgence ; compte A + B, device réel) :
   1. Signup d'un nouveau compte → la ligne `players` se crée (policy `players_insert`).
   2. Login → voir son profil + le profil d'un autre joueur (lecture publique OK).
   3. Éditer SON profil → OK ; tenter d'éditer le profil de B → doit échouer.
@@ -40,7 +41,7 @@ Tables à protéger (source : `schema.sql`) :
   8. Favoris / notifications push token → seul le owner lit/écrit.
   9. Action admin (link FRMT, change gender) avec un compte admin → OK ; avec un non-admin → échoue.
 - [ ] 🔴 Vérifier l'app **web** `matchup_padel` (partage la même base ?) : ranking public, pages anon → lecture toujours OK grâce aux SELECT publics.
-- [ ] 🔴 Une fois staging validé → appliquer en **prod** (Supabase Dashboard).
+- [x] 🔴 Appliqué en **PROD** (Supabase Dashboard) le 2026-06-08, reconfirmé 2026-06-10. Staging sauté ; la prod tourne sous RLS depuis (signup déjà corrigé via trigger). Smoke-test ci-dessus = hygiène, pas blocage.
 
 **Critère de sortie :** un compte B ne peut ni lire les chats privés ni modifier les données d'un compte A ; le parcours nominal (les 9 étapes) fonctionne toujours en staging.
 

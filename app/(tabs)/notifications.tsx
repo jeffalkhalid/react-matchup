@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, ActivityIndicator,
 } from 'react-native';
@@ -97,10 +97,13 @@ export default function NotificationsScreen() {
   const { player } = usePlayer();
   const [items, setItems] = useState<NotifItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const fetchNotifs = useCallback(async () => {
     if (!player) return;
-    setLoading(true);
+    // Stale-while-revalidate : spinner seulement au 1er chargement ; ensuite on
+    // garde la liste affichée et on rafraîchit en arrière-plan.
+    if (!hasLoadedRef.current) setLoading(true);
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const playerOr = [
@@ -345,6 +348,7 @@ export default function NotificationsScreen() {
 
     // Retirer les notifs "info" déjà supprimées par l'utilisateur.
     setItems(result.filter(it => !(isDismissible(it.type) && dismissedKeys.has(it.id))));
+    hasLoadedRef.current = true;
     setLoading(false);
   }, [player]);
 
