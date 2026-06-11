@@ -11,9 +11,10 @@ import {
   simulateElo,
   type EloSimResult,
 } from '../../lib/elo';
-import { Colors, Fonts } from '../../lib/theme';
+import { Colors, Fonts, eloToLevel } from '../../lib/theme';
+import { formatFrmtRanking } from '../../lib/frmt-match';
 
-type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports';
+type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -171,6 +172,174 @@ function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForc
         );
       })}
     </View>
+  );
+}
+
+// ─── Players dashboard tab ────────────────────────────────────
+function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, onRefresh }: {
+  players: any[];
+  loading: boolean;
+  actingId: string | null;
+  onUnlink: (playerId: string) => void | Promise<void>;
+  onFraud: (playerId: string, name: string) => void;
+  onUnblock: (playerId: string) => void | Promise<void>;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | 'verified' | 'unlinked' | 'blocked' | 'inactive'>('all');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 30;
+
+  // Inactivité : aucune partie depuis 30 j. On prend last_match_at ; à défaut
+  // (jamais joué) created_at sert de référence — un compte récent qui n'a pas
+  // encore joué n'est donc PAS compté inactif tant qu'il a < 30 j.
+  const INACTIVE_DAYS = 30;
+  const inactiveCutoff = Date.now() - INACTIVE_DAYS * 24 * 60 * 60 * 1000;
+  const lastSeenMs = (p: any) => new Date(p.last_match_at ?? p.created_at ?? 0).getTime();
+  const isInactive = (p: any) => lastSeenMs(p) < inactiveCutoff;
+
+  const filtered = players.filter(p => {
+    if (filter === 'verified' && !p.frmt_verified) return false;
+    if (filter === 'unlinked' && (p.frmt_verified || p.frmt_blocked)) return false;
+    if (filter === 'blocked' && !p.frmt_blocked) return false;
+    if (filter === 'inactive' && !isInactive(p)) return false;
+    if (search && !(p.name ?? '').toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  // En vue « Inactifs », on remonte les plus dormants en premier.
+  if (filter === 'inactive') filtered.sort((a, b) => lastSeenMs(a) - lastSeenMs(b));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const verifiedCount = players.filter(p => p.frmt_verified).length;
+  const blockedCount = players.filter(p => p.frmt_blocked).length;
+  const inactiveCount = players.filter(isInactive).length;
+
+  if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
+
+  return (
+    <>
+      {/* Stats */}
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+        {[
+          { label: 'Inscrits', value: players.length, color: Colors.textOnDark },
+          { label: 'Vérifiés', value: verifiedCount, color: Colors.success },
+          { label: 'Bloqués', value: blockedCount, color: Colors.danger },
+        ].map(s => (
+          <View key={s.label} style={sty.statBox}>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: s.color, fontFamily: Fonts.uiBlack }}>{s.value}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: Fonts.uiBlack }}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Search + refresh */}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={[sty.searchRow, { flex: 1 }]}>
+          <Text style={{ fontSize: 13, color: Colors.textSecondary }}>🔍</Text>
+          <TextInput
+            value={search}
+            onChangeText={v => { setSearch(v); setPage(1); }}
+            placeholder="Rechercher un joueur…"
+            placeholderTextColor={Colors.textSecondary}
+            style={{ flex: 1, fontSize: 13, color: Colors.textOnDark, fontWeight: '600' }}
+          />
+        </View>
+        <TouchableOpacity onPress={() => onRefresh()} style={sty.refreshBtn}>
+          <Text style={{ fontSize: 16 }}>⟳</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Filters */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {([['all', 'Tous'], ['verified', '✅ Vérifiés'], ['unlinked', '◯ Non liés'], ['blocked', '🚫 Bloqués'], ['inactive', `😴 Inactifs (${inactiveCount})`]] as [string, string][]).map(([v, l]) => (
+          <TouchableOpacity key={v} onPress={() => { setFilter(v as any); setPage(1); }}
+            style={[sty.chip, filter === v && sty.chipActive]}>
+            <Text style={[sty.chipText, filter === v && sty.chipTextActive]}>{l}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {filtered.length === 0 ? (
+        <Text style={{ color: Colors.textSecondary, textAlign: 'center', marginTop: 24, fontWeight: '700' }}>Aucun joueur</Text>
+      ) : (
+        <View style={{ gap: 8 }}>
+          {paged.map(p => {
+            const frmt = formatFrmtRanking(p);
+            const lvl = eloToLevel(p.elo_score ?? 800).toFixed(1);
+            const dateStr = p.created_at
+              ? new Date(p.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
+              : '—';
+            const lastMatchStr = p.last_match_at
+              ? new Date(p.last_match_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
+              : 'Jamais';
+            const pushOn = !!p.push_token;
+            const acting = actingId === p.id;
+            return (
+              <View key={p.id} style={[sty.frmtRow, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack, flexShrink: 1 }} numberOfLines={1}>{p.name}</Text>
+                  {p.frmt_blocked && (
+                    <View style={{ backgroundColor: '#ef444420', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: '#ef444450' }}>
+                      <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.danger }}>🚫 Bloqué</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>
+                  Inscrit le {dateStr} · Niv. {lvl}{p.frmt_elo_bonus > 0 ? ` · FRMT +${p.frmt_elo_bonus} ELO` : ''}
+                </Text>
+                <Text style={{ fontSize: 11, color: frmt ? Colors.brand : Colors.textSecondary, fontWeight: '800' }} numberOfLines={1}>
+                  {frmt ? `FRMT ${frmt.text} ✓` : (p.frmt_full_name ? `FRMT non lié (${p.frmt_full_name})` : 'Pas de FRMT déclaré')}
+                </Text>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>
+                  Dernier match : <Text style={{ color: p.last_match_at ? Colors.textOnDark : Colors.textSecondary, fontWeight: '900' }}>{lastMatchStr}</Text>
+                  {'  ·  '}
+                  <Text style={{ color: pushOn ? Colors.success : Colors.textSecondary, fontWeight: '900' }}>
+                    {pushOn ? '🔔 Notifs ON' : '🔕 Notifs OFF'}
+                  </Text>
+                </Text>
+
+                {/* Actions */}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+                  {acting ? (
+                    <ActivityIndicator color={Colors.brand} />
+                  ) : p.frmt_blocked ? (
+                    <TouchableOpacity onPress={() => onUnblock(p.id)} style={[sty.chip, { borderColor: Colors.success + '60' }]}>
+                      <Text style={[sty.chipText, { color: Colors.success }]}>Débloquer</Text>
+                    </TouchableOpacity>
+                  ) : p.frmt_verified ? (
+                    <>
+                      <TouchableOpacity onPress={() => onUnlink(p.id)} style={sty.chip}>
+                        <Text style={sty.chipText}>Délier</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => onFraud(p.id, p.name)} style={[sty.chip, { borderColor: '#ef444450', backgroundColor: '#ef444415' }]}>
+                        <Text style={[sty.chipText, { color: Colors.danger }]}>🚫 Fraudeur</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>—</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 12 }}>
+              <TouchableOpacity disabled={safePage <= 1} onPress={() => setPage(safePage - 1)} style={[sty.chip, safePage <= 1 && { opacity: 0.4 }]}>
+                <Text style={sty.chipText}>‹ Préc.</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '800' }}>{safePage} / {totalPages}</Text>
+              <TouchableOpacity disabled={safePage >= totalPages} onPress={() => setPage(safePage + 1)} style={[sty.chip, safePage >= totalPages && { opacity: 0.4 }]}>
+                <Text style={sty.chipText}>Suiv. ›</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </>
   );
 }
 
@@ -524,6 +693,11 @@ export default function AdminScreen() {
   const [reports, setReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
 
+  // Players dashboard
+  const [playersList, setPlayersList] = useState<any[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(false);
+  const [playerActingId, setPlayerActingId] = useState<string | null>(null);
+
   // Auth guard
   useEffect(() => {
     if (player && !player.is_admin) {
@@ -548,6 +722,9 @@ export default function AdminScreen() {
 
   const loadFrmt = useCallback(async () => {
     setFrmtLoading(true);
+    // Re-tente l'auto-matching des joueurs non liés (utile après un scrape).
+    // Best-effort : on n'interrompt pas le chargement si ça échoue.
+    try { await supabase.rpc('relink_unlinked_frmt'); } catch { /* ignore */ }
     // Pagination par pages de 1000 : PostgREST plafonne un select() simple à
     // 1000 lignes. Le classement FRMT dépasse 1000 (Messieurs ~2300), donc on
     // boucle sur .range() jusqu'à épuisement, sinon le panel tronque en silence.
@@ -601,8 +778,63 @@ export default function AdminScreen() {
     setReportsLoading(false);
   }, []);
 
+  const loadPlayers = useCallback(async () => {
+    setPlayersLoading(true);
+    const PAGE = 1000;
+    const all: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('players')
+        .select('id, name, created_at, gender, declared_elo, elo_score, frmt_verified, frmt_position, frmt_points, frmt_blocked, frmt_elo_bonus, frmt_full_name, last_match_at, push_token')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error || !data?.length) break;
+      all.push(...data);
+      if (data.length < PAGE) break;
+    }
+    setPlayersList(all);
+    setPlayersLoading(false);
+  }, []);
+
+  const handlePlayerUnlink = async (playerId: string) => {
+    setPlayerActingId(playerId);
+    const { error } = await supabase.rpc('admin_unlink_frmt_player', { p_player_id: playerId });
+    setPlayerActingId(null);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    await loadPlayers();
+  };
+
+  const handlePlayerFraud = (playerId: string, name: string) => {
+    Alert.alert(
+      '🚫 Marquer comme fraudeur',
+      `${name} : on retire sa liaison FRMT, on annule le bonus de niveau, et on bloque le re-matching automatique. Continuer ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Confirmer', style: 'destructive', onPress: async () => {
+            setPlayerActingId(playerId);
+            const { error } = await supabase.rpc('admin_flag_fraud_frmt', { p_player_id: playerId });
+            setPlayerActingId(null);
+            if (error) { Alert.alert('Erreur', error.message); return; }
+            await loadPlayers();
+          },
+        },
+      ],
+    );
+  };
+
+  const handlePlayerUnblock = async (playerId: string) => {
+    setPlayerActingId(playerId);
+    const { error } = await supabase.rpc('admin_unblock_frmt', { p_player_id: playerId });
+    setPlayerActingId(null);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    await loadPlayers();
+  };
+
   useEffect(() => { if (player?.is_admin) { loadDisputes(); loadGenderReqs(); loadReports(); } }, [player, loadDisputes, loadGenderReqs, loadReports]);
   useEffect(() => { if (tab === 'frmt' && player?.is_admin) loadFrmt(); }, [tab, player, loadFrmt]);
+  useEffect(() => { if (tab === 'players' && player?.is_admin) loadPlayers(); }, [tab, player, loadPlayers]);
   useEffect(() => { if (tab === 'games' && player?.is_admin) loadGames(); }, [tab, player, loadGames]);
   useEffect(() => { if (tab === 'gender' && player?.is_admin) loadGenderReqs(); }, [tab, player, loadGenderReqs]);
   useEffect(() => { if (tab === 'reports' && player?.is_admin) loadReports(); }, [tab, player, loadReports]);
@@ -699,19 +931,17 @@ export default function AdminScreen() {
     ]);
   };
 
-  const handleLink = async (entryId: string, entry: any, playerId: string) => {
-    await supabase.from('frmt_rankings').update({ player_id: playerId }).eq('id', entryId);
-    // Vrai classement FRMT (position + points), pas un palier dérivé des points.
-    await supabase.from('players').update({
-      frmt_verified: true,
-      frmt_position: entry.ranking_position ?? null,
-      frmt_points: entry.ranking_points ?? null,
-    }).eq('id', playerId);
+  const handleLink = async (entryId: string, _entry: any, playerId: string) => {
+    // RPC : pose la liaison + frmt_verified/position/points + bonus de niveau (plancher).
+    const { error } = await supabase.rpc('admin_link_frmt', { p_entry_id: entryId, p_player_id: playerId });
+    if (error) { Alert.alert('Erreur', error.message); return; }
     await loadFrmt();
   };
 
   const handleUnlink = async (entryId: string) => {
-    await supabase.from('frmt_rankings').update({ player_id: null }).eq('id', entryId);
+    // RPC : délie + remet les flags FRMT du joueur (sans baisser l'ELO acquis).
+    const { error } = await supabase.rpc('admin_unlink_frmt', { p_entry_id: entryId });
+    if (error) { Alert.alert('Erreur', error.message); return; }
     await loadFrmt();
   };
 
@@ -763,6 +993,7 @@ export default function AdminScreen() {
             { key: 'reports'  as AdminTab, label: '🚩 Signalements', badge: reports.length },
             { key: 'gender'   as AdminTab, label: '⚧ Genre',     badge: genderReqs.length },
             { key: 'frmt'     as AdminTab, label: '🏆 FRMT',     badge: 0 },
+            { key: 'players'  as AdminTab, label: '👥 Joueurs',  badge: 0 },
             { key: 'games'    as AdminTab, label: 'Parties',  badge: 0 },
           ]).map(t => {
             const active = tab === t.key;
@@ -802,6 +1033,17 @@ export default function AdminScreen() {
             onLink={handleLink}
             onUnlink={handleUnlink}
             onRefresh={loadFrmt}
+          />
+        )}
+        {tab === 'players' && (
+          <PlayersTab
+            players={playersList}
+            loading={playersLoading}
+            actingId={playerActingId}
+            onUnlink={handlePlayerUnlink}
+            onFraud={handlePlayerFraud}
+            onUnblock={handlePlayerUnblock}
+            onRefresh={loadPlayers}
           />
         )}
         {tab === 'games' && (

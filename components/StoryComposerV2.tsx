@@ -5,7 +5,7 @@
  * Dépendances : react-native-view-shot, expo-image-picker, expo-sharing,
  * expo-media-library, react-native-safe-area-context, react-native-qrcode-svg. */
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Modal, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Dimensions, TextInput } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
@@ -13,7 +13,8 @@ import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../lib/theme';
 import StoryCardV2, { STORY_REGISTRY, StoryMode } from './story/StoryStyles';
-import type { StoryPlayer, StoryMatchData, InviteData } from './story/storyTheme';
+import type { StoryPlayer, StoryMatchData, InviteData, StoryToggles, StoryMatchOpts } from './story/storyTheme';
+import { STORY_ACCENTS, DEFAULT_TOGGLES } from './story/storyTheme';
 
 interface Props {
   visible: boolean;
@@ -23,28 +24,64 @@ interface Props {
   onClose: () => void;
   onRequestMatch?: () => void;      // ouvre StoryMatchPicker si match manquant
   initialMode?: StoryMode;          // mode à l'ouverture (défaut: 'profil')
+  lockMode?: boolean;               // verrouille sur initialMode (masque le sélecteur Profil/Match/Photo)
 }
 
 const MODES: Array<{ k: StoryMode; label: string }> = [
   { k: 'profil', label: 'Profil' }, { k: 'match', label: 'Match' }, { k: 'photo', label: 'Photo' },
 ];
 
-export default function StoryComposerV2({ visible, player, match, invite, onClose, onRequestMatch, initialMode = 'profil' }: Props) {
+export default function StoryComposerV2({ visible, player, match, invite, onClose, onRequestMatch, initialMode = 'profil', lockMode = false }: Props) {
   const insets = useSafeAreaInsets();
   const canvasRef = useRef<View>(null);
   const [mode, setMode] = useState<StoryMode>(initialMode);
   const [styleId, setStyleId] = useState(STORY_REGISTRY[initialMode][0].id);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [busy, setBusy] = useState<'share' | 'save' | null>(null);
+  // Personnalisation du mode Match
+  const [accentId, setAccentId] = useState<string | null>(null);
+  const [caption, setCaption] = useState('');
+  const [bgUri, setBgUri] = useState<string | null>(null);
+  const [toggles, setToggles] = useState<StoryToggles>(DEFAULT_TOGGLES);
 
-  // À chaque ouverture, (ré)initialise le mode demandé.
+  const matchOpts: StoryMatchOpts = {
+    accent: accentId ? STORY_ACCENTS.find(a => a.id === accentId)?.color : undefined,
+    caption,
+    bgUri,
+    toggles,
+  };
+
+  const TOGGLE_LABELS: Array<{ k: keyof StoryToggles; label: string }> = [
+    { k: 'elo', label: 'Δ Niveau' }, { k: 'location', label: 'Lieu' }, { k: 'date', label: 'Date' },
+    { k: 'type', label: 'Type' }, { k: 'qr', label: 'QR' }, { k: 'logo', label: 'Logo' },
+  ];
+
+  // Choisit une photo de fond (galerie) pour les templates de match.
+  const pickBackground = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission refusée', 'Active l’accès à la galerie.'); return; }
+    const r = await ImagePicker.launchImageLibraryAsync({ quality: 0.85, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (!r.canceled && r.assets?.[0]?.uri) setBgUri(r.assets[0].uri);
+  };
+
+  // À chaque ouverture, (ré)initialise le mode demandé et la personnalisation.
   useEffect(() => {
     if (!visible) return;
     setMode(initialMode);
     setStyleId(STORY_REGISTRY[initialMode][0].id);
+    setAccentId(null);
+    setCaption('');
+    setBgUri(null);
+    setToggles(DEFAULT_TOGGLES);
   }, [visible, initialMode]);
 
-  const previewW = Math.min(Dimensions.get('window').width * 0.62, 250);
+  // Taille de l'aperçu : bornée par la largeur ET la hauteur dispo pour éviter
+  // que la carte (ratio 9:16) déborde sur les contrôles. Le mode Match ajoute
+  // un panneau de personnalisation → plus de chrome vertical, donc carte plus petite.
+  const win = Dimensions.get('window');
+  const chromeH = mode === 'match' ? 560 : 400; // hauteur approx. hors aperçu (header + sélecteurs + CTA)
+  const maxPreviewH = Math.max(200, win.height - insets.top - insets.bottom - chromeH);
+  const previewW = Math.min(win.width * 0.6, (maxPreviewH * 9) / 16, 250);
   const exportW = 1080;
   const list = STORY_REGISTRY[mode];
 
@@ -104,28 +141,30 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
           <TouchableOpacity onPress={onClose} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 18, color: Colors.textSecondary }}>✕</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>📸 Ma story</Text>
+          <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{lockMode ? '📸 Partager le match' : '📸 Ma story'}</Text>
           <View style={{ width: 36 }} />
         </View>
 
-        {/* segmented */}
-        <View style={{ paddingHorizontal: 16, paddingBottom: 12, backgroundColor: Colors.bgCard, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
-          <View style={{ flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: Colors.border }}>
-            {MODES.map(({ k, label }) => {
-              const on = mode === k;
-              return (
-                <TouchableOpacity key={k} onPress={() => switchMode(k)} style={{ flex: 1, paddingVertical: 9, borderRadius: 9, backgroundColor: on ? Colors.primary : 'transparent', alignItems: 'center' }}>
-                  <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13, color: on ? Colors.textOnDark : Colors.textSecondary }}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
+        {/* segmented (masqué quand le mode est verrouillé, ex. partage d'un score précis) */}
+        {!lockMode && (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 12, backgroundColor: Colors.bgCard, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
+            <View style={{ flexDirection: 'row', backgroundColor: Colors.bg, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: Colors.border }}>
+              {MODES.map(({ k, label }) => {
+                const on = mode === k;
+                return (
+                  <TouchableOpacity key={k} onPress={() => switchMode(k)} style={{ flex: 1, paddingVertical: 9, borderRadius: 9, backgroundColor: on ? Colors.primary : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13, color: on ? Colors.textOnDark : Colors.textSecondary }}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* preview */}
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCard }}>
           <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
-            <StoryCardV2 ref={canvasRef} width={previewW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} />
+            <StoryCardV2 ref={canvasRef} width={previewW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
           </View>
         </View>
 
@@ -155,6 +194,51 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
             })}
           </ScrollView>
         </View>
+
+        {/* Personnalisation (mode Match) */}
+        {mode === 'match' && (
+          <View style={{ backgroundColor: Colors.bgCard, paddingTop: 4 }}>
+            {/* Accents */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 10, paddingBottom: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1.5 }}>COULEUR</Text>
+              {STORY_ACCENTS.map((a) => {
+                const on = accentId === a.id;
+                return (
+                  <TouchableOpacity key={a.id} onPress={() => setAccentId(on ? null : a.id)}
+                    style={{ width: 26, height: 26, borderRadius: 999, backgroundColor: a.color, borderWidth: on ? 3 : 1, borderColor: on ? Colors.textPrimary : Colors.border }} />
+                );
+              })}
+            </ScrollView>
+            {/* Toggles */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1.5 }}>ÉLÉMENTS</Text>
+              {TOGGLE_LABELS.map(({ k, label }) => {
+                const on = toggles[k];
+                return (
+                  <TouchableOpacity key={k} onPress={() => setToggles(t => ({ ...t, [k]: !t[k] }))}
+                    style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1.5, borderColor: on ? Colors.brand : Colors.border, backgroundColor: on ? 'rgba(255,193,26,0.14)' : Colors.bg }}>
+                    <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: on ? Colors.brandDeep : Colors.textMuted }}>{on ? '✓ ' : ''}{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {/* Légende + photo de fond */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12 }}>
+              <TextInput
+                value={caption}
+                onChangeText={setCaption}
+                placeholder="Ajoute une légende…"
+                placeholderTextColor={Colors.textMuted}
+                maxLength={80}
+                style={{ flex: 1, height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bg, color: Colors.textPrimary, fontSize: 13 }}
+              />
+              <TouchableOpacity onPress={bgUri ? () => setBgUri(null) : pickBackground}
+                style={{ height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, borderColor: bgUri ? Colors.brand : Colors.border, backgroundColor: bgUri ? 'rgba(255,193,26,0.14)' : Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: bgUri ? Colors.brandDeep : Colors.textPrimary }}>{bgUri ? '✕ Fond' : '🖼️ Fond'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* CTA */}
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 12, backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt }}>

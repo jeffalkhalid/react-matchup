@@ -64,6 +64,21 @@ Côté code (FAIT — typecheck `tsc --noEmit` = 0 erreur, inerte tant que `CAPT
 
 **Critère de sortie :** login/signup protégés par Turnstile invisible sur device, plus aucune référence hCaptcha fonctionnelle.
 
+### 1.3 🔴 SMTP custom pour les emails Auth (BLOQUANT tests **et** launch)
+**Constat (2026-06-11) :** l'inscription remonte `email rate limit exceeded`. Cause = le projet utilise encore le **serveur mail intégré de Supabase**, **réservé aux tests** et bridé à **~2-4 emails/heure tous projets confondus**. Quelques inscriptions de suite l'épuisent → confirmation d'email impossible. **Sans SMTP custom, c'est impossible de tester en série ET le lancement est cassé dès les premières inscriptions réelles.** Aucun SMTP custom n'est configuré (rien dans `.env`, pas de `supabase/config.toml`).
+
+À faire côté dashboard (utilisateur) :
+- [ ] 🔴 Créer un compte chez un provider transactionnel — **Resend** recommandé (gratuit 3 000 emails/mois, 100/jour), alternatives Brevo / Mailgun / Amazon SES / Postmark.
+- [ ] 🔴 Vérifier le **domaine d'envoi** chez le provider (DNS : SPF + DKIM, idéalement DMARC) — utiliser `pagmatch.com` (cohérent avec `support@pagmatch.com`). Tant que le domaine n'est pas vérifié, les emails partent en spam ou sont refusés.
+- [ ] 🔴 Supabase → **Authentication → Emails → SMTP Settings** → activer « Enable Custom SMTP » et renseigner host/port/user/pass du provider + **Sender email** = `no-reply@pagmatch.com` (ou `support@`) + Sender name = « PAG MATCH ».
+- [ ] 🟠 Supabase → **Authentication → Rate Limits** → remonter « Emails sent per hour » à une valeur réaliste (le bridage 2-4/h ne s'applique qu'au SMTP intégré ; avec SMTP custom, c'est ce réglage qui pilote).
+- [ ] 🟢 (Optionnel test) Pour débloquer les tests AVANT d'avoir le SMTP : Supabase → Authentication → Providers → Email → désactiver temporairement « Confirm email » (⚠️ à **réactiver impérativement** avant le launch — la confirmation email est la preuve d'identité du flux reset mot de passe).
+
+Côté code (FAIT le 2026-06-11) :
+- [x] 🔴 `signup.tsx` : message d'erreur d'inscription traduit (le rate limit affichait l'anglais brut `email rate limit exceeded`). Désormais : « Trop d'inscriptions en peu de temps. Patiente quelques minutes puis réessaie. » + cas réseau/captcha/email déjà pris. `login.tsx` gérait déjà le cas.
+
+**Critère de sortie :** SMTP custom actif, domaine vérifié (SPF/DKIM), un email de confirmation reçu en boîte de réception (pas spam) sur un compte de test, « Confirm email » réactivé.
+
 ---
 
 ## Phase 2 — Conformité légale (loi 09-08 / CNDP + stores)
@@ -85,7 +100,7 @@ Données décrites : e-mail, profil (nom/sexe/niveau ELO/historique/stats/FRMT),
 - [x] 🔴 Liens in-app : écran d'inscription (`signup.tsx`, ligne de consentement) + réglages (`profile.tsx`, section « Légal »).
 - [x] 🔴 Placeholders **centralisés** dans `lib/legal.ts` (un seul fichier). `minAge` fixé à **18**.
 - [x] 🔴 **`lib/legal.ts` COMPLET (2026-06-10)** : `responsable` + `editor` = **QUARTZTEC, SARL AU au capital de 100 000 MAD, RC de Casablanca n° 521941** ; `supabaseRegion` = **Union européenne (Irlande — eu-west-1)** ; `contactEmail`, `minAge`, `lastUpdate` OK. Mis à jour dans les DEUX `lib/legal.ts` (react-matchup + activegame-landing). Éditeur **nommé** dans la CGU (section 14 « Éditeur & contact »). Typecheck OK. Plus aucun placeholder. **Note juridique transfert hors Maroc : hébergement UE (Irlande/RGPD) = niveau de protection adéquat au sens des art. 43-44 loi 09-08 → favorable.** Reste à confirmer auprès de la CNDP si le transfert relève d'une simple déclaration ou d'une autorisation (cf. §2.3).
-- [x] 🔴 **URL publique pour les stores** : site vitrine **PAG MATCH — Padel Active Game** (Next.js) dans `Native/activegame-landing/` (dossier inchangé) → pages `/confidentialite` + `/cgu` + landing. `npm run build` OK. Reste : déployer (Vercel/Cloudflare Pages) + brancher **padelactivegame.com** → URLs finales `https://padelactivegame.com/confidentialite` et `/cgu` à reporter dans App Store Connect + Play Console.
+- [x] 🔴 **URL publique pour les stores — DÉPLOYÉE (2026-06-10)** : site vitrine **PAG MATCH — Padel Active Game** (Next.js) dans `Native/activegame-landing/`, déployé et accessible. **Domaine final retenu = `pagmatch.com`** (PAS `padelactivegame.com`). URLs en ligne et vérifiées (contenu réel) : **`https://www.pagmatch.com/confidentialite`** et **`https://www.pagmatch.com/cgu`** → à reporter dans App Store Connect (Privacy Policy URL) + Play Console (Politique de confidentialité). Cohérent avec l'app : `lib/legal.ts` (`support@pagmatch.com`) + `lib/community.ts` (`SHARE_BASE = https://pagmatch.com`) ; aucune référence `padelactivegame.com` dans le code livré.
 - [x] 🟠 Version **arabe** : abandonnée (décision utilisateur).
 
 ### 2.2 🟠 CGU / Conditions d'utilisation
@@ -122,7 +137,7 @@ Exigée par Apple **et** Google Play (et droit à l'effacement 09-08).
 ### 3.2 🔴 Déclarations de confidentialité des stores
 - [ ] 🔴 Google Play : formulaire **Data Safety** cohérent avec la politique.
 - [ ] 🔴 Apple : **Privacy Nutrition Labels** dans App Store Connect.
-- [ ] 🔴 Renseigner l'**URL de politique de confidentialité** dans les deux fiches (obligatoire, sinon rejet) → `https://padelactivegame.com/confidentialite` une fois le site déployé (cf. §2.1, `Native/activegame-landing/`).
+- [ ] 🔴 Renseigner l'**URL de politique de confidentialité** dans les deux fiches (obligatoire, sinon rejet) → **`https://www.pagmatch.com/confidentialite`** (site déployé et vérifié, cf. §2.1).
 
 ### 3.3 🔴 Modération de contenu (UGC : chat + Stories + activités communautaires)
 **Constat (vérifié 2026-06-05) : AUCUNE modération n'existe.** Recherche code + schéma → aucune table `user_blocks`/`content_reports`, aucun bouton signaler/bloquer (le seul « signaler/bloquer » est dans le texte des CGU que je viens d'écrire). L'app a pourtant du UGC : chat de partie, Stories (photos/vidéos), activités + commentaires communautaires. **→ Exigence Apple 1.2 non remplie = rejet quasi certain.** Devient 🔴 bloquant.
@@ -141,6 +156,53 @@ MVP implémenté (typecheck `tsc --noEmit` = 0 erreur) :
 ### 3.4 🟠 Build & soumission
 - [ ] 🟠 `eas build` iOS + Android (voir `project_ios_deployment` : compte Apple, APNs, eas submit).
 - [x] 🟠 **Audit permissions Android** (`app.json`) : les 3 sont liées aux notifications, aucune sensible. `POST_NOTIFICATIONS` (requise Android 13+) et `VIBRATE` ✅ justifiées. `RECEIVE_BOOT_COMPLETED` = inutile (aucune notification locale planifiée, que du push distant) mais inoffensive et ajoutée par expo-notifications → peut être retirée, sans urgence.
+
+### 3.5 🔴 Comptes développeur & D-U-N-S (Android d'abord, iOS en 2ᵉ vague)
+
+**Stratégie retenue : lancer ANDROID d'abord** (Android plus avancé : dossier `android/` + `google-services.json` présents, `eas.json production` → AAB déjà configuré ; vs iOS = rien de construit). iOS traité ensuite en réutilisant le **même D-U-N-S**.
+
+**⚠️ Décision compte : ORGANISATION (pas Personnel) sur les deux stores.**
+- Affiche **QUARTZTEC** comme développeur → cohérent avec l'éditeur nommé dans CGU + confidentialité + déclaration CNDP.
+- Côté Google : un compte **Personnel** créé après le 13/11/2023 impose **12 testeurs opt-in pendant 14 jours consécutifs** avant de pouvoir publier en production. **Un compte Organisation (entité légale) en est EXEMPTÉ.** → l'Organisation évite ~2 semaines de délai forcé.
+- Le **mail Google de connexion peut rester perso** (jeffalkhalid@gmail.com) — c'est seulement l'identifiant, ça n'a aucune incidence ; c'est le *type de compte* qui compte.
+
+#### Étape 0 — 🔴 Demander le D-U-N-S (à lancer EN PREMIER, sert Google ET Apple)
+Le D-U-N-S (émis par Dun & Bradstreet, **gratuit**) est requis pour les comptes **Organisation** des DEUX stores. Un seul numéro → débloque Google + Apple. C'est le seul élément à délai potentiellement long → à demander maintenant, en parallèle des tests device + CNDP.
+- ⚠️ **Le portail D-U-N-S d'Apple NE COUVRE PAS le Maroc** (le pays n'est pas dans la liste — vérifié 2026-06-11). Au Maroc, passer par le **représentant officiel de D&B** :
+  - **Inforisk Altares Africa** (représentant unique D&B Maroc/Tunisie/Algérie) → **https://iaa-dnb.com/d-u-n-s-number/**
+  - Alternative globale : https://www.dnb.com/fr-ca/smb/duns/get-a-duns.html (redirige vers le canal local)
+  - Guide pas-à-pas ambassade US Maroc : https://ma.usembassy.gov/wp-content/uploads/sites/153/Step-by-step-on-how-to-apply-for-a-DUNS.pdf
+- ⏳ **Délai Maroc : jusqu'à ~30 jours** (vs ~5 j via Apple, non applicable ici). → demander MAINTENANT.
+- [ ] 🔴 Déposer la demande via Inforisk — infos **identiques au RC Casablanca 521941** (toute divergence = rejet) :
+  - Nom légal exact : **QUARTZTEC, SARL AU**
+  - Adresse légale du siège (telle qu'au RC) + **ICE** de la société (le D-U-N-S = équivalent international de l'ICE)
+  - Téléphone de la société
+  - Site web : **pagmatch.com**
+  - Nom + email d'un contact (`support@pagmatch.com`)
+- [ ] 🔴 Attendre l'email avec le numéro → le conserver (réutilisé pour Apple).
+- **Décision compte Play en attendant (2026-06-11) : demander le D-U-N-S + décider perso vs Organisation seulement si le délai est trop long.** Un compte **Personnel** (sans D-U-N-S) permettrait de lancer plus vite mais impose 12 testeurs/14 j, affiche le nom perso (pas QUARTZTEC) et n'est PAS convertible en Organisation ensuite.
+
+#### Étape 1 — 🔴 Compte Google Play Console (Organisation)
+- [ ] 🔴 Créer le compte sur play.google.com/console → type **Organisation** (pas Personnel).
+- [ ] 🔴 Payer les **25 $** (paiement unique, à vie).
+- [ ] 🔴 Renseigner : nom légal QUARTZTEC + **D-U-N-S** (étape 0) + adresse + téléphone + site (pagmatch.com).
+- [ ] 🔴 Passer la **vérification d'identité** (pièce + justificatifs entité) — peut prendre quelques jours.
+
+#### Étape 2 — 🟠 Build & soumission Android (cf. §3.4)
+- [ ] 🟠 `npm install -g eas-cli` → `eas login`.
+- [ ] 🟠 `eas build --platform android --profile production` → récupérer l'**AAB**.
+- [ ] 🔴 Fiche Play : formulaire **Data Safety**, **URL confidentialité** = `https://www.pagmatch.com/confidentialite` (✅ prêt), captures, description, classification IARC.
+- [ ] 🟠 `eas submit --platform android` → **test interne** d'abord, puis production.
+
+#### Étape 3 — iOS (2ᵉ vague, réutilise le D-U-N-S de l'étape 0)
+- [ ] 🟠 **Apple Developer Program → Organization** : **99 $/an** (récurrent), même **D-U-N-S** que Google. Apple peut **téléphoner** pour vérifier l'entité.
+- [ ] 🟠 Générer la **clé APNs** (push iOS) + créer l'app dans **App Store Connect**.
+- [ ] 🟠 Compléter `eas.json` `submit.production` (appleId, ascAppId, appleTeamId) + profil `production` iOS.
+- [ ] 🔴 **Privacy Nutrition Labels** + URL confidentialité (`pagmatch.com/confidentialite`).
+- [ ] 🔴 **Tester la suppression de compte in-app AVANT soumission** — le reviewer Apple l'essaie (motif de rejet classique ; RPC déjà en prod mais pas encore testée, cf. §3.1).
+- [ ] 🟠 `eas build --platform ios` (pas de Mac requis, build cloud EAS) → `eas submit`.
+
+> Rappel cohérence : nom + adresse de l'entité doivent être **identiques** sur D-U-N-S, Google Play et Apple, sinon vérification rejetée. Se caler sur le libellé exact du RC.
 
 ---
 

@@ -18,6 +18,8 @@ import StoryMatchPicker from '../../../components/StoryMatchPicker';
 import StoryComposerV2 from '../../../components/StoryComposerV2';
 import type { StoryMode } from '../../../components/story/StoryStyles';
 import type { StoryPlayer, StoryMatchData, InviteData } from '../../../components/story/storyTheme';
+import { buildStoryMatch } from '../../../components/story/storyTheme';
+import { isDeleted, displayName, type JoinedPlayer } from '../../../lib/players';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -33,10 +35,10 @@ interface MatchRow {
   loser_id: string | null;
   winner_id_2: string | null;
   loser_id_2: string | null;
-  winner: { name: string } | null;
-  loser: { name: string } | null;
-  winner_2: { name: string } | null;
-  loser_2: { name: string } | null;
+  winner: JoinedPlayer | null;
+  loser: JoinedPlayer | null;
+  winner_2: JoinedPlayer | null;
+  loser_2: JoinedPlayer | null;
   game?: { location: string | null; match_date: string | null } | null;
 }
 
@@ -531,11 +533,12 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
   onShare?: () => void; onRematch?: () => void;
 }) {
   const win = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const meIds   = win ? [match.winner_id, match.winner_id_2] : [match.loser_id, match.loser_id_2];
-  const meNames = win ? [match.winner?.name, match.winner_2?.name] : [match.loser?.name, match.loser_2?.name];
-  const oppNames = (win ? [match.loser?.name, match.loser_2?.name] : [match.winner?.name, match.winner_2?.name]).filter(Boolean) as string[];
+  const meIds      = win ? [match.winner_id, match.winner_id_2] : [match.loser_id, match.loser_id_2];
+  const mePlayers  = win ? [match.winner, match.winner_2] : [match.loser, match.loser_2];
+  const oppPlayers = win ? [match.loser, match.loser_2] : [match.winner, match.winner_2];
+  const oppNames = oppPlayers.filter(Boolean).map(p => displayName(p, 'opponent'));
   const pIdx = meIds.findIndex(id => id && id !== playerId);
-  const partner = pIdx >= 0 ? meNames[pIdx] : null;
+  const partner = pIdx >= 0 && mePlayers[pIdx] ? displayName(mePlayers[pIdx], 'partner') : null;
   const accent = win ? Colors.success : Colors.danger;
   const dateRaw = match.game?.match_date ?? match.created_at;
   const dateStr = new Date(dateRaw).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
@@ -599,6 +602,7 @@ export default function PlayerProfileScreen() {
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<StoryMode>('profil');
+  const [composerLocked, setComposerLocked] = useState(false);
   const [genderReqPending, setGenderReqPending] = useState<{ requested_gender: string; created_at: string } | null>(null);
   const [genderReqChoice, setGenderReqChoice] = useState<'male' | 'female' | 'other' | ''>('');
   const [genderReqReason, setGenderReqReason] = useState('');
@@ -651,8 +655,8 @@ export default function PlayerProfileScreen() {
         .from('matches')
         .select(`id, score_text, created_at, game_format, match_type, is_challenge, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
-          winner:winner_id(name), loser:loser_id(name),
-          winner_2:winner_id_2(name), loser_2:loser_id_2(name),
+          winner:winner_id(id, name, deleted_at), loser:loser_id(id, name, deleted_at),
+          winner_2:winner_id_2(id, name, deleted_at), loser_2:loser_id_2(id, name, deleted_at),
           game:game_id(location, match_date)`)
         .or(`winner_id.eq.${id},loser_id.eq.${id},winner_id_2.eq.${id},loser_id_2.eq.${id}`)
         .eq('status', 'validated')
@@ -830,6 +834,28 @@ export default function PlayerProfileScreen() {
     );
   }
 
+  // Compte supprimé : on n'ouvre pas un profil cassé (couvre tous les chemins de
+  // navigation qui pointeraient vers un id supprimé : historique, défis, etc.).
+  if (isDeleted(profile)) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <Text style={{ fontSize: 40, marginBottom: 10 }}>👤</Text>
+        <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center' }}>
+          Ce compte a été supprimé
+        </Text>
+        <Text style={{ fontSize: 13, color: Colors.textMuted, textAlign: 'center', marginTop: 6 }}>
+          Ce joueur n’est plus sur l’app. Ses anciens matchs restent visibles dans ton historique.
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={{ marginTop: 20, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 12, backgroundColor: Colors.primary }}
+        >
+          <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   const league      = getLeague(profile.elo_score);
   const leagueColor = Colors.league[league];
   const wins        = profile.win_count  ?? 0;
@@ -855,23 +881,30 @@ export default function PlayerProfileScreen() {
   const fibLabel = fib >= 85 ? 'EXCELLENT' : fib >= 75 ? 'FIABLE' : fib >= 50 ? 'MOYEN' : 'FAIBLE';
   const fibColor = fib >= 75 ? Colors.success : fib >= 50 ? Colors.primary : Colors.danger;
 
-  // Best partner & nemesis
-  const partnerWins: Record<string, number>    = {};
-  const opponentLoss: Record<string, number>   = {};
+  // Best partner & nemesis — agrégés par id de joueur, comptes supprimés exclus
+  // (sinon tous les supprimés tomberaient dans un même bucket « Compte supprimé »).
+  const partnerWins: Record<string, { name: string; n: number }>  = {};
+  const opponentLoss: Record<string, { name: string; n: number }> = {};
+  const tally = (acc: Record<string, { name: string; n: number }>, pid: string | null, p: JoinedPlayer | null) => {
+    if (!pid || !p || isDeleted(p) || !p.name) return;
+    const cur = acc[pid] ?? { name: p.name, n: 0 };
+    cur.n += 1;
+    acc[pid] = cur;
+  };
   for (const m of matches) {
     const isW   = m.winner_id === id || m.winner_id_2 === id;
     const is2v2 = isDoubles(m);
     if (isW && is2v2) {
-      const p = m.winner_id === id ? m.winner_2?.name : m.winner?.name;
-      if (p) partnerWins[p] = (partnerWins[p] || 0) + 1;
+      if (m.winner_id === id) tally(partnerWins, m.winner_id_2, m.winner_2);
+      else                    tally(partnerWins, m.winner_id,   m.winner);
     }
     if (!isW) {
-      if (m.winner?.name)   opponentLoss[m.winner.name]   = (opponentLoss[m.winner.name]   || 0) + 1;
-      if (m.winner_2?.name) opponentLoss[m.winner_2.name] = (opponentLoss[m.winner_2.name] || 0) + 1;
+      tally(opponentLoss, m.winner_id,   m.winner);
+      tally(opponentLoss, m.winner_id_2, m.winner_2);
     }
   }
-  const [bestPartner]  = Object.entries(partnerWins).sort(([,a],[,b]) => b-a)[0] ?? [];
-  const [worstNemesis] = Object.entries(opponentLoss).sort(([,a],[,b]) => b-a)[0] ?? [];
+  const bestPartner  = Object.values(partnerWins).sort((a, b) => b.n - a.n)[0]?.name;
+  const worstNemesis = Object.values(opponentLoss).sort((a, b) => b.n - a.n)[0]?.name;
 
   // Achievement badges
   const achvBadges: { emoji: string; name: string; desc: string }[] = [];
@@ -955,23 +988,12 @@ export default function PlayerProfileScreen() {
 
   // Ouvre le composer de story directement (mode Match) avec ce match pré-rempli.
   const shareMatch = (m: MatchRow) => {
-    const won = m.winner_id === id || m.winner_id_2 === id;
-    const dateSrc = m.game?.match_date ?? m.created_at;
     const d = eloChangeByMatch[m.id];
-    // score_text est stocké côté vainqueur ; on l'oriente côté joueur (mon score d'abord).
-    const raw = parseSets(m.score_text);
-    const sets = won ? raw : raw.map(([a, b]) => [b, a] as [number, number]);
-    setStoryMatch({
-      result: won ? 'win' : 'loss',
-      sets,
-      winners: [m.winner?.name, m.winner_2?.name].filter(Boolean) as string[],
-      losers: [m.loser?.name, m.loser_2?.name].filter(Boolean) as string[],
-      location: m.game?.location ?? undefined,
-      date: dateSrc ? new Date(dateSrc).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : undefined,
-      type: m.is_challenge ? 'Défi' : 'Compétitif',
+    setStoryMatch(buildStoryMatch(m, id as string, {
       eloDelta: d != null ? `${d >= 0 ? '+' : ''}${d.toFixed(2)}` : undefined,
-    });
+    }));
     setComposerMode('match');
+    setComposerLocked(true); // partage d'un score précis → verrouillé sur Match
     setComposerOpen(true);
   };
 
@@ -998,7 +1020,12 @@ export default function PlayerProfileScreen() {
     league,
     level: curLevel,
     rank: rankPos ?? 0,
-    frmtRank: formatFrmtRanking(profile)?.text ?? undefined,
+    // Sur la story, on ne met le classement FRMT que si le joueur est réellement
+    // LIÉ au scraper (vérifié + position connue) → le vrai rang (#position · pts),
+    // jamais le bracket auto-déclaré (PXXX).
+    frmtRank: (profile.frmt_verified && profile.frmt_position != null)
+      ? formatFrmtRanking(profile)?.text ?? undefined
+      : undefined,
     frmtVerified: profile.frmt_verified ?? undefined,
     fiability: fib,
     fiabilityLabel: fibLabel,
@@ -1032,7 +1059,7 @@ export default function PlayerProfileScreen() {
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {isSelf ? (
           <>
-            <TouchableOpacity onPress={() => { setComposerMode('profil'); setComposerOpen(true); }} activeOpacity={0.7}
+            <TouchableOpacity onPress={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }} activeOpacity={0.7}
               style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
               <IconCamera color={LIGHT.sub} />
             </TouchableOpacity>
@@ -1569,6 +1596,7 @@ export default function PlayerProfileScreen() {
           match={storyMatch}
           invite={storyInvite}
           initialMode={composerMode}
+          lockMode={composerLocked}
           onClose={() => setComposerOpen(false)}
           onRequestMatch={() => setStoryPickerOpen(true)}
         />

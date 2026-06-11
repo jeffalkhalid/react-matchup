@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   Platform, ActivityIndicator, Alert,
-  KeyboardAvoidingView, Image, Dimensions, ScrollView,
+  KeyboardAvoidingView, Image, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,7 @@ const COLLECT_FRMT_IDENTITY = true;
 const TOTAL_STEPS = 5;
 
 const RACKET = require('../../assets/auth/splash-racket.png');
-const TRAILS = require('../../assets/auth/splash-trails.png');
+const WORDMARK = require('../../assets/auth/splash-wordmark.png');
 const DECO_TRAILS = require('../../assets/auth/deco-trails.png');
 
 // ── ELO helpers ────────────────────────────────────────────────────────────
@@ -30,29 +30,18 @@ const DECO_TRAILS = require('../../assets/auth/deco-trails.png');
 // ⚠️ Ne PAS redéfinir une échelle locale ici : calculateInitialScore() produit
 // déjà des ELO sur l'échelle theme (ex. Novice→800 = niveau 1.7). Une échelle
 // locale divergente affichait un faux niveau à l'inscription (3.0 au lieu de 1.7).
-function parseFrmtRankNumber(rank: string): number | null {
-  const m = rank.trim().replace(/\s/g, '').match(/^[Pp]?(\d+)$/);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return n > 0 ? n : null;
-}
-function getFrmtBonus(n: number): number {
-  if (n <= 25) return 650; if (n <= 100) return 350;
-  if (n <= 250) return 200; if (n <= 500) return 100;
-  if (n <= 1000) return 50; return 25;
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface FormData {
   gender: string; ageGroup: string; handedness: string; preferredSide: string;
   estimatedLevel: string; frequency: string; tournaments: string;
-  hasFrmtRank: '' | 'yes' | 'no'; frmtRank: string; frmtFirstName: string; frmtLastName: string;
+  hasFrmtRank: '' | 'yes' | 'no'; frmtFirstName: string; frmtLastName: string;
   techniques: string[]; name: string; email: string; password: string;
 }
 const INITIAL: FormData = {
   gender: '', ageGroup: '', handedness: '', preferredSide: '',
   estimatedLevel: '', frequency: '', tournaments: '',
-  hasFrmtRank: '', frmtRank: '', frmtFirstName: '', frmtLastName: '',
+  hasFrmtRank: '', frmtFirstName: '', frmtLastName: '',
   techniques: [], name: '', email: '', password: '',
 };
 const TECHNIQUES = [
@@ -141,39 +130,17 @@ const IconCheck = ({ size = 28, color = '#FFC11A' }) => (
   </Svg>
 );
 
-// ─── Lockup (raquette + traits + wordmark) — 3 pièces, ratio 364/261 ───
-function Lockup({ width, tokens }: { width: number; tokens: AuthThemeTokens }) {
-  const ratio = 364 / 261;
-  const h = width / ratio;
+// ─── Logo — pastille raquette + wordmark sur fond sombre (identique au lobby) ─
+function Lockup() {
   return (
-    <View style={{ width, height: h, position: 'relative' }}>
-      <Image
-        source={TRAILS}
-        style={{
-          position: 'absolute',
-          left: width * 0.1456, top: h * 0.1763,
-          width: width * 0.3571, height: h * 0.4215,
-        }}
-        resizeMode="contain"
-      />
-      <Image
-        source={RACKET}
-        style={{
-          position: 'absolute',
-          left: width * 0.478, top: 0,
-          width: width * 0.4148, height: h * 0.5785,
-        }}
-        resizeMode="contain"
-      />
-      <Image
-        source={tokens.wordmarkAsset}
-        style={{
-          position: 'absolute',
-          left: 0, top: h * 0.5977,
-          width, height: h * 0.4023,
-        }}
-        resizeMode="contain"
-      />
+    <View style={{
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: '#0A0A0A',
+      paddingHorizontal: 18, paddingVertical: 9,
+      borderRadius: 999,
+    }}>
+      <Image source={RACKET} style={{ width: 26, height: 26 }} resizeMode="contain" />
+      <Image source={WORDMARK} style={{ width: 118, height: 26, marginLeft: -8 }} resizeMode="contain" />
     </View>
   );
 }
@@ -361,7 +328,6 @@ export default function SignupScreen() {
   const [nameFocused, setNameFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [pwFocused, setPwFocused] = useState(false);
-  const [frmtRankFocused, setFrmtRankFocused] = useState(false);
   const [frmtFirstFocused, setFrmtFirstFocused] = useState(false);
   const [frmtLastFocused, setFrmtLastFocused] = useState(false);
 
@@ -407,13 +373,10 @@ export default function SignupScreen() {
     // déclaration non soutenue par l'activité est revue à la baisse).
     // Plafond = niveau 5.5 (ELO 1525, cf. PADEL_ANCHORS) : sans FRMT vérifié on
     // ne dépasse pas un bon amateur ; l'élite se prouve sur le terrain ou via FRMT.
-    const selfScore = Math.min(800 + Math.round(selfBonus * getHonestyFactor()), 1525);
-    let frmtBonus = 0;
-    if (formData.hasFrmtRank === 'yes') {
-      const n = parseFrmtRankNumber(formData.frmtRank);
-      if (n !== null) frmtBonus = getFrmtBonus(n);
-    }
-    return Math.min(selfScore + frmtBonus, 2400);
+    // Le bonus FRMT n'est plus appliqué à l'inscription : la vérification se fait
+    // côté serveur en comparant nom + prénom à la base FRMT, puis le rang/bonus
+    // est attribué une fois le compte validé.
+    return Math.min(800 + Math.round(selfBonus * getHonestyFactor()), 1525);
   };
 
   const canProceed = (s: number) => {
@@ -422,7 +385,6 @@ export default function SignupScreen() {
     if (s === 3) {
       if (!formData.hasFrmtRank) return false;
       if (formData.hasFrmtRank === 'yes') {
-        if (!parseFrmtRankNumber(formData.frmtRank)) return false;
         if (COLLECT_FRMT_IDENTITY && (!formData.frmtFirstName.trim() || !formData.frmtLastName.trim())) return false;
       }
       return true;
@@ -463,10 +425,6 @@ export default function SignupScreen() {
         court_side: formData.preferredSide || null,
         gender: formData.gender === 'Homme' ? 'male' : formData.gender === 'Femme' ? 'female' : null,
       };
-      if (formData.hasFrmtRank === 'yes') {
-        const n = parseFrmtRankNumber(formData.frmtRank);
-        if (n) meta.frmt_rank = String(n);
-      }
       if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && formData.frmtFirstName.trim() && formData.frmtLastName.trim()) {
         meta.frmt_full_name = `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`;
       }
@@ -484,9 +442,16 @@ export default function SignupScreen() {
       setIsSuccess(true);
     } catch (err: unknown) {
       const raw = (err as Error).message;
+      const lower = raw.toLowerCase();
       const msg = raw === 'pseudo_taken' ? 'Ce pseudo est déjà utilisé.'
-        : raw === 'email_taken' || raw.includes('already registered') ? 'Cet email est déjà utilisé.'
-        : 'Erreur : ' + raw;
+        : raw === 'email_taken' || lower.includes('already registered') ? 'Cet email est déjà utilisé.'
+        : lower.includes('rate limit') || lower.includes('over_email_send_rate_limit') || lower.includes('too many requests')
+          ? "Trop d'inscriptions en peu de temps. Patiente quelques minutes puis réessaie."
+        : lower.includes('network') || lower.includes('fetch')
+          ? 'Erreur de connexion. Vérifie ton réseau et réessaie.'
+        : lower.includes('captcha')
+          ? 'Vérification anti-robot échouée. Recommence la vérification.'
+        : 'Inscription impossible. Réessaie dans un instant.';
       Alert.alert('Erreur', msg);
       (captchaRef.current as any)?.reset();
       setCaptchaToken(null);
@@ -503,8 +468,6 @@ export default function SignupScreen() {
     { prefix: 'Ton ', accent: 'compte' },
   ];
 
-  const screenW = Dimensions.get('window').width;
-  const lockupW = screenW * 0.42;
 
   const cardShadow = isDark
     ? { shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 36, shadowOffset: { width: 0, height: 12 }, elevation: 14 }
@@ -665,9 +628,9 @@ export default function SignupScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Lockup logo ── */}
-          <View style={{ alignItems: 'center', marginBottom: 10 }}>
-            <Lockup width={lockupW} tokens={tokens} />
+          {/* ── Logo ── */}
+          <View style={{ alignItems: 'center', marginBottom: 8 }}>
+            <Lockup />
           </View>
 
           {/* Titre + progress */}
@@ -843,68 +806,50 @@ export default function SignupScreen() {
                     </Row>
                   </View>
 
-                  {formData.hasFrmtRank === 'yes' && (
-                    <>
-                      <FieldInput
-                        label="Ton rang FRMT"
-                        value={formData.frmtRank}
-                        onChangeText={v => set('frmtRank', v)}
-                        placeholder="Ex : 147 ou 27"
-                        focused={frmtRankFocused}
-                        onFocus={() => setFrmtRankFocused(true)}
-                        onBlur={() => setFrmtRankFocused(false)}
-                        keyboardType="numeric"
-                        error={formData.frmtRank !== '' && !parseFrmtRankNumber(formData.frmtRank)}
-                        errorMessage="Format invalide."
-                        tokens={tokens}
-                      />
-
-                      {COLLECT_FRMT_IDENTITY && (
-                        <View style={{
-                          backgroundColor: 'rgba(255,193,26,0.08)',
-                          borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
-                          borderRadius: 14, padding: 12, gap: 10,
-                        }}>
-                          <Text style={{
-                            color: AUTH_BRAND, fontSize: 11, fontFamily: Fonts.uiExtraBold,
-                            textTransform: 'uppercase', letterSpacing: 1.32,
-                          }}>
-                            Vérification du classement
-                          </Text>
-                          <Text style={{ color: tokens.label, fontSize: 12, lineHeight: 17, fontFamily: Fonts.ui }}>
-                            Ton nom sera comparé à la base FRMT pour le badge vérifié. Jamais affiché publiquement.
-                          </Text>
-                          <Row>
-                            <View style={{ flex: 1 }}>
-                              <FieldInput
-                                label="Prénom"
-                                value={formData.frmtFirstName}
-                                onChangeText={v => set('frmtFirstName', v)}
-                                placeholder="Prénom"
-                                focused={frmtFirstFocused}
-                                onFocus={() => setFrmtFirstFocused(true)}
-                                onBlur={() => setFrmtFirstFocused(false)}
-                                autoCapitalize="words"
-                                tokens={tokens}
-                              />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <FieldInput
-                                label="Nom"
-                                value={formData.frmtLastName}
-                                onChangeText={v => set('frmtLastName', v)}
-                                placeholder="Nom"
-                                focused={frmtLastFocused}
-                                onFocus={() => setFrmtLastFocused(true)}
-                                onBlur={() => setFrmtLastFocused(false)}
-                                autoCapitalize="words"
-                                tokens={tokens}
-                              />
-                            </View>
-                          </Row>
+                  {formData.hasFrmtRank === 'yes' && COLLECT_FRMT_IDENTITY && (
+                    <View style={{
+                      backgroundColor: 'rgba(255,193,26,0.08)',
+                      borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
+                      borderRadius: 14, padding: 12, gap: 10,
+                    }}>
+                      <Text style={{
+                        color: AUTH_BRAND, fontSize: 11, fontFamily: Fonts.uiExtraBold,
+                        textTransform: 'uppercase', letterSpacing: 1.32,
+                      }}>
+                        Vérification du classement
+                      </Text>
+                      <Text style={{ color: tokens.label, fontSize: 12, lineHeight: 17, fontFamily: Fonts.ui }}>
+                        Ton nom et prénom seront comparés à la base FRMT pour le badge vérifié. Jamais affichés publiquement.
+                      </Text>
+                      <Row>
+                        <View style={{ flex: 1 }}>
+                          <FieldInput
+                            label="Prénom"
+                            value={formData.frmtFirstName}
+                            onChangeText={v => set('frmtFirstName', v)}
+                            placeholder="Prénom"
+                            focused={frmtFirstFocused}
+                            onFocus={() => setFrmtFirstFocused(true)}
+                            onBlur={() => setFrmtFirstFocused(false)}
+                            autoCapitalize="words"
+                            tokens={tokens}
+                          />
                         </View>
-                      )}
-                    </>
+                        <View style={{ flex: 1 }}>
+                          <FieldInput
+                            label="Nom"
+                            value={formData.frmtLastName}
+                            onChangeText={v => set('frmtLastName', v)}
+                            placeholder="Nom"
+                            focused={frmtLastFocused}
+                            onFocus={() => setFrmtLastFocused(true)}
+                            onBlur={() => setFrmtLastFocused(false)}
+                            autoCapitalize="words"
+                            tokens={tokens}
+                          />
+                        </View>
+                      </Row>
+                    </View>
                   )}
                 </View>
               )}
@@ -977,22 +922,18 @@ export default function SignupScreen() {
                     }}>
                       Niv. {formatPadelLevel(calculateInitialScore())}
                     </Text>
-                    {formData.hasFrmtRank === 'yes' && (() => {
-                      const n = parseFrmtRankNumber(formData.frmtRank);
-                      if (!n) return null;
-                      return (
-                        <View style={{
-                          marginTop: 8,
-                          backgroundColor: 'rgba(255,193,26,0.10)',
-                          borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
-                          paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
-                        }}>
-                          <Text style={{ color: AUTH_BRAND, fontFamily: Fonts.uiExtraBold, fontSize: 12 }}>
-                            Classé #{n} FRMT
-                          </Text>
-                        </View>
-                      );
-                    })()}
+                    {formData.hasFrmtRank === 'yes' && !!formData.frmtFirstName.trim() && !!formData.frmtLastName.trim() && (
+                      <View style={{
+                        marginTop: 8,
+                        backgroundColor: 'rgba(255,193,26,0.10)',
+                        borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
+                        paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+                      }}>
+                        <Text style={{ color: AUTH_BRAND, fontFamily: Fonts.uiExtraBold, fontSize: 12 }}>
+                          Vérification FRMT en attente
+                        </Text>
+                      </View>
+                    )}
                     {getHonestyFactor() < 0.95 && (
                       <View style={{
                         marginTop: 10,

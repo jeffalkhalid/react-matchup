@@ -8,6 +8,7 @@ import Svg, { Defs, RadialGradient, LinearGradient, Stop, Rect, Circle } from 'r
 import {
   Colors, Fonts, makeScale, leagueColor, leagueLabel, leagueGrad,
   setsWon, setsLost, initialsOf, StoryPlayer, StoryMatchData, InviteData,
+  StoryMatchOpts, StoryToggles, DEFAULT_TOGGLES,
 } from './storyTheme';
 import { Wordmark, Avatars, BigSets, Invite } from './StoryPrimitives';
 
@@ -35,6 +36,10 @@ function Ring({ rate, size, sw, track, color, labelColor, subColor }:
 /* ── CARTE NOIRE (profil) ─────────────────────────────────────────── */
 function CardDark({ width, player: p, invite }: Base & { player: StoryPlayer }) {
   const s = makeScale(width); const H = (width * 16) / 9; const gold = leagueColor(p.league);
+  const rankLine = [
+    p.rank > 0 ? `Rang #${p.rank}` : null,
+    p.frmtRank ? `FRMT ${p.frmtRank} ✓` : null,
+  ].filter(Boolean).join(' · ');
   return (
     <View style={{ width, height: H, backgroundColor: '#0A0A0A' }}>
       <Svg width={width} height={H} style={StyleSheet.absoluteFill}>
@@ -58,7 +63,7 @@ function CardDark({ width, player: p, invite }: Base & { player: StoryPlayer }) 
               <View style={{ alignSelf: 'flex-start', borderRadius: 999, paddingVertical: s(8), paddingHorizontal: s(20), backgroundColor: gold + '22', borderWidth: 1.5, borderColor: gold + '66' }}>
                 <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(22), letterSpacing: s(3), color: gold }}>● {leagueLabel[p.league]?.toUpperCase()}</Text>
               </View>
-              <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(24), color: 'rgba(255,255,255,0.45)' }}>Rang #{p.rank}{p.frmtRank ? ` · FRMT ${p.frmtRank} ✓` : ''}</Text>
+              {rankLine ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(24), color: 'rgba(255,255,255,0.45)' }}>{rankLine}</Text> : null}
             </View>
           </View>
           <Text style={{ fontFamily: Fonts.welcome, fontSize: s(150), lineHeight: s(140), color: '#fff', textTransform: 'uppercase' }} numberOfLines={1}>{p.name}</Text>
@@ -85,32 +90,62 @@ function CardDark({ width, player: p, invite }: Base & { player: StoryPlayer }) 
   );
 }
 
+/* Résout les options de personnalisation d'une story de match. */
+function resolveMatchOpts(opts?: StoryMatchOpts) {
+  return {
+    brand: opts?.accent ?? Colors.brand,
+    show: { ...DEFAULT_TOGGLES, ...(opts?.toggles ?? {}) } as StoryToggles,
+    caption: opts?.caption?.trim() ? opts.caption.trim() : null,
+    bgUri: opts?.bgUri ?? null,
+  };
+}
+
+/* Ligne lieu · date respectant les toggles (renvoie null si tout est masqué). */
+function metaLine(m: StoryMatchData, show: StoryToggles): string | null {
+  const parts = [
+    show.location && m.location ? `📍 ${m.location}` : null,
+    show.date && m.date ? m.date : null,
+  ].filter(Boolean) as string[];
+  return parts.length ? parts.join('\n') : null;
+}
+
 /* ── SCORE HERO (match) ───────────────────────────────────────────── */
-function ScoreHero({ width, match: m, invite }: Base & { match: StoryMatchData }) {
+function ScoreHero({ width, match: m, invite, opts }: Base & { match: StoryMatchData; opts?: StoryMatchOpts }) {
   const s = makeScale(width); const H = (width * 16) / 9; const win = m.result === 'win';
   const acc = win ? Colors.success : Colors.danger;
+  const { brand, show, caption, bgUri } = resolveMatchOpts(opts);
+  const inv = { ...invite, showQR: invite.showQR && show.qr };
+  const meta = metaLine(m, show);
   return (
     <View style={{ width, height: H, backgroundColor: '#0A0A0A' }}>
-      <Svg width={width} height={H} style={StyleSheet.absoluteFill}>
-        <Defs><RadialGradient id="gh" cx="80%" cy="8%" r="55%"><Stop offset="0" stopColor={acc} stopOpacity={0.18} /><Stop offset="1" stopColor={acc} stopOpacity={0} /></RadialGradient></Defs>
-        <Rect width={width} height={H} fill="url(#gh)" />
-      </Svg>
+      {bgUri ? (
+        <>
+          <Image source={{ uri: bgUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,10,10,0.66)' }]} />
+        </>
+      ) : (
+        <Svg width={width} height={H} style={StyleSheet.absoluteFill}>
+          <Defs><RadialGradient id="gh" cx="80%" cy="8%" r="55%"><Stop offset="0" stopColor={acc} stopOpacity={0.18} /><Stop offset="1" stopColor={acc} stopOpacity={0} /></RadialGradient></Defs>
+          <Rect width={width} height={H} fill="url(#gh)" />
+        </Svg>
+      )}
       <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: s(90), paddingTop: s(110), paddingBottom: s(96) }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Wordmark s={s} />
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(4), color: 'rgba(255,255,255,0.35)' }}>{(m.type || '').toUpperCase()}</Text>
+          {show.logo ? <Wordmark s={s} /> : <View />}
+          {show.type ? <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(4), color: 'rgba(255,255,255,0.35)' }}>{(m.type || '').toUpperCase()}</Text> : null}
         </View>
         <View style={{ alignItems: 'center' }}>
           <Text style={{ fontFamily: Fonts.welcome, fontSize: s(90), color: acc, textTransform: 'uppercase', marginBottom: s(24) }}>{win ? 'Victoire' : 'Défaite'}</Text>
-          <BigSets sets={m.sets} accent={Colors.brand} size={s(188)} s={s} />
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(28), letterSpacing: s(3), color: 'rgba(255,255,255,0.5)', marginTop: s(24) }}>{setsWon(m.sets)}–{setsLost(m.sets)} SETS{m.eloDelta ? ` · ${m.eloDelta} NIV.` : ''}</Text>
+          <BigSets sets={m.sets} accent={brand} size={s(188)} s={s} />
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(28), letterSpacing: s(3), color: 'rgba(255,255,255,0.5)', marginTop: s(24) }}>{setsWon(m.sets)}–{setsLost(m.sets)} SETS{show.elo && m.eloDelta ? ` · ${m.eloDelta} NIV.` : ''}</Text>
+          {caption ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(30), color: '#fff', textAlign: 'center', marginTop: s(24), maxWidth: s(820) }}>“{caption}”</Text> : null}
         </View>
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(24), marginBottom: s(22) }}>
-            <View style={{ width: s(6), height: s(96), backgroundColor: Colors.brand, borderRadius: s(3) }} />
+            <View style={{ width: s(6), height: s(96), backgroundColor: brand, borderRadius: s(3) }} />
             <Avatars names={m.winners} size={s(84)} dark s={s} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(20), letterSpacing: s(3), color: Colors.brand }}>VAINQUEURS</Text>
+              <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(20), letterSpacing: s(3), color: brand }}>VAINQUEURS</Text>
               <Text style={{ fontFamily: Fonts.welcome, fontSize: s(56), color: '#fff', textTransform: 'uppercase' }} numberOfLines={1}>{m.winners.join(' & ')}</Text>
             </View>
           </View>
@@ -124,8 +159,8 @@ function ScoreHero({ width, match: m, invite }: Base & { match: StoryMatchData }
             </View>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: s(30), borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
-            <Invite invite={invite} s={s} light qr={s(120)} />
-            <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(22), color: 'rgba(255,255,255,0.45)', textAlign: 'right', maxWidth: s(240) }}>📍 {m.location}{'\n'}{m.date}</Text>
+            <Invite invite={inv} s={s} light qr={s(120)} />
+            {meta ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(22), color: 'rgba(255,255,255,0.45)', textAlign: 'right', maxWidth: s(240) }}>{meta}</Text> : null}
           </View>
         </View>
       </View>
@@ -134,8 +169,14 @@ function ScoreHero({ width, match: m, invite }: Base & { match: StoryMatchData }
 }
 
 /* ── TICKET (match, éditorial crème) ──────────────────────────────── */
-function Ticket({ width, match: m, invite }: Base & { match: StoryMatchData }) {
+function Ticket({ width, match: m, invite, opts }: Base & { match: StoryMatchData; opts?: StoryMatchOpts }) {
   const s = makeScale(width); const H = (width * 16) / 9; const win = m.result === 'win';
+  const { brand, show, caption, bgUri } = resolveMatchOpts(opts);
+  const inv = { ...invite, showQR: invite.showQR && show.qr };
+  const ticketMeta = [
+    show.location && m.location ? (m.location || '').toUpperCase() : null,
+    show.date && m.date ? (m.date || '').toUpperCase() : null,
+  ].filter(Boolean).join(' · ');
   const Team = ({ names, label, c }: { names: string[]; label: string; c: string }) => (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(20) }}>
       <Avatars names={names} size={s(72)} s={s} />
@@ -147,28 +188,74 @@ function Ticket({ width, match: m, invite }: Base & { match: StoryMatchData }) {
   );
   return (
     <View style={{ width, height: H, backgroundColor: '#0A0A0A', alignItems: 'center', justifyContent: 'center' }}>
+      {bgUri ? (
+        <>
+          <Image source={{ uri: bgUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,10,10,0.5)' }]} />
+        </>
+      ) : null}
       <View style={{ width: s(920), backgroundColor: Colors.bgCard, borderRadius: s(36), overflow: 'hidden' }}>
         <View style={{ backgroundColor: '#0A0A0A', paddingVertical: s(46), paddingHorizontal: s(56), flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Wordmark s={s} />
-          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(22), letterSpacing: s(3), color: win ? Colors.brand : Colors.danger }}>{win ? 'VICTOIRE' : 'DÉFAITE'}</Text>
+          {show.logo ? <Wordmark s={s} /> : <View />}
+          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(22), letterSpacing: s(3), color: win ? brand : Colors.danger }}>{win ? 'VICTOIRE' : 'DÉFAITE'}</Text>
         </View>
         <View style={{ paddingHorizontal: s(56), paddingTop: s(56), paddingBottom: s(30), alignItems: 'center' }}>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(24), letterSpacing: s(4), color: Colors.textMuted }}>SCORE FINAL</Text>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(24), letterSpacing: s(4), color: Colors.textMuted }}>SCORE FINAL{show.elo && m.eloDelta ? ` · ${m.eloDelta} NIV.` : ''}</Text>
           <View style={{ marginVertical: s(20) }}>
-            <BigSets sets={m.sets} accent={Colors.brandDeep} mine={Colors.textPrimary} theirs={Colors.textMuted} size={s(170)} s={s} />
+            <BigSets sets={m.sets} accent={brand} mine={Colors.textPrimary} theirs={Colors.textMuted} size={s(170)} s={s} />
           </View>
+          {caption ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(28), color: Colors.textSecondary, textAlign: 'center', maxWidth: s(760) }}>“{caption}”</Text> : null}
         </View>
         {/* perforation */}
         <View style={{ marginHorizontal: s(40), borderTopWidth: s(4), borderColor: Colors.border, borderStyle: 'dashed' }} />
         <View style={{ paddingHorizontal: s(56), paddingTop: s(40), paddingBottom: s(56), gap: s(26) }}>
-          <Team names={m.winners} label="VAINQUEURS" c={Colors.brandDeep} />
+          <Team names={m.winners} label="VAINQUEURS" c={brand} />
           <Team names={m.losers} label="ADVERSAIRES" c={Colors.textMuted} />
-          <View style={{ borderTopWidth: 2, borderColor: Colors.border, paddingTop: s(22), alignItems: 'center' }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(24), letterSpacing: s(2), color: Colors.textSecondary }}>📍 {(m.location || '').toUpperCase()} · {(m.date || '').toUpperCase()}</Text>
-          </View>
+          {ticketMeta ? (
+            <View style={{ borderTopWidth: 2, borderColor: Colors.border, paddingTop: s(22), alignItems: 'center' }}>
+              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(24), letterSpacing: s(2), color: Colors.textSecondary }}>📍 {ticketMeta}</Text>
+            </View>
+          ) : null}
           <View style={{ borderTopWidth: 2, borderColor: Colors.border, paddingTop: s(26), alignItems: 'center' }}>
-            <Invite invite={invite} s={s} light={false} accent={Colors.brandDeep} qr={s(120)} />
+            <Invite invite={inv} s={s} light={false} accent={brand} qr={s(120)} />
           </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* ── MINIMAL (match, fond uni + score géant) ──────────────────────── */
+function MinimalMatch({ width, match: m, invite, opts }: Base & { match: StoryMatchData; opts?: StoryMatchOpts }) {
+  const s = makeScale(width); const H = (width * 16) / 9; const win = m.result === 'win';
+  const { brand, show, caption, bgUri } = resolveMatchOpts(opts);
+  const inv = { ...invite, showQR: invite.showQR && show.qr };
+  const meta = metaLine(m, show);
+  return (
+    <View style={{ width, height: H, backgroundColor: '#0A0A0A' }}>
+      {bgUri ? (
+        <>
+          <Image source={{ uri: bgUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,10,10,0.72)' }]} />
+        </>
+      ) : null}
+      <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: s(96), paddingTop: s(120), paddingBottom: s(110) }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          {show.logo ? <Wordmark s={s} /> : <View />}
+          {show.type ? <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(4), color: 'rgba(255,255,255,0.3)' }}>{(m.type || '').toUpperCase()}</Text> : null}
+        </View>
+        <View>
+          <View style={{ width: s(120), height: s(10), backgroundColor: brand, borderRadius: s(5), marginBottom: s(40) }} />
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(120), lineHeight: s(118), color: '#fff', textTransform: 'uppercase' }}>{win ? 'Victoire' : 'Défaite'}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: s(150), color: brand, marginTop: s(10) }}>{m.sets.map(([a, b]) => `${a}-${b}`).join('  ')}</Text>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), letterSpacing: s(3), color: 'rgba(255,255,255,0.55)', marginTop: s(28) }} numberOfLines={2}>
+            {m.winners.join(' & ')}  vs  {m.losers.join(' & ')}{show.elo && m.eloDelta ? `   ·   ${m.eloDelta} NIV.` : ''}
+          </Text>
+          {caption ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(32), color: '#fff', marginTop: s(30), maxWidth: s(840) }}>“{caption}”</Text> : null}
+        </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: s(34), borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+          <Invite invite={inv} s={s} light qr={s(120)} />
+          {meta ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(22), color: 'rgba(255,255,255,0.45)', textAlign: 'right', maxWidth: s(240) }}>{meta}</Text> : null}
         </View>
       </View>
     </View>
@@ -251,10 +338,12 @@ function TradingCard({ width, player: p, invite }: Base & { player: StoryPlayer 
               <View style={{ width: s(90), height: s(4), backgroundColor: ink, opacity: 0.4, marginVertical: s(12), borderRadius: s(4) }} />
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(34), letterSpacing: s(4), color: ink }}>PADEL</Text>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(26), letterSpacing: s(4), color: inkSoft }}>RANG</Text>
-              <Text style={{ fontFamily: Fonts.display, fontSize: s(96), color: ink, lineHeight: s(92) }}>#{p.rank}</Text>
-            </View>
+            {p.rank > 0 ? (
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(26), letterSpacing: s(4), color: inkSoft }}>RANG</Text>
+                <Text style={{ fontFamily: Fonts.display, fontSize: s(96), color: ink, lineHeight: s(92) }}>#{p.rank}</Text>
+              </View>
+            ) : null}
           </View>
 
           {/* avatar + name */}
@@ -302,7 +391,7 @@ function EditorialLight({ width, player: p, invite }: Base & { player: StoryPlay
 
       {/* name block */}
       <View style={{ marginTop: s(64) }}>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), letterSpacing: s(5), color: gold, marginBottom: s(16) }}>● {leagueLabel[p.league]?.toUpperCase()} · RANG #{p.rank}</Text>
+        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), letterSpacing: s(5), color: gold, marginBottom: s(16) }}>● {leagueLabel[p.league]?.toUpperCase()}{p.rank > 0 ? ` · RANG #${p.rank}` : ''}</Text>
         <Text style={{ fontFamily: Fonts.welcome, fontSize: s(176), lineHeight: s(160), color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{first}</Text>
         {last ? <Text style={{ fontFamily: Fonts.welcome, fontSize: s(176), lineHeight: s(160), color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{last}</Text> : null}
       </View>
@@ -342,16 +431,17 @@ export type StoryMode = 'profil' | 'match' | 'photo';
 export interface StoryCardProps {
   width: number; mode: StoryMode; styleId: string;
   player: StoryPlayer; match: StoryMatchData; invite: InviteData; photoUri?: string | null;
+  matchOpts?: StoryMatchOpts;
 }
 
 export const STORY_REGISTRY: Record<StoryMode, Array<{ id: string; name: string }>> = {
   profil: [{ id: 'dark', name: 'Carte Noire' }, { id: 'trading', name: 'Trading Card' }, { id: 'editorial', name: 'Éditorial' }],
-  match: [{ id: 'mhero', name: 'Score Hero' }, { id: 'mticket', name: 'Ticket' }],
+  match: [{ id: 'mhero', name: 'Score Hero' }, { id: 'mticket', name: 'Ticket' }, { id: 'mmin', name: 'Minimal' }],
   photo: [{ id: 'pmatch', name: 'Photo Match' }],
 };
 
 const StoryCardV2 = forwardRef<View, StoryCardProps>(function StoryCardV2(props, ref) {
-  const { width, mode, styleId, player, match, invite, photoUri } = props;
+  const { width, mode, styleId, player, match, invite, photoUri, matchOpts } = props;
   let content: React.ReactNode = null;
   if (mode === 'profil') content = styleId === 'trading'
     ? <TradingCard width={width} player={player} invite={invite} />
@@ -359,11 +449,13 @@ const StoryCardV2 = forwardRef<View, StoryCardProps>(function StoryCardV2(props,
       ? <EditorialLight width={width} player={player} invite={invite} />
       : <CardDark width={width} player={player} invite={invite} />;
   else if (mode === 'match') content = styleId === 'mticket'
-    ? <Ticket width={width} match={match} invite={invite} />
-    : <ScoreHero width={width} match={match} invite={invite} />;
+    ? <Ticket width={width} match={match} invite={invite} opts={matchOpts} />
+    : styleId === 'mmin'
+      ? <MinimalMatch width={width} match={match} invite={invite} opts={matchOpts} />
+      : <ScoreHero width={width} match={match} invite={invite} opts={matchOpts} />;
   else content = <PhotoMatch width={width} match={match} invite={invite} photoUri={photoUri} />;
   return <View ref={ref} collapsable={false}>{content}</View>;
 });
 
 export default StoryCardV2;
-export { CardDark, TradingCard, EditorialLight, ScoreHero, Ticket, PhotoMatch };
+export { CardDark, TradingCard, EditorialLight, ScoreHero, Ticket, MinimalMatch, PhotoMatch };

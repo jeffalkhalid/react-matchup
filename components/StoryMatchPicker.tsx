@@ -3,7 +3,8 @@ import { View, Text, Modal, TouchableOpacity, FlatList, ActivityIndicator, Image
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { Colors, Fonts } from '../lib/theme';
-import { parseSets, type StoryMatchData } from './story/storyTheme';
+import { buildStoryMatch, type StoryMatchData } from './story/storyTheme';
+import { displayName, type JoinedPlayer } from '../lib/players';
 
 interface MatchRow {
   id: string;
@@ -14,10 +15,10 @@ interface MatchRow {
   loser_id: string | null;
   winner_id_2: string | null;
   loser_id_2: string | null;
-  winner: { name: string } | null;
-  loser: { name: string } | null;
-  winner_2: { name: string } | null;
-  loser_2: { name: string } | null;
+  winner: JoinedPlayer | null;
+  loser: JoinedPlayer | null;
+  winner_2: JoinedPlayer | null;
+  loser_2: JoinedPlayer | null;
   game: { location: string | null; match_date: string | null } | null;
 }
 
@@ -39,8 +40,8 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
     supabase
       .from('matches')
       .select(`id, score_text, created_at, is_challenge, winner_id, loser_id, winner_id_2, loser_id_2,
-        winner:winner_id(name), loser:loser_id(name),
-        winner_2:winner_id_2(name), loser_2:loser_id_2(name),
+        winner:winner_id(id, name, deleted_at), loser:loser_id(id, name, deleted_at),
+        winner_2:winner_id_2(id, name, deleted_at), loser_2:loser_id_2(id, name, deleted_at),
         game:game_id(location, match_date)`)
       .or(`winner_id.eq.${playerId},loser_id.eq.${playerId},winner_id_2.eq.${playerId},loser_id_2.eq.${playerId}`)
       .eq('status', 'validated')
@@ -53,20 +54,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
   }, [visible, playerId]);
 
   const handlePick = (m: MatchRow) => {
-    const won = m.winner_id === playerId || m.winner_id_2 === playerId;
-    const dateSrc = m.game?.match_date ?? m.created_at;
-    // score_text est stocké côté vainqueur ; on l'oriente côté joueur (mon score d'abord).
-    const raw = parseSets(m.score_text);
-    const sets = won ? raw : raw.map(([a, b]) => [b, a] as [number, number]);
-    onPick({
-      result: won ? 'win' : 'loss',
-      sets,
-      winners: [m.winner?.name, m.winner_2?.name].filter(Boolean) as string[],
-      losers: [m.loser?.name, m.loser_2?.name].filter(Boolean) as string[],
-      location: m.game?.location ?? undefined,
-      date: dateSrc ? new Date(dateSrc).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : undefined,
-      type: m.is_challenge ? 'Défi' : 'Compétitif',
-    });
+    onPick(buildStoryMatch(m, playerId));
   };
 
   return (
@@ -115,8 +103,10 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
 
 function Row({ match, playerId, onPick }: { match: MatchRow; playerId: string; onPick: () => void }) {
   const won = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const winners = [match.winner?.name, match.winner_2?.name].filter(Boolean).join(' & ');
-  const losers  = [match.loser?.name,  match.loser_2?.name].filter(Boolean).join(' & ');
+  const winnerRole = won ? 'partner' : 'opponent';
+  const loserRole  = won ? 'opponent' : 'partner';
+  const winners = [match.winner, match.winner_2].filter(Boolean).map(p => displayName(p, winnerRole)).join(' & ');
+  const losers  = [match.loser,  match.loser_2 ].filter(Boolean).map(p => displayName(p, loserRole)).join(' & ');
   const date = (match.game?.match_date ?? match.created_at);
   const dateStr = new Date(date).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 

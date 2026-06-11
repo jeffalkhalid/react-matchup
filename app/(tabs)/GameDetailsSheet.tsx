@@ -144,8 +144,8 @@ function CourtSlot({
 
   if (!player) {
     const isChange = mode === 'change';
-    const borderCol = selected ? theme.accentHex : isChange ? theme.eloBorder : theme.courtLine;
-    const bgCol = selected ? theme.eloBg : isChange ? theme.eloBg : 'rgba(255,255,255,0.55)';
+    const borderCol = selected ? theme.accentHex : isChange ? theme.eloBorder : Colors.border;
+    const bgCol = selected ? theme.eloBg : isChange ? theme.eloBg : Colors.bg;
     const icon = selected ? '✓' : isChange ? '↔' : '+';
     const iconColor = theme.accentHex;
     const labelColor = selected || isChange ? theme.accentHex : theme.courtLabel;
@@ -168,9 +168,9 @@ function CourtSlot({
   return (
     <View style={[s.cell, {
       borderStyle: 'solid',
-      borderColor: player.isMe ? Colors.warning : player.isInvited ? Colors.border : 'transparent',
-      backgroundColor: player.isInvited ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.95)',
-      opacity: player.isInvited ? 0.65 : 1,
+      borderColor: player.isMe ? Colors.warning : Colors.border,
+      backgroundColor: player.isInvited ? Colors.bgCardAlt : Colors.bg,
+      opacity: player.isInvited ? 0.7 : 1,
     }]}>
       <Avatar name={player.name} size={30} ring={player.isMe ? Colors.warning : undefined} team={SIDE_TEAM[side] as 'A' | 'B'} />
       <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textPrimary, marginTop: 3 }} numberOfLines={1}>
@@ -230,7 +230,12 @@ async function shareGame(game: EnrichedGame) {
   const typeLabel = game.is_challenge ? 'Défi' : (game as any).game_format === 'friendly' ? 'Amical' : 'Compétitif';
   const minLv = formatPadelLevel(game.min_elo ?? 0);
   const maxLv = formatPadelLevel(game.max_elo ?? 1750);
-  const spots = game.spots_available;
+  // Places dérivées des vrais joueurs (créateur + acceptés/invités, sur 4),
+  // comme l'UI de la fiche (3 - heldCount) — le compteur stocké peut dériver.
+  const heldCount = (game.participants ?? []).filter(
+    (p: any) => (p.status === 'accepted' || p.status === 'invited') && p.player_id !== game.creator_id,
+  ).length;
+  const spots = Math.max(0, 3 - heldCount);
   const spotsText = spots === 0 ? 'Complet' : `${spots} place${spots > 1 ? 's' : ''} dispo`;
   const creatorObj = game.creator as any;
   const creatorLv = creatorObj ? ` (Niv. ${formatPadelLevel(creatorObj.elo_score ?? 1000)})` : '';
@@ -555,8 +560,8 @@ export default function GameDetailsSheet({
             {/* ── Court visualization ── */}
             <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
               <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 18, padding: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 1 }}>Le terrain</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 1 }}>Les joueurs</Text>
                   {courtHint ? (
                     <Text style={{ fontSize: 10, fontWeight: '700', color: isFull ? Colors.danger : mySlot ? Colors.success : Colors.textMuted, flexShrink: 1, marginLeft: 8 }} numberOfLines={1}>
                       {courtHint}
@@ -564,27 +569,12 @@ export default function GameDetailsSheet({
                   ) : null}
                 </View>
 
-                {/* Court */}
-                <View style={{ borderRadius: 14, overflow: 'hidden', backgroundColor: theme.courtBg, minHeight: 120, padding: 10, paddingTop: 26, position: 'relative' }}>
-                  {/* Border */}
-                  <View style={{ position: 'absolute', top: 10, bottom: 10, left: 10, right: 10, borderWidth: 1.5, borderColor: theme.courtLine, borderRadius: 8 }} />
-                  {/* Center line */}
-                  <View style={{ position: 'absolute', top: 10, bottom: 10, left: '50%', width: 2, backgroundColor: theme.courtLine }} />
-                  {/* VS */}
-                  <View style={{ position: 'absolute', top: '42%', alignSelf: 'center', backgroundColor: theme.courtLine, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: 8, fontWeight: '900', color: theme.courtLabel, letterSpacing: 1 }}>VS</Text>
-                  </View>
-                  {/* Team labels */}
-                  <View style={{ position: 'absolute', top: 6, left: 14 }}>
-                    <Text style={{ fontSize: 8, fontWeight: '900', color: theme.courtLabel }}>ÉQ. A</Text>
-                  </View>
-                  <View style={{ position: 'absolute', top: 6, right: 14 }}>
-                    <Text style={{ fontSize: 8, fontWeight: '900', color: theme.courtLabel }}>ÉQ. B</Text>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {/* Team A: A_GAU, A_DRO */}
-                    <View style={{ flex: 1, flexDirection: 'row', gap: 6 }}>
+                {/* Vue joueurs épurée : Équipe A | séparateur | Équipe B (sans fond terrain) */}
+                <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
+                  {/* Équipe A : A_GAU, A_DRO */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: theme.courtLabel, letterSpacing: 0.5, marginBottom: 8 }}>ÉQUIPE A</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
                       {(['A_GAU', 'A_DRO'] as const).map(side => {
                         const isEmpty = !slots[SIDE_TO_IDX[side]];
                         const joinMode = isEmpty && canParticipate && !isFull;
@@ -610,9 +600,15 @@ export default function GameDetailsSheet({
                         );
                       })}
                     </View>
-                    <View style={{ width: 8 }} />
-                    {/* Team B: B_DRO first (mirrors A_GAU), then B_GAU */}
-                    <View style={{ flex: 1, flexDirection: 'row', gap: 6 }}>
+                  </View>
+
+                  {/* Séparateur */}
+                  <View style={{ width: 1, backgroundColor: Colors.border, marginHorizontal: 12, alignSelf: 'stretch' }} />
+
+                  {/* Équipe B : B_DRO (miroir de A_GAU), B_GAU */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: theme.courtLabel, letterSpacing: 0.5, marginBottom: 8, textAlign: 'right' }}>ÉQUIPE B</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
                       {(['B_DRO', 'B_GAU'] as const).map(side => {
                         const isEmpty = !slots[SIDE_TO_IDX[side]];
                         const joinMode = isEmpty && canParticipate && !isFull;

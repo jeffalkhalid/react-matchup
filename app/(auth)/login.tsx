@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator, Image, Dimensions,
+  Platform, ScrollView, ActivityIndicator, Image,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,7 +26,7 @@ const SUPABASE_URL      = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const LAST_EMAIL_KEY = 'auth:last_email';
 
 const RACKET = require('../../assets/auth/splash-racket.png');
-const TRAILS = require('../../assets/auth/splash-trails.png');
+const WORDMARK = require('../../assets/auth/splash-wordmark.png');
 const DECO_TRAILS = require('../../assets/auth/deco-trails.png');
 
 // ─── Icons ──────────────────────────────────────────────────────────────
@@ -81,42 +81,17 @@ const IconAlertCircle = ({ size = 14, color = '#F87171' }) => (
   </Svg>
 );
 
-// ─── Lockup (raquette + traits + wordmark) — 3 pièces, ratio 364/261 ───
-function Lockup({ width, tokens }: { width: number; tokens: AuthThemeTokens }) {
-  const ratio = 364 / 261;
-  const h = width / ratio;
+// ─── Logo — pastille raquette + wordmark sur fond sombre (identique au lobby) ─
+function Lockup() {
   return (
-    <View style={{ width, height: h, position: 'relative' }}>
-      {/* trails — left 14.56% top 17.63% w 35.71% h 42.15% */}
-      <Image
-        source={TRAILS}
-        style={{
-          position: 'absolute',
-          left: width * 0.1456, top: h * 0.1763,
-          width: width * 0.3571, height: h * 0.4215,
-        }}
-        resizeMode="contain"
-      />
-      {/* racket — left 47.80% top 0 w 41.48% h 57.85% */}
-      <Image
-        source={RACKET}
-        style={{
-          position: 'absolute',
-          left: width * 0.478, top: 0,
-          width: width * 0.4148, height: h * 0.5785,
-        }}
-        resizeMode="contain"
-      />
-      {/* wordmark — left 0 top 59.77% w 100% h 40.23% — bascule selon thème */}
-      <Image
-        source={tokens.wordmarkAsset}
-        style={{
-          position: 'absolute',
-          left: 0, top: h * 0.5977,
-          width, height: h * 0.4023,
-        }}
-        resizeMode="contain"
-      />
+    <View style={{
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: '#0A0A0A',
+      paddingHorizontal: 18, paddingVertical: 9,
+      borderRadius: 999,
+    }}>
+      <Image source={RACKET} style={{ width: 26, height: 26 }} resizeMode="contain" />
+      <Image source={WORDMARK} style={{ width: 118, height: 26, marginLeft: -8 }} resizeMode="contain" />
     </View>
   );
 }
@@ -292,8 +267,6 @@ export default function LoginScreen() {
     }
   };
 
-  const screenW = Dimensions.get('window').width;
-  const lockupW = screenW * 0.58;
 
   // Ombre carte : plus prononcée en sombre.
   const cardShadow = isDark
@@ -325,9 +298,9 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── Lockup logo ── */}
+          {/* ── Logo ── */}
           <View style={{ alignItems: 'center', marginBottom: 14 }}>
-            <Lockup width={lockupW} tokens={tokens} />
+            <Lockup />
           </View>
 
           {/* ── Titre d'accueil ── */}

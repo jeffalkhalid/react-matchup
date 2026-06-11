@@ -9,10 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Rect } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
-import { Colors, eloToLevel, padelLevelToElo, Fonts } from '../../lib/theme';
+import { Colors, eloToLevel, padelLevelToElo, getLeague, Fonts } from '../../lib/theme';
 import { notifyPlayers } from '../../lib/notify';
-import { notifyMatchingAlerts, lobbyGameLink } from '../../lib/community';
+import { notifyMatchingAlerts, lobbyGameLink, playerStoryLink, SHARE_LABEL } from '../../lib/community';
 import { getHiddenPlayerIds } from '../../lib/moderation';
+import { displayName } from '../../lib/players';
+import { buildStoryMatch } from '../../components/story/storyTheme';
+import StoryComposerV2 from '../../components/StoryComposerV2';
+import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
 import type { OpenGame, Match } from '../../types';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
@@ -44,6 +48,18 @@ function getGameType(game: OpenGame): 'challenge' | 'friendly' | 'competitive' {
   if (game.is_challenge) return 'challenge';
   if ((game.game_format as string) === 'friendly') return 'friendly';
   return 'competitive';
+}
+
+// Places libres = dérivées des vrais joueurs (créateur + acceptés/invités, sur 4
+// au padel), PAS du compteur stocké open_games.spots_available qui peut dériver
+// (le décrément était oublié sur l'approbation pending→accepted). Auto-réparant :
+// colle toujours aux slots affichés. Repli sur le compteur si participants absents.
+function freeSpots(game: OpenGame): number {
+  if (!game.participants) return game.spots_available ?? 0;
+  const occupied = 1 + game.participants.filter(
+    (p: any) => (p.status === 'accepted' || p.status === 'invited') && p.player_id !== game.creator_id,
+  ).length;
+  return Math.max(0, 4 - occupied);
 }
 
 function fmtLevel(elo: number): string {
@@ -123,6 +139,44 @@ const IconSwords = ({ size = 11, color = '#92400e' }) => (
 const IconFire = ({ size = 12, color = Colors.danger }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none">
     <Path fill={color} d="M12 2s4 5 4 9a4 4 0 1 1-8 0c0-1.5 1-3 1-3s-3 1-3 5a6 6 0 0 0 12 0c0-5-6-11-6-11Z" />
+  </Svg>
+);
+
+// ─── Role icons (section bandeaux « À venir ») ────────────────
+// Style trait minimal, charte noir/jaune. Couleur passée depuis la pastille.
+const IconMail = ({ size = 14, color = Colors.textOnDark }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <Rect x={3} y={5} width={18} height={14} rx={2} stroke={color} />
+    <Path stroke={color} d="m3 7 9 6 9-6" />
+  </Svg>
+);
+const IconMegaphone = ({ size = 14, color = Colors.textOnDark }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <Path stroke={color} d="m3 11 18-5v12L3 14v-3z" />
+    <Path stroke={color} d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+  </Svg>
+);
+const IconCheck = ({ size = 15, color = Colors.textOnDark }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+    <Path stroke={color} d="M20 6 9 17l-5-5" />
+  </Svg>
+);
+const IconHourglass = ({ size = 14, color = Colors.textOnDark }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <Path stroke={color} d="M5 2h14M5 22h14" />
+    <Path stroke={color} d="M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4A2 2 0 0 0 17 6.2V2" />
+    <Path stroke={color} d="M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4A2 2 0 0 0 7 17.8V22" />
+  </Svg>
+);
+const IconWaitClock = ({ size = 14, color = Colors.textOnDark }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx={12} cy={12} r={9} stroke={color} />
+    <Path stroke={color} d="M12 7.5v5l3 2" />
   </Svg>
 );
 
@@ -216,20 +270,47 @@ function TypeChip({ active, onPress, children }: {
 }
 
 // ─── Section ──────────────────────────────────────────────────
-function Section({ title, count, color, children }: {
-  title: string; count: number; color: string; children: React.ReactNode;
+function Section({ title, count, color, icon, children }: {
+  title: string; count: number; color: string;
+  icon?: React.ReactNode; children: React.ReactNode;
 }) {
+  // Bandeau renforcé quand une icône de rôle est fournie (onglet « À venir »).
+  // Sinon : en-tête fin d'origine (Historique, scores…) → aucun impact ailleurs.
+  const onColor = color === Colors.brand ? Colors.textOnBrand : Colors.textOnDark;
   return (
     <View style={{ marginBottom: 18 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <View style={{ width: 3, height: 14, backgroundColor: color, borderRadius: 2 }} />
-        <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-          {title}
-        </Text>
-        <View style={{ backgroundColor: color + '22', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 }}>
-          <Text style={{ fontSize: 11, fontWeight: '900', color }}>{count}</Text>
+      {icon ? (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+          backgroundColor: color + '14',
+          borderLeftWidth: 4, borderLeftColor: color,
+          borderRadius: 10, paddingVertical: 9, paddingLeft: 11, paddingRight: 10,
+          marginBottom: 10,
+        }}>
+          <View style={{
+            width: 26, height: 26, borderRadius: 8, backgroundColor: color,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            {icon}
+          </View>
+          <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+            {title}
+          </Text>
+          <View style={{ minWidth: 22, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: color, alignItems: 'center' }}>
+            <Text style={{ fontSize: 12, fontWeight: '900', color: onColor }}>{count}</Text>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <View style={{ width: 3, height: 14, backgroundColor: color, borderRadius: 2 }} />
+          <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+            {title}
+          </Text>
+          <View style={{ backgroundColor: color + '22', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 }}>
+            <Text style={{ fontSize: 11, fontWeight: '900', color }}>{count}</Text>
+          </View>
+        </View>
+      )}
       <View style={{ gap: 10 }}>{children}</View>
     </View>
   );
@@ -453,7 +534,7 @@ async function shareGame(game: EnrichedGame) {
   const typeLabel = game.is_challenge ? 'Défi' : (game as any).game_format === 'friendly' ? 'Amical' : 'Compétitif';
   const minLv = fmtLevel(game.min_elo ?? 0);
   const maxLv = fmtLevel(game.max_elo ?? 1750);
-  const spots = game.spots_available;
+  const spots = freeSpots(game);
   const spotsText = spots === 0 ? 'Complet' : `${spots} place${spots > 1 ? 's' : ''} dispo`;
   const creatorObj = game.creator as any;
   const creatorLv = creatorObj ? ` (Niv. ${fmtLevel(creatorObj.elo_score ?? 1000)})` : '';
@@ -472,7 +553,7 @@ async function shareGame(game: EnrichedGame) {
 }
 
 // ─── Game Card ────────────────────────────────────────────────
-function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation }: {
+function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, roleColor }: {
   game: EnrichedGame; variant: 'explore' | 'upcoming' | 'history';
   myElo: number; playerId?: string; onPress: () => void;
   onApply?: (gameId: string, side: string) => void;
@@ -483,11 +564,14 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   onScorePress?: () => void;
   onAcceptInvitation?: (participantId: string, gameId: string) => void;
   onDeclineInvitation?: (participantId: string, gameId: string) => void;
+  // Couleur du rôle (« À venir ») : barre latérale rattachant la carte à sa section.
+  roleColor?: string;
 }) {
   const router = useRouter();
   const fit = getEloFit(game, myElo);
   const hoursLeft = game.match_date ? hoursUntil(game.match_date) : 0;
-  const isUrgent = game.spots_available === 1 && hoursLeft > 0 && hoursLeft <= 6;
+  const spotsLeft = freeSpots(game);
+  const isUrgent = spotsLeft === 1 && hoursLeft > 0 && hoursLeft <= 6;
   const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
   const creatorObj = game.creator as { name: string } | undefined;
   const teamOf = (side?: string): 'A' | 'B' | undefined => side ? (side.startsWith('B') ? 'B' : 'A') : undefined;
@@ -507,7 +591,8 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   const stripColor = isUrgent ? Colors.danger : st.accent;
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={cs.card}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.88}
+      style={[cs.card, roleColor ? { borderLeftWidth: 4, borderLeftColor: roleColor } : null]}>
       <View style={{ height: 3, backgroundColor: stripColor }} />
       <View style={{ padding: 14 }}>
         {/* Pills row */}
@@ -580,8 +665,8 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
             ) : null}
             {variant !== 'history' && (
               <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                {game.spots_available === 0 ? 'Complet'
-                  : `${game.spots_available} place${(game.spots_available ?? 0) > 1 ? 's' : ''} libre${(game.spots_available ?? 0) > 1 ? 's' : ''}`}
+                {spotsLeft === 0 ? 'Complet'
+                  : `${spotsLeft} place${spotsLeft > 1 ? 's' : ''} libre${spotsLeft > 1 ? 's' : ''}`}
               </Text>
             )}
           </View>
@@ -751,8 +836,8 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
               const isValidated = validatedIds.has(m.id);
               const isValidating = validatingId === m.id;
               const won = m.winner_id === playerId || m.winner_id_2 === playerId;
-              const winnerNames = [m.winner?.name, m.winner_2?.name].filter(Boolean).join(' & ') || '?';
-              const loserNames  = [m.loser?.name,  m.loser_2?.name ].filter(Boolean).join(' & ') || '?';
+              const winnerNames = [m.winner, m.winner_2].filter(Boolean).map(p => displayName(p, won ? 'partner' : 'opponent')).join(' & ') || '?';
+              const loserNames  = [m.loser,  m.loser_2 ].filter(Boolean).map(p => displayName(p, won ? 'opponent' : 'partner')).join(' & ') || '?';
               return (
                 <View key={m.id} style={{
                   backgroundColor: isValidated ? 'rgba(16,185,129,0.06)' : Colors.bgCard,
@@ -832,11 +917,12 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
 }
 
 // ─── Match detail sheet ───────────────────────────────────────
-function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, onRematch }: {
+function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, onRematch, onShare }: {
   match: Match; playerId: string; onClose: () => void;
   onValidated?: (matchId: string) => void;
   onContest?: (matchId: string) => void;
   onRematch?: (matchId: string) => void;
+  onShare?: (m: Match) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [badges, setBadges] = useState<{ badge_type: string; giver: { name: string } | null }[]>([]);
@@ -865,9 +951,11 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
   }, [match.id, playerId]);
 
   const won = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const myTeam = [match.winner, match.winner_2].filter(Boolean) as { name: string }[];
-  const oppTeam = [match.loser, match.loser_2].filter(Boolean) as { name: string }[];
-  const [teamA, teamB] = won ? [myTeam, oppTeam] : [oppTeam, myTeam];
+  // Côté joueur : le vainqueur est mon équipe si j'ai gagné, sinon ce sont les adversaires.
+  const winnerTeam = [match.winner, match.winner_2].filter(Boolean).map(p => ({ name: displayName(p, won ? 'partner' : 'opponent') }));
+  const loserTeam  = [match.loser,  match.loser_2 ].filter(Boolean).map(p => ({ name: displayName(p, won ? 'opponent' : 'partner') }));
+  const [myTeam, oppTeam] = won ? [winnerTeam, loserTeam] : [loserTeam, winnerTeam];
+  const [teamA, teamB] = [myTeam, oppTeam];
 
   const date = new Date(match.created_at).toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long',
@@ -946,21 +1034,38 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
             </View>
           )}
 
-          {match.status === 'validated' && onRematch && (
-            <View style={{ marginHorizontal: 20, marginTop: 18 }}>
-              <TouchableOpacity
-                onPress={() => { onRematch(match.id); onClose(); }}
-                activeOpacity={0.85}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14,
-                  shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
-                }}
-              >
-                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>
-                  🔄 Rejouer avec la même équipe
-                </Text>
-              </TouchableOpacity>
+          {match.status === 'validated' && (onRematch || onShare) && (
+            <View style={{ marginHorizontal: 20, marginTop: 18, gap: 10 }}>
+              {onRematch && (
+                <TouchableOpacity
+                  onPress={() => { onRematch(match.id); onClose(); }}
+                  activeOpacity={0.85}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14,
+                    shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>
+                    🔄 Rejouer avec la même équipe
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {onShare && (
+                <TouchableOpacity
+                  onPress={() => { onShare(match); onClose(); }}
+                  activeOpacity={0.85}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    backgroundColor: Colors.bgCardAlt, borderRadius: 14, paddingVertical: 14,
+                    borderWidth: 1, borderColor: Colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>
+                    📸 Partager en story
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
           {needsValidation && (
@@ -1025,17 +1130,18 @@ function needsMyValidation(m: Match, playerId: string): boolean {
 }
 
 // ─── Match card (history) ─────────────────────────────────────
-function MatchCard({ match, playerId, onPress, onRematch }: {
+function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
   match: Match;
   playerId: string;
   onPress: () => void;
   onRematch?: (matchId: string) => void;
+  onShare?: () => void;
 }) {
   const won = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const winnerTeam = ([match.winner, match.winner_2].filter(Boolean) as { name: string }[])
-    .map(p => ({ name: p.name, team: 'A' as const }));
-  const loserTeam  = ([match.loser,  match.loser_2 ].filter(Boolean) as { name: string }[])
-    .map(p => ({ name: p.name, team: 'B' as const }));
+  const winnerTeam = [match.winner, match.winner_2].filter(Boolean)
+    .map(p => ({ name: displayName(p, won ? 'partner' : 'opponent'), team: 'A' as const }));
+  const loserTeam  = [match.loser,  match.loser_2 ].filter(Boolean)
+    .map(p => ({ name: displayName(p, won ? 'opponent' : 'partner'), team: 'B' as const }));
   const winnerNames = winnerTeam.map(p => p.name).join(' & ') || '?';
   const loserNames  = loserTeam .map(p => p.name).join(' & ') || '?';
   const canRematch = onRematch && match.status === 'validated';
@@ -1087,21 +1193,41 @@ function MatchCard({ match, playerId, onPress, onRematch }: {
           {loserNames}
         </Text>
       </View>
-      {canRematch && (
-        <TouchableOpacity
-          onPress={(e) => { e.stopPropagation?.(); onRematch!(match.id); }}
-          activeOpacity={0.85}
-          style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-            marginTop: 10, paddingVertical: 9, borderRadius: 10,
-            backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
-          }}
-        >
-          <Text style={{ fontSize: 13 }}>🔄</Text>
-          <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
-            Rejouer avec la même équipe
-          </Text>
-        </TouchableOpacity>
+      {(canRematch || onShare) && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          {canRematch && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); onRematch!(match.id); }}
+              activeOpacity={0.85}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 9, borderRadius: 10,
+                backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
+              }}
+            >
+              <Text style={{ fontSize: 13 }}>🔄</Text>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
+                Rejouer
+              </Text>
+            </TouchableOpacity>
+          )}
+          {onShare && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); onShare(); }}
+              activeOpacity={0.85}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 9, borderRadius: 10,
+                backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
+              }}
+            >
+              <Text style={{ fontSize: 13 }}>📸</Text>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
+                Partager
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -1338,7 +1464,7 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
       */}
 
       {showInvited && invited.length > 0 && (
-        <Section title="À répondre" count={invited.length} color={Colors.brand}>
+        <Section title="À répondre" count={invited.length} color={Colors.brand} icon={<IconMail color={Colors.textOnBrand} />}>
           {invited.map(g => (
             <GameCard
               key={g.id}
@@ -1346,6 +1472,7 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
               variant="upcoming"
               myElo={myElo}
               playerId={playerId}
+              roleColor={Colors.brand}
               onPress={() => onOpenGame(g)}
               onAcceptInvitation={onAcceptInvitation}
               onDeclineInvitation={onDeclineInvitation}
@@ -1354,23 +1481,23 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
         </Section>
       )}
       {showCreated && created.length > 0 && (
-        <Section title="J'organise" count={created.length} color={Colors.primary}>
-          {created.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
+        <Section title="J'organise" count={created.length} color={Colors.primary} icon={<IconMegaphone color={Colors.textOnDark} />}>
+          {created.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.primary} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {showAccepted && accepted.length > 0 && (
-        <Section title="Je joue" count={accepted.length} color={Colors.success}>
-          {accepted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
+        <Section title="Je joue" count={accepted.length} color={Colors.success} icon={<IconCheck color={Colors.textOnDark} />}>
+          {accepted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.success} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {showPending && pending.length > 0 && (
-        <Section title="En attente d'approbation" count={pending.length} color={Colors.warning}>
-          {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} />)}
+        <Section title="En attente d'approbation" count={pending.length} color={Colors.warning} icon={<IconHourglass color={Colors.textOnDark} />}>
+          {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.warning} onPress={() => onOpenGame(g)} />)}
         </Section>
       )}
       {showWaitlist && waitlisted.length > 0 && (
-        <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted}>
-          {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
+        <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted} icon={<IconWaitClock color={Colors.textOnDark} />}>
+          {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.textMuted} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {created.length + accepted.length + invited.length + pending.length + waitlisted.length === 0 && (
@@ -1381,11 +1508,12 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
 }
 
 // ─── History tab ──────────────────────────────────────────────
-function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenGame, onScoreGame, onRematch }: {
+function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenGame, onScoreGame, onRematch, onShare }: {
   matches: Match[]; playerId: string; onOpenMatch: (m: Match) => void;
   pastCompleteGames: EnrichedGame[]; onOpenGame: (g: EnrichedGame) => void;
   onScoreGame: (gameId: string) => void;
   onRematch: (matchId: string) => void;
+  onShare: (m: Match) => void;
 }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [search, setSearch] = useState('');
@@ -1464,7 +1592,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
       )}
       {past.length > 0 && (
         <Section title="Matchs passés" count={past.length} color={Colors.textSecondary}>
-          {past.map(m => <MatchCard key={m.id} match={m} playerId={playerId} onPress={() => onOpenMatch(m)} onRematch={onRematch} />)}
+          {past.map(m => <MatchCard key={m.id} match={m} playerId={playerId} onPress={() => onOpenMatch(m)} onRematch={onRematch} onShare={() => onShare(m)} />)}
         </Section>
       )}
       {pastGames.length + toScore.length + past.length === 0 && (
@@ -1503,6 +1631,8 @@ export default function LobbyScreen() {
   const [challengeWith, setChallengeWith] = useState<{ id: string; name: string; elo_score: number; court_side?: string } | null>(null);
   const [rematchInvites, setRematchInvites] = useState<Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
   const [rematchGameType, setRematchGameType] = useState<'Compétitif' | 'Amical' | 'Défi' | undefined>(undefined);
+  const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
+  const [storyComposerOpen, setStoryComposerOpen] = useState(false);
 
   // Derived: always reflects latest fetched data — no stale snapshots
   const openGame = useMemo(
@@ -1534,7 +1664,7 @@ export default function LobbyScreen() {
         .limit(10),
       supabase
         .from('matches')
-        .select('*, winner:winner_id(name), winner_2:winner_id_2(name), loser:loser_id(name), loser_2:loser_id_2(name), game:game_id(location, match_date)')
+        .select('*, winner:winner_id(id, name, deleted_at), winner_2:winner_id_2(id, name, deleted_at), loser:loser_id(id, name, deleted_at), loser_2:loser_id_2(id, name, deleted_at), game:game_id(location, match_date)')
         .or(`winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`)
         .in('status', ['pending', 'validated'])
         .order('created_at', { ascending: false })
@@ -1986,6 +2116,13 @@ export default function LobbyScreen() {
     }
 
     if (allApproved) {
+      // Le candidat prend maintenant une vraie place → libérer une place de moins.
+      // (Une candidature `pending` ne réservait rien, contrairement à une invitation.)
+      if (game) {
+        await supabase.from('open_games')
+          .update({ spots_available: Math.max(0, (game.spots_available ?? 1) - 1) })
+          .eq('id', gameId);
+      }
       notifyPlayers({
         playerIds: [participantPlayerId],
         title: '✅ Candidature acceptée !',
@@ -2162,16 +2299,30 @@ export default function LobbyScreen() {
     const allIds = [partnerId, opp1Id, opp2Id].filter(Boolean) as string[];
     if (allIds.length === 0) { Alert.alert('Erreur', 'Aucun joueur à inviter pour rejouer.'); return; }
 
+    // On n'invite que les comptes encore actifs : un compte supprimé ne peut plus
+    // accepter (plus d'auth) et bloquerait le créneau à vie. Son slot reste libre.
     const { data: players } = await supabase
       .from('players')
       .select('id, name, elo_score')
-      .in('id', allIds);
+      .in('id', allIds)
+      .is('deleted_at', null);
     const byId = new Map((players ?? []).map((p: any) => [p.id, p]));
 
     const invites: Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>> = {};
     if (partnerId && byId.has(partnerId)) invites.A1 = byId.get(partnerId);
     if (opp1Id && byId.has(opp1Id))       invites.B0 = byId.get(opp1Id);
     if (opp2Id && byId.has(opp2Id))       invites.B1 = byId.get(opp2Id);
+
+    // Combien de joueurs du match d'origine ne sont plus invitables (supprimés) ?
+    const skipped = allIds.filter((pid) => !byId.has(pid)).length;
+    if (skipped > 0) {
+      Alert.alert(
+        'Rejouer',
+        skipped === 1
+          ? 'Un joueur de ce match n’est plus sur l’app — sa place reste libre dans la nouvelle partie.'
+          : `${skipped} joueurs de ce match ne sont plus sur l’app — leurs places restent libres dans la nouvelle partie.`,
+      );
+    }
 
     const gameType: 'Compétitif' | 'Amical' | 'Défi' = m.is_challenge
       ? 'Défi'
@@ -2181,6 +2332,35 @@ export default function LobbyScreen() {
     setRematchInvites(invites);
     setRematchGameType(gameType);
     setShowCreate(true);
+  };
+
+  // Ouvre le composer de story (mode Match) pré-rempli avec ce match.
+  const shareMatch = (m: Match) => {
+    if (!player) return;
+    setStoryMatch(buildStoryMatch(m, player.id));
+    setStoryComposerOpen(true);
+  };
+
+  // Données pour le composer de story. Le mode Match n'utilise pas les stats
+  // joueur (cf. StoryStyles) → un StoryPlayer minimal suffit ici.
+  const lwins = player?.win_count ?? 0;
+  const llosses = player?.loss_count ?? 0;
+  const lobbyStoryPlayer: StoryPlayer = {
+    name: player?.name ?? '',
+    league: getLeague(player?.elo_score ?? 1000),
+    level: eloToLevel(player?.elo_score ?? 1000),
+    rank: 0,
+    wins: lwins, losses: llosses,
+    winRate: lwins + llosses > 0 ? Math.round((lwins / (lwins + llosses)) * 100) : 0,
+    streak: 0,
+    recentForm: [],
+  };
+  const lobbyStoryInvite: InviteData = {
+    cta: 'Rejoins-moi sur',
+    link: SHARE_LABEL,
+    appUrl: 'Télécharger l’app',
+    qrValue: player ? playerStoryLink(player.id) : '',
+    showApp: true, showQR: true,
   };
 
   const handleAcceptInvitation = async (participantId: string, gameId: string) => {
@@ -2383,7 +2563,7 @@ export default function LobbyScreen() {
             <HistoryTab matches={matches} playerId={player.id} onOpenMatch={setOpenMatch}
               pastCompleteGames={pastCompleteGames} onOpenGame={(g) => setOpenGameId(g.id)}
               onScoreGame={(gameId) => router.push(('/score-entry?gameId=' + gameId) as any)}
-              onRematch={handleRematch} />
+              onRematch={handleRematch} onShare={shareMatch} />
           )}
         </ScrollView>
       )}
@@ -2433,6 +2613,19 @@ export default function LobbyScreen() {
             router.push((`/score-entry?matchId=${matchId}`) as any);
           }}
           onRematch={handleRematch}
+          onShare={shareMatch}
+        />
+      )}
+
+      {storyComposerOpen && player && (
+        <StoryComposerV2
+          visible={storyComposerOpen}
+          player={lobbyStoryPlayer}
+          match={storyMatch}
+          invite={lobbyStoryInvite}
+          initialMode="match"
+          lockMode
+          onClose={() => setStoryComposerOpen(false)}
         />
       )}
 
