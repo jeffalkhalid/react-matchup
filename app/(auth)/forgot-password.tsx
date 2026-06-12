@@ -7,12 +7,23 @@ import { useRouter, Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
+import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { Fonts } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
 
 const RACKET = require('../../assets/auth/splash-racket.png');
 const TRAILS = require('../../assets/auth/splash-trails.png');
 const DECO_TRAILS = require('../../assets/auth/deco-trails.png');
+
+const TURNSTILE_SITE_KEY = process.env.EXPO_PUBLIC_TURNSTILE_SITE_KEY!;
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+// Captcha (Turnstile) INVISIBLE. Quand la protection captcha est activée
+// globalement dans Supabase Auth, elle s'applique à TOUS les endpoints — y
+// compris `recover` (resetPasswordForEmail). On doit donc fournir un token,
+// sinon rejet systématique. Ici le widget se pré-chauffe en arrière-plan
+// (WebView 0×0, aucune case à cocher visible) → token transparent.
+// ⚠️ Garder synchro avec login.tsx / signup.tsx (CAPTCHA_ENABLED).
+const CAPTCHA_ENABLED = true;
 
 const IconMail = ({ size = 18, color = '#9A9AA2' }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -82,6 +93,16 @@ function Lockup({ width, tokens }: { width: number; tokens: AuthThemeTokens }) {
   );
 }
 
+function getResetErrorMessage(message: string): string {
+  if (message.includes('captcha'))
+    return 'Vérification de sécurité en cours. Réessaie dans un instant.';
+  if (message.includes('Too many requests') || message.includes('rate limit') || message.includes('over_email_send_rate_limit'))
+    return 'Trop de demandes. Attends quelques minutes avant de réessayer.';
+  if (message.includes('Network request failed') || message.includes('fetch') || message.includes('network'))
+    return 'Erreur de connexion. Vérifie ton réseau et réessaie.';
+  return 'Envoi impossible. Réessaie dans un instant.';
+}
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ForgotPasswordScreen() {
@@ -95,6 +116,18 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<any>(null);
+
+  // Reçoit le token Turnstile (pré-chauffé au rendu) ou un statut d'échec.
+  const handleCaptchaMessage = (event: any) => {
+    const data: string = event.nativeEvent?.data ?? '';
+    if (data === 'cancel' || data === 'error' || data === 'expired') {
+      setCaptchaToken(null);
+      return;
+    }
+    if (data.length > 35) setCaptchaToken(data);
+  };
 
   const handleSubmit = async () => {
     const trimmed = email.trim();
@@ -104,23 +137,37 @@ export default function ForgotPasswordScreen() {
       setError(null);
       return;
     }
+    // Le token se pré-chauffe en arrière-plan (invisible). S'il n'est pas encore
+    // prêt, on le ré-arme et on demande un court réessai — sans aucune UI captcha.
+    if (CAPTCHA_ENABLED && !captchaToken) {
+      captchaRef.current?.reset();
+      setError('Vérification de sécurité en cours. Réessaie dans un instant.');
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
       // redirectTo = deep link de l'app → ouvre l'écran reset-password avec un
       // `?code=…` (PKCE). Cette URL doit être autorisée dans Supabase →
       // Authentication → URL Configuration → Redirect URLs.
+      // captchaToken = exigé par Supabase quand la protection captcha est ON.
       const { error: rErr } = await supabase.auth.resetPasswordForEmail(trimmed, {
         redirectTo: 'pagmatch://reset-password',
+        ...(captchaToken ? { captchaToken } : {}),
       });
       if (rErr) {
-        setError('Envoi impossible. Réessaie dans un instant.');
+        // Token à usage unique → ré-arme un token frais pour le prochain essai.
+        setCaptchaToken(null);
+        captchaRef.current?.reset();
+        setError(getResetErrorMessage(rErr.message));
         setLoading(false);
         return;
       }
       setSent(true);
       setLoading(false);
     } catch {
+      setCaptchaToken(null);
+      captchaRef.current?.reset();
       setError('Erreur de connexion. Vérifie ton réseau.');
       setLoading(false);
     }
@@ -325,6 +372,18 @@ export default function ForgotPasswordScreen() {
                     </TouchableOpacity>
                   </Link>
                 </View>
+
+                {/* Captcha INVISIBLE (WebView 0×0, aucune case) — fournit un
+                    token au endpoint recover de Supabase. Pré-chauffé au rendu. */}
+                {CAPTCHA_ENABLED && (
+                  <TurnstileCaptcha
+                    ref={captchaRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    url={SUPABASE_URL}
+                    languageCode="fr"
+                    onMessage={handleCaptchaMessage}
+                  />
+                )}
               </>
             )}
           </View>

@@ -7,6 +7,9 @@ interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+  // URL d'image (logo PAG MATCH ou avatar joueur). Sur Android → BigPictureStyle :
+  // grande image dépliée + grande icône colorée repliée. Optionnel.
+  imageUrl?: string;
 }
 
 Deno.serve(async (req) => {
@@ -15,7 +18,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { playerIds, title, body, data }: PushPayload = await req.json();
+    const { playerIds, title, body, data, imageUrl }: PushPayload = await req.json();
     if (!playerIds?.length) return new Response('ok');
 
     const supabase = createClient(
@@ -48,6 +51,8 @@ Deno.serve(async (req) => {
       badge: 1,
       priority: 'high',
       channelId: 'default',
+      // Image colorée dans le tiroir (BigPictureStyle Android / pièce jointe iOS).
+      ...(imageUrl ? { richContent: { image: imageUrl } } : {}),
     }));
     await fetch(EXPO_PUSH_URL, {
       method: 'POST',

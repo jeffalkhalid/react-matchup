@@ -1085,7 +1085,7 @@ export default function PlayerProfileScreen() {
 
     <ScrollView
       style={{ flex: 1, backgroundColor: LIGHT.page }}
-      contentContainerStyle={{ paddingBottom: isSelf ? 40 : 120 }}
+      contentContainerStyle={{ paddingBottom: isSelf ? 40 : insets.bottom + 80 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
       {/* ── Identité (claire, centrée) ───────────────────────────── */}
@@ -1334,7 +1334,7 @@ export default function PlayerProfileScreen() {
       <View style={{
         position: 'absolute', left: 0, right: 0, bottom: 0,
         backgroundColor: LIGHT.card, borderTopWidth: 1, borderTopColor: LIGHT.border,
-        paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 16,
+        paddingHorizontal: 20, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 10) + 4,
         shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 28, shadowOffset: { width: 0, height: -10 }, elevation: 12,
       }}>
         <TouchableOpacity onPress={handleDefier} activeOpacity={0.85}

@@ -34,6 +34,7 @@ const MODES: Array<{ k: StoryMode; label: string }> = [
 export default function StoryComposerV2({ visible, player, match, invite, onClose, onRequestMatch, initialMode = 'profil', lockMode = false }: Props) {
   const insets = useSafeAreaInsets();
   const canvasRef = useRef<View>(null);
+  const exportRef = useRef<View>(null); // carte rendue à 1080px (hors-écran) → capture nette
   const [mode, setMode] = useState<StoryMode>(initialMode);
   const [styleId, setStyleId] = useState(STORY_REGISTRY[initialMode][0].id);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -81,7 +82,7 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
   const win = Dimensions.get('window');
   const chromeH = mode === 'match' ? 560 : 400; // hauteur approx. hors aperçu (header + sélecteurs + CTA)
   const maxPreviewH = Math.max(200, win.height - insets.top - insets.bottom - chromeH);
-  const previewW = Math.min(win.width * 0.6, (maxPreviewH * 9) / 16, 250);
+  const previewW = Math.min(win.width * 0.64, (maxPreviewH * 9) / 16, 272);
   const exportW = 1080;
   const list = STORY_REGISTRY[mode];
 
@@ -112,7 +113,9 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
     if (!r.canceled && r.assets?.[0]?.uri) setPhotoUri(r.assets[0].uri);
   };
 
-  const capture = () => captureRef(canvasRef, { format: 'png', quality: 1, width: exportW, height: (exportW * 16) / 9, result: 'tmpfile' });
+  // Capture la carte rendue à pleine résolution (1080×1920) hors-écran : pas
+  // d'upscale depuis l'aperçu → image nette. Pas de width/height forcés.
+  const capture = () => captureRef(exportRef, { format: 'png', quality: 1, result: 'tmpfile' });
 
   const handleShare = async () => {
     if (busy) return; setBusy('share');
@@ -166,6 +169,12 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
           <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
             <StoryCardV2 ref={canvasRef} width={previewW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
           </View>
+        </View>
+
+        {/* Carte d'export à pleine résolution (1080px), rendue hors-écran et capturée
+            telle quelle → image nette. Non visible, ne reçoit pas les interactions. */}
+        <View style={{ position: 'absolute', left: -10000, top: 0 }} pointerEvents="none">
+          <StoryCardV2 ref={exportRef} width={exportW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
         </View>
 
         {/* style selector */}
