@@ -128,11 +128,12 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 }
 
 // ─── MiniCalendar ─────────────────────────────────────────────
-function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
+function MiniCalendar({ selectedVal, onSelect, t, allDays, daysWithGames }: {
   selectedVal: string;
   onSelect: (val: string) => void;
   t: ReturnType<typeof getTheme>;
   allDays: Array<{ label: string; val: string }>;
+  daysWithGames: Set<string>;
 }) {
   const todayStr = localDateStr(new Date());
   const [offset, setOffset] = useState(0);
@@ -177,16 +178,21 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays }: {
           if (!cell) return <View key={`e${i}`} style={{ width: '14.28%', height: 34 }} />;
           const active  = cell.val === selectedVal;
           const isToday = cell.val === todayStr;
+          const hasGame = cell.valid && daysWithGames.has(cell.val);
           return (
             <TouchableOpacity key={i} onPress={() => cell.valid && onSelect(cell.val)}
               activeOpacity={cell.valid ? 0.7 : 1}
-              style={{ width: '14.28%', height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+              style={{ width: '14.28%', height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', position: 'relative',
                 backgroundColor: active ? t.btnBg : isToday ? t.eloBg : 'transparent',
                 opacity: !cell.valid ? 0.3 : 1,
               }}>
               <Text style={{ fontSize: 12, fontWeight: (active || isToday) ? '900' : '500',
                 color: active ? Colors.textOnDark : isToday ? t.eloColor : Colors.textPrimary,
               }}>{cell.d}</Text>
+              {hasGame && (
+                <View style={{ position: 'absolute', bottom: 3, width: 5, height: 5, borderRadius: 2.5,
+                  backgroundColor: active ? Colors.textOnDark : Colors.textMuted }} />
+              )}
             </TouchableOpacity>
           );
         })}
@@ -594,7 +600,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         </View>
 
         {showCal && (
-          <MiniCalendar selectedVal={form.day} onSelect={v => { pickDay(v); setShowCal(false); }} t={t} allDays={ALL_DAYS} />
+          <MiniCalendar selectedVal={form.day} onSelect={v => { pickDay(v); setShowCal(false); }} t={t} allDays={ALL_DAYS} daysWithGames={daysWithGames} />
         )}
 
         {/* Selected day pill (when from calendar) */}
