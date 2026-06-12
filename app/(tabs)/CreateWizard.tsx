@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Modal, TextInput,
   Alert, ActivityIndicator, StyleSheet, Dimensions, KeyboardAvoidingView, Platform,
@@ -13,6 +13,7 @@ import { Pill } from '../../components/Pill';
 // ─── Types ────────────────────────────────────────────────────
 type GameType = 'Compétitif' | 'Amical' | 'Défi';
 type Genre    = 'mixed' | 'men' | 'women';
+type BusyGame = { ts: number; location: string | null; role: string };
 
 export interface WizardResult {
   gameType: GameType; genre: Genre;
@@ -45,6 +46,8 @@ const TIMES = [
   '16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30',
   '20:00','20:30','21:00','21:30','22:00','22:30',
 ];
+// Fenêtre d'anti-chevauchement (identique au pre-check du publish dans lobby.tsx)
+const OVERLAP_MS = 2 * 60 * 60 * 1000;
 const FR_DAYS         = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
 const FR_MONTHS       = ['jan.','fév.','mar.','avr.','mai','juin','juil.','août','sep.','oct.','nov.','déc.'];
 const FR_MONTHS_LONG  = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
@@ -215,6 +218,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   const [searchQ,     setSearchQ]     = useState('');
   const [searchRes,   setSearchRes]   = useState<any[]>([]);
   const [searching,   setSearching]   = useState(false);
+  const [busyGames, setBusyGames] = useState<BusyGame[]>([]);
 
   // Form
   const myLevel = player ? eloToLevel(player.elo_score) : 4.0;
@@ -311,6 +315,50 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       });
   }, [visible, player]);
 
+  // Load the player's upcoming games to surface schedule conflicts (±2h).
+  // Sources et libellés de rôle alignés sur le pre-check du publish (lobby.tsx).
+  useEffect(() => {
+    if (!visible || !player) return;
+    const myId = player.id;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const fromIso = todayStart.toISOString();
+    let cancelled = false;
+
+    (async () => {
+      const [{ data: created }, { data: joined }] = await Promise.all([
+        supabase.from('open_games')
+          .select('location, match_date')
+          .eq('creator_id', myId)
+          .neq('status', 'cancelled')
+          .gte('match_date', fromIso),
+        supabase.from('game_participants')
+          .select('status, game:game_id(location, match_date, status)')
+          .eq('player_id', myId)
+          .in('status', ['accepted', 'pending', 'invited', 'waitlist']),
+      ]);
+      if (cancelled) return;
+
+      const games: BusyGame[] = [];
+      (created ?? []).forEach((g: any) => {
+        if (!g.match_date) return;
+        games.push({ ts: new Date(g.match_date).getTime(), location: g.location ?? null, role: 'organisateur' });
+      });
+      const ROLE: Record<string, string> = {
+        accepted: 'inscrit', invited: 'invité', waitlist: "liste d'attente", pending: 'candidature',
+      };
+      (joined ?? []).forEach((p: any) => {
+        const g = p.game;
+        if (!g || g.status === 'cancelled' || !g.match_date) return;
+        const ts = new Date(g.match_date).getTime();
+        if (ts < todayStart.getTime()) return;
+        games.push({ ts, location: g.location ?? null, role: ROLE[p.status] ?? 'engagement' });
+      });
+      setBusyGames(games);
+    })();
+
+    return () => { cancelled = true; };
+  }, [visible, player]);
+
   // Player search
   useEffect(() => {
     if (searchQ.length < 2) { setSearchRes([]); return; }
@@ -332,6 +380,28 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     !!form.gameType && form.minLevel <= form.maxLevel,
     true,
   ][step] ?? true;
+
+  // ── Dérivés conflit d'horaire (depuis busyGames) ──
+  const daysWithGames = useMemo(
+    () => new Set(busyGames.map(g => localDateStr(new Date(g.ts)))),
+    [busyGames],
+  );
+  const occupiedTimes = useMemo(() => {
+    const s = new Set<string>();
+    if (!form.day) return s;
+    for (const tm of TIMES) {
+      const slotTs = new Date(`${form.day}T${tm}`).getTime();
+      if (isNaN(slotTs)) continue;
+      if (busyGames.some(g => Math.abs(g.ts - slotTs) <= OVERLAP_MS)) s.add(tm);
+    }
+    return s;
+  }, [busyGames, form.day]);
+  const selectedConflicts = useMemo<BusyGame[]>(() => {
+    if (!form.day || !form.time) return [];
+    const slotTs = new Date(`${form.day}T${form.time}`).getTime();
+    if (isNaN(slotTs)) return [];
+    return busyGames.filter(g => Math.abs(g.ts - slotTs) <= OVERLAP_MS);
+  }, [busyGames, form.day, form.time]);
 
   // Step 2 helpers
   const invitedPlayers = Object.values(form.invites);
@@ -772,14 +842,21 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                             : <Text style={{ color: t.libreColor, fontSize: 20, fontWeight: '300' }}>+</Text>
                         }
                       </TouchableOpacity>
-                      <View style={{ backgroundColor: Colors.textPrimary, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                        <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.5 }}>
-                          {pos === 0 ? 'GAU' : 'DRO'}
-                        </Text>
-                      </View>
                       <Text style={{ fontSize: 9.5, fontWeight: '700', color: isMe ? Colors.primary : inv ? Colors.primary : t.libreColor, maxWidth: 52, textAlign: 'center' }} numberOfLines={1}>
                         {isMe ? 'Vous' : inv ? inv.name.split(' ')[0] : 'Libre'}
                       </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <View style={{ backgroundColor: Colors.textPrimary, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.5 }}>
+                            {pos === 0 ? 'G' : 'D'}
+                          </Text>
+                        </View>
+                        {(isMe && player) || inv ? (
+                          <Text style={{ fontSize: 8.5, fontWeight: '700', color: Colors.textMuted }} numberOfLines={1}>
+                            Niv. {formatPadelLevel(isMe ? player!.elo_score : inv!.elo_score)}
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
                   );
                 })}
