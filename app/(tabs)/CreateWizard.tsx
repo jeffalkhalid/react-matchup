@@ -566,15 +566,19 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: showCal ? 8 : 14 }}>
           {QUICK_DAYS.map(d => {
             const active = form.day === d.val;
+            const hasGame = daysWithGames.has(d.val);
             return (
               <TouchableOpacity key={d.val} onPress={() => { pickDay(d.val); setShowCal(false); }}
-                style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, position: 'relative',
                   borderWidth: 2, borderColor: active ? t.accent : Colors.border,
                   backgroundColor: active ? t.selectBg : Colors.bgCard,
                 }}>
                 <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600', color: active ? t.selectColor : Colors.textPrimary }}>
                   {d.label}
                 </Text>
+                {hasGame && (
+                  <View style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textMuted }} />
+                )}
               </TouchableOpacity>
             );
           })}
