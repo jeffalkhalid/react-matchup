@@ -114,7 +114,14 @@ On **extrait** la logique en fonction serveur partagée `free_spot_and_promote(p
 | **Expiration auto** (cron) | ✅ « ⌛ Invitation expirée — la partie du [date] s'est faite sans toi » |
 | Promotion d'un waitlister (effet de bord) | ✅ « 🎉 Place libérée — tu es accepté ! » (existant) |
 
-**Point d'intégration à valider à l'implémentation** : l'envoi push **depuis SQL**. Concerne **tout chemin serveur qui notifie** — l'expiration (cron) **et** la promotion (`free_spot_and_promote()`, désormais en SQL). Atteindre la fonction Edge `send-push` via `pg_net` (HTTP depuis Postgres) **ou** insérer dans le mécanisme de notif que l'app relit déjà. Seul point infra non tranché ; le reste est du SQL standard. (Aujourd'hui la notif de promotion est côté client via `notifyPlayers` ; la migrer en SQL la fait dépendre de ce même canal.)
+**Envoi push depuis SQL — TRANCHÉ : Database Webhook** (pattern existant). L'app utilise déjà ce mécanisme : un webhook Supabase sur `game_participants` UPDATE déclenche l'edge function `notify-eject` qui réutilise `send-push` (cf. `supabase/functions/notify-eject/index.ts`). **Pas de `pg_net`.** On applique le même schéma :
+
+- **Expiration** : `expire_stale_invitations()` fait `invited → expired` (UPDATE) → webhook → edge function `notify-invite-expired` → `send-push` « ⌛ Invitation expirée ».
+- **Promotion** : `free_spot_and_promote()` fait `waitlist → accepted` (UPDATE) → webhook → edge function `notify-promotion` (ou extension de `notify-eject`) → `send-push` « 🎉 Place libérée ».
+
+Les fonctions SQL restent **pures** (transitions de statut, testables en transaction) ; le push est découplé via webhooks + edge functions. Les webhooks se configurent dans le dashboard Supabase (hors migrations) → étape de déploiement documentée dans le plan.
+
+> Les notifs **déclenchées par le client** (nouveau joueur confirmé, demande à valider) restent côté client via `notifyPlayers` : `join_game()` renvoie le statut attribué, et le client envoie la notif adéquate. Seules les notifs déclenchées **côté serveur** (expiration cron, promotion) passent par webhook.
 
 ## 9. Interactions verrouillées
 
