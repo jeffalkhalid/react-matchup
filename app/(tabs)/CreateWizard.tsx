@@ -621,18 +621,23 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <Text style={[sty.sectionLabel, { marginTop: 4 }]}>Heure</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
           {TIMES.map(tm => {
-            const active = form.time === tm;
-            const past   = isPastSlot(form.day, tm);
+            const active   = form.time === tm;
+            const past     = isPastSlot(form.day, tm);
+            const occupied = !past && occupiedTimes.has(tm);
             return (
               <TouchableOpacity key={tm} disabled={past} onPress={() => set('time', tm)}
-                style={{ width: '23%', paddingVertical: 9, borderRadius: 10,
-                  borderWidth: 1.5, borderColor: active ? t.eloBorder : Colors.border,
+                style={{ width: '23%', paddingVertical: 9, borderRadius: 10, position: 'relative',
+                  borderWidth: 1.5,
+                  borderColor: active ? t.eloBorder : occupied ? Colors.warning : Colors.border,
                   backgroundColor: active ? t.selectBg : Colors.bgCard, alignItems: 'center',
                   opacity: past ? 0.35 : 1,
                 }}>
                 <Text style={{ fontSize: 12, fontWeight: active ? '900' : '600',
                   color: active ? t.selectColor : Colors.textPrimary,
                   textDecorationLine: past ? 'line-through' : 'none' }}>{tm}</Text>
+                {occupied && (
+                  <View style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.warning }} />
+                )}
               </TouchableOpacity>
             );
           })}
