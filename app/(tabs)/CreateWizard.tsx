@@ -642,6 +642,27 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             );
           })}
         </View>
+        {/* Conflits sur le créneau choisi (±2h) */}
+        {form.time && selectedConflicts.length > 0 && (
+          <View style={{ flexDirection: 'row', backgroundColor: 'rgba(245,158,11,0.08)',
+            borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.45)', borderRadius: 12,
+            overflow: 'hidden', marginBottom: 16 }}>
+            <View style={{ width: 4, backgroundColor: Colors.warning }} />
+            <View style={{ flex: 1, padding: 11, gap: 7 }}>
+              <Text style={{ fontSize: 12, fontWeight: '900', color: '#92400e' }}>
+                ⚠️ Tu es déjà pris à ce créneau (±2h)
+              </Text>
+              {selectedConflicts.map((g, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                  <Text style={{ fontSize: 11, color: Colors.textSecondary, flex: 1 }} numberOfLines={1}>
+                    🗓️ {new Date(g.ts).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · {g.location ?? '?'}
+                  </Text>
+                  <Pill variant="brand">{g.role}</Pill>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
       </ScrollView>
     );
   }
