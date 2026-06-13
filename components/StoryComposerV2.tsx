@@ -76,13 +76,14 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
     setToggles(DEFAULT_TOGGLES);
   }, [visible, initialMode]);
 
-  // Taille de l'aperçu : bornée par la largeur ET la hauteur dispo pour éviter
-  // que la carte (ratio 9:16) déborde sur les contrôles. Le mode Match ajoute
-  // un panneau de personnalisation → plus de chrome vertical, donc carte plus petite.
+  // Taille de l'aperçu : on mesure la zone réellement disponible (onLayout) et on
+  // remplit au maximum en gardant le ratio 9:16, plutôt que d'estimer la hauteur
+  // du chrome (qui sous-dimensionnait fortement la carte en mode Match/verrouillé).
   const win = Dimensions.get('window');
-  const chromeH = mode === 'match' ? 560 : 400; // hauteur approx. hors aperçu (header + sélecteurs + CTA)
-  const maxPreviewH = Math.max(200, win.height - insets.top - insets.bottom - chromeH);
-  const previewW = Math.min(win.width * 0.64, (maxPreviewH * 9) / 16, 272);
+  const [previewBox, setPreviewBox] = useState({ w: 0, h: 0 });
+  const previewW = previewBox.w > 0 && previewBox.h > 0
+    ? Math.min(previewBox.w * 0.92, (previewBox.h * 0.96 * 9) / 16)
+    : Math.min(win.width * 0.7, 272); // fallback avant la 1ère mesure
   const exportW = 1080;
   const list = STORY_REGISTRY[mode];
 
@@ -165,7 +166,12 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
         )}
 
         {/* preview */}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCard }}>
+        <View
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setPreviewBox(p => (p.w === width && p.h === height ? p : { w: width, h: height }));
+          }}
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCard, paddingVertical: 8 }}>
           <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
             <StoryCardV2 ref={canvasRef} width={previewW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
           </View>
