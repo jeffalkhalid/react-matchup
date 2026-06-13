@@ -14,6 +14,7 @@ export interface JoinedPlayer {
   id?: string | null;
   name?: string | null;
   deleted_at?: string | null;
+  elo_score?: number | null;
 }
 
 export type PlayerRole = 'partner' | 'opponent' | 'player';
