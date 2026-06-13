@@ -226,16 +226,19 @@ export default function ScoreEntryScreen() {
       .eq('status', 'accepted');
     const partIds = (partEntries ?? []).map((e: any) => e.game_id as string).filter(Boolean);
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // Fenêtre 48 h : DOIT rester alignée sur lobby.readyToScore et
+    // useNotificationCount.toScore, sinon le badge « à scorer » compte des
+    // parties (jouées il y a 24-48 h) que cet écran ne montre pas.
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    // Build query: creator OR participant — exclude closed & cancelled, within 24h window
+    // Build query: creator OR participant — exclude closed & cancelled, within 48h window
     const baseQuery = supabase
       .from('open_games')
       .select(GAME_SELECT)
       .neq('status', 'cancelled')
       .neq('status', 'closed')
       .lt('match_date', now)
-      .gte('match_date', oneDayAgo)
+      .gte('match_date', twoDaysAgo)
       .eq('spots_available', 0)
       .order('match_date', { ascending: false })
       .limit(20);
@@ -640,11 +643,11 @@ export default function ScoreEntryScreen() {
                 <View style={sty.scoringArea}>
                   {/* Partner */}
                   <View style={{ marginBottom: 16 }}>
-                    <Text style={sty.sectionLabel}>Ton partenaire</Text>
-                    <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 8 }}>
-                      Pré-sélectionné — modifiable si changé en cours de match
+                    <Text style={sty.sectionLabel}>🤝 Avec qui as-tu joué ?</Text>
+                    <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 10 }}>
+                      Sélectionne ton partenaire — les 2 autres seront tes adversaires.
                     </Text>
-                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    <View style={{ gap: 8 }}>
                       {others.map(p => {
                         const sel = partnerId === p.id;
                         return (
@@ -653,12 +656,12 @@ export default function ScoreEntryScreen() {
                             activeOpacity={0.75}
                           >
                             <View style={[sty.partnerAvatar, { backgroundColor: sel ? Colors.primary : Colors.border }]}>
-                              <Text style={{ fontSize: 12, fontWeight: '900', color: sel ? Colors.textOnDark : Colors.textSecondary }}>
+                              <Text style={{ fontSize: 15, fontWeight: '900', color: sel ? Colors.textOnDark : Colors.textSecondary }}>
                                 {p.name.charAt(0).toUpperCase()}
                               </Text>
                             </View>
-                            <View>
-                              <Text style={[sty.partnerName, sel && { color: Colors.primary }]}>{p.name}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[sty.partnerName, sel && { color: Colors.primary }]} numberOfLines={1}>{p.name}</Text>
                               <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
                                 Niv. {formatPadelLevel(p.elo_score)}
                               </Text>
@@ -794,12 +797,12 @@ const sty = StyleSheet.create({
     padding: 14, alignItems: 'center', marginBottom: 16,
   },
   partnerChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
-    padding: 10, flex: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
+    paddingVertical: 11, paddingHorizontal: 12,
   },
   partnerChipSel: { borderColor: Colors.brand, backgroundColor: 'rgba(255,193,26,0.14)' },
-  partnerAvatar: { width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  partnerAvatar: { width: 36, height: 36, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   partnerName: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary, fontFamily: Fonts.uiExtraBold },
   badgeCard: {
     backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
