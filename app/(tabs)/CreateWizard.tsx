@@ -229,7 +229,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   // Form
   const myLevel = player ? eloToLevel(player.elo_score) : 4.0;
   const defaultMin = Math.max(1.0, Math.round((myLevel - 0.5) * 2) / 2);
-  const defaultMax = Math.min(9.0, Math.round((myLevel + 0.5) * 2) / 2);
+  const defaultMax = Math.min(8.0, Math.round((myLevel + 0.5) * 2) / 2);
 
   const [form, setFormState] = useState({
     day:            QUICK_DAYS[1]?.val ?? '',
@@ -261,7 +261,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (!visible) return;
     const lv = player ? eloToLevel(player.elo_score) : 4.0;
     const mn = Math.max(1.0, Math.round((lv - 0.5) * 2) / 2);
-    const mx = Math.min(9.0, Math.round((lv + 0.5) * 2) / 2);
+    const mx = Math.min(8.0, Math.round((lv + 0.5) * 2) / 2);
     setStep(0); setPublished(false); setPublishedGameId(null); setSubmitting(false);
     setShowAbandon(false); setShowCal(false); setVenueOpen(false); setVenueSearch('');
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
@@ -697,7 +697,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 onPress={() => {
                   const lv = player ? eloToLevel(player.elo_score) : 4.0;
                   const mn = Math.max(1.0, +(lv - 0.5).toFixed(2));
-                  const mx = Math.min(9.0, +(lv + 0.5).toFixed(2));
+                  const mx = Math.min(8.0, +(lv + 0.5).toFixed(2));
                   if (opt.val === 'Compétitif') setFormState(f => ({ ...f, gameType: opt.val, minLevel: mn, maxLevel: mx }));
                   else if (opt.val === 'Défi')  setFormState(f => ({ ...f, gameType: opt.val, minLevel: mx }));
                   else set('gameType', opt.val);
@@ -759,7 +759,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   {form.minLevel.toFixed(2)}
                 </Text>
                 {!lockMin && (
-                  <TouchableOpacity onPress={() => set('minLevel', Math.min(9.0, +(form.minLevel + 0.1).toFixed(2)))}
+                  <TouchableOpacity onPress={() => set('minLevel', Math.min(8.0, +(form.minLevel + 0.1).toFixed(2)))}
                     style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
@@ -783,7 +783,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   {form.maxLevel.toFixed(2)}
                 </Text>
                 {!lockMax && (
-                  <TouchableOpacity onPress={() => set('maxLevel', Math.min(9.0, +(form.maxLevel + 0.1).toFixed(2)))}
+                  <TouchableOpacity onPress={() => set('maxLevel', Math.min(8.0, +(form.maxLevel + 0.1).toFixed(2)))}
                     style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
@@ -794,8 +794,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           {/* Range bar */}
           <View style={{ height: 5, borderRadius: 99, backgroundColor: Colors.bgCardAlt, overflow: 'hidden' }}>
             <View style={{ position: 'absolute', height: '100%', borderRadius: 99, backgroundColor: t.btnBg,
-              left: `${((form.minLevel - 1) / 8) * 100}%`,
-              right: `${100 - ((form.maxLevel - 1) / 8) * 100}%`,
+              left: `${((form.minLevel - 1) / 7) * 100}%`,
+              right: `${100 - ((form.maxLevel - 1) / 7) * 100}%`,
             }} />
           </View>
           {lockMin && (
