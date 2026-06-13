@@ -216,6 +216,33 @@ export interface ActivityComment {
   league?: League;
 }
 
+// ─── Palmarès / réalisations ─────────────────────────────────────
+// Métadonnées statiques (catalogue) — vivent côté client, pas en DB.
+export interface AchievementDef {
+  key: string;
+  name: string;
+  desc: string;
+  glyph: string;   // clé dans GLYPHS (components/profile/glyphs)
+  target: number;
+  order: number;
+}
+
+// Progression renvoyée par get_player_achievements (table player_achievements).
+export interface PlayerAchievementRow {
+  player_id: string;
+  key: string;
+  progress: number;
+  target: number;
+  unlocked_at: string | null;
+  updated_at: string;
+}
+
+// Vue fusionnée catalogue + progression, prête pour l'UI.
+export interface Achievement extends AchievementDef {
+  progress: number;
+  unlocked: boolean;
+}
+
 export interface GameAlert {
   id: string;
   player_id: string;

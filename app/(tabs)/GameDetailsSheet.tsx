@@ -9,6 +9,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts } from '../../lib/theme';
 import { lobbyGameLink } from '../../lib/community';
+import { isInviteActive } from '../../lib/games';
 import type { OpenGame } from '../../types';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -60,6 +61,15 @@ function getGameTheme(game: any): GameTheme {
   };
 }
 
+// Temps restant avant expiration d'une invitation (lecture de invite_expires_at).
+function inviteCountdown(p: { invite_expires_at?: string | null }): string | null {
+  if (!p.invite_expires_at) return null;
+  const ms = new Date(p.invite_expires_at).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const h = Math.floor(ms / 3_600_000);
+  return h >= 1 ? `expire dans ${h} h` : `expire dans ${Math.max(1, Math.floor(ms / 60_000))} min`;
+}
+
 function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
   const slots: (SlotPlayer | null)[] = [null, null, null, null];
   const creatorIdx = SIDE_TO_IDX[game.creator_side ?? 'A_GAU'] ?? 0;
@@ -73,7 +83,7 @@ function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
     isMe: game.creator_id === myId,
   };
   (game.participants ?? [])
-    .filter((p: any) => p.status === 'accepted' || p.status === 'invited')
+    .filter((p: any) => p.status === 'accepted' || (p.status === 'invited' && isInviteActive(p)))
     .forEach((p: any) => {
       if (p.player_id === game.creator_id) return;
       const sp: SlotPlayer = {
@@ -196,6 +206,7 @@ interface Props {
   onDeclinePending: (participantId: string) => Promise<void>;
   onAcceptInvitation: (participantId: string, gameId: string) => Promise<void>;
   onDeclineInvitation: (participantId: string, gameId: string) => Promise<void>;
+  onWithdrawInvitation?: (gameId: string, playerId: string) => Promise<void> | void;
   onLeave: (gameId: string, participantId: string, wasAccepted: boolean) => void;
   onCancelGame: (gameId: string) => void;
 }
@@ -233,7 +244,7 @@ async function shareGame(game: EnrichedGame) {
   // Places dérivées des vrais joueurs (créateur + acceptés/invités, sur 4),
   // comme l'UI de la fiche (3 - heldCount) — le compteur stocké peut dériver.
   const heldCount = (game.participants ?? []).filter(
-    (p: any) => (p.status === 'accepted' || p.status === 'invited') && p.player_id !== game.creator_id,
+    (p: any) => (p.status === 'accepted' || (p.status === 'invited' && isInviteActive(p))) && p.player_id !== game.creator_id,
   ).length;
   const spots = Math.max(0, 3 - heldCount);
   const spotsText = spots === 0 ? 'Complet' : `${spots} place${spots > 1 ? 's' : ''} dispo`;
@@ -255,7 +266,7 @@ async function shareGame(game: EnrichedGame) {
 
 // ─── Main component ───────────────────────────────────────────
 export default function GameDetailsSheet({
-  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onLeave, onCancelGame,
+  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -287,7 +298,7 @@ export default function GameDetailsSheet({
   const canParticipate = !isCreator && !alreadyIn;
 
   const pendingPlayers = (game.participants ?? []).filter((p: any) => p.status === 'pending');
-  const invitedPlayers = (game.participants ?? []).filter((p: any) => p.status === 'invited');
+  const invitedPlayers = (game.participants ?? []).filter((p: any) => p.status === 'invited' && isInviteActive(p));
   const waitlistPlayers = (game.participants ?? [])
     .filter((p: any) => p.status === 'waitlist')
     .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
@@ -738,6 +749,54 @@ export default function GameDetailsSheet({
                             Niv. {formatPadelLevel(p.player?.elo_score ?? 0)} · {i === 0 ? 'Prochain à entrer' : `${i + 1}ᵉ en attente`}
                           </Text>
                         </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Invitations en attente — créateur uniquement (peut retirer) */}
+            {isCreator && invitedPlayers.length > 0 && (
+              <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.brandDeep }} />
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+                    {invitedPlayers.length} invitation{invitedPlayers.length > 1 ? 's' : ''} en attente
+                  </Text>
+                </View>
+                <View style={{ gap: 6 }}>
+                  {invitedPlayers.map((p: any) => {
+                    const countdown = inviteCountdown(p);
+                    return (
+                      <View key={p.id} style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 10,
+                        backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+                        borderRadius: 12, padding: 10,
+                      }}>
+                        <Avatar name={p.player?.name ?? '?'} size={30} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
+                            {p.player?.name}
+                          </Text>
+                          <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
+                            Niv. {formatPadelLevel(p.player?.elo_score ?? 0)}{countdown ? ` · ${countdown}` : ''}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => {
+                            Alert.alert(
+                              "Retirer l'invitation ?",
+                              `${p.player?.name ?? 'Ce joueur'} ne pourra plus rejoindre via cette invitation.`,
+                              [
+                                { text: 'Annuler', style: 'cancel' },
+                                { text: 'Retirer', style: 'destructive', onPress: () => onWithdrawInvitation?.(game.id, p.player_id) },
+                              ],
+                            );
+                          }}
+                          style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textSecondary }}>Retirer</Text>
+                        </TouchableOpacity>
                       </View>
                     );
                   })}

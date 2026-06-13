@@ -18,9 +18,11 @@ import { buildStoryMatch } from '../../components/story/storyTheme';
 import StoryComposerV2 from '../../components/StoryComposerV2';
 import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
 import type { OpenGame, Match } from '../../types';
+import { MatchCard as MatchScoreCard, type MatchView as PMMatchView } from '../../components/profile/components';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
+import { joinGame, occupiesSpot, withdrawInvitation } from '../../lib/games';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -57,7 +59,7 @@ function getGameType(game: OpenGame): 'challenge' | 'friendly' | 'competitive' {
 function freeSpots(game: OpenGame): number {
   if (!game.participants) return game.spots_available ?? 0;
   const occupied = 1 + game.participants.filter(
-    (p: any) => (p.status === 'accepted' || p.status === 'invited') && p.player_id !== game.creator_id,
+    (p: any) => occupiesSpot(p) && p.player_id !== game.creator_id,
   ).length;
   return Math.max(0, 4 - occupied);
 }
@@ -158,6 +160,12 @@ const IconMegaphone = ({ size = 14, color = Colors.textOnDark }) => (
     <Path stroke={color} d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
   </Svg>
 );
+const IconCrown = ({ size = 14, color = Colors.textOnDark }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <Path stroke={color} fill={color} d="M3 8.5 6.5 12l3-5 2.5 4 2.5-4 3 5L21 8.5 19 19H5L3 8.5z" />
+  </Svg>
+);
 const IconCheck = ({ size = 15, color = Colors.textOnDark }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
@@ -194,10 +202,11 @@ function hashTone(name: string) {
 // Couleurs équipe (charte) — A = ink, B = brand
 const TEAM_BG  = { A: Colors.primary,    B: Colors.brand };
 const TEAM_FG  = { A: Colors.textOnDark, B: Colors.textOnBrand };
-function Avatar({ name, size = 28, ring, team }: { name: string; size?: number; ring?: string; team?: 'A' | 'B' }) {
+function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?: number; ring?: string; team?: 'A' | 'B'; creator?: boolean }) {
   const tone = hashTone(name);
   const bg = team ? TEAM_BG[team] : tone.bg;
   const fg = team ? TEAM_FG[team] : tone.fg;
+  const bs = Math.max(13, Math.round(size * 0.5));
   return (
     <View style={{
       width: size, height: size, borderRadius: Math.round(size * 0.3),
@@ -207,6 +216,16 @@ function Avatar({ name, size = 28, ring, team }: { name: string; size?: number; 
       <Text style={{ color: fg, fontSize: Math.round(size * 0.42), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
+      {creator ? (
+        <View style={{
+          position: 'absolute', top: -4, right: -4,
+          width: bs, height: bs, borderRadius: bs,
+          backgroundColor: Colors.brand, borderWidth: 1.5, borderColor: Colors.bgCard,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <IconCrown size={Math.round(bs * 0.62)} color={Colors.primary} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -321,10 +340,10 @@ const SIDE_TO_IDX: Record<string, number> = { A_GAU: 0, A_DRO: 1, B_GAU: 2, B_DR
 const IDX_TO_SIDE: Record<number, string> = { 0: 'A_GAU', 1: 'A_DRO', 2: 'B_GAU', 3: 'B_DRO' };
 
 function buildGameSlots(game: EnrichedGame, myId: string) {
-  const slots: Array<{ id: string; name: string; isMe: boolean; isInvited?: boolean } | null> = [null, null, null, null];
-  const creator = game.creator as { name?: string } | undefined;
+  const slots: Array<{ id: string; name: string; isMe: boolean; isInvited?: boolean; isCreator?: boolean; elo?: number | null } | null> = [null, null, null, null];
+  const creator = game.creator as { name?: string; elo_score?: number | null } | undefined;
   const creatorIdx = SIDE_TO_IDX[game.creator_side ?? 'A_GAU'] ?? 0;
-  slots[creatorIdx] = { id: game.creator_id, name: creator?.name ?? '?', isMe: game.creator_id === myId };
+  slots[creatorIdx] = { id: game.creator_id, name: creator?.name ?? '?', isMe: game.creator_id === myId, isCreator: true, elo: creator?.elo_score ?? null };
   (game.participants ?? [])
     .filter((p: any) => (p.status === 'accepted' || p.status === 'invited') && p.player_id !== game.creator_id)
     .forEach((p: any) => {
@@ -333,6 +352,7 @@ function buildGameSlots(game: EnrichedGame, myId: string) {
         name: p.player?.name ?? '?',
         isMe: p.player_id === myId,
         isInvited: p.status === 'invited',
+        elo: p.player?.elo_score ?? null,
       };
       const idx = SIDE_TO_IDX[p.team_side ?? ''];
       if (idx !== undefined && !slots[idx]) slots[idx] = sp;
@@ -381,9 +401,10 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
 
     if (s) {
       const team: 'A' | 'B' = side.startsWith('A_') ? 'A' : 'B';
+      const lvl = s.elo != null ? fmtLevel(s.elo) : null;
       return (
         <View key={idx} style={{ alignItems: 'center', gap: 2, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
-          <Avatar name={s.name} size={30} ring={s.isMe ? Colors.warning : undefined} team={team} />
+          <Avatar name={s.name} size={30} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
           <Text
             numberOfLines={1}
             style={{
@@ -393,6 +414,11 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           >
             {nameLabel}
           </Text>
+          {lvl ? (
+            <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.brandDeep, letterSpacing: 0.2 }}>
+              Niv {lvl}
+            </Text>
+          ) : null}
           <Text style={{ fontSize: 7, fontWeight: '900', color: s.isInvited ? st.accent : Colors.textMuted, letterSpacing: 0.3 }}>
             {s.isInvited ? '⏳ Invité' : posLabel}
           </Text>
@@ -468,12 +494,12 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
 }
 
 // ─── Avatar row ───────────────────────────────────────────────
-function AvatarRow({ players, slots }: { players: Array<{ name: string; team?: 'A' | 'B' }>; slots: number }) {
+function AvatarRow({ players, slots }: { players: Array<{ name: string; team?: 'A' | 'B'; isCreator?: boolean }>; slots: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {players.map((p, i) => (
         <View key={i} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: players.length - i }}>
-          <Avatar name={p.name} size={28} ring={Colors.bgCard} team={p.team} />
+          <Avatar name={p.name} size={28} ring={Colors.bgCard} team={p.team} creator={p.isCreator} />
         </View>
       ))}
       {Array.from({ length: slots }).map((_, i) => (
@@ -553,7 +579,7 @@ async function shareGame(game: EnrichedGame) {
 }
 
 // ─── Game Card ────────────────────────────────────────────────
-function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, roleColor }: {
+function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation }: {
   game: EnrichedGame; variant: 'explore' | 'upcoming' | 'history';
   myElo: number; playerId?: string; onPress: () => void;
   onApply?: (gameId: string, side: string) => void;
@@ -564,8 +590,6 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   onScorePress?: () => void;
   onAcceptInvitation?: (participantId: string, gameId: string) => void;
   onDeclineInvitation?: (participantId: string, gameId: string) => void;
-  // Couleur du rôle (« À venir ») : barre latérale rattachant la carte à sa section.
-  roleColor?: string;
 }) {
   const router = useRouter();
   const fit = getEloFit(game, myElo);
@@ -575,11 +599,11 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
   const creatorObj = game.creator as { name: string } | undefined;
   const teamOf = (side?: string): 'A' | 'B' | undefined => side ? (side.startsWith('B') ? 'B' : 'A') : undefined;
-  const allPlayers: Array<{ name: string; team?: 'A' | 'B' }> = [
-    ...(creatorObj?.name ? [{ name: creatorObj.name, team: teamOf((game as any).creator_side) }] : []),
+  const allPlayers: Array<{ name: string; team?: 'A' | 'B'; isCreator?: boolean }> = [
+    ...(creatorObj?.name ? [{ name: creatorObj.name, team: teamOf((game as any).creator_side), isCreator: true }] : []),
     ...accepted.flatMap(p => {
       const nm = (p.player as { name: string } | undefined)?.name;
-      return nm ? [{ name: nm, team: teamOf((p as any).team_side) }] : [];
+      return nm && p.player_id !== game.creator_id ? [{ name: nm, team: teamOf((p as any).team_side) }] : [];
     }),
   ];
   const levelRange = (game.min_elo || game.max_elo)
@@ -591,8 +615,7 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   const stripColor = isUrgent ? Colors.danger : st.accent;
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.88}
-      style={[cs.card, roleColor ? { borderLeftWidth: 4, borderLeftColor: roleColor } : null]}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={cs.card}>
       <View style={{ height: 3, backgroundColor: stripColor }} />
       <View style={{ padding: 14 }}>
         {/* Pills row */}
@@ -972,40 +995,9 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
           </View>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
 
-          {/* Result header */}
-          <View style={{
-            marginHorizontal: 20, marginTop: 8, marginBottom: 16,
-            backgroundColor: won ? 'rgba(16,185,129,0.10)' : 'rgba(239,68,68,0.10)',
-            borderRadius: 16, padding: 16, alignItems: 'center',
-          }}>
-            <Text style={{ fontSize: 28 }}>{won ? '🏆' : '😤'}</Text>
-            <Text style={{ fontSize: 20, fontFamily: Fonts.uiBlack, color: won ? '#047857' : '#B91C1C', marginTop: 4 }}>
-              {won ? 'Victoire' : 'Défaite'}
-            </Text>
-            {match.score_text ? (
-              <Text style={{ fontSize: 28, fontFamily: Fonts.uiBlack, color: won ? '#047857' : '#B91C1C', marginTop: 4, letterSpacing: 1 }}>
-                {match.score_text}
-              </Text>
-            ) : null}
-            <Text style={{ fontSize: 12, color: Colors.textMuted, fontWeight: '600', marginTop: 6, textTransform: 'capitalize' }}>{date}</Text>
-          </View>
-
-          {/* Teams */}
-          <View style={{ flexDirection: 'row', marginHorizontal: 20, gap: 10, marginBottom: 16 }}>
-            {[{ team: teamA, label: 'Ton équipe', color: won ? '#047857' : '#B91C1C', bg: won ? 'rgba(16,185,129,0.10)' : 'rgba(239,68,68,0.10)' },
-              { team: teamB, label: 'Adversaires', color: Colors.textSecondary, bg: Colors.bg }].map(({ team, label, color, bg }) => (
-              <View key={label} style={{ flex: 1, backgroundColor: bg, borderRadius: 14, padding: 12 }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>{label}</Text>
-                {team.map((p, i) => (
-                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: i < team.length - 1 ? 6 : 0 }}>
-                    <View style={{ width: 26, height: 26, borderRadius: 999, backgroundColor: color + '22', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 11, fontWeight: '900', color }}>{p.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary, flexShrink: 1 }} numberOfLines={1}>{p.name}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
+          {/* Carte de match — même affichage que le profil (en-tête + équipes en lignes + grille de score) */}
+          <View style={{ marginHorizontal: 20, marginTop: 8, marginBottom: 16 }}>
+            <MatchScoreCard m={matchToView(match, playerId)} showDelta={false} showActions={false} />
           </View>
 
           {/* Badges received */}
@@ -1129,6 +1121,46 @@ function needsMyValidation(m: Match, playerId: string): boolean {
   return true;
 }
 
+// ── Match → forme MatchView (réutilise l'affichage du profil) ──
+function parseSetsLocal(text: string | null | undefined): [number, number][] {
+  if (!text) return [];
+  return text.trim().split(/[\s,]+/).flatMap(s => {
+    const p = s.split('-').map(Number);
+    return p.length === 2 && !p.some(isNaN) ? [[p[0], p[1]] as [number, number]] : [];
+  });
+}
+
+function matchToView(match: Match, playerId: string): PMMatchView {
+  const won = match.winner_id === playerId || match.winner_id_2 === playerId;
+  const winners = [match.winner, match.winner_2].filter(Boolean) as NonNullable<typeof match.winner>[];
+  const losers  = [match.loser,  match.loser_2 ].filter(Boolean) as NonNullable<typeof match.loser>[];
+  const mine = won ? winners : losers;
+  const opp  = won ? losers  : winners;
+  const meP     = mine.find(p => p.id === playerId);
+  const partner = mine.find(p => p.id !== playerId);
+  const lvlOf = (p?: { elo_score?: number | null } | null) => (p?.elo_score != null ? eloToLevel(p.elo_score) : undefined);
+  const myTeam = [
+    { name: displayName(meP ?? null, 'player'), me: true, lvl: lvlOf(meP) },
+    ...(partner ? [{ name: displayName(partner, 'partner'), lvl: lvlOf(partner) }] : []),
+  ];
+  const oppTeam = opp.map(p => ({ name: displayName(p, 'opponent'), lvl: lvlOf(p) }));
+  const sets = parseSetsLocal(match.score_text).map(([w, l]) => (won ? [w, l] : [l, w]) as [number, number]);
+  const dt = new Date(match.game?.match_date ?? match.created_at);
+  const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const time = dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+  return {
+    id: match.id,
+    club: match.game?.location ?? 'Match',
+    date: dateStr.charAt(0).toUpperCase() + dateStr.slice(1),
+    time,
+    result: won ? 'Victoire' : 'Défaite',
+    delta: 0,
+    teams: [myTeam, oppTeam],
+    sets,
+    winnerRow: won ? 0 : 1,
+  };
+}
+
 // ─── Match card (history) ─────────────────────────────────────
 function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
   match: Match;
@@ -1137,99 +1169,33 @@ function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
   onRematch?: (matchId: string) => void;
   onShare?: () => void;
 }) {
-  const won = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const winnerTeam = [match.winner, match.winner_2].filter(Boolean)
-    .map(p => ({ name: displayName(p, won ? 'partner' : 'opponent'), team: 'A' as const }));
-  const loserTeam  = [match.loser,  match.loser_2 ].filter(Boolean)
-    .map(p => ({ name: displayName(p, won ? 'opponent' : 'partner'), team: 'B' as const }));
-  const winnerNames = winnerTeam.map(p => p.name).join(' & ') || '?';
-  const loserNames  = loserTeam .map(p => p.name).join(' & ') || '?';
   const canRematch = onRematch && match.status === 'validated';
+  const footer = (canRematch || onShare) ? (
+    <View style={{ flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt, paddingTop: 10 }}>
+      {canRematch && (
+        <TouchableOpacity
+          onPress={(e) => { (e as any).stopPropagation?.(); onRematch!(match.id); }}
+          activeOpacity={0.85}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }}
+        >
+          <Text style={{ fontSize: 13 }}>🔄</Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>Rejouer</Text>
+        </TouchableOpacity>
+      )}
+      {onShare && (
+        <TouchableOpacity
+          onPress={(e) => { (e as any).stopPropagation?.(); onShare(); }}
+          activeOpacity={0.85}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }}
+        >
+          <Text style={{ fontSize: 13 }}>📸</Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>Partager</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  ) : undefined;
   return (
-    <TouchableOpacity style={[cs.card, { padding: 14 }]} onPress={onPress} activeOpacity={0.8}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pill variant={won ? 'success' : 'danger'}>
-            {won ? 'Victoire' : 'Défaite'}
-          </Pill>
-          <Text style={{ fontSize: 11, fontWeight: '600', color: Colors.textMuted }}>
-            {new Date(match.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-          </Text>
-        </View>
-        {match.score_text ? (
-          <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: won ? '#047857' : '#B91C1C' }}>
-            {match.score_text}
-          </Text>
-        ) : null}
-      </View>
-      {(match.game?.location || match.game?.match_date) && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-          {match.game?.location ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={{ fontSize: 11 }}>📍</Text>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }} numberOfLines={1}>{match.game.location}</Text>
-            </View>
-          ) : null}
-          {match.game?.match_date ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={{ fontSize: 11 }}>🕒</Text>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }}>
-                {new Date(match.game.match_date).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      )}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <AvatarRow players={winnerTeam} slots={0} />
-        <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBlack, color: '#047857' }} numberOfLines={1}>
-          {winnerNames}
-        </Text>
-      </View>
-      <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, marginLeft: 6, marginVertical: 4 }}>vs</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <AvatarRow players={loserTeam} slots={0} />
-        <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: Colors.textSecondary }} numberOfLines={1}>
-          {loserNames}
-        </Text>
-      </View>
-      {(canRematch || onShare) && (
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          {canRematch && (
-            <TouchableOpacity
-              onPress={(e) => { e.stopPropagation?.(); onRematch!(match.id); }}
-              activeOpacity={0.85}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                paddingVertical: 9, borderRadius: 10,
-                backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
-              }}
-            >
-              <Text style={{ fontSize: 13 }}>🔄</Text>
-              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
-                Rejouer
-              </Text>
-            </TouchableOpacity>
-          )}
-          {onShare && (
-            <TouchableOpacity
-              onPress={(e) => { e.stopPropagation?.(); onShare(); }}
-              activeOpacity={0.85}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                paddingVertical: 9, borderRadius: 10,
-                backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
-              }}
-            >
-              <Text style={{ fontSize: 13 }}>📸</Text>
-              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
-                Partager
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-    </TouchableOpacity>
+    <MatchScoreCard m={matchToView(match, playerId)} onPress={onPress} showDelta={false} showActions={false} footer={footer} />
   );
 }
 
@@ -1472,7 +1438,6 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
               variant="upcoming"
               myElo={myElo}
               playerId={playerId}
-              roleColor={Colors.brand}
               onPress={() => onOpenGame(g)}
               onAcceptInvitation={onAcceptInvitation}
               onDeclineInvitation={onDeclineInvitation}
@@ -1482,22 +1447,22 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
       )}
       {showCreated && created.length > 0 && (
         <Section title="J'organise" count={created.length} color={Colors.primary} icon={<IconMegaphone color={Colors.textOnDark} />}>
-          {created.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.primary} onPress={() => onOpenGame(g)} {...cardProps} />)}
+          {created.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {showAccepted && accepted.length > 0 && (
         <Section title="Je joue" count={accepted.length} color={Colors.success} icon={<IconCheck color={Colors.textOnDark} />}>
-          {accepted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.success} onPress={() => onOpenGame(g)} {...cardProps} />)}
+          {accepted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {showPending && pending.length > 0 && (
         <Section title="En attente d'approbation" count={pending.length} color={Colors.warning} icon={<IconHourglass color={Colors.textOnDark} />}>
-          {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.warning} onPress={() => onOpenGame(g)} />)}
+          {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} />)}
         </Section>
       )}
       {showWaitlist && waitlisted.length > 0 && (
         <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted} icon={<IconWaitClock color={Colors.textOnDark} />}>
-          {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} roleColor={Colors.textMuted} onPress={() => onOpenGame(g)} {...cardProps} />)}
+          {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {created.length + accepted.length + invited.length + pending.length + waitlisted.length === 0 && (
@@ -1587,12 +1552,20 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
       )}
       {toScore.length > 0 && (
         <Section title="Score à saisir" count={toScore.length} color={Colors.warning}>
-          {toScore.map(m => <MatchCard key={m.id} match={m} playerId={playerId} onPress={() => onOpenMatch(m)} />)}
+          {toScore.map(m => (
+            <View key={m.id} style={{ marginBottom: 10 }}>
+              <MatchCard match={m} playerId={playerId} onPress={() => onOpenMatch(m)} />
+            </View>
+          ))}
         </Section>
       )}
       {past.length > 0 && (
         <Section title="Matchs passés" count={past.length} color={Colors.textSecondary}>
-          {past.map(m => <MatchCard key={m.id} match={m} playerId={playerId} onPress={() => onOpenMatch(m)} onRematch={onRematch} onShare={() => onShare(m)} />)}
+          {past.map(m => (
+            <View key={m.id} style={{ marginBottom: 10 }}>
+              <MatchCard match={m} playerId={playerId} onPress={() => onOpenMatch(m)} onRematch={onRematch} onShare={() => onShare(m)} />
+            </View>
+          ))}
         </Section>
       )}
       {pastGames.length + toScore.length + past.length === 0 && (
@@ -1645,7 +1618,7 @@ export default function LobbyScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
 
-    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, player:player_id(id, name, elo_score, win_count, loss_count))';
+    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
 
     const [explorerRes, createdRes, matchesRes] = await Promise.all([
       supabase
@@ -1664,7 +1637,7 @@ export default function LobbyScreen() {
         .limit(10),
       supabase
         .from('matches')
-        .select('*, winner:winner_id(id, name, deleted_at), winner_2:winner_id_2(id, name, deleted_at), loser:loser_id(id, name, deleted_at), loser_2:loser_id_2(id, name, deleted_at), game:game_id(location, match_date)')
+        .select('*, winner:winner_id(id, name, deleted_at, elo_score), winner_2:winner_id_2(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score), game:game_id(location, match_date)')
         .or(`winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`)
         .in('status', ['pending', 'validated'])
         .order('created_at', { ascending: false })
@@ -1849,34 +1822,25 @@ export default function LobbyScreen() {
   const handleApply = async (gameId: string, joinWaitlist: boolean, teamSide?: string) => {
     if (!player) return;
     const game = games.find(g => g.id === gameId) ?? upcomingGames.find(g => g.id === gameId);
-    const eloFit = game ? getEloFit(game, myElo) : 'outside';
-    const autoAccept = !joinWaitlist && eloFit === 'fit' && (game?.spots_available ?? 0) > 0;
-    const newStatus = joinWaitlist || (game?.spots_available ?? 0) === 0
-      ? 'waitlist'
-      : autoAccept ? 'accepted' : 'pending';
-
-    const { error } = await supabase.from('game_participants').insert({
-      game_id: gameId,
-      player_id: player.id,
-      status: newStatus,
-      ...(teamSide ? { team_side: teamSide } : {}),
-    });
-    if (error) {
+    // Candidature atomique côté serveur : gate sur l'occupation vivante
+    // (invités expirés exclus), pas de surbooking concurrent. Renvoie le
+    // statut attribué ; on enchaîne sur les notifs adéquates.
+    let newStatus: string;
+    try {
+      newStatus = await joinGame(gameId, teamSide, joinWaitlist);
+    } catch (error: any) {
       if (isCreatorConflict(error)) {
         Alert.alert(
           'Créneau déjà occupé',
-          "Tu es l'organisateur·trice d'une autre partie au même créneau. Annule-la ou transfère-la d'abord.",
+          "Tu es l'organisateur·trice d'un match sur un créneau équivalent ou rapproché (~2h). Annule-le ou transfère-en l'organisation avant de créer ou rejoindre une partie.",
         );
       } else {
-        Alert.alert('Erreur', error.message);
+        Alert.alert('Erreur', error.message ?? 'Candidature échouée');
       }
       throw error;
     }
 
     if (newStatus === 'accepted' && game) {
-      await supabase.from('open_games')
-        .update({ spots_available: Math.max(0, (game.spots_available ?? 1) - 1) })
-        .eq('id', gameId);
       const confirmedIds = [
         game.creator_id,
         ...(game.participants?.filter((p: any) => p.status === 'accepted').map((p: any) => p.player_id) ?? []),
@@ -2107,7 +2071,7 @@ export default function LobbyScreen() {
       if (isCreatorConflict(error)) {
         Alert.alert(
           'Créneau déjà occupé',
-          'Ce joueur organise une autre partie au même créneau — sa candidature ne peut pas être acceptée.',
+          'Ce joueur organise une autre partie à un créneau équivalent ou rapproché (~2h) — sa candidature ne peut pas être acceptée.',
         );
       } else {
         Alert.alert('Erreur', error.message);
@@ -2186,40 +2150,10 @@ export default function LobbyScreen() {
               );
             }
 
-            // Promote first waitlisted player if any
-            const { data: nextUp } = await supabase
-              .from('game_participants')
-              .select('id, player_id, player:player_id(name)')
-              .eq('game_id', gameId)
-              .eq('status', 'waitlist')
-              .order('created_at', { ascending: true })
-              .limit(1)
-              .maybeSingle();
-
-            if (nextUp) {
-              const takenSides = new Set<string>([
-                ...(game?.creator_side ? [game.creator_side] : ['A_GAU']),
-                ...(game?.participants ?? [])
-                  .filter((p: any) => p.status === 'accepted' && p.id !== participantId)
-                  .map((p: any) => p.team_side).filter(Boolean),
-              ]);
-              const promoSide = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'].find(s => !takenSides.has(s)) ?? null;
-              await supabase.from('game_participants').update({
-                status: 'accepted',
-                ...(promoSide ? { team_side: promoSide } : {}),
-              }).eq('id', nextUp.id);
-              notifyPlayers({
-                playerIds: [nextUp.player_id],
-                title: '🎉 Place libérée — tu es accepté !',
-                body: `Tu passes de la liste d'attente à confirmé !`,
-                data: { type: 'lobby', gameId },
-              });
-            } else {
-              const currentSpots = game?.spots_available ?? 0;
-              await supabase.from('open_games')
-                .update({ spots_available: currentSpots + 1, status: 'open' })
-                .eq('id', gameId);
-            }
+            // Libération de place déléguée à la fonction serveur partagée
+            // (promotion du 1er waitlister, sinon +1 compteur). La notif de
+            // promotion part du webhook notify-promotion (waitlist→accepted).
+            await supabase.rpc('free_spot_and_promote', { p_game_id: gameId });
           }
 
           fetchData();
@@ -2363,6 +2297,20 @@ export default function LobbyScreen() {
     showApp: true, showQR: true,
   };
 
+  // Retrait manuel d'une invitation par le créateur (silencieux côté invité).
+  // RPC serveur qui vérifie l'ownership, supprime la ligne, répercute le défi
+  // lié et rouvre la place (free_spot_and_promote).
+  const handleWithdrawInvitation = async (gameId: string, playerId: string) => {
+    if (!player) return;
+    try {
+      await withdrawInvitation(gameId, playerId);
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message ?? 'Retrait échoué');
+      return;
+    }
+    fetchData();
+  };
+
   const handleAcceptInvitation = async (participantId: string, gameId: string) => {
     if (!player) return;
     const game = upcomingGames.find(g => g.id === gameId) ?? games.find(g => g.id === gameId);
@@ -2375,7 +2323,7 @@ export default function LobbyScreen() {
       if (isCreatorConflict(error)) {
         Alert.alert(
           'Créneau déjà occupé',
-          "Tu es l'organisateur·trice d'une autre partie au même créneau. Annule-la ou transfère-la d'abord.",
+          "Tu es l'organisateur·trice d'un match sur un créneau équivalent ou rapproché (~2h). Annule-le ou transfère-en l'organisation avant de créer ou rejoindre une partie.",
         );
       } else {
         Alert.alert('Erreur', error.message);
@@ -2583,6 +2531,7 @@ export default function LobbyScreen() {
           onDeclinePending={handleDeclinePending}
           onAcceptInvitation={handleAcceptInvitation}
           onDeclineInvitation={handleDeclineInvitation}
+          onWithdrawInvitation={handleWithdrawInvitation}
           onLeave={handleLeaveGame}
           onCancelGame={handleCancelGame}
         />

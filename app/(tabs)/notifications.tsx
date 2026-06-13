@@ -133,7 +133,7 @@ export default function NotificationsScreen() {
       { data: recentMatches },
       { data: alreadyVoted },
       { data: eloHistory },
-      { count: toScoreCount },
+      { data: toScoreGames },
       { data: invitations },
       { data: myGames },
       { data: dismissedRows },
@@ -167,7 +167,7 @@ export default function NotificationsScreen() {
         .order('created_at', { ascending: false }),
       supabase
         .from('open_games')
-        .select('id', { count: 'exact', head: true })
+        .select('id, creator_id, participants:game_participants(player_id, status)')
         .neq('status', 'cancelled')
         .neq('status', 'closed')
         .lt('match_date', nowIso)
@@ -196,6 +196,18 @@ export default function NotificationsScreen() {
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
     const unvotedCount = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id)).length;
+
+    // "Partie à scorer" — MÊMES critères que score-entry.fetchGames et
+    // useNotificationCount.toScore : doubles uniquement (4 joueurs réels). On ne
+    // se fie PAS au seul spots_available (compteur dénormalisé sujet au drift),
+    // sinon une partie incomplète génère une notif fantôme sans match en face.
+    const toScoreCount = (toScoreGames ?? []).filter((g: any) => {
+      const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
+      const creatorAccepted = accepted.some((p: any) => p.player_id === g.creator_id);
+      const total = accepted.length + (creatorAccepted ? 0 : 1);
+      const meIn = g.creator_id === player.id || accepted.some((p: any) => p.player_id === player.id);
+      return total >= 4 && meIn;
+    }).length;
 
     // Filter pending: exclude matches submitted by me OR by my doubles partner
     const visiblePending = (pending ?? []).filter((m: any) => {

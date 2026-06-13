@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type ReactNode } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput,
   Modal, KeyboardAvoidingView, Platform, Pressable, Alert,
@@ -11,9 +11,15 @@ import { supabase } from '../../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../../lib/theme';
 import { formatFrmtRanking } from '../../../lib/frmt-match';
 import { blockUser, unblockUser, isBlocked, reportContent } from '../../../lib/moderation';
-import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction } from '../../../lib/community';
+import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../../lib/community';
 import { ActivityCard } from '../../../components/community/ActivityCard';
-import type { Player, EloHistory, ActivityEvent } from '../../../types';
+import type { Player, EloHistory, ActivityEvent, Achievement } from '../../../types';
+import { getPlayerAchievements } from '../../../lib/achievements';
+import { PM } from '../../../components/profile/theme';
+import {
+  ProfileHeader, AchievementFeedCard, MatchActionButton, type TabName, type MatchView, type TimelinePoint, type PlayerLite,
+} from '../../../components/profile/components';
+import { StatsTab, MatchsTab, PalmaresTab, BadgesTab } from '../../../components/profile/tabs';
 import StoryMatchPicker from '../../../components/StoryMatchPicker';
 import StoryComposerV2 from '../../../components/StoryComposerV2';
 import type { StoryMode } from '../../../components/story/StoryStyles';
@@ -608,6 +614,13 @@ export default function PlayerProfileScreen() {
   const [genderReqReason, setGenderReqReason] = useState('');
   const [genderReqSubmitting, setGenderReqSubmitting] = useState(false);
 
+  // ── Refonte profil (header sombre + onglets) ──────────────────────
+  const [tab, setTab]                     = useState<TabName>('Stats');
+  const [achievements, setAchievements]   = useState<Achievement[]>([]);
+  const [isFollowing, setIsFollowing]     = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+
   const isSelf = self?.id === id;
 
   const reactToActivity = async (eventId: string) => {
@@ -655,8 +668,8 @@ export default function PlayerProfileScreen() {
         .from('matches')
         .select(`id, score_text, created_at, game_format, match_type, is_challenge, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
-          winner:winner_id(id, name, deleted_at), loser:loser_id(id, name, deleted_at),
-          winner_2:winner_id_2(id, name, deleted_at), loser_2:loser_id_2(id, name, deleted_at),
+          winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
+          winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
           game:game_id(location, match_date)`)
         .or(`winner_id.eq.${id},loser_id.eq.${id},winner_id_2.eq.${id},loser_id_2.eq.${id}`)
         .eq('status', 'validated')
@@ -678,6 +691,18 @@ export default function PlayerProfileScreen() {
     setIsFav(!!favRes.data);
     setRankPos((rankRes.count ?? 0) + 1);
     getPlayerActivity(id).then(setActivity);
+    getPlayerAchievements(id).then(setAchievements);
+
+    // Graphe social (follows) — compteurs + état de suivi pour l'en-tête.
+    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id)
+      .then(({ count }) => setFollowerCount(count ?? 0));
+    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id)
+      .then(({ count }) => setFollowingCount(count ?? 0));
+    if (self && self.id !== id) {
+      supabase.from('follows').select('follower_id')
+        .eq('follower_id', self.id).eq('following_id', id).maybeSingle()
+        .then(({ data }) => setIsFollowing(!!data));
+    }
 
     // Pending gender-change request (only relevant on own profile)
     if (self?.id === id) {
@@ -727,6 +752,15 @@ export default function PlayerProfileScreen() {
 
   useEffect(() => { fetchData(); }, [id]);
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
+
+  const toggleFollow = async () => {
+    if (!self || isSelf) return;
+    const next = !isFollowing;
+    setIsFollowing(next);
+    setFollowerCount(c => Math.max(0, c + (next ? 1 : -1)));
+    try { await setFollow(self.id, id as string, next); }
+    catch { setIsFollowing(!next); setFollowerCount(c => Math.max(0, c + (next ? -1 : 1))); }
+  };
 
   const toggleFav = async () => {
     if (!self || isSelf) return;
@@ -1043,309 +1077,152 @@ export default function PlayerProfileScreen() {
     showApp: true, showQR: true,
   };
 
+  // ── Adaptateurs : données réelles → formes de la maquette ─────────
+  const matchById = new Map(matches.map(m => [m.id, m]));
+  const mapMatch = (m: MatchRow): MatchView => {
+    const win = m.winner_id === id || m.winner_id_2 === id;
+    const is2 = isDoubles(m);
+    const winners = [{ pid: m.winner_id, p: m.winner }, { pid: m.winner_id_2, p: m.winner_2 }].filter(x => x.pid);
+    const losers  = [{ pid: m.loser_id,  p: m.loser  }, { pid: m.loser_id_2,  p: m.loser_2  }].filter(x => x.pid);
+    const mine = win ? winners : losers;
+    const opp  = win ? losers  : winners;
+    const meEntry = mine.find(x => x.pid === id);
+    const partnerEntry = mine.find(x => x.pid !== id);
+    const lvlOf = (p: JoinedPlayer | null | undefined) => (p?.elo_score != null ? eloToLevel(p.elo_score) : undefined);
+    const myTeam: PlayerLite[] = [
+      { name: meEntry?.p?.name ?? profile.name, lvl: lvlOf(meEntry?.p) ?? curLevel, me: true },
+      ...(is2 && partnerEntry ? [{ name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p) }] : []),
+    ];
+    const oppTeam: PlayerLite[] = opp.map(x => ({ name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p) }));
+    const sets = parseSets(m.score_text).map(([w, l]) => (win ? [w, l] : [l, w]) as [number, number]);
+    const dt = new Date(m.game?.match_date ?? m.created_at);
+    const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const time = dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+    return {
+      id: m.id,
+      club: m.game?.location ?? 'Match',
+      date: dateStr.charAt(0).toUpperCase() + dateStr.slice(1),
+      time,
+      result: win ? 'Victoire' : 'Défaite',
+      delta: eloChangeByMatch[m.id] ?? 0,
+      teams: [myTeam, oppTeam],
+      sets,
+      winnerRow: win ? 0 : 1,
+    };
+  };
+  const matchViews: MatchView[] = matches.map(mapMatch);
+  const lastMatchView = matchViews[0] ?? null;
+  const timeline: TimelinePoint[] = eloHistory
+    .filter(h => h.match_id && matchById.has(h.match_id))
+    .map(h => {
+      const m = matchById.get(h.match_id as string) as MatchRow;
+      const win = m.winner_id === id || m.winner_id_2 === id;
+      return { lvl: eloToLevel(h.elo_score), result: (win ? 'Victoire' : 'Défaite') as 'Victoire' | 'Défaite', match: mapMatch(m) };
+    });
+  const formVD = recentForm.map(r => (r === 'W' ? 'V' : 'D')) as ('V' | 'D')[];
+  const repMap = new Map<string, { emoji: string; label: string; n: number }>();
+  for (const [key, n] of Object.entries(karmaCounts)) {
+    const info = BADGES_INFO[key];
+    if (!info) continue;
+    const cur = repMap.get(info.label) ?? { emoji: info.icon, label: info.label, n: 0 };
+    cur.n += n; repMap.set(info.label, cur);
+  }
+  const repBadges = [...repMap.values()];
+  const nowMs = Date.now();
+  const recentHist = eloHistory.filter(h => nowMs - new Date(h.created_at).getTime() <= 30 * 86400000);
+  const delta30 = recentHist.length
+    ? eloToLevel(eloHistory[eloHistory.length - 1].elo_score) - eloToLevel(recentHist[0].elo_score - recentHist[0].elo_change)
+    : null;
+  const onShareMatchView = (mv: MatchView) => { const m = mv.id ? matchById.get(mv.id) : null; if (m) shareMatch(m); };
+
+  // Footer d'une carte de match — branché sur l'événement d'activité du match :
+  //  • Vamos 🔥  → réaction (pas sur ses propres matchs, comme dans la Communauté)
+  //  • Commenter → fil de commentaires de l'événement
+  //  • Partager  → uniquement sur SON profil (on ne partage pas le match d'un autre)
+  const eventByMatch = new Map(activity.filter(e => e.match_id).map(e => [e.match_id as string, e]));
+  const renderMatchFooter = (mv: MatchView): ReactNode => {
+    const ev = mv.id ? eventByMatch.get(mv.id) : undefined;
+    const myId = self?.id ?? '';
+    const fireArr = ev?.reactions?.['🔥'] ?? [];
+    const reacted = !!myId && fireArr.includes(myId);
+    const btns: ReactNode[] = [];
+    if (ev && !isSelf) {
+      btns.push(<MatchActionButton key="vamos" icon="🔥" label="Vamos" active={reacted} count={fireArr.length} onPress={() => reactToActivity(ev.id)} />);
+    }
+    if (ev) {
+      btns.push(<MatchActionButton key="comment" icon="💬" label="Commenter" count={ev.comment_count} onPress={() => router.push(`/community/comments/${ev.id}` as any)} />);
+    }
+    if (isSelf) {
+      btns.push(<MatchActionButton key="share" icon="↗" label="Partager" onPress={() => onShareMatchView(mv)} />);
+    }
+    if (btns.length === 0) return null;
+    return <View style={{ flexDirection: 'row', gap: 7, borderTopWidth: 1, borderTopColor: PM.divider, paddingTop: 10 }}>{btns}</View>;
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: LIGHT.page }}>
-    {/* ── Top bar claire (sticky) ──────────────────────────────── */}
-    <View style={{
-      paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 12,
-      backgroundColor: LIGHT.card, borderBottomWidth: 1, borderBottomColor: LIGHT.border,
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    }}>
-      <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}
-        style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
-        <IconBack color={LIGHT.text} />
-      </TouchableOpacity>
-      <Text style={{ fontSize: 16, fontWeight: '700', color: LIGHT.text }}>Profil</Text>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        {isSelf ? (
-          <>
-            <TouchableOpacity onPress={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }} activeOpacity={0.7}
-              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
-              <IconCamera color={LIGHT.sub} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={openEdit} activeOpacity={0.7}
-              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
-              <IconEdit color={LIGHT.text} size={18} />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity onPress={toggleFav} activeOpacity={0.7}
-              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: isFav ? 'rgba(245,158,11,0.14)' : LIGHT.chip, borderWidth: 1, borderColor: isFav ? Colors.warning : LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
-              <IconStar filled={isFav} color={isFav ? Colors.warning : LIGHT.sub} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={openModerationMenu} activeOpacity={0.7}
-              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 20, lineHeight: 20, color: LIGHT.text, marginTop: -4 }}>⋯</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </View>
-
+    {/* ── Header sombre + onglets (refonte « Profil PagMatch ») ── */}
     <ScrollView
-      style={{ flex: 1, backgroundColor: LIGHT.page }}
-      contentContainerStyle={{ paddingBottom: isSelf ? 40 : insets.bottom + 80 }}
+      style={{ flex: 1, backgroundColor: PM.ink }}
+      contentContainerStyle={{ paddingBottom: isSelf ? 40 : insets.bottom + 40 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
-      {/* ── Identité (claire, centrée) ───────────────────────────── */}
-      <View style={{ alignItems: 'center', paddingHorizontal: 20, paddingTop: 24, paddingBottom: 4 }}>
-        <GradientAvatar name={profile.name} color={leagueColor} size={76} />
-        <Text style={{ fontSize: 26, fontWeight: '800', letterSpacing: -0.6, color: LIGHT.text, marginTop: 14 }} numberOfLines={1}>
-          {profile.name}
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 7, marginTop: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <View style={{ backgroundColor: leagueColor + '1f', borderWidth: 1, borderColor: leagueColor + '55', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: leagueColor }}>● {getLeagueLabel(league)} · Niv. {curLevel.toFixed(2)}</Text>
-          </View>
-          {rankPos && (
-            <View style={{ backgroundColor: LIGHT.chip, borderWidth: 1, borderColor: LIGHT.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: LIGHT.sub }}>Rang #{rankPos}</Text>
-            </View>
-          )}
-          {(() => {
-            const f = formatFrmtRanking(profile);
-            if (!f || !f.verified) return null;
-            return (
-              <View style={{ backgroundColor: Colors.success + '16', borderWidth: 1, borderColor: Colors.success + '44', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5 }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.success }}>FRMT {f.text} ✓</Text>
-              </View>
-            );
-          })()}
-        </View>
-      </View>
-
-      {/* ── Carte « Niveau padel » ───────────────────────────────── */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-        <View style={[cardStyle, { padding: 18, flexDirection: 'row', alignItems: 'center', gap: 18 }]}>
-
-          {/* Colonne gauche : niveau + barre de progression enrichie */}
-          <View style={{ flex: 1 }}>
-            <Kicker style={{ marginBottom: 2 }}>Niveau padel</Kicker>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 50, lineHeight: 52, color: LIGHT.accent, letterSpacing: -1 }}>
-              {formatPadelLevel(profile.elo_score)}
-            </Text>
-
-            {nextLvl ? (
-              <View style={{ marginTop: 10 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: LIGHT.sub }}>Vers niveau {nextLvl.toFixed(1)}</Text>
-                  <Text style={{ fontFamily: Fonts.display, fontSize: 15, lineHeight: 16, color: LIGHT.accent }}>{Math.round(lvlPct * 100)}%</Text>
-                </View>
-                <View style={{ height: 9, borderRadius: 5, backgroundColor: LIGHT.divider, overflow: 'hidden' }}>
-                  <View style={{ height: 9, borderRadius: 5, backgroundColor: LIGHT.accent, width: `${Math.max(4, Math.round(lvlPct * 100))}%` as any }} />
-                </View>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: LIGHT.sub, marginTop: 6 }}>
-                  Plus que <Text style={{ fontWeight: '800', color: LIGHT.text }}>{lvlToNext.toFixed(2)}</Text> pour le niveau {nextLvl.toFixed(1)}
-                </Text>
-              </View>
-            ) : (
-              <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.success }}>🏆 Niveau maximum atteint</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Colonne droite : jauge circulaire de fiabilité, bien mise en avant */}
-          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <ReliabilityRing pct={fib} color={fibColor} />
-            <Kicker style={{ marginTop: 8, fontSize: 9.5 }}>Fiabilité</Kicker>
-            <View style={{ backgroundColor: fibColor + '16', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, marginTop: 4 }}>
-              <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.5, color: fibColor }}>{fibLabel}</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      {/* ── Carte « Bilan + Forme » ──────────────────────────────── */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
-        <View style={[cardStyle, { overflow: 'hidden' }]}>
-          <View style={{ flexDirection: 'row', paddingVertical: 18 }}>
-            {([
-              ['Matchs', String(totalM), LIGHT.text],
-              ['Victoires', String(wins), Colors.success],
-              ['Défaites', String(losses), Colors.danger],
-              ['Win', `${winRate}%`, LIGHT.accent],
-            ] as [string, string, string][]).map(([label, value, color], i) => (
-              <View key={label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: i ? 1 : 0, borderLeftColor: LIGHT.divider }}>
-                <Text style={{ fontFamily: Fonts.display, fontSize: 26, lineHeight: 28, color }}>{value}</Text>
-                <Kicker style={{ marginTop: 2 }}>{label}</Kicker>
-              </View>
-            ))}
-          </View>
-          {recentForm.length > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 14, borderTopWidth: 1, borderTopColor: LIGHT.divider }}>
-              <Kicker>Forme</Kicker>
-              <View style={{ flexDirection: 'row', gap: 5, flex: 1 }}>
-                {recentForm.map((r, i) => (
-                  <View key={i} style={{ width: 22, height: 22, borderRadius: 7, backgroundColor: r === 'W' ? Colors.success : Colors.danger, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: Colors.textOnDark, fontSize: 10, fontWeight: '900' }}>{r}</Text>
-                  </View>
-                ))}
-              </View>
-              {streak >= 3 && <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.warning }}>🔥 {streak}</Text>}
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* ── ELO Chart ───────────────────────────────────────────── */}
-      {eloHistory.length >= 2 && (
-        <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
-          <View style={[cardStyle, { padding: 18 }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-              <Kicker>Évolution du niveau</Kicker>
-            </View>
-            <EloLineChart history={eloHistory} />
-          </View>
-        </View>
-      )}
-
-
-      {/* ── Préférences (lignes label / valeur, épuré) ──────────── */}
-      {prefRows.length > 0 && (
-        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-          <Kicker style={{ marginBottom: 8, marginLeft: 2 }}>Préférences</Kicker>
-          <View style={[cardStyle, { paddingHorizontal: 16 }]}>
-            {prefRows.map(([label, value], i) => (
-              <View key={label} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 46, gap: 12, borderTopWidth: i ? 1 : 0, borderTopColor: LIGHT.divider }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: LIGHT.sub }}>{label}</Text>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: LIGHT.text, flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>{value}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* ── Palmarès (badges karma + achievements, conservé) ────── */}
-      {showPalm && (
-        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-          <Kicker style={{ marginBottom: 8, marginLeft: 2 }}>Palmarès</Kicker>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {sortedKarma.map(([key, count]) => {
-              const info = BADGES_INFO[key];
-              if (!info) return null;
-              return (
-                <View key={key} style={[cardStyle, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }]}>
-                  <Text style={{ fontSize: 20 }}>{info.icon}</Text>
-                  <View>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: LIGHT.text }}>{info.label}</Text>
-                    <Text style={{ fontSize: 10, color: LIGHT.accent, fontWeight: '800' }}>×{count}</Text>
-                  </View>
-                </View>
-              );
-            })}
-            {achvBadges.map((b, i) => (
-              <View key={i} style={[cardStyle, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }]}>
-                <Text style={{ fontSize: 20 }}>{b.emoji}</Text>
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: LIGHT.text }}>{b.name}</Text>
-                  <Text style={{ fontSize: 10, color: LIGHT.muted, fontWeight: '600' }}>{b.desc}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* ── Activité (interactive : 🔥 + commentaires) ──────────── */}
-      {activity.length > 0 && (
-        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-          <Kicker style={{ marginBottom: 8, marginLeft: 2 }}>Activité</Kicker>
-          <View style={{ gap: 14 }}>
-            {activity.map(e => (
-              <ActivityCard
-                key={e.id}
-                e={e}
-                myId={self?.id ?? ''}
-                onReact={isSelf ? undefined : () => reactToActivity(e.id)}
-                onPressComments={() => router.push(`/community/comments/${e.id}` as any)}
-                onReport={isSelf ? undefined : () => reportActivityEvent(e)}
-              />
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* ── Historique des matchs (compact, épuré) ──────────────── */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, marginLeft: 2 }}>
-          <Kicker>Historique des matchs · {matches.length}</Kicker>
-          {isSelf && matches.length > 0 && (
-            <Text style={{ fontSize: 10.5, fontWeight: '700', color: LIGHT.muted }}>Tape pour partager 📸</Text>
-          )}
-        </View>
-
-        {matches.length > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: LIGHT.card, borderRadius: 12, borderWidth: 1, borderColor: LIGHT.border, paddingHorizontal: 12, marginBottom: 10, height: 42 }}>
-            <Text style={{ fontSize: 15, marginRight: 8, color: LIGHT.muted }}>🔍</Text>
-            <TextInput
-              value={matchSearch}
-              onChangeText={setMatchSearch}
-              placeholder="Rechercher un joueur…"
-              placeholderTextColor={LIGHT.muted}
-              style={{ flex: 1, fontSize: 14, color: LIGHT.text }}
-              clearButtonMode="while-editing"
-              autoCorrect={false}
-            />
-          </View>
+      <ProfileHeader
+        name={profile.name}
+        level={curLevel}
+        leagueLabel={getLeagueLabel(league)}
+        leagueColor={leagueColor}
+        followers={followerCount}
+        following={followingCount}
+        isSelf={isSelf}
+        isFollowing={isFollowing}
+        onToggleFollow={toggleFollow}
+        onBack={() => router.back()}
+        onMenu={openModerationMenu}
+        onEdit={openEdit}
+        onShareProfile={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }}
+        onDefier={handleDefier}
+        tab={tab}
+        setTab={setTab}
+        topInset={insets.top}
+      />
+      <View style={{ backgroundColor: PM.page, borderTopLeftRadius: 20, borderTopRightRadius: 20, marginTop: -2, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 40, minHeight: 420 }}>
+        {tab === 'Stats' && (
+          <StatsTab
+            curLevel={curLevel} delta30={delta30} timeline={timeline}
+            winRate={winRate} played={totalM} wins={wins} losses={losses}
+            streak={streak} form={formVD} lastMatch={lastMatchView} renderFooter={renderMatchFooter}
+          />
         )}
-
-        {filteredMatches.length === 0 ? (
-          <View style={[cardStyle, { padding: 36, alignItems: 'center' }]}>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: LIGHT.text }}>
-              {matchSearch.trim() ? 'Aucun résultat' : 'Aucun match joué'}
-            </Text>
-            <Text style={{ fontSize: 13, color: LIGHT.muted, marginTop: 4 }}>
-              {matchSearch.trim() ? `Aucun match avec "${matchSearch}"` : "L'historique est encore vierge."}
-            </Text>
-          </View>
-        ) : (
-          <View style={[cardStyle, { paddingHorizontal: 16 }]}>
-            {visibleMatches.map((m, i) => (
-              <HistoryRow
-                key={m.id}
-                match={m}
-                playerId={id as string}
-                isSelf={isSelf}
-                divider={i > 0}
-                onShare={() => shareMatch(m)}
-                onRematch={isSelf ? () => router.push(`/(tabs)/lobby?rematch=${m.id}` as any) : undefined}
-              />
-            ))}
-            {!matchSearch.trim() && filteredMatches.length > 3 && (
-              <TouchableOpacity
-                onPress={() => setShowAllMatches(s => !s)}
-                activeOpacity={0.7}
-                style={{ paddingVertical: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: LIGHT.divider }}
-              >
-                <Text style={{ fontSize: 12.5, fontWeight: '800', letterSpacing: 0.3, color: LIGHT.accent }}>
-                  {showAllMatches ? 'Voir moins' : `Voir tout · ${filteredMatches.length}`}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+        {tab === 'Matchs' && <MatchsTab matches={matchViews} renderFooter={renderMatchFooter} />}
+        {tab === 'Palmarès' && <PalmaresTab achievements={achievements} />}
+        {tab === 'Badges' && <BadgesTab badges={repBadges} />}
+        {tab === 'Activité' && (() => {
+          // Activité = badges reçus + palmarès débloqués (pas les matchs).
+          const feedEvents = activity.filter(e => e.type !== 'match_win' && e.type !== 'match_loss');
+          const unlocked = achievements.filter(a => a.unlocked || a.progress >= a.target);
+          if (feedEvents.length === 0 && unlocked.length === 0) {
+            return <Text style={{ fontSize: 12, color: PM.muted, textAlign: 'center', paddingVertical: 24 }}>Aucun badge ni palmarès débloqué pour l'instant.</Text>;
+          }
+          return (
+            <View style={{ gap: 14 }}>
+              {unlocked.map(a => <AchievementFeedCard key={a.key} ach={a} />)}
+              {feedEvents.map(e => (
+                <ActivityCard
+                  key={e.id}
+                  e={e}
+                  myId={self?.id ?? ''}
+                  onReact={isSelf ? undefined : () => reactToActivity(e.id)}
+                  onPressComments={() => router.push(`/community/comments/${e.id}` as any)}
+                  onReport={isSelf ? undefined : () => reportActivityEvent(e)}
+                />
+              ))}
+            </View>
+          );
+        })()}
       </View>
     </ScrollView>
 
-    {/* ── Barre « Défier » collée en bas (autre joueur) ───────────── */}
-    {!isSelf && (
-      <View style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        backgroundColor: LIGHT.card, borderTopWidth: 1, borderTopColor: LIGHT.border,
-        paddingHorizontal: 20, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 10) + 4,
-        shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 28, shadowOffset: { width: 0, height: -10 }, elevation: 12,
-      }}>
-        <TouchableOpacity onPress={handleDefier} activeOpacity={0.85}
-          style={{ height: 52, borderRadius: 16, backgroundColor: Colors.brand, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, shadowColor: Colors.brand, shadowOpacity: 0.4, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
-            <Polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-          </Svg>
-          <Text style={{ fontSize: 16, fontWeight: '800', color: '#0A0A0A', letterSpacing: 0.2 }}>Défier {profile.name.split(' ')[0]}</Text>
-        </TouchableOpacity>
-      </View>
-    )}
 
     {/* ── Edit profile modal ──────────────────────────────────── */}
     <Modal visible={editOpen} transparent animationType="slide" onRequestClose={() => setEditOpen(false)}>
