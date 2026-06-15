@@ -1,6 +1,6 @@
 // ── PagMatch profile (refonte) — composants visuels ───────────────────
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, LayoutChangeEvent, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, LayoutChangeEvent, Image } from 'react-native';
 import Svg, {
   Path, Circle, Line, Polyline, Polygon, Defs, Stop,
   LinearGradient as SvgLinearGradient, G,
@@ -11,7 +11,7 @@ import { Glyph } from './glyphs';
 const A = accentOf(ACCENT);
 
 // ── Types de présentation (alimentés par les adaptateurs de tabs.tsx) ──
-export interface PlayerLite { name: string; lvl?: number; me?: boolean }
+export interface PlayerLite { id?: string; name: string; lvl?: number; me?: boolean }
 export interface MatchView {
   id?: string;
   club: string; date: string; time: string;
@@ -80,9 +80,12 @@ export function ScoreGrid({ sets, winnerRow }: { sets: [number, number][]; winne
   );
 }
 
-function MatchPlayer({ p, team }: { p: PlayerLite; team: 0 | 1 }) {
+function MatchPlayer({ p, team, onPress }: { p: PlayerLite; team: 0 | 1; onPress?: () => void }) {
+  const Wrap: any = onPress ? TouchableOpacity : View;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
+    <Wrap
+      {...(onPress ? { onPress, activeOpacity: 0.7 } : {})}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
       <Avatar name={p.name} size={28} me={p.me} team={team} />
       <View style={{ minWidth: 0, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
@@ -93,14 +96,15 @@ function MatchPlayer({ p, team }: { p: PlayerLite; team: 0 | 1 }) {
         </View>
         <LevelPill lvl={p.lvl} />
       </View>
-    </View>
+    </Wrap>
   );
 }
 
 // ── Carte d'un match ──────────────────────────────────────────────────
-export function MatchCard({ m, onShare, compact = false, onPress, footer, showActions = true, showDelta = true }: {
+export function MatchCard({ m, onShare, compact = false, onPress, footer, showActions = true, showDelta = true, onPlayerPress }: {
   m: MatchView; onShare?: () => void; compact?: boolean;
   onPress?: () => void; footer?: React.ReactNode; showActions?: boolean; showDelta?: boolean;
+  onPlayerPress?: (id: string) => void;
 }) {
   const win = m.result === 'Victoire';
   const clubInit = m.club.split(' ').map(w => w[0]).join('').slice(0, 2);
@@ -138,10 +142,10 @@ export function MatchCard({ m, onShare, compact = false, onPress, footer, showAc
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {m.teams[0].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={0} /></View>)}
+            {m.teams[0].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={0} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {m.teams[1].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={1} /></View>)}
+            {m.teams[1].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={1} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
           </View>
         </View>
         <View><ScoreGrid sets={m.sets} winnerRow={m.winnerRow} /></View>
@@ -284,16 +288,25 @@ export function LevelChart({ data, selected, onSelect }: { data: TimelinePoint[]
             <Polyline points={line} fill="none" stroke={ACCENT} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
             <Line x1={sel.x} x2={sel.x} y1={sel.y} y2={H - padBot} stroke={ACCENT} strokeWidth={1} strokeDasharray="2 3" opacity={0.55} />
             {pts.map((p, i) => i === si ? null : (
-              <Circle key={i} cx={p.x} cy={p.y} r={2.6} fill={p.d.result === 'Victoire' ? '#fff' : PM.muted} stroke={ACCENT} strokeWidth={1.6} />
+              <Circle key={i} cx={p.x} cy={p.y} r={3.2} fill={p.d.result === 'Victoire' ? '#fff' : PM.muted} stroke={ACCENT} strokeWidth={1.6} />
             ))}
             <Circle cx={sel.x} cy={sel.y} r={5.5} fill={win ? ACCENT : PM.danger} stroke="#fff" strokeWidth={2.5} />
           </Svg>
 
-          {/* Cibles de clic */}
-          {pts.map((p, i) => (
-            <TouchableOpacity key={'h' + i} activeOpacity={0.6} onPress={() => onSelect(i)}
-              style={{ position: 'absolute', left: p.x * scale - 16, top: p.y * scale - 16, width: 32, height: 32 }} />
-          ))}
+          {/* Cible de clic unique : sélectionne le point le plus proche du toucher.
+              Évite les zones 32px qui se chevauchaient (points denses non cliquables). */}
+          <Pressable
+            onPress={(e) => {
+              const lx = e.nativeEvent.locationX;
+              let best = 0, bestD = Infinity;
+              for (let i = 0; i < pts.length; i++) {
+                const dx = Math.abs(pts[i].x * scale - lx);
+                if (dx < bestD) { bestD = dx; best = i; }
+              }
+              onSelect(best);
+            }}
+            style={{ position: 'absolute', left: 0, top: 0, width: w, height: H * scale }}
+          />
 
           {/* Bulle valeur */}
           <View pointerEvents="none" style={{
@@ -416,8 +429,15 @@ export function AchievementFeedCard({ ach }: { ach: AchievementView }) {
 export const TABS = ['Stats', 'Matchs', 'Palmarès', 'Badges', 'Activité'] as const;
 export type TabName = typeof TABS[number];
 
+// Onglets masqués temporairement (code conservé, juste retiré de la barre).
+// « Activité » est en pause : il recoupe Palmarès/Badges sans valeur claire en plus.
+// À ré-afficher quand on aura une meilleure idée de son rôle.
+const HIDDEN_TABS: TabName[] = ['Activité'];
+const VISIBLE_TABS = TABS.filter(t => !HIDDEN_TABS.includes(t));
+
 export function ProfileHeader(props: {
   name: string; level: number; leagueLabel: string; leagueColor: string;
+  frmt?: { text: string; verified: boolean } | null;
   followers: number; following: number;
   isSelf: boolean; isFollowing: boolean;
   onToggleFollow: () => void; onBack: () => void; onMenu: () => void; onEdit: () => void;
@@ -464,7 +484,7 @@ export function ProfileHeader(props: {
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 27, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3 }}>{name}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: ACCENT }}>{level.toFixed(2)}</Text>
               <Text style={{ fontSize: 11 }}>⭐</Text>
@@ -473,6 +493,13 @@ export function ProfileHeader(props: {
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: leagueColor }} />
               <Text style={{ fontSize: 11, fontWeight: '800', color: leagueColor }}>{leagueLabel}</Text>
             </View>
+            {props.frmt && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.28)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '900', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.3 }}>FRMT</Text>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>{props.frmt.text}</Text>
+                {props.frmt.verified && <Text style={{ fontSize: 10, color: ACCENT }}>✓</Text>}
+              </View>
+            )}
           </View>
           <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)', marginTop: 7 }}>
             <Text style={{ color: '#fff', fontWeight: '700' }}>{followers}</Text> abonnés · <Text style={{ color: '#fff', fontWeight: '700' }}>{following}</Text> abonnements
@@ -512,7 +539,7 @@ export function ProfileHeader(props: {
 
       {/* Onglets */}
       <View style={{ flexDirection: 'row', marginTop: 16 }}>
-        {TABS.map(t => {
+        {VISIBLE_TABS.map(t => {
           const on = t === props.tab;
           return (
             <TouchableOpacity key={t} onPress={() => props.setTab(t)} style={{ flex: 1, paddingTop: 11, paddingBottom: 12, alignItems: 'center' }}>

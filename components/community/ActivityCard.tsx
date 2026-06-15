@@ -5,6 +5,8 @@ import { Colors, Fonts, getLeague } from '../../lib/theme';
 import { Avatar } from './Avatar';
 import { Card, Chips } from './ui';
 import { Icon } from './icons';
+import { MatchCard as MatchScoreCard } from '../profile/components';
+import { matchToView } from '../../lib/matchView';
 import type { ActivityEvent, League } from '../../types';
 
 function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
@@ -16,13 +18,14 @@ function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
   }
 }
 
-export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments }: {
+export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer }: {
   e: ActivityEvent;
   myId: string;
   onReact?: () => void;        // absent = 🔥 désactivé (ex: ses propres posts)
   onPressActor?: () => void;   // ouvre le profil de l'acteur
   onReport?: () => void;       // signaler l'activité (absent si c'est la mienne)
   onPressComments?: () => void; // ouvre la feuille de commentaires
+  onPressPlayer?: (id: string) => void; // ouvre le profil d'un joueur de la carte de match
 }) {
   const win = e.type === 'match_win';
   const isMatch = e.type === 'match_win' || e.type === 'match_loss';
@@ -61,8 +64,18 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
         )}
       </View>
 
-      {/* Bloc résultat de match */}
-      {isMatch && e.payload.score ? (
+      {/* Bloc résultat de match — MÊME représentation que partout (<MatchCard>) */}
+      {isMatch && e.match ? (
+        <View style={{ marginBottom: 12 }}>
+          <MatchScoreCard
+            m={matchToView(e.match, e.player_id, false)}
+            showActions={false}
+            showDelta={false}
+            onPlayerPress={onPressPlayer}
+          />
+        </View>
+      ) : isMatch && e.payload.score ? (
+        // Repli si le match n'a pas pu être hydraté (supprimé / fetch échoué).
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12,
           backgroundColor: win ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.06)',

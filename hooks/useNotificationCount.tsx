@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { showBanner } from '../lib/inAppBanner';
+import { isInviteActive } from '../lib/games';
 import { usePlayer } from './usePlayer';
 
 // Single source of truth for the notification bell total, shared by the Home
@@ -45,6 +46,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     if (!player) { setCounts(EMPTY); setLoading(false); return; }
     const id = player.id;
     const now = Date.now();
+    const nowIso = new Date(now).toISOString();
     const h48 = now - 48 * 60 * 60 * 1000;
     const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
     const playerOr = `winner_id.eq.${id},winner_id_2.eq.${id},loser_id.eq.${id},loser_id_2.eq.${id}`;
@@ -68,12 +70,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       { data: myVotes },
     ] = await Promise.all([
       supabase.from('challenges').select('game_id')
-        .eq('challenged_id', id).eq('status', 'pending'),
+        .eq('challenged_id', id).eq('status', 'pending').gt('expires_at', nowIso),
       supabase.from('matches')
         .select('id, created_by, winner_id, winner_id_2, loser_id, loser_id_2, status')
         .or(playerOr).in('status', ['pending', 'counter_proposed']),
       supabase.from('game_participants')
-        .select('id, game_id, game:game_id(status, match_date)').eq('player_id', id).eq('status', 'invited'),
+        .select('id, game_id, invite_expires_at, game:game_id(status, match_date)').eq('player_id', id).eq('status', 'invited'),
       supabase.from('matches').select('id')
         .or(playerOr).in('status', ['pending', 'validated']).gte('created_at', sevenDaysAgo),
       supabase.from('reputation_votes').select('match_id').eq('giver_id', id),
@@ -104,6 +106,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const invitations = (invites ?? []).filter((inv: any) => {
       const g = inv.game;
       if (!g) return false;
+      // Invitation expirée (TTL dépassé) — vérifie la date car le cron de bascule
+      // 'invited' → 'expired' peut avoir jusqu'à 10 min de retard.
+      if (!isInviteActive({ status: 'invited', invite_expires_at: inv.invite_expires_at })) return false;
       if (inv.game_id && challengeGameIds.has(inv.game_id)) return false;
       if (g.status === 'closed' || g.status === 'cancelled') return false;
       if (g.match_date && new Date(g.match_date).getTime() < now) return false;
@@ -149,7 +154,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }, 0);
     }
 
-    const challenges = (challengeRows ?? []).length;
+    // Robustesse : ne pas compter un défi dont la partie est déjà acceptée par
+    // moi (la ligne `challenges` a pu rester 'pending' — drift historique ou
+    // réponse via un autre chemin). Miroir du filtre de l'onglet Défis reçus.
+    const acceptedGameIds = new Set((accParts ?? []).map((p: any) => p.game_id));
+    const challenges = (challengeRows ?? []).filter((c: any) => !c.game_id || !acceptedGameIds.has(c.game_id)).length;
     setCounts({
       challenges, toValidate, invitations, toApprove, trophies, toScore,
       total: challenges + toValidate + invitations + toApprove + trophies + toScore,

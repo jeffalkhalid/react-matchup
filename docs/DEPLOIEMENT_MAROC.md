@@ -206,6 +206,15 @@ Le D-U-N-S (émis par Dun & Bradstreet, **gratuit**) est requis pour les comptes
 
 ---
 
+### 3.6 🟠 Webhooks notifications serveur (Database Webhooks → Edge Functions)
+
+Les notifications déclenchées **en base** (cron/trigger/RPC) passent par des Database Webhooks à créer **à la main** dans le dashboard (Database → Webhooks → type « Supabase Edge Functions »), hors migrations. À vérifier/recréer à chaque réinitialisation de projet.
+
+- [ ] 🟠 **notify-vote-requested** *(nouveau, 2026-06-14)* : Webhook sur `game_participants` **UPDATE** → `POST {SUPABASE_URL}/functions/v1/notify-vote-requested`, header `Authorization: Bearer <SERVICE_ROLE_KEY>`. Prévient les joueurs présents qu'un joueur **hors-niveau** (converti `waitlist→pending` par `free_spot_and_promote`) attend leur **vote unanime**. Déployer d'abord : `npx supabase functions deploy notify-vote-requested --project-ref icshhobxeppttgayxmba`. Ne double pas `notify-promotion` (qui ne réagit qu'à `accepted`).
+- Voir aussi `notify-promotion` (waitlist→accepted), `notify-invite-expired` (invited→expired), `notify-eject` (auto-décline) — même mécanisme. Cf. mémoire `project_supabase_webhooks`.
+
+---
+
 ## Phase 4 — Localisation / UX Maroc (post-MVP)
 
 - [ ] 🟢 Interface en français garantie ; envisager l'arabe.

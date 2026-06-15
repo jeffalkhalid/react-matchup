@@ -160,10 +160,12 @@ export async function setFollow(myId: string, targetId: string, follow: boolean)
 
 // ─── Fil d'activité ──────────────────────────────────────────
 
-// Fil des amis (+ soi). Hydrate l'acteur, la ligue et le nb de commentaires.
+// Fil des amis UNIQUEMENT (on n'affiche pas sa propre activité dans « Mes amis »).
+// Hydrate l'acteur, la ligue et le nb de commentaires.
 export async function getActivityFeed(myId: string, limit = 50): Promise<ActivityEvent[]> {
   const following = await getFollowingIds(myId);
-  const authorIds = [...new Set([myId, ...following])];
+  const authorIds = [...new Set(following)];
+  if (authorIds.length === 0) return [];
 
   const { data: events } = await supabase
     .from('activity_events')
@@ -177,13 +179,23 @@ export async function getActivityFeed(myId: string, limit = 50): Promise<Activit
 
   const actorIds = [...new Set(list.map(e => e.player_id))];
   const eventIds = list.map(e => e.id);
+  // Matchs référencés par les events match_win/loss → hydratation pour <MatchCard>.
+  const matchIds = [...new Set(list.map(e => e.match_id).filter(Boolean))] as string[];
 
-  const [{ data: actors }, { data: comments }] = await Promise.all([
+  const [{ data: actors }, { data: comments }, { data: matches }] = await Promise.all([
     supabase.from('players').select('id, name, elo_score').in('id', actorIds),
     supabase.from('activity_comments').select('event_id').in('event_id', eventIds),
+    matchIds.length
+      ? supabase.from('matches').select(`
+          id, winner_id, loser_id, winner_id_2, loser_id_2, score_text, created_at,
+          winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
+          winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
+          game:game_id(location, match_date)`).in('id', matchIds)
+      : Promise.resolve({ data: [] as any[] }),
   ]);
 
   const actorById = new Map((actors ?? []).map((a: any) => [a.id, a]));
+  const matchById = new Map((matches ?? []).map((m: any) => [m.id, m]));
   const commentCount = new Map<string, number>();
   (comments ?? []).forEach((c: any) =>
     commentCount.set(c.event_id, (commentCount.get(c.event_id) ?? 0) + 1));
@@ -196,6 +208,7 @@ export async function getActivityFeed(myId: string, limit = 50): Promise<Activit
       actor,
       league: actor ? (getLeague(actor.elo_score) as League) : 'discovery',
       comment_count: commentCount.get(e.id) ?? 0,
+      match: e.match_id ? (matchById.get(e.match_id) ?? null) : null,
     };
   });
 }
@@ -224,6 +237,8 @@ export async function getPlayerActivity(playerId: string, limit = 20): Promise<A
 
   const a: any = actor;
   const league = a ? (getLeague(a.elo_score) as League) : 'discovery';
+  // NB: l'onglet « Activité » du profil filtre les matchs (cf. player/[id].tsx) →
+  // pas d'hydratation de `match` ici, ce serait une requête pour rien.
   return list.map(e => ({
     ...e,
     reactions: e.reactions ?? {},

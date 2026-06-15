@@ -871,7 +871,7 @@ export default function AdminScreen() {
     if (!player) return;
     Alert.alert(
       'Refuser la demande ?',
-      `${req.player?.name ?? '?'} restera en ${req.current_gender === 'male' ? 'Homme' : req.current_gender === 'female' ? 'Femme' : 'Autre'}.`,
+      `${req.player?.name ?? '?'} restera en ${req.current_gender === 'male' ? 'Homme' : 'Femme'}.`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -924,7 +924,7 @@ export default function AdminScreen() {
       { text: 'Retour', style: 'cancel' },
       { text: 'Confirmer', style: 'destructive', onPress: async () => {
         setLoadingId(matchId);
-        await supabase.from('matches').update({ status: 'canceled' }).eq('id', matchId);
+        await supabase.from('matches').update({ status: 'cancelled' }).eq('id', matchId);
         setDisputes(prev => prev.filter(m => m.id !== matchId));
         setLoadingId(null);
       }},
@@ -1085,7 +1085,7 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
   onApprove: (req: any) => void; onReject: (req: any) => void; onRefresh: () => void;
 }) {
   const genderLabel = (g: string | null | undefined) =>
-    g === 'male' ? '♂ Homme' : g === 'female' ? '♀ Femme' : g === 'other' ? '⚧ Autre' : '—';
+    g === 'male' ? '♂ Homme' : g === 'female' ? '♀ Femme' : '—';
 
   if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
   if (requests.length === 0) {

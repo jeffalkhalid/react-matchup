@@ -1,0 +1,73 @@
+<style>
+  .bar {
+    display: flex; align-items: flex-end; justify-content: space-around;
+    background: #fff; border-radius: 18px; padding: 10px 8px 12px;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.10); border: 1px solid #eee;
+    margin-top: 10px;
+  }
+  .tab { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
+  .ico { width:26px; height:26px; border-radius:8px; background:#e9edf2; display:flex; align-items:center; justify-content:center; font-size:13px; }
+  .lab { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:#9aa3ad; }
+  .fab .ico { width:40px; height:40px; border-radius:999px; background:#2f6f4f; color:#fff; font-size:20px; box-shadow:0 4px 10px rgba(47,111,79,.35); }
+  .fab .lab { color:#2f6f4f; }
+  .act .ico { background:#ffd84d; color:#3a2e00; }
+  .act .lab { color:#caa400; }
+  .actfab .ico { width:40px; height:40px; border-radius:999px; background:#ffc11a; color:#3a2e00; font-size:18px; box-shadow:0 4px 10px rgba(255,193,26,.4); }
+  .actfab .lab { color:#caa400; }
+  .opt-note { font-size:13px; color:#5b6470; margin-top:8px; line-height:1.5; }
+</style>
+
+<h2>Navbar à 6 boutons — où placer « Activité » ?</h2>
+<p class="subtitle">Aujourd'hui : Accueil · Défi · <b>[+ Créer centré]</b> · Chats · Profil. Le jaune = Activité, le vert = Créer.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>6 onglets à plat — Activité &amp; Créer au centre</h3>
+      <div class="bar">
+        <div class="tab"><div class="ico">🏠</div><div class="lab">Accueil</div></div>
+        <div class="tab"><div class="ico">⚔️</div><div class="lab">Défi</div></div>
+        <div class="tab act"><div class="ico">📡</div><div class="lab">Activité</div></div>
+        <div class="tab"><div class="ico">➕</div><div class="lab">Créer</div></div>
+        <div class="tab"><div class="ico">💬</div><div class="lab">Chats</div></div>
+        <div class="tab"><div class="ico">🙂</div><div class="lab">Profil</div></div>
+      </div>
+      <div class="opt-note">On abandonne le gros bouton rond : Créer devient un onglet normal. 6 boutons égaux, Activité pile au milieu. Le plus simple et symétrique, mais on perd la mise en valeur de « Créer » et les libellés sont serrés.</div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>On garde le « + » rond — Activité juste à sa gauche</h3>
+      <div class="bar">
+        <div class="tab"><div class="ico">🏠</div><div class="lab">Accueil</div></div>
+        <div class="tab"><div class="ico">⚔️</div><div class="lab">Défi</div></div>
+        <div class="tab act"><div class="ico">📡</div><div class="lab">Activité</div></div>
+        <div class="tab fab"><div class="ico">+</div><div class="lab">Créer</div></div>
+        <div class="tab"><div class="ico">💬</div><div class="lab">Chats</div></div>
+        <div class="tab"><div class="ico">🙂</div><div class="lab">Profil</div></div>
+      </div>
+      <div class="opt-note">On conserve le bouton rond « Créer » mis en valeur. Activité se loge juste à côté du centre (3 onglets à gauche, 2 à droite). Légèrement asymétrique mais on garde l'identité actuelle de la barre.</div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Activité devient le bouton vedette au centre</h3>
+      <div class="bar">
+        <div class="tab"><div class="ico">🏠</div><div class="lab">Accueil</div></div>
+        <div class="tab"><div class="ico">⚔️</div><div class="lab">Défi</div></div>
+        <div class="tab actfab"><div class="ico">📡</div><div class="lab">Activité</div></div>
+        <div class="tab"><div class="ico">➕</div><div class="lab">Créer</div></div>
+        <div class="tab"><div class="ico">💬</div><div class="lab">Chats</div></div>
+        <div class="tab"><div class="ico">🙂</div><div class="lab">Profil</div></div>
+      </div>
+      <div class="opt-note">Activité prend la place centrale mise en valeur (gros bouton). Créer redevient un onglet normal à côté. C'est le « Activité au milieu » le plus littéral, mais ça rétrograde l'action principale Créer.</div>
+    </div>
+  </div>
+
+</div>

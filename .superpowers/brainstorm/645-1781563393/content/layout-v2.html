@@ -1,0 +1,62 @@
+<style>
+  .bar {
+    position: relative;
+    display: flex; align-items: flex-end; justify-content: space-around;
+    background: #fff; border-radius: 18px; padding: 14px 8px 12px;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.10); border: 1px solid #eee;
+    margin-top: 34px;
+  }
+  .tab { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
+  .ico { width:26px; height:26px; border-radius:8px; background:#e9edf2; display:flex; align-items:center; justify-content:center; font-size:13px; }
+  .lab { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:#9aa3ad; }
+  .act .ico { background:#ffd84d; color:#3a2e00; }
+  .act .lab { color:#caa400; }
+  .feat .ico { background:#cfe3ff; color:#0b3d73; }
+  .feat .lab { color:#3b78c4; }
+  /* Créer surélevé : remonte au-dessus de la barre */
+  .fab { transform: translateY(-22px); }
+  .fab .ico { width:46px; height:46px; border-radius:999px; background:#2f6f4f; color:#fff; font-size:22px; box-shadow:0 6px 14px rgba(47,111,79,.4); border:4px solid #fff; }
+  .fab .lab { color:#2f6f4f; transform: translateY(-2px); }
+  .opt-note { font-size:13px; color:#5b6470; margin-top:14px; line-height:1.5; }
+  .warn { color:#b26b00; }
+</style>
+
+<h2>Créer surélevé — deux mises en page</h2>
+<p class="subtitle">Le bouton Créer (vert) « décolle » au-dessus de la barre. Jaune = Activité, bleu = bouton feature à définir.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="d" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Ton idée 1 — 6 boutons, Créer surélevé, Activité juste à gauche</h3>
+      <div class="bar">
+        <div class="tab"><div class="ico">🏠</div><div class="lab">Accueil</div></div>
+        <div class="tab"><div class="ico">⚔️</div><div class="lab">Défi</div></div>
+        <div class="tab act"><div class="ico">📡</div><div class="lab">Activité</div></div>
+        <div class="tab fab"><div class="ico">+</div><div class="lab">Créer</div></div>
+        <div class="tab"><div class="ico">💬</div><div class="lab">Chats</div></div>
+        <div class="tab"><div class="ico">🙂</div><div class="lab">Profil</div></div>
+      </div>
+      <div class="opt-note">Aucun nouveau bouton à inventer. Créer reste la vedette, surélevé. Activité est tout proche du centre (3 à gauche / 2 à droite). Léger décalage assumé — en pratique l'œil le voit comme « au milieu ».</div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="e" onclick="toggleSelect(this)">
+    <div class="letter">E</div>
+    <div class="content">
+      <h3>Ton idée 2 — 7 boutons, symétrie parfaite (3 · Créer · 3)</h3>
+      <div class="bar">
+        <div class="tab"><div class="ico">🏠</div><div class="lab">Accueil</div></div>
+        <div class="tab"><div class="ico">⚔️</div><div class="lab">Défi</div></div>
+        <div class="tab act"><div class="ico">📡</div><div class="lab">Activité</div></div>
+        <div class="tab fab"><div class="ico">+</div><div class="lab">Créer</div></div>
+        <div class="tab"><div class="ico">💬</div><div class="lab">Chats</div></div>
+        <div class="tab feat"><div class="ico">🏆</div><div class="lab">Classement</div></div>
+        <div class="tab"><div class="ico">🙂</div><div class="lab">Profil</div></div>
+      </div>
+      <div class="opt-note">Créer pile au centre et surélevé, parfaitement symétrique. On profite du 6ᵉ slot pour faire remonter une feature aujourd'hui cachée — ex. <b>Classement</b> (le placement de Classement/Profil est libre). <span class="warn">⚠️ 7 cibles sur la largeur d'un téléphone, c'est serré : libellés courts obligatoires.</span></div>
+    </div>
+  </div>
+
+</div>

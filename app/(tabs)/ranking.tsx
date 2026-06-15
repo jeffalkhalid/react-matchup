@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  ScrollView, RefreshControl, ActivityIndicator,
+  ScrollView, RefreshControl, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
+import { getFollowingIds, setFollow } from '../../lib/community';
 import type { Player } from '../../types';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -85,9 +86,9 @@ export default function RankingScreen() {
     const { data } = await supabase.from('players').select('*').is('deleted_at', null).order('elo_score', { ascending: false });
     setAllPlayers(data ?? []);
     if (me) {
-      const { data: favData } = await supabase
-        .from('player_favorites').select('favorite_id').eq('player_id', me.id);
-      if (favData) setFavorites(new Set(favData.map((r: any) => r.favorite_id)));
+      // Onglet « Amis » = graphe de suivi (table follows), unifié avec « Ma communauté ».
+      const followingIds = await getFollowingIds(me.id);
+      setFavorites(new Set(followingIds));
     }
     if (showLoading) setLoading(false);
   };
@@ -100,6 +101,7 @@ export default function RankingScreen() {
     setRefreshing(false);
   };
 
+  // Suivre / ne plus suivre — partagé avec « Ma communauté » (table follows).
   const toggleFavorite = async (playerId: string) => {
     if (!me) return;
     const isFav = favorites.has(playerId);
@@ -109,11 +111,7 @@ export default function RankingScreen() {
       return next;
     });
     setFavLoading(prev => new Set([...prev, playerId]));
-    if (isFav) {
-      await supabase.from('player_favorites').delete().match({ player_id: me.id, favorite_id: playerId });
-    } else {
-      await supabase.from('player_favorites').insert({ player_id: me.id, favorite_id: playerId });
-    }
+    await setFollow(me.id, playerId, !isFav);
     setFavLoading(prev => { const next = new Set(prev); next.delete(playerId); return next; });
   };
 
@@ -141,12 +139,25 @@ export default function RankingScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
 
       {/* ── Dark header ──────────────────────────────────────────── */}
-      <View style={{ backgroundColor: Colors.heroBg, paddingTop: insets.top + 14, paddingHorizontal: 16 }}>
+      <View style={{ backgroundColor: Colors.heroBg, paddingTop: insets.top + 10, paddingHorizontal: 16 }}>
+        {/* Brand lockup — raquette + wordmark PAGMATCH */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+          <Image
+            source={require('../../assets/auth/splash-racket.png')}
+            style={{ width: 22, height: 22 }}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('../../assets/auth/splash-wordmark.png')}
+            style={{ width: 100, height: 22, marginLeft: -7 }}
+            resizeMode="contain"
+          />
+        </View>
         {/* Title row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+          <View style={{ flexShrink: 1 }}>
             <Text style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 30, fontFamily: Fonts.welcome }}>
-              Le <Text style={{ color: Colors.brand }}>classement</Text>
+              Le <Text style={{ color: Colors.brand, fontFamily: Fonts.welcome }}>classement</Text>
             </Text>
             <Text style={{ color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 4 }}>
               {ranked.length} joueur{ranked.length !== 1 ? 's' : ''} classés
@@ -154,6 +165,7 @@ export default function RankingScreen() {
           </View>
           {myEntry && (
             <View style={{
+              flexShrink: 0,
               flexDirection: 'row', alignItems: 'center', gap: 6,
               backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12,
               paddingHorizontal: 12, paddingVertical: 6,
@@ -308,7 +320,7 @@ export default function RankingScreen() {
               }}>
                 <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.uiBlack }}>
                   {tab === 'amis'
-                    ? `${displayed.length} favori${displayed.length !== 1 ? 's' : ''}`
+                    ? `${displayed.length} suivi${displayed.length !== 1 ? 's' : ''}`
                     : search
                     ? `${displayed.length} résultat${displayed.length !== 1 ? 's' : ''}`
                     : showPodium
@@ -341,12 +353,12 @@ export default function RankingScreen() {
                   <IconStar size={22} color="#f59e0b" />
                 </View>
                 <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginBottom: 6, fontFamily: Fonts.uiBlack }}>
-                  Aucun favori pour l'instant
+                  Tu ne suis personne pour l'instant
                 </Text>
                 <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: 'center', lineHeight: 17 }}>
                   Va dans l'onglet{' '}
                   <Text style={{ fontWeight: '900', color: Colors.textSecondary, fontFamily: Fonts.uiBlack }}>Global</Text>
-                  {' '}et clique sur l'étoile à côté d'un joueur.
+                  {' '}et clique sur l'étoile pour suivre un joueur.
                 </Text>
               </View>
             ) : (

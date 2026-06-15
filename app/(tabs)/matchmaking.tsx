@@ -11,9 +11,10 @@ import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
 import { getHiddenPlayerIds } from '../../lib/moderation';
-import { Colors, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
+import { Colors, eloToLevel, Fonts } from '../../lib/theme';
 import type { Player, Challenge } from '../../types';
 import { Pill, type PillVariant } from '../../components/Pill';
+import { GameCard } from './lobby';
 
 // ── Types ─────────────────────────────────────────────────────
 type Tab = 'suggestions' | 'defis';
@@ -313,11 +314,11 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
 }
 
 // ── Incoming challenge card ────────────────────────────────────
-function IncomingCard({ challenge, detail, onAction }: {
+function IncomingCard({ challenge, detail, onAction, playerId, myElo }: {
   challenge: Challenge; detail?: CompatDetail;
   onAction: (id: string, action: 'accepted' | 'declined') => Promise<void>;
+  playerId: string; myElo: number;
 }) {
-  const [acting, setActing] = useState<'accepted' | 'declined' | null>(null);
   const [expanded, setExpanded] = useState(false);
   const challenger = challenge.challenger as Player | undefined;
   const isPending = challenge.status === 'pending';
@@ -338,24 +339,12 @@ function IncomingCard({ challenge, detail, onAction }: {
   };
   const st = statusInfo[challenge.status] ?? statusInfo.pending;
 
-  // Détails de la partie liée au défi (heure, terrain, format, niveau)
-  const game = challenge.game;
-  const gameDate = game?.match_date ? new Date(game.match_date) : null;
-  const gameDateLabel = gameDate
-    ? gameDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+  // Partie liée au défi, présentée avec la MÊME carte que l'onglet « À venir »
+  // (slots des 4 joueurs, niveaux, boutons Relever/Refuser intégrés).
+  const game = (challenge as any).game;
+  const gameForCard = game
+    ? { ...game, my_status: game.my_status ?? 'invited', is_creator: false }
     : null;
-  const gameTimeLabel = gameDate
-    ? gameDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-    : null;
-  const gameFormatLabel = game
-    ? (game.is_challenge ? 'Défi' : (game.game_format as string) === 'friendly' ? 'Amical' : 'Compétitif')
-    : null;
-  const gameSpots = game?.spots_available ?? 0;
-
-  const handle = async (action: 'accepted' | 'declined') => {
-    setActing(action);
-    await onAction(challenge.id, action);
-  };
 
   return (
     <View style={[sty.card, { borderColor: isPending ? tier.border : '#e2e8f0' },
@@ -382,29 +371,6 @@ function IncomingCard({ challenge, detail, onAction }: {
                 <Text style={{ fontSize: 11.5, color: Colors.textSecondary, fontStyle: 'italic' }}>"{challenge.message}"</Text>
               </View>
             ) : null}
-            {gameDate && (
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 12, padding: 10, marginBottom: 8, gap: 6, borderWidth: 1, borderColor: Colors.bgCardAlt }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                  <Text style={{ fontSize: 12 }}>📅</Text>
-                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiExtraBold, fontWeight: '800', color: Colors.textPrimary, textTransform: 'capitalize' }} numberOfLines={1}>
-                    {gameDateLabel} · {gameTimeLabel}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                  <Text style={{ fontSize: 12 }}>📍</Text>
-                  <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>
-                    {game?.location || 'Lieu à confirmer'}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-                  {gameFormatLabel && <Pill variant="ink">{gameFormatLabel}</Pill>}
-                  <Pill variant="neutral">Niv. {formatPadelLevel(game?.min_elo ?? 0)}–{formatPadelLevel(game?.max_elo ?? 1750)}</Pill>
-                  <Pill variant={gameSpots > 0 ? 'success' : 'danger'}>
-                    {gameSpots === 0 ? 'Complet' : `${gameSpots} place${gameSpots > 1 ? 's' : ''}`}
-                  </Pill>
-                </View>
-              </View>
-            )}
             {((challenge.shared_clubs?.length ?? 0) > 0 || (challenge.shared_days?.length ?? 0) > 0) && (
               <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
                 {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} variant="info">📍 {c}</Pill>)}
@@ -426,18 +392,18 @@ function IncomingCard({ challenge, detail, onAction }: {
         )}
       </View>
       {detail && expanded && <CompatBreakdown detail={detail} />}
-      {isPending && (
-        <View style={{ flexDirection: 'row', gap: 8, padding: 14, paddingTop: 0 }}>
-          <TouchableOpacity onPress={() => handle('declined')} disabled={acting !== null}
-            style={[sty.actionBtn, { flex: 1, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bgCard, opacity: acting ? 0.5 : 1 }]}
-            activeOpacity={0.75}>
-            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textSecondary }}>{acting === 'declined' ? '…' : '✕ Décliner'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handle('accepted')} disabled={acting !== null}
-            style={[sty.actionBtn, { flex: 2, backgroundColor: Colors.primary, opacity: acting ? 0.5 : 1 }]}
-            activeOpacity={0.85}>
-            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>{acting === 'accepted' ? '…' : '✓ Accepter le défi'}</Text>
-          </TouchableOpacity>
+      {gameForCard && (
+        <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
+          <GameCard
+            game={gameForCard as any}
+            variant="upcoming"
+            myElo={myElo}
+            playerId={playerId}
+            hideActions
+            onPress={() => {}}
+            onAcceptInvitation={() => onAction(challenge.id, 'accepted')}
+            onDeclineInvitation={() => onAction(challenge.id, 'declined')}
+          />
         </View>
       )}
     </View>
@@ -479,7 +445,7 @@ export default function MatchmakingScreen() {
         .limit(50),
       // Défis reçus : uniquement en attente et non expirés
       supabase.from('challenges')
-        .select('*, challenger:challenger_id(*), game:game_id(id, location, match_date, game_format, is_challenge, min_elo, max_elo, spots_available)')
+        .select('*, challenger:challenger_id(*), game:game_id(*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count)))')
         .eq('challenged_id', player.id)
         .eq('status', 'pending')
         .gt('expires_at', nowIso)
@@ -502,7 +468,15 @@ export default function MatchmakingScreen() {
 
     setSuggestions(sorted);
 
-    const challenges = ((incomingRes.data ?? []) as Challenge[]).filter(c => !hidden.has(c.challenger_id));
+    const challenges = ((incomingRes.data ?? []) as Challenge[]).filter(c => {
+      if (hidden.has(c.challenger_id)) return false;
+      // Robustesse : masquer un défi dès que j'ai déjà répondu côté partie
+      // (accepted/declined), même si la ligne `challenges` est restée 'pending'
+      // (drift historique ou réponse via un autre chemin). On n'affiche que si
+      // je suis encore 'invited' (ou si aucune ligne participant n'existe).
+      const myPart = ((c as any).game?.participants ?? []).find((p: any) => p.player_id === player.id);
+      return !myPart || myPart.status === 'invited';
+    });
     setIncoming(challenges);
     setChallengedIds(new Set(((sentRes.data ?? []) as any[]).map((c: any) => c.challenged_id)));
     setLoading(false);
@@ -578,7 +552,9 @@ export default function MatchmakingScreen() {
       });
     }
 
-    setIncoming(prev => prev.map(x => x.id === id ? { ...x, status: action } : x));
+    setIncoming(prev => prev.map(x => x.id === id
+      ? { ...x, status: action, game: (x as any).game ? { ...(x as any).game, my_status: action === 'accepted' ? 'accepted' : 'declined' } : (x as any).game }
+      : x));
     showToast(action === 'accepted' ? '✅ Défi accepté ! Tu es inscrit à la partie.' : 'Défi décliné');
     // Rafraîchit l'état notif PARTAGÉ → le badge Défi (navbar) et le badge avatar
     // Profil se vident immédiatement, sans devoir rouvrir la cloche ou redémarrer.
@@ -683,7 +659,7 @@ export default function MatchmakingScreen() {
                   ? <EmptyCard icon="🎯" title="Aucun défi reçu" sub="Les joueurs peuvent te défier depuis les Suggestions." />
                   : <View style={{ gap: 10 }}>
                       {incoming.map(c => (
-                        <IncomingCard key={c.id} challenge={c} detail={incomingCompatMap.get(c.id)} onAction={handleAction} />
+                        <IncomingCard key={c.id} challenge={c} detail={incomingCompatMap.get(c.id)} onAction={handleAction} playerId={player.id} myElo={player.elo_score} />
                       ))}
                     </View>
                 }

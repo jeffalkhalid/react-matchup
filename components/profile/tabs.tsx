@@ -12,10 +12,11 @@ const A = accentOf(ACCENT);
 // ════════════════════════════════════════════════════════════════════
 //  STATS
 // ════════════════════════════════════════════════════════════════════
-export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, losses, streak, form, lastMatch, renderFooter }: {
+export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, losses, streak, form, infoRows, lastMatch, renderFooter, onPlayerPress }: {
   curLevel: number; delta30: number | null; timeline: TimelinePoint[];
   winRate: number; played: number; wins: number; losses: number; streak: number;
-  form: ('V' | 'D')[]; lastMatch: MatchView | null; renderFooter: (m: MatchView) => React.ReactNode;
+  form: ('V' | 'D')[]; infoRows: [string, string][]; lastMatch: MatchView | null; renderFooter: (m: MatchView) => React.ReactNode;
+  onPlayerPress?: (id: string) => void;
 }) {
   const [filt, setFilt] = useState('10 résultats');
   const slice = filt === '5 résultats' ? timeline.slice(-5) : filt === 'Tous' ? timeline : timeline.slice(-10);
@@ -76,7 +77,7 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
             <Text style={{ fontSize: 10, fontWeight: '700', color: PM.muted, marginVertical: 8, marginHorizontal: 2 }}>
               👆 Touche un point pour voir le match.
             </Text>
-            {selMatch && <MatchCard m={selMatch} footer={renderFooter(selMatch)} showActions={false} />}
+            {selMatch && <MatchCard m={selMatch} footer={renderFooter(selMatch)} showActions={false} onPlayerPress={onPlayerPress} />}
           </>
         ) : (
           <Text style={{ fontSize: 12, color: PM.muted, textAlign: 'center', paddingVertical: 12 }}>
@@ -99,7 +100,8 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
         </View>
         {form.length > 0 && (
           <View style={{ borderTopWidth: 1, borderTopColor: PM.divider, marginTop: 12, paddingTop: 12 }}>
-            <Text style={{ fontSize: 9, fontWeight: '800', color: PM.muted, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>Forme récente</Text>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: PM.muted, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 2 }}>Forme récente</Text>
+            <Text style={{ fontSize: 10, fontWeight: '600', color: PM.faint, marginBottom: 8 }}>Matchs compétitifs et défis uniquement</Text>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {form.map((f, i) => (
                 <View key={i} style={{
@@ -117,7 +119,24 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
       {/* Dernier match */}
       {lastMatch && (
         <Section title="Dernier match" action="" noCard>
-          <MatchCard m={lastMatch} footer={renderFooter(lastMatch)} showActions={false} />
+          <MatchCard m={lastMatch} footer={renderFooter(lastMatch)} showActions={false} onPlayerPress={onPlayerPress} />
+        </Section>
+      )}
+
+      {/* Infos (préférences + classement FRMT) — uniquement les valeurs présentes */}
+      {infoRows.length > 0 && (
+        <Section title="Infos">
+          <View style={{ gap: 10 }}>
+            {infoRows.map(([label, value], i) => (
+              <View key={i} style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                ...(i > 0 ? { borderTopWidth: 1, borderTopColor: PM.divider, paddingTop: 10 } : {}),
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: PM.muted }}>{label}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: PM.text, flexShrink: 1, textAlign: 'right' }}>{value}</Text>
+              </View>
+            ))}
+          </View>
         </Section>
       )}
     </View>
@@ -127,7 +146,7 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
 // ════════════════════════════════════════════════════════════════════
 //  MATCHS
 // ════════════════════════════════════════════════════════════════════
-export function MatchsTab({ matches, renderFooter }: { matches: MatchView[]; renderFooter: (m: MatchView) => React.ReactNode }) {
+export function MatchsTab({ matches, renderFooter, onPlayerPress }: { matches: MatchView[]; renderFooter: (m: MatchView) => React.ReactNode; onPlayerPress?: (id: string) => void }) {
   const [filt, setFilt] = useState('Tous');
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
@@ -160,7 +179,7 @@ export function MatchsTab({ matches, renderFooter }: { matches: MatchView[]; ren
 
       {list.length === 0
         ? <Text style={{ fontSize: 12, color: PM.muted, textAlign: 'center', paddingVertical: 16 }}>{q ? `Aucun match pour « ${search.trim()} ».` : 'Aucun match.'}</Text>
-        : list.map((m, i) => <MatchCard key={i} m={m} footer={renderFooter(m)} showActions={false} />)}
+        : list.map((m, i) => <MatchCard key={i} m={m} footer={renderFooter(m)} showActions={false} onPlayerPress={onPlayerPress} />)}
     </View>
   );
 }

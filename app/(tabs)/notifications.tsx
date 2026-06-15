@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
+import { isInviteActive } from '../../lib/games';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, Fonts } from '../../lib/theme';
 
 // ─── Icons ───────────────────────────────────────────────────
@@ -142,7 +143,8 @@ export default function NotificationsScreen() {
         .from('challenges')
         .select('id, game_id, challenger:players!challenger_id(name)')
         .eq('challenged_id', player.id)
-        .eq('status', 'pending'),
+        .eq('status', 'pending')
+        .gt('expires_at', nowIso),
       supabase
         .from('matches')
         .select('id, winner:winner_id(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
@@ -176,7 +178,7 @@ export default function NotificationsScreen() {
         .or(orParts),
       supabase
         .from('game_participants')
-        .select('id, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
+        .select('id, invite_expires_at, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
         .eq('player_id', player.id)
         .eq('status', 'invited'),
       // Mes parties (créateur ou participant validé) — pour les demandes à valider.
@@ -239,6 +241,9 @@ export default function NotificationsScreen() {
     const activeInvites = (invitations ?? []).filter((inv: any) => {
       const g = inv.game;
       if (!g) return false;
+      // Invitation expirée (TTL dépassé) — le cron peut avoir jusqu'à 10 min de
+      // retard à basculer le statut en 'expired', donc on vérifie aussi la date.
+      if (!isInviteActive({ status: 'invited', invite_expires_at: inv.invite_expires_at })) return false;
       if (g.id && challengeGameIds.has(g.id)) return false;
       if (g.status === 'closed' || g.status === 'cancelled') return false;
       if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;

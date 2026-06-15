@@ -8,6 +8,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Rect } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, padelLevelToElo, getLeague, Fonts } from '../../lib/theme';
 import { notifyPlayers } from '../../lib/notify';
@@ -18,11 +19,12 @@ import { buildStoryMatch } from '../../components/story/storyTheme';
 import StoryComposerV2 from '../../components/StoryComposerV2';
 import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
 import type { OpenGame, Match } from '../../types';
-import { MatchCard as MatchScoreCard, type MatchView as PMMatchView } from '../../components/profile/components';
+import { MatchCard as MatchScoreCard } from '../../components/profile/components';
+import { matchToView } from '../../lib/matchView';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
-import { joinGame, occupiesSpot, withdrawInvitation } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive } from '../../lib/games';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -345,7 +347,7 @@ function buildGameSlots(game: EnrichedGame, myId: string) {
   const creatorIdx = SIDE_TO_IDX[game.creator_side ?? 'A_GAU'] ?? 0;
   slots[creatorIdx] = { id: game.creator_id, name: creator?.name ?? '?', isMe: game.creator_id === myId, isCreator: true, elo: creator?.elo_score ?? null };
   (game.participants ?? [])
-    .filter((p: any) => (p.status === 'accepted' || p.status === 'invited') && p.player_id !== game.creator_id)
+    .filter((p: any) => (p.status === 'accepted' || (p.status === 'invited' && isInviteActive(p))) && p.player_id !== game.creator_id)
     .forEach((p: any) => {
       const sp = {
         id: p.player_id,
@@ -378,14 +380,24 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
   onChangeSide?: (participantId: string, side: string) => void;
   onCreatorChangeSide?: (gameId: string, side: string) => void;
 }) {
+  const router = useRouter();
   const slots = buildGameSlots(game, playerId);
   const st = getSlotTheme(game);
   const isCreator = game.creator_id === playerId;
+  // « Déjà dans la partie » = relation VIVANTE (accepté / candidature en cours /
+  // invitation NON expirée). On exclut les états terminaux ('declined', 'expired')
+  // et les invitations expirées par l'horloge — sinon une invite périmée grise les
+  // emplacements et empêche de re-candidater. Aligné sur GameDetailsSheet.
   const myParticipant = (game.participants ?? []).find(
-    (p: any) => p.player_id === playerId && p.status !== 'declined'
+    (p: any) => p.player_id === playerId && p.status !== 'declined' && p.status !== 'expired'
   ) as any;
   const isAccepted = myParticipant?.status === 'accepted';
-  const alreadyIn = !!myParticipant;
+  const alreadyIn = !!myParticipant && (
+    isAccepted
+    || myParticipant.status === 'pending'
+    || myParticipant.status === 'waitlist'
+    || isInviteActive(myParticipant)
+  );
   const isFull = slots.every(s => s !== null);
 
   const canJoin = !isCreator && !alreadyIn && !isFull && !!onApply;
@@ -403,7 +415,12 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
       const team: 'A' | 'B' = side.startsWith('A_') ? 'A' : 'B';
       const lvl = s.elo != null ? fmtLevel(s.elo) : null;
       return (
-        <View key={idx} style={{ alignItems: 'center', gap: 2, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
+        <TouchableOpacity
+          key={idx}
+          onPress={() => router.push(`/player/${s.id}` as any)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          style={{ alignItems: 'center', gap: 2, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
           <Avatar name={s.name} size={30} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
           <Text
             numberOfLines={1}
@@ -422,7 +439,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           <Text style={{ fontSize: 7, fontWeight: '900', color: s.isInvited ? st.accent : Colors.textMuted, letterSpacing: 0.3 }}>
             {s.isInvited ? '⏳ Invité' : posLabel}
           </Text>
-        </View>
+        </TouchableOpacity>
       );
     }
 
@@ -478,14 +495,19 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
     );
   };
 
+  // alignItems 'flex-start' : les colonnes avec joueur ont une ligne de plus
+  // (« Niv X ») que les colonnes « Libre ». En centrant, l'équipe tout-libre
+  // (plus courte) était poussée vers le bas et ses pastilles ne s'alignaient plus
+  // avec les avatars. On aligne tout par le haut → avatars/pastilles sur la même
+  // ligne, les libellés pendent dessous. Le séparateur reste centré sur la bande.
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <View style={{ flexDirection: 'row', gap: 5 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
         {renderSlot(0)}
         {renderSlot(1)}
       </View>
-      <View style={{ width: 1, height: 22, backgroundColor: Colors.border }} />
-      <View style={{ flexDirection: 'row', gap: 5 }}>
+      <View style={{ width: 1, height: 22, backgroundColor: Colors.border, marginTop: 4, alignSelf: 'flex-start' }} />
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
         {renderSlot(2)}
         {renderSlot(3)}
       </View>
@@ -494,13 +516,19 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
 }
 
 // ─── Avatar row ───────────────────────────────────────────────
-function AvatarRow({ players, slots }: { players: Array<{ name: string; team?: 'A' | 'B'; isCreator?: boolean }>; slots: number }) {
+function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: string; team?: 'A' | 'B'; isCreator?: boolean }>; slots: number }) {
+  const router = useRouter();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {players.map((p, i) => (
-        <View key={i} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: players.length - i }}>
+        <TouchableOpacity
+          key={i}
+          disabled={!p.id}
+          onPress={() => p.id && router.push(`/player/${p.id}` as any)}
+          activeOpacity={0.7}
+          style={{ marginLeft: i === 0 ? 0 : -8, zIndex: players.length - i }}>
           <Avatar name={p.name} size={28} ring={Colors.bgCard} team={p.team} creator={p.isCreator} />
-        </View>
+        </TouchableOpacity>
       ))}
       {Array.from({ length: slots }).map((_, i) => (
         <View key={`s${i}`} style={{
@@ -579,7 +607,7 @@ async function shareGame(game: EnrichedGame) {
 }
 
 // ─── Game Card ────────────────────────────────────────────────
-function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation }: {
+export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation }: {
   game: EnrichedGame; variant: 'explore' | 'upcoming' | 'history';
   myElo: number; playerId?: string; onPress: () => void;
   onApply?: (gameId: string, side: string) => void;
@@ -597,13 +625,13 @@ function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSi
   const spotsLeft = freeSpots(game);
   const isUrgent = spotsLeft === 1 && hoursLeft > 0 && hoursLeft <= 6;
   const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
-  const creatorObj = game.creator as { name: string } | undefined;
+  const creatorObj = game.creator as { id?: string; name: string } | undefined;
   const teamOf = (side?: string): 'A' | 'B' | undefined => side ? (side.startsWith('B') ? 'B' : 'A') : undefined;
-  const allPlayers: Array<{ name: string; team?: 'A' | 'B'; isCreator?: boolean }> = [
-    ...(creatorObj?.name ? [{ name: creatorObj.name, team: teamOf((game as any).creator_side), isCreator: true }] : []),
+  const allPlayers: Array<{ id?: string; name: string; team?: 'A' | 'B'; isCreator?: boolean }> = [
+    ...(creatorObj?.name ? [{ id: creatorObj.id ?? game.creator_id, name: creatorObj.name, team: teamOf((game as any).creator_side), isCreator: true }] : []),
     ...accepted.flatMap(p => {
       const nm = (p.player as { name: string } | undefined)?.name;
-      return nm && p.player_id !== game.creator_id ? [{ name: nm, team: teamOf((p as any).team_side) }] : [];
+      return nm && p.player_id !== game.creator_id ? [{ id: p.player_id, name: nm, team: teamOf((p as any).team_side) }] : [];
     }),
   ];
   const levelRange = (game.min_elo || game.max_elo)
@@ -947,6 +975,7 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
   onRematch?: (matchId: string) => void;
   onShare?: (m: Match) => void;
 }) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [badges, setBadges] = useState<{ badge_type: string; giver: { name: string } | null }[]>([]);
   const [validating, setValidating] = useState(false);
@@ -997,7 +1026,7 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
 
           {/* Carte de match — même affichage que le profil (en-tête + équipes en lignes + grille de score) */}
           <View style={{ marginHorizontal: 20, marginTop: 8, marginBottom: 16 }}>
-            <MatchScoreCard m={matchToView(match, playerId)} showDelta={false} showActions={false} />
+            <MatchScoreCard m={matchToView(match, playerId)} showDelta={false} showActions={false} onPlayerPress={(id) => { onClose(); router.push(`/player/${id}` as any); }} />
           </View>
 
           {/* Badges received */}
@@ -1121,46 +1150,6 @@ function needsMyValidation(m: Match, playerId: string): boolean {
   return true;
 }
 
-// ── Match → forme MatchView (réutilise l'affichage du profil) ──
-function parseSetsLocal(text: string | null | undefined): [number, number][] {
-  if (!text) return [];
-  return text.trim().split(/[\s,]+/).flatMap(s => {
-    const p = s.split('-').map(Number);
-    return p.length === 2 && !p.some(isNaN) ? [[p[0], p[1]] as [number, number]] : [];
-  });
-}
-
-function matchToView(match: Match, playerId: string): PMMatchView {
-  const won = match.winner_id === playerId || match.winner_id_2 === playerId;
-  const winners = [match.winner, match.winner_2].filter(Boolean) as NonNullable<typeof match.winner>[];
-  const losers  = [match.loser,  match.loser_2 ].filter(Boolean) as NonNullable<typeof match.loser>[];
-  const mine = won ? winners : losers;
-  const opp  = won ? losers  : winners;
-  const meP     = mine.find(p => p.id === playerId);
-  const partner = mine.find(p => p.id !== playerId);
-  const lvlOf = (p?: { elo_score?: number | null } | null) => (p?.elo_score != null ? eloToLevel(p.elo_score) : undefined);
-  const myTeam = [
-    { name: displayName(meP ?? null, 'player'), me: true, lvl: lvlOf(meP) },
-    ...(partner ? [{ name: displayName(partner, 'partner'), lvl: lvlOf(partner) }] : []),
-  ];
-  const oppTeam = opp.map(p => ({ name: displayName(p, 'opponent'), lvl: lvlOf(p) }));
-  const sets = parseSetsLocal(match.score_text).map(([w, l]) => (won ? [w, l] : [l, w]) as [number, number]);
-  const dt = new Date(match.game?.match_date ?? match.created_at);
-  const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const time = dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
-  return {
-    id: match.id,
-    club: match.game?.location ?? 'Match',
-    date: dateStr.charAt(0).toUpperCase() + dateStr.slice(1),
-    time,
-    result: won ? 'Victoire' : 'Défaite',
-    delta: 0,
-    teams: [myTeam, oppTeam],
-    sets,
-    winnerRow: won ? 0 : 1,
-  };
-}
-
 // ─── Match card (history) ─────────────────────────────────────
 function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
   match: Match;
@@ -1169,6 +1158,7 @@ function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
   onRematch?: (matchId: string) => void;
   onShare?: () => void;
 }) {
+  const router = useRouter();
   const canRematch = onRematch && match.status === 'validated';
   const footer = (canRematch || onShare) ? (
     <View style={{ flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt, paddingTop: 10 }}>
@@ -1195,7 +1185,7 @@ function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
     </View>
   ) : undefined;
   return (
-    <MatchScoreCard m={matchToView(match, playerId)} onPress={onPress} showDelta={false} showActions={false} footer={footer} />
+    <MatchScoreCard m={matchToView(match, playerId)} onPress={onPress} showDelta={false} showActions={false} footer={footer} onPlayerPress={(id) => router.push(`/player/${id}` as any)} />
   );
 }
 
@@ -1222,7 +1212,7 @@ function filterExploreGames(
   let arr = games;
   if (filterMode === 'urgent') arr = arr.filter(g => {
     const h = g.match_date ? hoursUntil(g.match_date) : 0;
-    return g.spots_available === 1 && h > 0 && h <= 6;
+    return freeSpots(g) === 1 && h > 0 && h <= 6;
   });
   if (typeFilter !== 'all') arr = arr.filter(g => getGameType(g) === typeFilter);
   if (search.trim()) {
@@ -1257,7 +1247,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
   const recommended = useMemo(() => games.filter(g => getEloFit(g, myElo) === 'fit'), [games, myElo]);
   const urgentCount = useMemo(() => games.filter(g => {
     const h = g.match_date ? hoursUntil(g.match_date) : 0;
-    return g.spots_available === 1 && h > 0 && h <= 6;
+    return freeSpots(g) === 1 && h > 0 && h <= 6;
   }).length, [games]);
 
   // "Pour toi" is shown above the main list; drop those games from the main
@@ -1581,6 +1571,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
 // ─── Main screen ──────────────────────────────────────────────
 export default function LobbyScreen() {
   const { player } = usePlayer();
+  const { reload: reloadNotifs } = useNotificationCount();
   const insets = useSafeAreaInsets();
   const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, rematch: rematchParam } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; rematch?: string }>();
   const router = useRouter();
@@ -1662,7 +1653,7 @@ export default function LobbyScreen() {
     // as 'invited' once its game is still joinable.
     const { data: partRows } = await supabase
       .from('game_participants')
-      .select('game_id, status, auto_declined')
+      .select('game_id, status, auto_declined, invite_expires_at')
       .eq('player_id', player.id)
       .in('status', ['accepted', 'pending', 'waitlist', 'invited', 'declined']);
 
@@ -1672,6 +1663,11 @@ export default function LobbyScreen() {
       if (r.status === 'declined') {
         if (!r.auto_declined) continue;       // manual refusal → keep hidden
         myStatusByGame.set(r.game_id, 'invited'); // re-offer auto-declined invitation
+      } else if (r.status === 'invited' && !isInviteActive(r)) {
+        // Invitation expirée (horloge dépassée) mais cron expire_stale_invitations
+        // pas encore passée : on la traite comme terminale → le match ressort dans
+        // l'Explorer et join_game gère la ré-inscription (purge la ligne périmée).
+        continue;
       } else {
         myStatusByGame.set(r.game_id, r.status);
       }
@@ -1888,7 +1884,10 @@ export default function LobbyScreen() {
     const matchDate = new Date(`${data.matchDate}T${data.matchTime}:00`);
     const matchDateIso = matchDate.toISOString();
 
-    // ── Conflict pre-check (±2h window) — warn but allow override
+    // ── Conflict pre-check — warn but allow override.
+    // Chevauchement strict des intervalles [début, début+durée+marge) :
+    // conflit si |début1 − début2| < (1h30 jeu + 30 min marge) = 2h.
+    // Un écart pile de 2h (19h vs 21h) ne se chevauche pas → pas de conflit.
     const OVERLAP_MS = 2 * 60 * 60 * 1000;
     const fromIso = new Date(matchDate.getTime() - OVERLAP_MS).toISOString();
     const toIso   = new Date(matchDate.getTime() + OVERLAP_MS).toISOString();
@@ -1901,23 +1900,29 @@ export default function LobbyScreen() {
         .gte('match_date', fromIso)
         .lte('match_date', toIso),
       supabase.from('game_participants')
-        .select('status, game:game_id(id, location, match_date, status)')
+        .select('status, invite_expires_at, game:game_id(id, location, match_date, status)')
         .eq('player_id', player.id)
         .in('status', ['accepted', 'pending', 'invited', 'waitlist']),
     ]);
 
+    // La requête borne à ±2h *inclus* (gte/lte) ; on re-filtre en strict pour
+    // exclure l'écart pile de 2h (qui ne se chevauche pas).
+    const createdConflicts = (myCreated ?? []).filter((g: any) =>
+      g.match_date && Math.abs(new Date(g.match_date).getTime() - matchDate.getTime()) < OVERLAP_MS);
     const joinedConflicts = (myJoined ?? []).filter((p: any) => {
       const g = p.game;
       if (!g || g.status === 'cancelled') return false;
       if (!g.match_date) return false;
+      // Invitation expirée → plus un engagement, pas un conflit.
+      if (p.status === 'invited' && !isInviteActive(p)) return false;
       const t = new Date(g.match_date).getTime();
-      return Math.abs(t - matchDate.getTime()) <= OVERLAP_MS;
+      return Math.abs(t - matchDate.getTime()) < OVERLAP_MS;
     });
-    const totalConflicts = (myCreated?.length ?? 0) + joinedConflicts.length;
+    const totalConflicts = createdConflicts.length + joinedConflicts.length;
 
     if (totalConflicts > 0) {
       const fmt = (d: string) => new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-      const createdLines = (myCreated ?? []).map((g: any) => `• ${fmt(g.match_date)} — ${g.location ?? '?'}`);
+      const createdLines = createdConflicts.map((g: any) => `• ${fmt(g.match_date)} — ${g.location ?? '?'}`);
       const joinedLines  = joinedConflicts.map((p: any) => {
         const statusLabel = p.status === 'accepted' ? 'inscrit' : p.status === 'invited' ? 'invité' : p.status === 'waitlist' ? "liste d'attente" : 'candidature';
         return `• ${fmt(p.game.match_date)} — ${p.game.location ?? '?'} (${statusLabel})`;
@@ -2042,9 +2047,24 @@ export default function LobbyScreen() {
     ].filter((id): id is string => !!id && id !== participantPlayerId).slice(0, 3);
     const allApproved = requiredApprovers.every(id => newApprovals.includes(id));
 
+    // Cas limite : un joueur dans-le-niveau a pu prendre la place pendant le
+    // vote (un `pending` ne réserve aucune place). Re-vérifier qu'une place
+    // vivante est libre avant d'accepter ; sinon on enregistre l'approbation
+    // mais on n'accepte pas (le vote reste en attente d'une place).
+    const liveOccupants = 1 + (game?.participants ?? [])
+      .filter((p: any) => p.id !== participantId && occupiesSpot(p)).length;
+    const spotFree = liveOccupants < 4;
+    const willAccept = allApproved && spotFree;
+    if (allApproved && !spotFree) {
+      Alert.alert(
+        'Partie complète',
+        "Une place a été prise entre-temps — le vote reste en attente d'une place libre.",
+      );
+    }
+
     // If all approved, resolve which side to assign
     let assignedSide: string | null = null;
-    if (allApproved && game) {
+    if (willAccept && game) {
       const SIDE_ORDER = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'];
       const takenSides = new Set<string>([
         ...(game.creator_side ? [game.creator_side] : ['A_GAU']),
@@ -2063,7 +2083,7 @@ export default function LobbyScreen() {
       .from('game_participants')
       .update({
         approvals: newApprovals,
-        ...(allApproved ? { status: 'accepted', team_side: assignedSide } : {}),
+        ...(willAccept ? { status: 'accepted', team_side: assignedSide } : {}),
       })
       .eq('id', participantId);
 
@@ -2079,7 +2099,7 @@ export default function LobbyScreen() {
       return;
     }
 
-    if (allApproved) {
+    if (willAccept) {
       // Le candidat prend maintenant une vraie place → libérer une place de moins.
       // (Une candidature `pending` ne réservait rien, contrairement à une invitation.)
       if (game) {
@@ -2193,7 +2213,9 @@ export default function LobbyScreen() {
             if (error) { Alert.alert('Erreur', error.message); return; }
 
             const targetIds = (game.participants ?? [])
-              .filter((p: any) => ['accepted', 'invited', 'pending', 'waitlist'].includes(p.status))
+              .filter((p: any) =>
+                ['accepted', 'pending', 'waitlist'].includes(p.status)
+                || (p.status === 'invited' && isInviteActive(p)))
               .map((p: any) => p.player_id)
               .filter((id: string) => id && id !== player.id);
 
@@ -2331,6 +2353,16 @@ export default function LobbyScreen() {
       return;
     }
 
+    // Si cette invitation est un défi, refléter la réponse sur la table
+    // `challenges` (sinon le défi reste 'pending' → toujours compté dans le badge
+    // et affiché dans l'onglet « Défis reçus »). No-op si ce n'est pas un défi.
+    await supabase
+      .from('challenges')
+      .update({ status: 'accepted' })
+      .eq('game_id', gameId)
+      .eq('challenged_id', player.id)
+      .eq('status', 'pending');
+
     if (game?.creator_id) {
       const otherIds = [
         game.creator_id,
@@ -2346,6 +2378,7 @@ export default function LobbyScreen() {
       }
     }
     fetchData();
+    reloadNotifs();
   };
 
   const handleDeclineInvitation = async (participantId: string, gameId: string) => {
@@ -2357,6 +2390,14 @@ export default function LobbyScreen() {
       .update({ status: 'declined' })
       .eq('id', participantId);
     if (error) { Alert.alert('Erreur', error.message); return; }
+
+    // Refléter le refus sur la table `challenges` (no-op si ce n'est pas un défi).
+    await supabase
+      .from('challenges')
+      .update({ status: 'declined' })
+      .eq('game_id', gameId)
+      .eq('challenged_id', player.id)
+      .eq('status', 'pending');
 
     // Free the spot that was held by the invitation
     if (game) {
@@ -2374,6 +2415,7 @@ export default function LobbyScreen() {
     }
     setOpenGameId(null);
     fetchData();
+    reloadNotifs();
   };
 
   if (!player) return null;

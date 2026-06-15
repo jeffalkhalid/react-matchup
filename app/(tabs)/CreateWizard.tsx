@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
 import { lobbyGameLink } from '../../lib/community';
+import { isInviteActive } from '../../lib/games';
 import { Pill } from '../../components/Pill';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -46,8 +47,14 @@ const TIMES = [
   '16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30',
   '20:00','20:30','21:00','21:30','22:00','22:30',
 ];
-// Fenêtre d'anti-chevauchement (identique au pre-check du publish dans lobby.tsx)
-const OVERLAP_MS = 2 * 60 * 60 * 1000;
+// Fenêtre d'anti-chevauchement (identique au pre-check du publish dans lobby.tsx).
+// Un match occupe sa durée de jeu + une marge déplacement/repos ; deux matchs
+// entrent en conflit quand leurs intervalles [début, début+durée+marge) se
+// chevauchent, soit |début1 − début2| < (durée + marge). Comparaison STRICTE :
+// un écart pile de 2h (ex. 19h vs 21h) ne se chevauche pas → pas de conflit.
+const MATCH_DURATION_MS = 90 * 60 * 1000;   // 1h30 de jeu
+const BUFFER_MS         = 30 * 60 * 1000;   // marge déplacement/repos entre 2 courts
+const OVERLAP_MS = MATCH_DURATION_MS + BUFFER_MS;  // 2h — séparation min entre 2 débuts
 const FR_DAYS         = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
 const FR_MONTHS       = ['jan.','fév.','mar.','avr.','mai','juin','juil.','août','sep.','oct.','nov.','déc.'];
 const FR_MONTHS_LONG  = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
@@ -338,7 +345,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           .neq('status', 'cancelled')
           .gte('match_date', fromIso),
         supabase.from('game_participants')
-          .select('status, game:game_id(location, match_date, status)')
+          .select('status, invite_expires_at, game:game_id(location, match_date, status)')
           .eq('player_id', myId)
           .in('status', ['accepted', 'pending', 'invited', 'waitlist']),
       ]);
@@ -355,6 +362,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       (joined ?? []).forEach((p: any) => {
         const g = p.game;
         if (!g || g.status === 'cancelled' || !g.match_date) return;
+        // Une invitation expirée (horloge dépassée, cron pas encore passé) n'est plus
+        // un engagement → ne doit pas déclencher de faux conflit de créneau.
+        if (p.status === 'invited' && !isInviteActive(p)) return;
         const ts = new Date(g.match_date).getTime();
         if (ts < todayStart.getTime()) return;
         games.push({ ts, location: g.location ?? null, role: ROLE[p.status] ?? 'engagement' });
@@ -398,7 +408,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     for (const tm of TIMES) {
       const slotTs = new Date(`${form.day}T${tm}`).getTime();
       if (isNaN(slotTs)) continue;
-      if (busyGames.some(g => Math.abs(g.ts - slotTs) <= OVERLAP_MS)) s.add(tm);
+      if (busyGames.some(g => Math.abs(g.ts - slotTs) < OVERLAP_MS)) s.add(tm);
     }
     return s;
   }, [busyGames, form.day]);
@@ -406,7 +416,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (!form.day || !form.time) return [];
     const slotTs = new Date(`${form.day}T${form.time}`).getTime();
     if (isNaN(slotTs)) return [];
-    return busyGames.filter(g => Math.abs(g.ts - slotTs) <= OVERLAP_MS);
+    return busyGames.filter(g => Math.abs(g.ts - slotTs) < OVERLAP_MS);
   }, [busyGames, form.day, form.time]);
 
   // Step 2 helpers
@@ -642,7 +652,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             );
           })}
         </View>
-        {/* Conflits sur le créneau choisi (±2h) */}
+        {/* Conflits sur le créneau choisi (chevauchement durée + marge) */}
         {form.time && selectedConflicts.length > 0 && (
           <View style={{ flexDirection: 'row', backgroundColor: 'rgba(245,158,11,0.08)',
             borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.45)', borderRadius: 12,
@@ -650,7 +660,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             <View style={{ width: 4, backgroundColor: Colors.warning }} />
             <View style={{ flex: 1, padding: 11, gap: 7 }}>
               <Text style={{ fontSize: 12, fontWeight: '900', color: '#92400e' }}>
-                ⚠️ Tu es déjà pris à ce créneau (±2h)
+                ⚠️ Tu es déjà pris autour de ce créneau
               </Text>
               {selectedConflicts.map((g, i) => (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>

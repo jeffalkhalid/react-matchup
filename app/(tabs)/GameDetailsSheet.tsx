@@ -292,9 +292,15 @@ export default function GameDetailsSheet({
   const isCreator    = game.creator_id === playerId;
   const myParticipant = (game.participants ?? []).find((p: any) => p.player_id === playerId);
   const myStatus     = (myParticipant as any)?.status;
-  const alreadyIn    = !!myParticipant && ['accepted', 'pending', 'waitlist', 'invited'].includes(myStatus);
+  // Une invitation expirée (cron pas encore passée) ne « réserve » plus la place :
+  // on la traite comme non-occupante pour rouvrir le chemin de candidature.
+  const myInviteActive = !!myParticipant && isInviteActive(myParticipant as any);
+  const alreadyIn    = !!myParticipant && (
+    ['accepted', 'pending', 'waitlist'].includes(myStatus) ||
+    (myStatus === 'invited' && myInviteActive)
+  );
   const isAccepted   = myStatus === 'accepted';
-  const isInvited    = myStatus === 'invited';
+  const isInvited    = myStatus === 'invited' && myInviteActive;
   const canParticipate = !isCreator && !alreadyIn;
 
   const pendingPlayers = (game.participants ?? []).filter((p: any) => p.status === 'pending');

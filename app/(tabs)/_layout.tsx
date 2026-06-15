@@ -42,6 +42,21 @@ const IconMessage = ({ color, size = 22 }: { color: string; size?: number }) => 
   </Svg>
 );
 
+const IconActivity = ({ color, size = 22 }: { color: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </Svg>
+);
+
+const IconBell = ({ color, size = 22 }: { color: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+    <Path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+  </Svg>
+);
+
 const IconPlus = ({ size = 20 }: { size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={Colors.brand} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -87,15 +102,17 @@ function CreateTabButton({ ...rest }: any) {
       activeOpacity={0.85}
     >
       <View style={{
-        width: 36, height: 36, borderRadius: 999,
+        width: 46, height: 46, borderRadius: 999,
         backgroundColor: Colors.primary,
         alignItems: 'center', justifyContent: 'center',
-        shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 8,
-        shadowOffset: { width: 0, height: 3 }, elevation: 5,
+        borderWidth: 4, borderColor: '#fff',
+        transform: [{ translateY: -18 }],
+        shadowColor: Colors.primary, shadowOpacity: 0.35, shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 }, elevation: 8, zIndex: 10,
       }}>
-        <IconPlus size={20} />
+        <IconPlus size={22} />
       </View>
-      <Text style={{ color: Colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+      <Text style={{ marginTop: -14, color: Colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 }}>
         Créer
       </Text>
     </TouchableOpacity>
@@ -233,6 +250,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: 'rgba(255,255,255,0.97)',
+          overflow: 'visible',
           borderTopColor: Colors.borderLight,
           borderTopWidth: 1,
           borderTopLeftRadius: 24,
@@ -268,11 +286,25 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="activite"
+        options={{
+          title: 'Activité',
+          tabBarIcon: ({ color }) => <IconActivity color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
         name="lobby"
         options={{
           title: '',
           tabBarLabel: () => null,
           tabBarButton: (props) => <CreateTabButton {...props} />,
+        }}
+      />
+      <Tabs.Screen
+        name="alertes"
+        options={{
+          title: 'Alertes',
+          tabBarIcon: ({ color }) => <IconBell color={color} size={22} />,
         }}
       />
       <Tabs.Screen

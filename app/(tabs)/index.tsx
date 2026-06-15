@@ -248,10 +248,10 @@ const BADGE_EMOJI: Record<string, string> = {
 };
 
 // ─── Hero compact — identité horizontale + bande de stats (handoff) ───
-function ProfileBanner({ name, elo, wins, losses, badgeCount, notifCount, frmt, onBellPress }: {
+function ProfileBanner({ name, elo, wins, losses, badgeCount, notifCount, frmt, onBellPress, onProfilePress }: {
   name: string; elo: number; wins: number; losses: number; badgeCount: number;
   notifCount: number; frmt?: { text: string; verified: boolean } | null;
-  onBellPress: () => void;
+  onBellPress: () => void; onProfilePress: () => void;
 }) {
   const leagueType = getLeague(elo);
   const leagueLabel = 'Ligue ' + getLeagueLabel(leagueType);
@@ -291,8 +291,8 @@ function ProfileBanner({ name, elo, wins, losses, badgeCount, notifCount, frmt, 
       <View pointerEvents="none" style={{ position: 'absolute', top: -50, right: -30, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.16)' }} />
       <View pointerEvents="none" style={{ position: 'absolute', bottom: -60, left: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.06)' }} />
 
-      {/* Identity row — paddingRight pour laisser la cloche (absolue) respirer */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingRight: 44 }}>
+      {/* Identity row — paddingRight pour laisser la cloche (absolue) respirer ; tap → profil complet */}
+      <TouchableOpacity activeOpacity={0.8} onPress={onProfilePress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingRight: 44 }}>
         <GradientAvatar letter={name.charAt(0)} size={56} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -313,7 +313,7 @@ function ProfileBanner({ name, elo, wins, losses, badgeCount, notifCount, frmt, 
             Niveau {level}
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* Stats strip */}
       <View style={{ flexDirection: 'row', marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
@@ -699,6 +699,7 @@ export default function HomeScreen() {
                 notifCount={totalNotifs}
                 frmt={formatFrmtRanking(player)}
                 onBellPress={() => router.push('/notifications' as any)}
+                onProfilePress={() => router.push(`/player/${player.id}` as any)}
               />
             </View>
             <View style={{ marginTop: 12 }}>

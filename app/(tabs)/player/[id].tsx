@@ -897,8 +897,12 @@ export default function PlayerProfileScreen() {
   const totalM      = wins + losses;
   const winRate     = totalM > 0 ? Math.round((wins / totalM) * 100) : 0;
 
-  // Recent form + streak
-  const recentForm = matches.slice(0, 5).map(m => (m.winner_id === id || m.winner_id_2 === id ? 'W' : 'L'));
+  // Recent form + streak — matchs compétitifs et défis uniquement (on exclut
+  // les amicaux : ils ne bougent pas l'ELO et n'apparaissent pas sur la courbe).
+  // Les 3 types sont exclusifs à la création (cf. lobby) : un défi est toujours
+  // en game_format 'competitive', donc exclure 'friendly' suffit à le garder.
+  const competitiveMatches = matches.filter(m => m.game_format !== 'friendly');
+  const recentForm = competitiveMatches.slice(0, 5).map(m => (m.winner_id === id || m.winner_id_2 === id ? 'W' : 'L'));
   let streak = 0;
   for (const m of matches) { if (m.winner_id === id || m.winner_id_2 === id) streak++; else break; }
 
@@ -1091,9 +1095,9 @@ export default function PlayerProfileScreen() {
     const lvlOf = (p: JoinedPlayer | null | undefined) => (p?.elo_score != null ? eloToLevel(p.elo_score) : undefined);
     const myTeam: PlayerLite[] = [
       { name: meEntry?.p?.name ?? profile.name, lvl: lvlOf(meEntry?.p) ?? curLevel, me: true },
-      ...(is2 && partnerEntry ? [{ name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p) }] : []),
+      ...(is2 && partnerEntry ? [{ id: partnerEntry.pid ?? undefined, name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p) }] : []),
     ];
-    const oppTeam: PlayerLite[] = opp.map(x => ({ name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p) }));
+    const oppTeam: PlayerLite[] = opp.map(x => ({ id: x.pid ?? undefined, name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p) }));
     const sets = parseSets(m.score_text).map(([w, l]) => (win ? [w, l] : [l, w]) as [number, number]);
     const dt = new Date(m.game?.match_date ?? m.created_at);
     const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -1172,6 +1176,7 @@ export default function PlayerProfileScreen() {
         level={curLevel}
         leagueLabel={getLeagueLabel(league)}
         leagueColor={leagueColor}
+        frmt={formatFrmtRanking(profile)}
         followers={followerCount}
         following={followingCount}
         isSelf={isSelf}
@@ -1191,10 +1196,11 @@ export default function PlayerProfileScreen() {
           <StatsTab
             curLevel={curLevel} delta30={delta30} timeline={timeline}
             winRate={winRate} played={totalM} wins={wins} losses={losses}
-            streak={streak} form={formVD} lastMatch={lastMatchView} renderFooter={renderMatchFooter}
+            streak={streak} form={formVD} infoRows={prefRows} lastMatch={lastMatchView} renderFooter={renderMatchFooter}
+            onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }}
           />
         )}
-        {tab === 'Matchs' && <MatchsTab matches={matchViews} renderFooter={renderMatchFooter} />}
+        {tab === 'Matchs' && <MatchsTab matches={matchViews} renderFooter={renderMatchFooter} onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }} />}
         {tab === 'Palmarès' && <PalmaresTab achievements={achievements} />}
         {tab === 'Badges' && <BadgesTab badges={repBadges} />}
         {tab === 'Activité' && (() => {
@@ -1261,7 +1267,7 @@ export default function PlayerProfileScreen() {
                   <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Genre</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
                     <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textPrimary }}>
-                      {profile.gender === 'male' ? '♂ Homme' : profile.gender === 'female' ? '♀ Femme' : profile.gender === 'other' ? '⚧ Autre' : '—'}
+                      {profile.gender === 'male' ? '♂ Homme' : profile.gender === 'female' ? '♀ Femme' : '—'}
                     </Text>
                     {genderReqPending ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1281,7 +1287,7 @@ export default function PlayerProfileScreen() {
                   </View>
                   {genderReqPending ? (
                     <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
-                      Demande pour {genderReqPending.requested_gender === 'male' ? '♂ Homme' : genderReqPending.requested_gender === 'female' ? '♀ Femme' : '⚧ Autre'} envoyée le {new Date(genderReqPending.created_at).toLocaleDateString('fr-FR')}. Tu peux l'annuler tant qu'elle n'est pas traitée.
+                      Demande pour {genderReqPending.requested_gender === 'male' ? '♂ Homme' : '♀ Femme'} envoyée le {new Date(genderReqPending.created_at).toLocaleDateString('fr-FR')}. Tu peux l'annuler tant qu'elle n'est pas traitée.
                     </Text>
                   ) : (
                     <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>Le genre influence les filtres de parties. Une demande sera traitée par un administrateur.</Text>
@@ -1396,7 +1402,6 @@ export default function PlayerProfileScreen() {
             {([
               { val: 'male' as const, label: '♂ Homme' },
               { val: 'female' as const, label: '♀ Femme' },
-              { val: 'other' as const, label: '⚧ Autre' },
             ]).map(({ val, label }) => {
               const active = genderReqChoice === val;
               const disabled = profile?.gender === val;

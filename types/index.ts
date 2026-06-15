@@ -200,6 +200,7 @@ export interface ActivityEvent {
   actor?: Pick<Player, 'id' | 'name' | 'elo_score'>;
   league?: League;
   comment_count?: number;
+  match?: Match | null;   // match complet (jointures) pour les events match_win/loss → <MatchCard>
 }
 
 export type CommentsPolicy = 'everyone' | 'friends' | 'nobody';
