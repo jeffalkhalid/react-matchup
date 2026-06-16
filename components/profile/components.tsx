@@ -442,6 +442,7 @@ export function ProfileHeader(props: {
   isSelf: boolean; isFollowing: boolean;
   onToggleFollow: () => void; onBack: () => void; onMenu: () => void; onEdit: () => void;
   onShareProfile: () => void; onDefier: () => void;
+  hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
 }) {
   const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing } = props;
@@ -451,9 +452,11 @@ export function ProfileHeader(props: {
       {/* Barre logo + actions */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <TouchableOpacity onPress={props.onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Path d="M15 18l-6-6 6-6" /></Svg>
-          </TouchableOpacity>
+          {!props.hideBack && (
+            <TouchableOpacity onPress={props.onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Path d="M15 18l-6-6 6-6" /></Svg>
+            </TouchableOpacity>
+          )}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
             <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 100, height: 22, marginLeft: -7 }} resizeMode="contain" />
@@ -465,8 +468,8 @@ export function ProfileHeader(props: {
               <TouchableOpacity onPress={props.onShareProfile} style={iconBtn}>
                 <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2z" /><Circle cx={12} cy={13} r={3.6} /></Svg>
               </TouchableOpacity>
-              <TouchableOpacity onPress={props.onEdit} style={iconBtn}>
-                <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></Svg>
+              <TouchableOpacity onPress={props.onMenu} style={iconBtn}>
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Line x1={3} y1={6} x2={21} y2={6} /><Line x1={3} y1={12} x2={21} y2={12} /><Line x1={3} y1={18} x2={21} y2={18} /></Svg>
               </TouchableOpacity>
             </>
           ) : (

@@ -24,6 +24,7 @@ import { matchToView } from '../../lib/matchView';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive } from '../../lib/games';
 
 // ─── Local types ──────────────────────────────────────────────
@@ -408,7 +409,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
     const side = IDX_TO_SIDE[idx];
     const posLabel = side.includes('GAU') ? 'G' : 'D';
 
-    const SLOT_W = 52;
+    const SLOT_W = 60;
     const nameLabel = s ? (s.isMe ? 'Toi' : (s.name?.split(' ')[0] ?? '?')) : null;
 
     if (s) {
@@ -420,23 +421,23 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           onPress={() => router.push(`/player/${s.id}` as any)}
           activeOpacity={0.7}
           hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          style={{ alignItems: 'center', gap: 2, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
-          <Avatar name={s.name} size={30} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
+          style={{ alignItems: 'center', gap: 3, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
+          <Avatar name={s.name} size={42} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
           <Text
             numberOfLines={1}
             style={{
-              fontSize: 10, fontWeight: '800', maxWidth: SLOT_W,
+              fontSize: 13, fontWeight: '900', maxWidth: SLOT_W,
               color: s.isMe ? Colors.warning : Colors.textPrimary,
             }}
           >
             {nameLabel}
           </Text>
           {lvl ? (
-            <Text style={{ fontSize: 8, fontWeight: '900', color: Colors.brandDeep, letterSpacing: 0.2 }}>
+            <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.brandDeep, letterSpacing: 0.2 }}>
               Niv {lvl}
             </Text>
           ) : null}
-          <Text style={{ fontSize: 7, fontWeight: '900', color: s.isInvited ? st.accent : Colors.textMuted, letterSpacing: 0.3 }}>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: s.isInvited ? st.accent : Colors.textMuted, letterSpacing: 0.3 }}>
             {s.isInvited ? '⏳ Invité' : posLabel}
           </Text>
         </TouchableOpacity>
@@ -446,17 +447,17 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
     if (canJoin) {
       return (
         <TouchableOpacity key={idx} onPress={() => onApply!(game.id, side)}
-          activeOpacity={0.7} style={{ alignItems: 'center', gap: 2, width: SLOT_W }}
+          activeOpacity={0.7} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
           <View style={{
-            width: 30, height: 30, borderRadius: 999,
+            width: 42, height: 42, borderRadius: 999,
             borderWidth: 1.5, borderColor: st.border, borderStyle: 'dashed',
             backgroundColor: st.bg, alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text style={{ color: st.accent, fontSize: 17, fontWeight: '300', lineHeight: 19 }}>+</Text>
+            <Text style={{ color: st.accent, fontSize: 24, fontWeight: '300', lineHeight: 26 }}>+</Text>
           </View>
-          <Text style={{ fontSize: 10, fontWeight: '800', color: st.accent }}>Libre</Text>
-          <Text style={{ fontSize: 7, fontWeight: '900', color: st.border, letterSpacing: 0.3 }}>{posLabel}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: st.accent }}>Libre</Text>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: st.border, letterSpacing: 0.3 }}>{posLabel}</Text>
         </TouchableOpacity>
       );
     }
@@ -467,30 +468,30 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
         : onChangeSide!(myParticipant?.id, side);
       return (
         <TouchableOpacity key={idx} onPress={handlePress}
-          activeOpacity={0.7} style={{ alignItems: 'center', gap: 2, width: SLOT_W }}
+          activeOpacity={0.7} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
           <View style={{
-            width: 30, height: 30, borderRadius: 999,
+            width: 42, height: 42, borderRadius: 999,
             borderWidth: 1.5, borderColor: st.border, borderStyle: 'dashed',
             backgroundColor: st.bg, alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text style={{ color: st.accent, fontSize: 11, fontWeight: '900' }}>↔</Text>
+            <Text style={{ color: st.accent, fontSize: 15, fontWeight: '900' }}>↔</Text>
           </View>
-          <Text style={{ fontSize: 10, fontWeight: '800', color: st.accent }}>Changer</Text>
-          <Text style={{ fontSize: 7, fontWeight: '900', color: st.border, letterSpacing: 0.3 }}>{posLabel}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: st.accent }}>Changer</Text>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: st.border, letterSpacing: 0.3 }}>{posLabel}</Text>
         </TouchableOpacity>
       );
     }
 
     return (
-      <View key={idx} style={{ alignItems: 'center', gap: 2, width: SLOT_W }}>
+      <View key={idx} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}>
         <View style={{
           width: 30, height: 30, borderRadius: 999,
           borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
           backgroundColor: Colors.bg,
         }} />
-        <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted }}>Libre</Text>
-        <Text style={{ fontSize: 7, fontWeight: '900', color: Colors.border, letterSpacing: 0.3 }}>{posLabel}</Text>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textMuted }}>Libre</Text>
+        <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.border, letterSpacing: 0.3 }}>{posLabel}</Text>
       </View>
     );
   };
@@ -501,13 +502,16 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
   // avec les avatars. On aligne tout par le haut → avatars/pastilles sur la même
   // ligne, les libellés pendent dessous. Le séparateur reste centré sur la bande.
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         {renderSlot(0)}
         {renderSlot(1)}
       </View>
-      <View style={{ width: 1, height: 22, backgroundColor: Colors.border, marginTop: 4, alignSelf: 'flex-start' }} />
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
+      {/* Séparateur « VS » entre les deux équipes (remplace le filet vertical), centré sur les avatars. */}
+      <Text style={{ fontSize: 24, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.5, marginTop: 9 }}>
+        VS
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         {renderSlot(2)}
         {renderSlot(3)}
       </View>
@@ -684,23 +688,43 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
           )}
         </View>
 
-        {game.location ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-            <IconPin size={13} color={Colors.textSecondary} />
-            <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
-              {game.location}
-            </Text>
+        {/* Lieu + horaire (colonne gauche) et niveau + places (colonne droite), alignés en haut. */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {game.location ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                <IconPin size={13} color={Colors.textSecondary} />
+                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
+                  {game.location}
+                </Text>
+              </View>
+            ) : null}
+            {game.match_date ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <IconClock size={12} color={Colors.textSecondary} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.textSecondary }}>{formatDate(game.match_date)}</Text>
+              </View>
+            ) : null}
           </View>
-        ) : null}
+          {(levelRange || variant !== 'history') && (
+            <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
+              {levelRange ? (
+                <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textSecondary, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                  {levelRange}
+                </Text>
+              ) : null}
+              {variant !== 'history' && (
+                <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 1 }}>
+                  {spotsLeft === 0 ? 'Complet'
+                    : `${spotsLeft} place${spotsLeft > 1 ? 's' : ''} libre${spotsLeft > 1 ? 's' : ''}`}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
 
-        {game.match_date ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 10 }}>
-            <IconClock size={12} color={Colors.textSecondary} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.textSecondary }}>{formatDate(game.match_date)}</Text>
-          </View>
-        ) : <View style={{ marginBottom: 10 }} />}
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        {/* Joueurs : équipe A — VS — équipe B */}
+        <View style={{ alignItems: 'center' }}>
           {showInlineSlots
             ? <InlineSlots game={game} playerId={playerId!}
                 onApply={onApply}
@@ -708,19 +732,6 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
                 onCreatorChangeSide={onCreatorChangeSide} />
             : <AvatarRow players={allPlayers} slots={0} />
           }
-          <View style={{ alignItems: 'flex-end' }}>
-            {levelRange ? (
-              <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textSecondary, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                {levelRange}
-              </Text>
-            ) : null}
-            {variant !== 'history' && (
-              <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                {spotsLeft === 0 ? 'Complet'
-                  : `${spotsLeft} place${spotsLeft > 1 ? 's' : ''} libre${spotsLeft > 1 ? 's' : ''}`}
-              </Text>
-            )}
-          </View>
         </View>
 
         {scorable && (
@@ -2436,6 +2447,7 @@ export default function LobbyScreen() {
         paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16,
         borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
       }}>
+        <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 20 }} />
 
         {/* Brand lockup — raquette + wordmark PAGMATCH */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>

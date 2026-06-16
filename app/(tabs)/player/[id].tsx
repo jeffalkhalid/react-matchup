@@ -20,6 +20,8 @@ import {
   ProfileHeader, AchievementFeedCard, MatchActionButton, type TabName, type MatchView, type TimelinePoint, type PlayerLite,
 } from '../../../components/profile/components';
 import { StatsTab, MatchsTab, PalmaresTab, BadgesTab } from '../../../components/profile/tabs';
+import { ProfileMenuSheet } from '../../../components/profile/ProfileMenuSheet';
+import { CommentsPolicyModal, DeleteAccountModal } from '../../../components/profile/AccountModals';
 import StoryMatchPicker from '../../../components/StoryMatchPicker';
 import StoryComposerV2 from '../../../components/StoryComposerV2';
 import type { StoryMode } from '../../../components/story/StoryStyles';
@@ -583,8 +585,12 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
 
 // ── Main screen ──────────────────────────────────────────────────────
 export default function PlayerProfileScreen() {
-  const { id }           = useLocalSearchParams<{ id: string }>();
-  const { player: self } = usePlayer();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <PlayerProfile id={id} />;
+}
+
+export function PlayerProfile({ id }: { id: string }) {
+  const { player: self, signOut } = usePlayer();
   const router           = useRouter();
   const insets           = useSafeAreaInsets();
 
@@ -622,6 +628,9 @@ export default function PlayerProfileScreen() {
   const [followingCount, setFollowingCount] = useState(0);
 
   const isSelf = self?.id === id;
+  const [menuOpen,     setMenuOpen]     = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [deleteOpen,   setDeleteOpen]   = useState(false);
 
   const reactToActivity = async (eventId: string) => {
     const myId = self?.id ?? '';
@@ -1183,7 +1192,7 @@ export default function PlayerProfileScreen() {
         isFollowing={isFollowing}
         onToggleFollow={toggleFollow}
         onBack={() => router.back()}
-        onMenu={openModerationMenu}
+        onMenu={isSelf ? () => setMenuOpen(true) : openModerationMenu}
         onEdit={openEdit}
         onShareProfile={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }}
         onDefier={handleDefier}
@@ -1481,6 +1490,34 @@ export default function PlayerProfileScreen() {
           lockMode={composerLocked}
           onClose={() => setComposerOpen(false)}
           onRequestMatch={() => setStoryPickerOpen(true)}
+        />
+        <ProfileMenuSheet
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          isAdmin={!!self?.is_admin}
+          onEdit={openEdit}
+          onComments={() => setCommentsOpen(true)}
+          onLogout={() => Alert.alert('Déconnexion', 'Tu vas être déconnecté.', [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Se déconnecter', style: 'destructive', onPress: signOut },
+          ])}
+          onDelete={() => setDeleteOpen(true)}
+        />
+        <CommentsPolicyModal
+          visible={commentsOpen}
+          onClose={() => setCommentsOpen(false)}
+          player={profile}
+          onSaved={onRefresh}
+        />
+        <DeleteAccountModal
+          visible={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          playerName={profile.name}
+          onConfirm={async () => {
+            const { error } = await supabase.rpc('delete_my_account');
+            if (error) { Alert.alert('Suppression impossible', error.message); return; }
+            signOut();
+          }}
         />
       </>
     )}

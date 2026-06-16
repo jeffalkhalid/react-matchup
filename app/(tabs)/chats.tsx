@@ -8,6 +8,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { useGameChats } from '../../hooks/useGameChats';
 import { Colors, Spacing, FontSize, Radius, Fonts } from '../../lib/theme';
 import { ChatRow } from '../../components/ChatRow';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 
 type TypeFilter = 'all' | 'unread' | 'challenge' | 'standard';
 
@@ -91,6 +92,7 @@ export default function ChatsScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Header */}
       <View style={{ backgroundColor: Colors.heroBg, paddingTop: 56, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md }}>
+        <ProfileAvatarButton style={{ position: 'absolute', top: 50, right: 20, zIndex: 20 }} />
         {/* Brand lockup — raquette + wordmark PAGMATCH */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
           <Image

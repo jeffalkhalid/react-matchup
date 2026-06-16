@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { getFollowingIds, setFollow } from '../../lib/community';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import type { Player } from '../../types';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -138,6 +139,9 @@ export default function RankingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
 
+      {/* Pastille Profil (cohérente avec les autres écrans : coin haut-droit). */}
+      <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 6, right: 14, zIndex: 20 }} />
+
       {/* ── Dark header ──────────────────────────────────────────── */}
       <View style={{ backgroundColor: Colors.heroBg, paddingTop: insets.top + 10, paddingHorizontal: 16 }}>
         {/* Brand lockup — raquette + wordmark PAGMATCH */}
@@ -156,7 +160,10 @@ export default function RankingScreen() {
         {/* Title row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
           <View style={{ flexShrink: 1 }}>
-            <Text style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 30, fontFamily: Fonts.welcome }}>
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 30, fontFamily: Fonts.welcome }}>
               Le <Text style={{ color: Colors.brand, fontFamily: Fonts.welcome }}>classement</Text>
             </Text>
             <Text style={{ color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 4 }}>

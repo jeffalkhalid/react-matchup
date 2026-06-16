@@ -1,0 +1,76 @@
+<style>
+  .wrap { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
+  .phone { width:300px; border-radius:26px; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,.18); border:1px solid #e7e7e7; background:#0f172a; }
+  .hdr { background:#0f172a; padding:16px 16px 20px; color:#fff; position:relative; }
+  .toprow { display:flex; align-items:center; justify-content:space-between; }
+  .iconbtn { width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; font-size:16px; color:#fff; }
+  .burger { background:#ffc11a; color:#3a2e00; }
+  .av { width:54px; height:54px; border-radius:16px; background:#eab308; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:22px; color:#1c1407; }
+  .name { font-size:18px; font-weight:800; margin-top:10px; }
+  .sub { font-size:11px; color:#9aa3ad; margin-top:3px; }
+  .tabs { display:flex; gap:14px; margin-top:14px; font-size:11px; color:#9aa3ad; font-weight:700; }
+  .tabs .on { color:#ffc11a; border-bottom:2px solid #ffc11a; padding-bottom:4px; }
+  .body { background:#f6f7f9; border-radius:18px 18px 0 0; margin-top:-2px; padding:16px; min-height:120px; color:#64748b; font-size:12px; }
+
+  /* sheet */
+  .sheet { width:300px; border-radius:22px; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,.18); border:1px solid #ececec; background:#fff; align-self:flex-start; }
+  .sheet h4 { margin:0; padding:16px 18px 6px; font-size:15px; font-weight:800; color:#0f172a; }
+  .grp { font-size:10px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:#94a3b8; padding:14px 18px 4px; }
+  .row { display:flex; align-items:center; gap:12px; padding:11px 18px; font-size:13.5px; font-weight:700; color:#0f172a; }
+  .row .e { width:30px; height:30px; border-radius:9px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .row.danger { color:#ef4444; }
+  .row.danger .e { background:#fef2f2; }
+  .row.muted { color:#94a3b8; }
+  .div { height:1px; background:#f1f5f9; margin-left:60px; }
+  .cap { text-align:center; font-size:12px; color:#5b6470; margin-top:12px; max-width:640px; margin-left:auto; margin-right:auto; }
+</style>
+
+<h2>Profil → profil complet, avec burger ☰</h2>
+<p class="subtitle">À gauche : le bouton Profil ouvre directement TON profil complet (header sombre + onglets), avec un burger en haut à droite. À droite : ce que le burger ouvre.</p>
+
+<div class="wrap">
+  <div class="phone">
+    <div class="hdr">
+      <div class="toprow">
+        <div class="iconbtn">‹</div>
+        <div style="display:flex; gap:8px;">
+          <div class="iconbtn">↗</div>
+          <div class="iconbtn burger">☰</div>
+        </div>
+      </div>
+      <div class="av">J</div>
+      <div class="name">Jeff</div>
+      <div class="sub">● OR · Niveau 5.2 · 🏆 FRMT</div>
+      <div class="tabs"><span class="on">Stats</span><span>Matchs</span><span>Palmarès</span><span>Badges</span></div>
+    </div>
+    <div class="body">Contenu du profil (stats, courbe, derniers matchs…) — inchangé.</div>
+  </div>
+
+  <div class="sheet">
+    <h4>Menu</h4>
+    <div class="grp">Compte</div>
+    <div class="row"><div class="e">✏️</div>Modifier le profil</div>
+    <div class="div"></div>
+    <div class="row"><div class="e">💬</div>Qui peut commenter</div>
+
+    <div class="grp">Raccourcis</div>
+    <div class="row"><div class="e">🏆</div>Classement</div>
+    <div class="div"></div>
+    <div class="row"><div class="e">🔔</div>Notifications</div>
+
+    <div class="grp">Admin</div>
+    <div class="row"><div class="e">🛡️</div>Panel Arbitre</div>
+
+    <div class="grp">Légal</div>
+    <div class="row"><div class="e">🔒</div>Confidentialité</div>
+    <div class="div"></div>
+    <div class="row"><div class="e">📄</div>Conditions d'utilisation</div>
+
+    <div class="grp">&nbsp;</div>
+    <div class="row danger"><div class="e">🚪</div>Se déconnecter</div>
+    <div class="div"></div>
+    <div class="row danger muted"><div class="e">🗑️</div>Supprimer mon compte</div>
+  </div>
+</div>
+
+<p class="cap">« Défi » n'est plus dans le menu (il a déjà son onglet dans la navbar). « Classement » et « Notifications » y restent car ils n'ont pas d'onglet dédié. Le bouton ↗ = partager le profil (déjà présent). Modifier le profil réutilise le modal déjà intégré au profil complet.</p>

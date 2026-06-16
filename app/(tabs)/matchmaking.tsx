@@ -14,6 +14,7 @@ import { getHiddenPlayerIds } from '../../lib/moderation';
 import { Colors, eloToLevel, Fonts } from '../../lib/theme';
 import type { Player, Challenge } from '../../types';
 import { Pill, type PillVariant } from '../../components/Pill';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import { GameCard } from './lobby';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -571,6 +572,8 @@ export default function MatchmakingScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      {/* Pastille Profil — alignée avec le logo (cohérent avec accueil/lobby/classement). */}
+      <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 6, right: 14, zIndex: 20 }} />
       {/* Dark header */}
       <View style={{
         backgroundColor: Colors.heroBg,

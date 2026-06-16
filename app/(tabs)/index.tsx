@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, getLeague, getLeagueLabel, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { CommunityCard } from '../../components/community/CommunityCard';
+import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import type { OpenGame } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -596,6 +597,7 @@ export default function HomeScreen() {
         paddingTop: insets.top + 8,
         paddingBottom: 8,
       }}>
+        <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 6, right: 14, zIndex: 20 }} />
         {/* Header — logo PAG MATCH (identique au splash de chargement) */}
         <View style={{ alignItems: 'center', marginBottom: 12 }}>
           <View style={{

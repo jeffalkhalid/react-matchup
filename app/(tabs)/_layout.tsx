@@ -49,14 +49,6 @@ const IconActivity = ({ color, size = 22 }: { color: string; size?: number }) =>
   </Svg>
 );
 
-const IconBell = ({ color, size = 22 }: { color: string; size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <Path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-    <Path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-  </Svg>
-);
-
 const IconPlus = ({ size = 20 }: { size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={Colors.brand} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -64,33 +56,6 @@ const IconPlus = ({ size = 20 }: { size?: number }) => (
     <Line x1="5" y1="12" x2="19" y2="12" />
   </Svg>
 );
-
-function AvatarTabIcon({ name, focused, badge }: { name: string; focused: boolean; badge: number }) {
-  return (
-    <View>
-      <View style={{
-        width: 28, height: 28, borderRadius: 999,
-        backgroundColor: focused ? Colors.primary : Colors.bgCardAlt,
-        alignItems: 'center', justifyContent: 'center',
-        borderWidth: focused ? 0 : 1, borderColor: Colors.border,
-      }}>
-        <Text style={{ color: focused ? '#fff' : Colors.textMuted, fontSize: 12, fontWeight: '900' }}>
-          {name.charAt(0).toUpperCase()}
-        </Text>
-      </View>
-      {badge > 0 && (
-        <View style={{
-          position: 'absolute', top: -5, right: -8,
-          minWidth: 16, height: 16, backgroundColor: Colors.brand,
-          borderRadius: 999, alignItems: 'center', justifyContent: 'center',
-          paddingHorizontal: 3, borderWidth: 2, borderColor: Colors.bgCard,
-        }}>
-          <Text style={{ color: Colors.textOnBrand, fontSize: 8, fontWeight: '900' }}>{badge}</Text>
-        </View>
-      )}
-    </View>
-  );
-}
 
 function CreateTabButton({ ...rest }: any) {
   const router = useRouter();
@@ -240,9 +205,6 @@ export default function TabLayout() {
     };
   }, [player]);
 
-  const playerName = player?.name ?? 'P';
-  const totalBadge = challengeCount + chatBadge;
-
   return (
     <View style={{ flex: 1 }}>
     <Tabs
@@ -277,15 +239,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="matchmaking"
-        options={{
-          title: 'Défi',
-          tabBarBadge: challengeCount > 0 ? challengeCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: Colors.warning, fontSize: 9, minWidth: 16, height: 16 },
-          tabBarIcon: ({ color }) => <IconSwords color={color} size={22} />,
-        }}
-      />
-      <Tabs.Screen
         name="activite"
         options={{
           title: 'Activité',
@@ -301,10 +254,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="alertes"
+        name="matchmaking"
         options={{
-          title: 'Alertes',
-          tabBarIcon: ({ color }) => <IconBell color={color} size={22} />,
+          title: 'Défi',
+          tabBarBadge: challengeCount > 0 ? challengeCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: Colors.warning, fontSize: 9, minWidth: 16, height: 16 },
+          tabBarIcon: ({ color }) => <IconSwords color={color} size={22} />,
         }}
       />
       <Tabs.Screen
@@ -314,13 +269,6 @@ export default function TabLayout() {
           tabBarBadge: chatBadge > 0 ? chatBadge : undefined,
           tabBarBadgeStyle: { backgroundColor: Colors.danger, fontSize: 9, minWidth: 16, height: 16 },
           tabBarIcon: ({ color }) => <IconMessage color={color} size={22} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profil',
-          tabBarIcon: ({ focused }) => <AvatarTabIcon name={playerName} focused={focused} badge={totalBadge} />,
         }}
       />
       {/* Hidden from tab bar */}
