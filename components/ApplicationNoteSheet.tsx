@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Modal, View, Text, TextInput, TouchableOpacity, Platform, Keyboard } from 'react-native';
 import { Colors, Fonts } from '../lib/theme';
 
 const MAX_LEN = 140;
@@ -18,8 +18,22 @@ type Props = {
  */
 export default function ApplicationNoteSheet({ visible, onSubmit, onCancel }: Props) {
   const [note, setNote] = useState('');
+  const [kbHeight, setKbHeight] = useState(0);
+
+  // KeyboardAvoidingView ne marche pas dans un <Modal> Android (la fenêtre du
+  // Modal n'hérite pas du adjustResize de l'activité), et la feuille est ancrée
+  // en bas — le clavier la recouvre. On suit donc la hauteur du clavier et on
+  // relève la feuille d'autant. iOS = events Will (plus fluides), Android = Did.
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const sub = Keyboard.addListener(showEvt, (e) => setKbHeight(e.endCoordinates?.height ?? 0));
+    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { sub.remove(); hideSub.remove(); };
+  }, []);
 
   const close = (submitted: boolean, value: string) => {
+    Keyboard.dismiss();
     setNote('');
     if (submitted) onSubmit(value);
     else onCancel();
@@ -27,9 +41,7 @@ export default function ApplicationNoteSheet({ visible, onSubmit, onCancel }: Pr
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => close(false, '')}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)', paddingBottom: kbHeight }}>
         <View style={{ backgroundColor: Colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 14 }}>
           <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
             Tu es hors de la zone de niveau
@@ -64,7 +76,7 @@ export default function ApplicationNoteSheet({ visible, onSubmit, onCancel }: Pr
             <Text style={{ color: Colors.textMuted, fontSize: 13 }}>Annuler</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
