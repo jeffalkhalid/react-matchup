@@ -12,9 +12,17 @@ export function occupiesSpot(p: { status: string; invite_expires_at?: string | n
   return p.status === 'accepted' || isInviteActive(p);
 }
 
-export async function joinGame(gameId: string, side?: string, joinWaitlist = false): Promise<string> {
+export async function joinGame(
+  gameId: string,
+  side?: string,
+  joinWaitlist = false,
+  note?: string,
+): Promise<string> {
   const { data, error } = await supabase.rpc('join_game', {
-    p_game_id: gameId, p_side: side ?? null, p_join_waitlist: joinWaitlist,
+    p_game_id: gameId,
+    p_side: side ?? null,
+    p_join_waitlist: joinWaitlist,
+    p_note: note ?? null,
   });
   if (error) throw error;
   return data as string; // 'accepted' | 'pending' | 'waitlist'

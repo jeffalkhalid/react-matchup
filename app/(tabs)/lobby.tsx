@@ -26,6 +26,8 @@ import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
 import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive } from '../../lib/games';
+import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
+import { containsProfanity } from '../../lib/profanity';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -1600,6 +1602,7 @@ export default function LobbyScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [openGameId, setOpenGameId] = useState<string | null>(null);
+  const [noteSheet, setNoteSheet] = useState<{ gameId: string; side?: string } | null>(null);
   const [openMatch, setOpenMatch] = useState<Match | null>(null);
   const [pendingSheetOpen, setPendingSheetOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -1620,7 +1623,7 @@ export default function LobbyScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
 
-    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
+    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, application_note, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
 
     const [explorerRes, createdRes, matchesRes] = await Promise.all([
       supabase
@@ -1829,12 +1832,28 @@ export default function LobbyScreen() {
   const handleApply = async (gameId: string, joinWaitlist: boolean, teamSide?: string) => {
     if (!player) return;
     const game = games.find(g => g.id === gameId) ?? upcomingGames.find(g => g.id === gameId);
+
+    // Hors-niveau (candidature normale, pas waitlist) → demander un mot optionnel
+    // AVANT d'envoyer. Les joueurs dans-le-niveau (acceptés direct) ou la waitlist
+    // gardent le chemin direct sans feuille.
+    if (!joinWaitlist && game && getEloFit(game, myElo) !== 'fit') {
+      setNoteSheet({ gameId, side: teamSide });
+      return;
+    }
+    return submitApplication(gameId, joinWaitlist, teamSide);
+  };
+
+  // Envoi effectif de la candidature (avec note optionnelle). Séparé de
+  // handleApply pour que la feuille hors-niveau puisse le rappeler après saisie.
+  const submitApplication = async (gameId: string, joinWaitlist: boolean, teamSide?: string, note?: string) => {
+    if (!player) return;
+    const game = games.find(g => g.id === gameId) ?? upcomingGames.find(g => g.id === gameId);
     // Candidature atomique côté serveur : gate sur l'occupation vivante
     // (invités expirés exclus), pas de surbooking concurrent. Renvoie le
     // statut attribué ; on enchaîne sur les notifs adéquates.
     let newStatus: string;
     try {
-      newStatus = await joinGame(gameId, teamSide, joinWaitlist);
+      newStatus = await joinGame(gameId, teamSide, joinWaitlist, note);
     } catch (error: any) {
       if (isCreatorConflict(error)) {
         Alert.alert(
@@ -1863,17 +1882,19 @@ export default function LobbyScreen() {
       Alert.alert('✅ Accepté !', 'Ton niveau correspond — tu es directement dans la partie !');
       setOpenGameId(null);
     } else if (newStatus === 'pending') {
-      // La validation requiert TOUS les joueurs en place (créateur + participants
-      // validés) — on les notifie tous, avec un lien vers la carte détail du match.
       const approverIds = [
         game?.creator_id,
         ...(game?.participants?.filter((p: any) => p.status === 'accepted').map((p: any) => p.player_id) ?? []),
       ].filter((id: string | undefined): id is string => !!id && id !== player.id);
       if (approverIds.length > 0) {
+        const loc = game?.location ? ` à ${game.location}` : '';
+        const preview = note && note.trim()
+          ? ` — « ${note.trim().slice(0, 60)}${note.trim().length > 60 ? '…' : ''} »`
+          : '';
         notifyPlayers({
           playerIds: approverIds,
           title: '📋 Nouvelle demande',
-          body: `${player.name} veut rejoindre la partie${game?.location ? ` à ${game.location}` : ''} — valide sa demande`,
+          body: `${player.name} veut rejoindre la partie${loc}${preview}`,
           data: { type: 'lobby', gameId },
         });
       }
@@ -2590,6 +2611,20 @@ export default function LobbyScreen() {
           onCancelGame={handleCancelGame}
         />
       )}
+
+      <ApplicationNoteSheet
+        visible={noteSheet !== null}
+        onCancel={() => setNoteSheet(null)}
+        onSubmit={(note) => {
+          if (note && containsProfanity(note)) {
+            Alert.alert('Message non autorisé', 'Ton message contient des termes interdits — reformule.');
+            return; // la feuille reste ouverte
+          }
+          const target = noteSheet;
+          setNoteSheet(null);
+          if (target) submitApplication(target.gameId, false, target.side, note || undefined);
+        }}
+      />
 
       <CreateWizard
         visible={showCreate}

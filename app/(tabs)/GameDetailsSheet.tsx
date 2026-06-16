@@ -707,6 +707,13 @@ export default function GameDetailsSheet({
                             </View>
                           )}
                         </View>
+                        {p.application_note ? (
+                          <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 10, padding: 8, marginBottom: 8 }}>
+                            <Text style={{ fontSize: 12, fontStyle: 'italic', color: Colors.textSecondary }}>
+                              💬 « {p.application_note} »
+                            </Text>
+                          </View>
+                        ) : null}
                         {/* Approval progress bar */}
                         <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 99, height: 5, overflow: 'hidden' }}>
                           <View style={{
