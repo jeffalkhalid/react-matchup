@@ -101,7 +101,7 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
         {form.length > 0 && (
           <View style={{ borderTopWidth: 1, borderTopColor: PM.divider, marginTop: 12, paddingTop: 12 }}>
             <Text style={{ fontSize: 9, fontWeight: '800', color: PM.muted, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 2 }}>Forme récente</Text>
-            <Text style={{ fontSize: 10, fontWeight: '600', color: PM.faint, marginBottom: 8 }}>Matchs compétitifs et défis uniquement</Text>
+            <Text style={{ fontSize: 10, fontWeight: '600', color: PM.faint, marginBottom: 8 }}>5 derniers matchs compétitifs et défis</Text>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {form.map((f, i) => (
                 <View key={i} style={{
