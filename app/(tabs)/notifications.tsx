@@ -6,9 +6,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
+import { getNotificationsEnabled, enableNotificationsFromApp } from '../../hooks/usePushNotifications';
 import { supabase } from '../../lib/supabase';
-import { isInviteActive } from '../../lib/games';
-import { Colors, getLeague, getLeagueLabel, eloToLevel, Fonts } from '../../lib/theme';
+import { buildNotificationItems, isDismissibleNotif, type NotifItem } from '../../lib/notifications';
+import { Colors, Fonts } from '../../lib/theme';
 
 // ─── Icons ───────────────────────────────────────────────────
 const IconChevronLeft = ({ size = 20, color = Colors.textPrimary }) => (
@@ -76,28 +78,18 @@ const IconX = ({ size = 14, color = Colors.textMuted }) => (
   </Svg>
 );
 
-// ─── Types ────────────────────────────────────────────────────
-interface NotifItem {
-  id: string;
-  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined';
-  title: string;
-  subtitle: string;
-  route: string;
-}
-
-// Notifs "info" sans action requise : supprimables définitivement (persistées
-// dans la table dismissed_notifications). Les autres types disparaissent en
-// traitant l'action correspondante.
-const DISMISSIBLE: ReadonlySet<NotifItem['type']> = new Set(['joined', 'levelup']);
-const isDismissible = (t: NotifItem['type']) => DISMISSIBLE.has(t);
-
 // ─── Screen ───────────────────────────────────────────────────
 export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { player } = usePlayer();
+  // Compteur partagé de la cloche : on le rafraîchit après une suppression "info"
+  // pour que le badge reste cohérent avec la liste affichée ici.
+  const { reload: reloadNotifs } = useNotificationCount();
   const [items, setItems] = useState<NotifItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // null = pas encore vérifié ; false = notifs désactivées → on montre la bannière.
+  const [notifsOn, setNotifsOn] = useState<boolean | null>(null);
   const hasLoadedRef = useRef(false);
 
   const fetchNotifs = useCallback(async () => {
@@ -106,265 +98,12 @@ export default function NotificationsScreen() {
     // garde la liste affichée et on rafraîchit en arrière-plan.
     if (!hasLoadedRef.current) setLoading(true);
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const playerOr = [
-      `winner_id.eq.${player.id}`,
-      `loser_id.eq.${player.id}`,
-      `winner_id_2.eq.${player.id}`,
-      `loser_id_2.eq.${player.id}`,
-    ].join(',');
-
-    // "Partie à scorer" : mêmes critères que score-entry et lobby.readyToScore.
-    const nowIso = new Date().toISOString();
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    const { data: acceptedGames } = await supabase
-      .from('game_participants')
-      .select('game_id')
-      .eq('player_id', player.id)
-      .eq('status', 'accepted');
-    const acceptedGameIds = (acceptedGames ?? []).map((e: any) => e.game_id).filter(Boolean) as string[];
-    const orParts = [
-      `creator_id.eq.${player.id}`,
-      ...(acceptedGameIds.length > 0 ? [`id.in.(${acceptedGameIds.join(',')})`] : []),
-    ].join(',');
-
-    const [
-      { data: challenges },
-      { data: pending },
-      { data: recentMatches },
-      { data: alreadyVoted },
-      { data: eloHistory },
-      { data: toScoreGames },
-      { data: invitations },
-      { data: myGames },
-      { data: dismissedRows },
-    ] = await Promise.all([
-      supabase
-        .from('challenges')
-        .select('id, game_id, challenger:players!challenger_id(name)')
-        .eq('challenged_id', player.id)
-        .eq('status', 'pending')
-        .gt('expires_at', nowIso),
-      supabase
-        .from('matches')
-        .select('id, winner:winner_id(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
-        .or(playerOr)
-        .eq('status', 'pending'),
-      supabase
-        .from('matches')
-        .select('id')
-        .or(playerOr)
-        .in('status', ['pending', 'validated'])
-        .gte('created_at', sevenDaysAgo),
-      supabase
-        .from('reputation_votes')
-        .select('match_id')
-        .eq('giver_id', player.id),
-      supabase
-        .from('elo_history')
-        .select('elo_score, elo_change, match_id')
-        .eq('player_id', player.id)
-        .gt('elo_change', 0)
-        .gte('created_at', sevenDaysAgo)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('open_games')
-        .select('id, creator_id, participants:game_participants(player_id, status)')
-        .neq('status', 'cancelled')
-        .neq('status', 'closed')
-        .lt('match_date', nowIso)
-        .gte('match_date', fortyEightHoursAgo)
-        .eq('spots_available', 0)
-        .or(orParts),
-      supabase
-        .from('game_participants')
-        .select('id, invite_expires_at, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
-        .eq('player_id', player.id)
-        .eq('status', 'invited'),
-      // Mes parties (créateur ou participant validé) — pour les demandes à valider.
-      supabase
-        .from('open_games')
-        .select('id, location, status, match_date')
-        .neq('status', 'cancelled')
-        .or(orParts),
-      // Notifs "info" déjà supprimées par l'utilisateur (joined / levelup).
-      supabase
-        .from('dismissed_notifications')
-        .select('notif_key')
-        .eq('player_id', player.id),
-    ]);
-
-    const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
-
-    const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
-    const unvotedCount = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id)).length;
-
-    // "Partie à scorer" — MÊMES critères que score-entry.fetchGames et
-    // useNotificationCount.toScore : doubles uniquement (4 joueurs réels). On ne
-    // se fie PAS au seul spots_available (compteur dénormalisé sujet au drift),
-    // sinon une partie incomplète génère une notif fantôme sans match en face.
-    const toScoreCount = (toScoreGames ?? []).filter((g: any) => {
-      const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
-      const creatorAccepted = accepted.some((p: any) => p.player_id === g.creator_id);
-      const total = accepted.length + (creatorAccepted ? 0 : 1);
-      const meIn = g.creator_id === player.id || accepted.some((p: any) => p.player_id === player.id);
-      return total >= 4 && meIn;
-    }).length;
-
-    // Filter pending: exclude matches submitted by me OR by my doubles partner
-    const visiblePending = (pending ?? []).filter((m: any) => {
-      if (m.created_by === player.id) return false;
-      const cb = m.created_by;
-      if (
-        (cb === m.winner_id   && m.winner_id_2 === player.id) ||
-        (cb === m.winner_id_2 && m.winner_id   === player.id) ||
-        (cb === m.loser_id    && m.loser_id_2  === player.id) ||
-        (cb === m.loser_id_2  && m.loser_id    === player.id)
-      ) return false;
-      return true;
-    });
-
-    // Detect most recent league or full-level promotion in the last 7 days
-    const levelUpEntry = (eloHistory ?? []).find((h: any) => {
-      const prevElo = h.elo_score - h.elo_change;
-      const leagueChanged = getLeague(h.elo_score) !== getLeague(prevElo);
-      const levelIncreased = Math.floor(eloToLevel(h.elo_score)) > Math.floor(eloToLevel(prevElo));
-      return leagueChanged || levelIncreased;
-    });
-
-    // Anti-doublon : un défi crée à la fois une ligne `challenges` ET un
-    // game_participants 'invited' sur la même partie. On exclut l'invitation
-    // si un défi existe déjà pour cette partie (la ligne `challenges` la couvre).
-    const challengeGameIds = new Set((challenges ?? []).map((c: any) => c.game_id).filter(Boolean));
-
-    // Filter active invitations: skip those whose game is closed/cancelled or already past
-    const activeInvites = (invitations ?? []).filter((inv: any) => {
-      const g = inv.game;
-      if (!g) return false;
-      // Invitation expirée (TTL dépassé) — le cron peut avoir jusqu'à 10 min de
-      // retard à basculer le statut en 'expired', donc on vérifie aussi la date.
-      if (!isInviteActive({ status: 'invited', invite_expires_at: inv.invite_expires_at })) return false;
-      if (g.id && challengeGameIds.has(g.id)) return false;
-      if (g.status === 'closed' || g.status === 'cancelled') return false;
-      if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
-      return true;
-    });
-
-    // Demandes à valider — candidatures 'pending' sur mes parties (créateur ou
-    // participant validé) que je n'ai pas encore approuvées. Lien → carte détail.
-    const myGameById = new Map((myGames ?? []).map((g: any) => [g.id, g]));
-    const validReqGameIds = (myGames ?? []).filter((g: any) => {
-      if (g.status === 'closed' || g.status === 'cancelled') return false;
-      if (g.match_date && new Date(g.match_date).getTime() < Date.now()) return false;
-      return true;
-    }).map((g: any) => g.id);
-
-    let pendingReqItems: NotifItem[] = [];
-    let joinedItems: NotifItem[] = [];
-    if (validReqGameIds.length > 0) {
-      const { data: reqs } = await supabase
-        .from('game_participants')
-        .select('id, game_id, player_id, approvals, player:player_id(name)')
-        .in('game_id', validReqGameIds)
-        .eq('status', 'pending');
-      pendingReqItems = (reqs ?? [])
-        .filter((r: any) => r.player_id !== player.id && !(r.approvals ?? []).includes(player.id))
-        .map((r: any) => {
-          const g = myGameById.get(r.game_id);
-          const where = g?.location ? ` à ${g.location}` : '';
-          return {
-            id: `req-${r.id}`,
-            type: 'to_approve' as const,
-            title: 'Demande à valider',
-            subtitle: `${r.player?.name ?? 'Un joueur'} veut rejoindre la partie${where}`,
-            route: `/(tabs)/lobby?gameId=${r.game_id}`,
-          };
-        });
-
-      // Joined events — accepted participants sur mes parties dans les 7 derniers jours,
-      // que ce soit auto-accept, invitation acceptée ou candidature approuvée.
-      const { data: joined } = await supabase
-        .from('game_participants')
-        .select('id, game_id, player_id, approvals, created_at, player:player_id(name)')
-        .in('game_id', validReqGameIds)
-        .eq('status', 'accepted')
-        .neq('player_id', player.id)
-        .gte('created_at', sevenDaysAgo)
-        .order('created_at', { ascending: false });
-      joinedItems = (joined ?? []).map((j: any) => {
-        const g = myGameById.get(j.game_id);
-        const where = g?.location ? ` à ${g.location}` : '';
-        const wasApproved = (j.approvals ?? []).length > 0;
-        return {
-          id: `joined-${j.id}`,
-          type: 'joined' as const,
-          title: wasApproved ? '✅ Candidature acceptée' : '👋 Nouveau joueur',
-          subtitle: `${j.player?.name ?? 'Un joueur'} a rejoint la partie${where}`,
-          route: `/(tabs)/lobby?gameId=${j.game_id}`,
-        };
-      });
-    }
-
-    const result: NotifItem[] = [
-      ...pendingReqItems,
-      ...joinedItems,
-      ...activeInvites.map((inv: any) => {
-        const isChall = !!inv.game?.is_challenge;
-        const who = inv.game?.creator?.name ?? '?';
-        const where = inv.game?.location ? ` à ${inv.game.location}` : '';
-        return {
-          id: `invitation-${inv.id}`,
-          type: (isChall ? 'challenge' : 'invitation') as 'challenge' | 'invitation',
-          title: isChall ? '⚡ Défi reçu' : '✉️ Invitation reçue',
-          subtitle: isChall ? `${who} te défie en duel${where}` : `${who} t'invite à jouer${where}`,
-          route: `/(tabs)/lobby?gameId=${inv.game.id}`,
-        };
-      }),
-      ...(challenges ?? []).map((c: any) => ({
-        id: `challenge-${c.id}`,
-        type: 'challenge' as const,
-        title: 'Nouveau défi reçu',
-        subtitle: `${c.challenger?.name ?? '?'} t'a lancé un défi`,
-        route: '/(tabs)/matchmaking',
-      })),
-      ...visiblePending.map((m: any) => ({
-        id: `match-${m.id}`,
-        type: 'match' as const,
-        title: 'Score à valider',
-        subtitle: `Soumis par ${m.winner?.name ?? '?'}`,
-        route: '/(tabs)/lobby?tab=history&openValidation=1',
-      })),
-      ...((toScoreCount ?? 0) > 0 ? [{
-        id: 'to-score',
-        type: 'to_score' as const,
-        title: 'Partie à scorer',
-        subtitle: `${toScoreCount} partie${(toScoreCount ?? 0) > 1 ? 's' : ''} en attente de score`,
-        route: '/(tabs)/lobby?tab=history',
-      }] : []),
-      ...(unvotedCount > 0 ? [{
-        id: 'badge-prompt',
-        type: 'badge' as const,
-        title: 'Note tes coéquipiers',
-        subtitle: `${unvotedCount} match${unvotedCount > 1 ? 's' : ''} en attente de badges`,
-        route: '/(tabs)?openBadge=1',
-      }] : []),
-      ...(levelUpEntry ? [{
-        id: `levelup-${levelUpEntry.match_id ?? 'last'}`,
-        type: 'levelup' as const,
-        title: 'Montée de niveau 🎉',
-        subtitle: (() => {
-          const prev = levelUpEntry.elo_score - levelUpEntry.elo_change;
-          if (getLeague(levelUpEntry.elo_score) !== getLeague(prev)) {
-            return `Tu es passé en ligue ${getLeagueLabel(getLeague(levelUpEntry.elo_score))} !`;
-          }
-          return `Tu as atteint le niveau ${Math.floor(eloToLevel(levelUpEntry.elo_score))} !`;
-        })(),
-        route: '/(tabs)',
-      }] : []),
-    ];
-
-    // Retirer les notifs "info" déjà supprimées par l'utilisateur.
-    setItems(result.filter(it => !(isDismissible(it.type) && dismissedKeys.has(it.id))));
+    // Source UNIQUE de la liste (lib/notifications.buildNotificationItems),
+    // partagée avec le compteur de la cloche (useNotificationCount) — le total
+    // de la cloche EST le nombre de cartes affichées ici, donc jamais de
+    // divergence possible.
+    const built = await buildNotificationItems(player.id);
+    setItems(built);
     hasLoadedRef.current = true;
     setLoading(false);
   }, [player]);
@@ -376,14 +115,15 @@ export default function NotificationsScreen() {
     await supabase
       .from('dismissed_notifications')
       .upsert({ player_id: player.id, notif_key: item.id }, { onConflict: 'player_id,notif_key' });
-  }, [player]);
+    reloadNotifs();
+  }, [player, reloadNotifs]);
 
   // "Effacer les infos" — supprime toutes les notifs "info" affichées, laisse
   // intactes celles qui exigent une action.
   const dismissAllInfo = useCallback(async () => {
-    const infoItems = items.filter(i => isDismissible(i.type));
+    const infoItems = items.filter(i => isDismissibleNotif(i.type));
     if (infoItems.length === 0) return;
-    setItems(prev => prev.filter(i => !isDismissible(i.type)));
+    setItems(prev => prev.filter(i => !isDismissibleNotif(i.type)));
     if (!player) return;
     await supabase
       .from('dismissed_notifications')
@@ -391,11 +131,21 @@ export default function NotificationsScreen() {
         infoItems.map(i => ({ player_id: player.id, notif_key: i.id })),
         { onConflict: 'player_id,notif_key' },
       );
-  }, [items, player]);
+    reloadNotifs();
+  }, [items, player, reloadNotifs]);
 
+  // Re-vérifie l'état des notifs à chaque focus → la bannière se met à jour
+  // automatiquement au retour des réglages système (cas refus définitif).
   useFocusEffect(useCallback(() => {
     fetchNotifs();
+    getNotificationsEnabled().then(setNotifsOn);
   }, [fetchNotifs]));
+
+  const handleEnableNotifs = useCallback(async () => {
+    if (!player) return;
+    await enableNotificationsFromApp(player.id);
+    setNotifsOn(await getNotificationsEnabled());
+  }, [player]);
 
   const iconFor = (type: NotifItem['type']) => {
     if (type === 'challenge')  return <IconSwords size={18} color={Colors.brandDeep} />;
@@ -466,7 +216,7 @@ export default function NotificationsScreen() {
             <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{items.length}</Text>
           </View>
         )}
-        {items.some(i => isDismissible(i.type)) && (
+        {items.some(i => isDismissibleNotif(i.type)) && (
           <TouchableOpacity
             onPress={dismissAllInfo}
             activeOpacity={0.7}
@@ -479,6 +229,46 @@ export default function NotificationsScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Bannière « Activer les notifications » — visible tant que c'est désactivé.
+          Au tap : prompt OS si possible, sinon ouverture des réglages système. */}
+      {notifsOn === false && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleEnableNotifs}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            marginHorizontal: 14, marginTop: 14,
+            backgroundColor: 'rgba(255,193,26,0.14)',
+            borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)',
+            borderRadius: 16, padding: 14,
+          }}
+        >
+          <View style={{
+            width: 40, height: 40, borderRadius: 12,
+            backgroundColor: Colors.bgCard,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IconBell size={20} color={Colors.brandDeep} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.brandDeep, fontFamily: Fonts.uiBlack }}>
+              Notifications désactivées
+            </Text>
+            <Text style={{ fontSize: 12, color: '#A16207', marginTop: 2 }}>
+              Active-les pour être prévenu des défis, invitations et résultats.
+            </Text>
+          </View>
+          <View style={{
+            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+            backgroundColor: Colors.brandDeep,
+          }}>
+            <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack }}>
+              Activer
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
 
       {loading ? (
         <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
@@ -538,7 +328,7 @@ export default function NotificationsScreen() {
                   </Text>
                 </View>
                 <IconChevronRight size={16} color={Colors.border} />
-                {isDismissible(item.type) && (
+                {isDismissibleNotif(item.type) && (
                   <TouchableOpacity
                     onPress={() => dismissOne(item)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

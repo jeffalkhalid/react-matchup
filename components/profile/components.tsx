@@ -7,24 +7,26 @@ import Svg, {
 } from 'react-native-svg';
 import { PM, accentOf, ACCENT, initials, PFonts } from './theme';
 import { Glyph } from './glyphs';
+import { CreatorCrownBadge } from '../CreatorCrownBadge';
 
 const A = accentOf(ACCENT);
 
 // ── Types de présentation (alimentés par les adaptateurs de tabs.tsx) ──
-export interface PlayerLite { id?: string; name: string; lvl?: number; me?: boolean }
+export interface PlayerLite { id?: string; name: string; lvl?: number; me?: boolean; isCreator?: boolean }
 export interface MatchView {
   id?: string;
   club: string; date: string; time: string;
   result: 'Victoire' | 'Défaite'; delta: number;
   teams: [PlayerLite[], PlayerLite[]];
   sets: [number, number][]; winnerRow: 0 | 1;
+  creatorId?: string;
 }
 export interface TimelinePoint { lvl: number; result: 'Victoire' | 'Défaite'; match: MatchView }
-export interface RepBadge { emoji: string; label: string; n: number }
+export interface RepBadge { label: string; n: number }
 export interface AchievementView { key: string; name: string; desc: string; glyph: string; progress: number; target: number; unlocked: boolean }
 
 // ── Avatar à initiales — charte noir/or, distinction d'équipe ─────────
-export function Avatar({ name, size = 30, me = false, team }: { name: string; size?: number; me?: boolean; team?: 0 | 1 }) {
+export function Avatar({ name, size = 30, me = false, team, creator }: { name: string; size?: number; me?: boolean; team?: 0 | 1; creator?: boolean }) {
   const mine = me || team === 0;
   return (
     <View style={{
@@ -35,6 +37,7 @@ export function Avatar({ name, size = 30, me = false, team }: { name: string; si
       <Text style={{ color: mine ? PM.ink : '#FFFFFF', fontWeight: '800', fontSize: Math.round(size * 0.40) }}>
         {initials(name)}
       </Text>
+      {creator ? <CreatorCrownBadge avatarSize={size} ringColor={PM.card} /> : null}
     </View>
   );
 }
@@ -86,13 +89,12 @@ function MatchPlayer({ p, team, onPress }: { p: PlayerLite; team: 0 | 1; onPress
     <Wrap
       {...(onPress ? { onPress, activeOpacity: 0.7 } : {})}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
-      <Avatar name={p.name} size={28} me={p.me} team={team} />
+      <Avatar name={p.name} size={28} me={p.me} team={team} creator={p.isCreator} />
       <View style={{ minWidth: 0, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: p.me ? '800' : '600', color: PM.text, maxWidth: 90 }}>
             {p.name.split(' ')[0]}
           </Text>
-          {p.me && <Text style={{ fontSize: 11 }}>👑</Text>}
         </View>
         <LevelPill lvl={p.lvl} />
       </View>
@@ -442,6 +444,7 @@ export function ProfileHeader(props: {
   isSelf: boolean; isFollowing: boolean;
   onToggleFollow: () => void; onBack: () => void; onMenu: () => void; onEdit: () => void;
   onShareProfile: () => void; onDefier: () => void;
+  onMessage?: () => void;
   hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
 }) {
@@ -536,6 +539,12 @@ export function ProfileHeader(props: {
           }}>
             <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><Polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></Svg>
             <Text style={{ fontSize: 13.5, fontWeight: '800', color: ACCENT }}>Défier</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={props.onMessage} activeOpacity={0.85} style={{
+            flex: 1, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+            paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Message</Text>
           </TouchableOpacity>
         </View>
       )}

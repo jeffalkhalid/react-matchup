@@ -1,25 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { showBanner } from '../lib/inAppBanner';
-import { isInviteActive } from '../lib/games';
+import { buildNotificationItems } from '../lib/notifications';
 import { usePlayer } from './usePlayer';
 
 // Single source of truth for the notification bell total, shared by the Home
 // hero bell, the Profile screen AND the tab bar badges (Défi + Profil avatar)
 // so they ALWAYS show the same number and update together.
+// Le total EST le nombre de cartes affichées par l'écran de notifications : les
+// deux dérivent de la MÊME liste (lib/notifications.buildNotificationItems), donc
+// la cloche affiche exactement ce qu'on voit en l'ouvrant — aucune divergence
+// possible (trophées/à-scorer agrégés en 1 carte, joined/levelup inclus, etc.).
 // Unread chat messages are intentionally NOT included here — they belong to the
 // Chats tab badge, not the notifications.
 export interface NotificationCounts {
-  challenges: number;   // défis reçus
-  toValidate: number;   // scores à valider (saisis par un adversaire)
-  invitations: number;  // invitations à une partie
-  toApprove: number;    // demandes de joueurs à valider (sur mes parties)
-  trophies: number;     // trophées à distribuer
-  toScore: number;      // matchs à scorer (saisir le score)
-  total: number;
+  challenges: number;   // défis reçus (badge onglet Défi) — sous-ensemble du total
+  total: number;        // = nombre de cartes affichées dans l'écran notifications
 }
 
-const EMPTY: NotificationCounts = { challenges: 0, toValidate: 0, invitations: 0, toApprove: 0, trophies: 0, toScore: 0, total: 0 };
+const EMPTY: NotificationCounts = { challenges: 0, total: 0 };
 
 interface NotificationContextValue extends NotificationCounts {
   loading: boolean;
@@ -45,123 +44,27 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     if (!player) { setCounts(EMPTY); setLoading(false); return; }
     const id = player.id;
-    const now = Date.now();
-    const nowIso = new Date(now).toISOString();
-    const h48 = now - 48 * 60 * 60 * 1000;
-    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const playerOr = `winner_id.eq.${id},winner_id_2.eq.${id},loser_id.eq.${id},loser_id_2.eq.${id}`;
 
-    // Game ids where I'm creator or accepted — needed for "à scorer".
+    // Ensemble de mes parties (créateur + accepté) — uniquement pour juger en O(1)
+    // si un événement realtime me concerne (bannières / déclenchement reload).
     const [{ data: accParts }, { data: myCreated }] = await Promise.all([
       supabase.from('game_participants').select('game_id').eq('player_id', id).eq('status', 'accepted'),
       supabase.from('open_games').select('id').eq('creator_id', id).in('status', ['open', 'closed']),
     ]);
-    const gameIds = [...new Set([
+    myGameIdsRef.current = new Set([
       ...(accParts ?? []).map((p: any) => p.game_id),
       ...(myCreated ?? []).map((g: any) => g.id),
-    ])];
-    myGameIdsRef.current = new Set(gameIds);
-
-    const [
-      { data: challengeRows },
-      { data: pendingMatches },
-      { data: invites },
-      { data: recentMatches },
-      { data: myVotes },
-    ] = await Promise.all([
-      supabase.from('challenges').select('game_id')
-        .eq('challenged_id', id).eq('status', 'pending').gt('expires_at', nowIso),
-      supabase.from('matches')
-        .select('id, created_by, winner_id, winner_id_2, loser_id, loser_id_2, status')
-        .or(playerOr).in('status', ['pending', 'counter_proposed']),
-      supabase.from('game_participants')
-        .select('id, game_id, invite_expires_at, game:game_id(status, match_date)').eq('player_id', id).eq('status', 'invited'),
-      supabase.from('matches').select('id')
-        .or(playerOr).in('status', ['pending', 'validated']).gte('created_at', sevenDaysAgo),
-      supabase.from('reputation_votes').select('match_id').eq('giver_id', id),
     ]);
 
-    // Scores à valider — mirror index.tsx visiblePending:
-    //  • counter_proposed → it's the original author who responds
-    //  • pending          → the opponents validate (not the author nor partner)
-    const toValidate = (pendingMatches ?? []).filter((m: any) => {
-      if (m.status === 'counter_proposed') return m.created_by === id;
-      if (m.created_by === id) return false;
-      const cb = m.created_by;
-      if (
-        (cb === m.winner_id   && m.winner_id_2 === id) ||
-        (cb === m.winner_id_2 && m.winner_id   === id) ||
-        (cb === m.loser_id    && m.loser_id_2  === id) ||
-        (cb === m.loser_id_2  && m.loser_id    === id)
-      ) return false;
-      return true;
-    }).length;
-
-    // Anti-doublon : un défi crée à la fois une ligne `challenges` ET un
-    // game_participants 'invited' sur la même partie. On exclut ces invitations
-    // pour ne pas compter le défi deux fois (il est déjà dans `challenges`).
-    const challengeGameIds = new Set((challengeRows ?? []).map((c: any) => c.game_id).filter(Boolean));
-
-    // Active invitations (status='invited' on a non-past, non-cancelled game).
-    const invitations = (invites ?? []).filter((inv: any) => {
-      const g = inv.game;
-      if (!g) return false;
-      // Invitation expirée (TTL dépassé) — vérifie la date car le cron de bascule
-      // 'invited' → 'expired' peut avoir jusqu'à 10 min de retard.
-      if (!isInviteActive({ status: 'invited', invite_expires_at: inv.invite_expires_at })) return false;
-      if (inv.game_id && challengeGameIds.has(inv.game_id)) return false;
-      if (g.status === 'closed' || g.status === 'cancelled') return false;
-      if (g.match_date && new Date(g.match_date).getTime() < now) return false;
-      return true;
-    }).length;
-
-    // Trophées à distribuer — recent matches I haven't voted badges on.
-    const votedIds = new Set((myVotes ?? []).map((v: any) => v.match_id));
-    const trophies = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id)).length;
-
-    // Matchs à scorer — mirror lobby.tsx readyToScore (full game, played < 48h, no score).
-    // + Demandes à valider — candidatures 'pending' sur mes parties que je n'ai
-    //   pas encore approuvées (miroir du push envoyé dans handleApply).
-    let toScore = 0;
-    let toApprove = 0;
-    if (gameIds.length > 0) {
-      const [{ data: scGames }, { data: scored }] = await Promise.all([
-        supabase.from('open_games')
-          .select('id, match_date, spots_available, status, creator_id, participants:game_participants(player_id, status, approvals)')
-          .in('id', gameIds),
-        supabase.from('matches').select('game_id').in('game_id', gameIds).in('status', ['pending', 'validated']),
-      ]);
-      const scoredSet = new Set((scored ?? []).map((m: any) => m.game_id).filter(Boolean));
-      toScore = (scGames ?? []).filter((g: any) => {
-        if (!g.match_date) return false;
-        const t = new Date(g.match_date).getTime();
-        if (t >= now || t < h48) return false;
-        if (scoredSet.has(g.id)) return false;
-        if (g.status === 'closed' || g.status === 'cancelled') return false;
-        if (g.spots_available !== 0) return false;
-        const isCreator = g.creator_id === id;
-        const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
-        if (!isCreator && !accepted.some((p: any) => p.player_id === id)) return false;
-        return 1 + accepted.length >= 4;
-      }).length;
-
-      toApprove = (scGames ?? []).reduce((acc: number, g: any) => {
-        if (g.status === 'closed' || g.status === 'cancelled') return acc;
-        if (g.match_date && new Date(g.match_date).getTime() < now) return acc;
-        const pend = (g.participants ?? []).filter((p: any) =>
-          p.status === 'pending' && p.player_id !== id && !(p.approvals ?? []).includes(id));
-        return acc + pend.length;
-      }, 0);
-    }
-
-    // Robustesse : ne pas compter un défi dont la partie est déjà acceptée par
-    // moi (la ligne `challenges` a pu rester 'pending' — drift historique ou
-    // réponse via un autre chemin). Miroir du filtre de l'onglet Défis reçus.
-    const acceptedGameIds = new Set((accParts ?? []).map((p: any) => p.game_id));
-    const challenges = (challengeRows ?? []).filter((c: any) => !c.game_id || !acceptedGameIds.has(c.game_id)).length;
+    // Liste partagée avec l'écran de notifications : le total de la cloche EST le
+    // nombre de cartes affichées (toScore/trophées agrégés en 1 carte, joined &
+    // levelup inclus, notifs "info" supprimées déjà retirées). Le badge onglet
+    // Défi (`challenges`) = uniquement les défis venant de la table `challenges`
+    // (cartes `challenge-…`), pour ne pas changer son périmètre historique.
+    const items = await buildNotificationItems(id);
     setCounts({
-      challenges, toValidate, invitations, toApprove, trophies, toScore,
-      total: challenges + toValidate + invitations + toApprove + trophies + toScore,
+      total: items.length,
+      challenges: items.filter((it) => it.id.startsWith('challenge-')).length,
     });
     setLoading(false);
   }, [player]);

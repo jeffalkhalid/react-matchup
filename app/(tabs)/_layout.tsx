@@ -8,10 +8,17 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { isMatchPast } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
+import { fetchConversations, unreadFor, isRequestFor } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
 import HelpCenter from '../../components/HelpCenter';
 import OnboardingCarousel from '../../components/OnboardingCarousel';
 import { GUIDE_KEY } from '../../lib/guideTheme';
+
+// Écran d'ouverture de l'app : le Lobby (exploration des parties), pas Accueil.
+// API native expo-router (le préfixe `unstable_` est hérité de Next.js, l'option est stable).
+export const unstable_settings = {
+  initialRouteName: 'lobby',
+};
 
 const IconHome = ({ color, size = 22 }: { color: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -92,6 +99,7 @@ export default function TabLayout() {
   // badge se vide dès qu'un défi est accepté/décliné, sans redémarrage de l'app.
   const { challenges: challengeCount } = useNotificationCount();
   const [chatBadge, setChatBadge] = useState(0);
+  const [directUnread, setDirectUnread] = useState(0);
   // null = lecture du flag en cours · false = afficher l'onboarding · true = vu.
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
 
@@ -170,6 +178,15 @@ export default function TabLayout() {
         unreadByGame.set(gid, count ?? 0);
       }));
       recomputeTotal();
+
+      // Direct chats unread — wrapped in try/catch so any failure never breaks the game badge.
+      try {
+        const convs = await fetchConversations();
+        // Non-lus des conversations acceptées + chaque demande reçue (pending) compte pour 1.
+        const dUnread = convs.reduce((s, c) =>
+          s + (isRequestFor(c, player.id) ? 1 : c.status === 'accepted' ? unreadFor(c, player.id) : 0), 0);
+        if (!cancelled) setDirectUnread(dUnread);
+      } catch {}
     };
 
     load();
@@ -198,10 +215,27 @@ export default function TabLayout() {
       })
       .subscribe();
 
+    // Subscribe to direct_messages INSERTs to keep the direct-unread count live.
+    const dmCh = supabase
+      .channel(`tab-chat-badge-dm:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, payload => {
+        const dm = payload.new as { sender_id: string } | null;
+        if (!dm || dm.sender_id === player.id) return;
+        // Re-fetch all conversations to get accurate last_message_at / last_read values.
+        fetchConversations().then(convs => {
+          if (cancelled) return;
+          const dUnread = convs.reduce((s, c) =>
+            s + (isRequestFor(c, player.id) ? 1 : c.status === 'accepted' ? unreadFor(c, player.id) : 0), 0);
+          setDirectUnread(dUnread);
+        }).catch(() => {});
+      })
+      .subscribe();
+
     return () => {
       cancelled = true;
       supabase.removeChannel(msgCh);
       supabase.removeChannel(readCh);
+      supabase.removeChannel(dmCh);
     };
   }, [player]);
 
@@ -266,7 +300,7 @@ export default function TabLayout() {
         name="chats"
         options={{
           title: 'Chats',
-          tabBarBadge: chatBadge > 0 ? chatBadge : undefined,
+          tabBarBadge: (chatBadge + directUnread) > 0 ? (chatBadge + directUnread) : undefined,
           tabBarBadgeStyle: { backgroundColor: Colors.danger, fontSize: 9, minWidth: 16, height: 16 },
           tabBarIcon: ({ color }) => <IconMessage color={color} size={22} />,
         }}

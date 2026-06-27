@@ -58,14 +58,19 @@ export interface Match {
   created_by?: string;
   counter_score_text?: string;
   counter_reason?: string;
+  dispute_reason?: string;
   counter_by?: string;
   counter_proposed_at?: string;
+  counter_winner_id?: string;
+  counter_winner_id_2?: string;
+  counter_loser_id?: string;
+  counter_loser_id_2?: string;
   created_at: string;
   winner?: Player;
   loser?: Player;
   winner_2?: Player;
   loser_2?: Player;
-  game?: { location: string | null; match_date: string | null } | null;
+  game?: { location: string | null; match_date: string | null; creator_id?: string | null } | null;
 }
 
 export interface OpenGame {
@@ -178,7 +183,7 @@ export interface SocialPlayer extends Player {
   reason?: string;      // raison de suggestion ("4 amis en commun", "Joue à …")
 }
 
-export type ActivityType = 'match_win' | 'match_loss' | 'badge' | 'promotion';
+export type ActivityType = 'match_win' | 'match_loss' | 'badge' | 'promotion' | 'bilan';
 
 export interface ActivityEvent {
   id: string;
@@ -193,7 +198,17 @@ export interface ActivityEvent {
     badge_label?: string | null;
     promo_league?: League | null;
     promo_label?: string | null;
+    // type 'bilan' (post de bilan mensuel in-app)
+    month?: string | null;
+    label?: string | null;
+    matches?: number | null;
+    winRate?: number | null;
+    eloDelta?: number | null;
+    levelDelta?: number | null;
+    topPartner?: string | null;
   };
+  caption?: string | null;     // légende libre (Moment partagé)
+  is_highlight?: boolean;      // mis en avant dans le rail Moments
   reactions: Record<string, string[]>;   // { "🔥": [player_id, ...] }
   created_at: string;
   // Hydraté côté client :

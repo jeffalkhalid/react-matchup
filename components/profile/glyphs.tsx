@@ -100,6 +100,50 @@ export function Glyph({ name, color, strokeWidth = 1.7 }: { name: string; color:
         <Circle cx={12} cy={12} r={4} {...stroke} />
         <Path d="M12 2 v3 M12 19 v3 M2 12 h3 M19 12 h3 M5 5 l 2 2 M17 17 l 2 2 M5 19 l 2 -2 M17 7 l 2 -2" {...stroke} />
       </>); break;
+    case 'bomb':
+      body = (<>
+        <Circle cx={11} cy={14} r={6.5} {...stroke} />
+        <Path d="M15 9.5 l 2.5 -2.5" {...stroke} />
+        <Path d="M17.5 7 l 1.2 -1.2 M19.5 6.2 l 1.3 .2 M19 4.4 l .6 -1.3" {...stroke} />
+        <Circle cx={9} cy={12} r={0.9} {...solid} />
+      </>); break;
+    case 'brick':
+      body = (<>
+        <Path d="M3 5 h18 v14 H3 z" {...stroke} />
+        <Path d="M3 9.7 h18 M3 14.3 h18" {...stroke} />
+        <Path d="M9 5 v4.7 M15 9.7 v4.6 M9 14.3 v4.7" {...stroke} />
+      </>); break;
+    case 'net':
+      body = (<>
+        <Path d="M3 6 h18 v12 H3 z" {...stroke} />
+        <Path d="M7.5 6 v12 M12 6 v12 M16.5 6 v12 M3 10 h18 M3 14 h18" {...stroke} />
+      </>); break;
+    case 'runner':
+      body = (<>
+        <Circle cx={15} cy={5} r={2} {...stroke} />
+        <Path d="M15 7.5 l -2.5 4 3 1.5 -1.5 5.5" {...stroke} />
+        <Path d="M12.5 11.5 l -4.5 1.5 M16 13 l 4 1" {...stroke} />
+      </>); break;
+    case 'brain':
+      body = (<>
+        <Path d="M12 4.5 a3 3 0 0 0 -5.2 1 a2.6 2.6 0 0 0 -1.3 4.3 a2.6 2.6 0 0 0 .6 4.3 a2.8 2.8 0 0 0 4.4 1.4 l 1.5 0" {...stroke} />
+        <Path d="M12 4.5 a3 3 0 0 1 5.2 1 a2.6 2.6 0 0 1 1.3 4.3 a2.6 2.6 0 0 1 -.6 4.3 a2.8 2.8 0 0 1 -4.4 1.4 l -1.5 0" {...stroke} />
+        <Path d="M12 4.5 v12" {...stroke} />
+      </>); break;
+    case 'smile':
+      body = (<>
+        <Circle cx={12} cy={12} r={9} {...stroke} />
+        <Path d="M8 13.5 c 1.6 2.2 6.4 2.2 8 0" {...stroke} />
+        <Circle cx={9} cy={9.5} r={0.95} {...solid} />
+        <Circle cx={15} cy={9.5} r={0.95} {...solid} />
+      </>); break;
+    case 'beers':
+      body = (<>
+        <Path d="M6 8 h7 v9 a2 2 0 0 1 -2 2 H8 a2 2 0 0 1 -2 -2 z" {...stroke} />
+        <Path d="M13 10 h2.5 a2 2 0 0 1 2 2 v1.5 a2 2 0 0 1 -2 2 H13" {...stroke} />
+        <Path d="M6 11.3 h7" {...stroke} />
+        <Path d="M8 5.5 v1.8 M10.5 5 v2.3" {...stroke} />
+      </>); break;
     case 'star':
     default:
       body = (

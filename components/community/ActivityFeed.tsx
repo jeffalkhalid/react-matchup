@@ -10,6 +10,62 @@ import { Icon } from './icons';
 import { ActivityCard } from './ActivityCard';
 import type { SocialPlayer, ActivityEvent } from '../../types';
 
+// ── Barre d'amis filtrante (export pour réutilisation dans l'onglet Activité) ──
+export function FriendsBar({ friends, sel, onSelect, dimmed = false }: {
+  friends: SocialPlayer[]; sel: string | null; onSelect: (id: string | null) => void; dimmed?: boolean;
+}) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ opacity: dimmed ? 0.4 : 1 }} contentContainerStyle={{ gap: 14, paddingBottom: 4 }}>
+      {/* Tous */}
+      <TouchableOpacity onPress={() => onSelect(null)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 56 }}>
+        <View style={{
+          width: 52, height: 52, borderRadius: 999, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: sel === null ? Colors.primary : Chips,
+          borderWidth: sel === null ? 0 : 1.5, borderColor: Colors.border,
+        }}>
+          <Icon name="users" size={22} color={sel === null ? Colors.brand : Colors.textMuted} />
+        </View>
+        <Text style={{ fontFamily: sel === null ? Fonts.uiExtraBold : Fonts.uiSemi, fontSize: 10.5, color: sel === null ? Colors.textPrimary : Colors.textSecondary }}>Tous</Text>
+      </TouchableOpacity>
+
+      {friends.map(f => {
+        const on = sel === f.id;
+        return (
+          <TouchableOpacity key={f.id} onPress={() => onSelect(on ? null : f.id)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 56 }}>
+            <View style={{ padding: on ? 3 : 2, borderRadius: 999, backgroundColor: on ? Colors.brand : (LeagueGradients[f.league] ?? LeagueGradients.gold)[1] }}>
+              <View style={{ padding: on ? 2 : 0, borderRadius: 999, backgroundColor: on ? Colors.bg : 'transparent' }}>
+                <Avatar name={f.name} size={on ? 44 : 48} radius={999} league={f.league} />
+              </View>
+            </View>
+            <Text numberOfLines={1} style={{ fontFamily: on ? Fonts.uiExtraBold : Fonts.uiSemi, fontSize: 10.5, color: on ? Colors.textPrimary : Colors.textSecondary, maxWidth: 56 }}>
+              {f.name.split(' ')[0]}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+// ── Liste filtrée (export) ──
+export function FeedList({ shown, myId, loading, selName, onReact, onReport, router, onOpen }: {
+  shown: ActivityEvent[]; myId: string; loading: boolean; selName?: string;
+  onReact: (id: string) => void; onReport: (e: ActivityEvent) => void; router: ReturnType<typeof useRouter>;
+  onOpen?: (e: ActivityEvent) => void;
+}) {
+  return (
+    <View style={{ gap: 14, marginTop: 14 }}>
+      {loading ? (
+        <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+      ) : shown.length > 0 ? (
+        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onOpen={onOpen ? () => onOpen(e) : undefined} />)
+      ) : (
+        <EmptyState name={selName?.split(' ')[0]} />
+      )}
+    </View>
+  );
+}
+
 export function ActivityFeed({ myId }: { myId: string }) {
   const router = useRouter();
   const [friends, setFriends] = useState<SocialPlayer[]>([]);
@@ -66,35 +122,7 @@ export function ActivityFeed({ myId }: { myId: string }) {
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 110 }}>
       {/* Bandeau d'amis — tap = FILTRE le fil (pas de navigation profil) */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingBottom: 4 }}>
-        {/* Tous */}
-        <TouchableOpacity onPress={() => setSel(null)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 56 }}>
-          <View style={{
-            width: 52, height: 52, borderRadius: 999, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: sel === null ? Colors.primary : Chips,
-            borderWidth: sel === null ? 0 : 1.5, borderColor: Colors.border,
-          }}>
-            <Icon name="users" size={22} color={sel === null ? Colors.brand : Colors.textMuted} />
-          </View>
-          <Text style={{ fontFamily: sel === null ? Fonts.uiExtraBold : Fonts.uiSemi, fontSize: 10.5, color: sel === null ? Colors.textPrimary : Colors.textSecondary }}>Tous</Text>
-        </TouchableOpacity>
-
-        {friends.map(f => {
-          const on = sel === f.id;
-          return (
-            <TouchableOpacity key={f.id} onPress={() => setSel(on ? null : f.id)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 56 }}>
-              <View style={{ padding: on ? 3 : 2, borderRadius: 999, backgroundColor: on ? Colors.brand : (LeagueGradients[f.league] ?? LeagueGradients.gold)[1] }}>
-                <View style={{ padding: on ? 2 : 0, borderRadius: 999, backgroundColor: on ? Colors.bg : 'transparent' }}>
-                  <Avatar name={f.name} size={on ? 44 : 48} radius={999} league={f.league} />
-                </View>
-              </View>
-              <Text numberOfLines={1} style={{ fontFamily: on ? Fonts.uiExtraBold : Fonts.uiSemi, fontSize: 10.5, color: on ? Colors.textPrimary : Colors.textSecondary, maxWidth: 56 }}>
-                {f.name.split(' ')[0]}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      <FriendsBar friends={friends} sel={sel} onSelect={setSel} />
 
       {/* En-tête de filtre */}
       {sel && selName ? (
@@ -108,15 +136,7 @@ export function ActivityFeed({ myId }: { myId: string }) {
       ) : null}
 
       {/* Fil (filtré par l'ami sélectionné) */}
-      <View style={{ gap: 14, marginTop: 14 }}>
-        {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
-        ) : shown.length > 0 ? (
-          shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => react(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => reportActivity(e)} />)
-        ) : (
-          <EmptyState name={selName?.split(' ')[0]} />
-        )}
-      </View>
+      <FeedList shown={shown} myId={myId} loading={loading} selName={selName} onReact={react} onReport={reportActivity} router={router} />
     </ScrollView>
   );
 }

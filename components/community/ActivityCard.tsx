@@ -6,6 +6,7 @@ import { Avatar } from './Avatar';
 import { Card, Chips } from './ui';
 import { Icon } from './icons';
 import { MatchCard as MatchScoreCard } from '../profile/components';
+import { BadgePill } from '../profile/BadgePill';
 import { matchToView } from '../../lib/matchView';
 import type { ActivityEvent, League } from '../../types';
 
@@ -15,10 +16,12 @@ function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
     case 'match_loss': return { verb: 'a perdu' };
     case 'badge':      return { verb: 'a débloqué un badge' };
     case 'promotion':  return { verb: 'monte en', accent: e.payload.promo_label ?? '' };
+    case 'bilan':      return { verb: 'a partagé son bilan', accent: e.payload.label ?? '' };
+    default:           return { verb: '' };
   }
 }
 
-export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer }: {
+export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer, onOpen }: {
   e: ActivityEvent;
   myId: string;
   onReact?: () => void;        // absent = 🔥 désactivé (ex: ses propres posts)
@@ -26,6 +29,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
   onReport?: () => void;       // signaler l'activité (absent si c'est la mienne)
   onPressComments?: () => void; // ouvre la feuille de commentaires
   onPressPlayer?: (id: string) => void; // ouvre le profil d'un joueur de la carte de match
+  onOpen?: () => void;          // tap sur le contenu → vue plein écran
 }) {
   const win = e.type === 'match_win';
   const isMatch = e.type === 'match_win' || e.type === 'match_loss';
@@ -64,6 +68,8 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
         )}
       </View>
 
+      {/* Contenu tappable → vue plein écran */}
+      <TouchableOpacity onPress={onOpen} disabled={!onOpen} activeOpacity={onOpen ? 0.9 : 1}>
       {/* Bloc résultat de match — MÊME représentation que partout (<MatchCard>) */}
       {isMatch && e.match ? (
         <View style={{ marginBottom: 12 }}>
@@ -108,7 +114,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
           backgroundColor: 'rgba(255,193,26,0.10)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
           borderRadius: 14, padding: 14,
         }}>
-          <Text style={{ fontSize: 26 }}>{e.payload.badge_emoji ?? '🏅'}</Text>
+          <BadgePill badge={e.payload.badge_label ?? ''} size={40} />
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 15, color: Colors.textPrimary }}>
             {e.payload.badge_label}
           </Text>
@@ -129,6 +135,27 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
         </View>
       ) : null}
 
+      {/* Bloc bilan mensuel (post in-app) */}
+      {e.type === 'bilan' ? (
+        <View style={{ marginBottom: 12, backgroundColor: Colors.bgDark, borderRadius: 14, padding: 16 }}>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: Colors.brand, letterSpacing: 1.5, textTransform: 'uppercase' }}>Bilan {e.payload.label ?? ''}</Text>
+          <View style={{ flexDirection: 'row', gap: 18, marginTop: 10 }}>
+            <BilanStat n={e.payload.matches ?? 0} l="matchs" color="#FFFFFF" />
+            <BilanStat n={`${e.payload.winRate ?? 0}%`} l="winrate" color={Colors.brand} />
+            <BilanStat n={`${(e.payload.levelDelta ?? 0) >= 0 ? '+' : ''}${(e.payload.levelDelta ?? 0).toFixed(2)}`} l="niveau" color={Colors.brand} />
+          </View>
+          {e.payload.topPartner ? (
+            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: 'rgba(255,255,255,0.6)', marginTop: 10 }}>Meilleur duo : {e.payload.topPartner}</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* Légende libre (Moment partagé) */}
+      {e.caption ? (
+        <Text style={{ fontFamily: Fonts.ui, fontSize: 13.5, color: Colors.textPrimary, marginBottom: 12, lineHeight: 19 }}>{e.caption}</Text>
+      ) : null}
+      </TouchableOpacity>
+
       {/* Réactions */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
         <TouchableOpacity onPress={onReact} disabled={!onReact} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -145,6 +172,15 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
         </TouchableOpacity>
       </View>
     </Card>
+  );
+}
+
+function BilanStat({ n, l, color }: { n: number | string; l: string; color: string }) {
+  return (
+    <View>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 24, color, lineHeight: 24 }}>{n}</Text>
+      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 9.5, color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>{l}</Text>
+    </View>
   );
 }
 

@@ -160,11 +160,12 @@ export async function setFollow(myId: string, targetId: string, follow: boolean)
 
 // ─── Fil d'activité ──────────────────────────────────────────
 
-// Fil des amis UNIQUEMENT (on n'affiche pas sa propre activité dans « Mes amis »).
+// Fil d'activité. Par défaut : amis UNIQUEMENT (hub Communauté « Mes amis »).
+// `includeSelf` (onglet Activité) ajoute SES propres posts pour pouvoir interagir.
 // Hydrate l'acteur, la ligue et le nb de commentaires.
-export async function getActivityFeed(myId: string, limit = 50): Promise<ActivityEvent[]> {
+export async function getActivityFeed(myId: string, limit = 50, includeSelf = false): Promise<ActivityEvent[]> {
   const following = await getFollowingIds(myId);
-  const authorIds = [...new Set(following)];
+  const authorIds = [...new Set(includeSelf ? [...following, myId] : following)];
   if (authorIds.length === 0) return [];
 
   const { data: events } = await supabase
@@ -190,7 +191,7 @@ export async function getActivityFeed(myId: string, limit = 50): Promise<Activit
           id, winner_id, loser_id, winner_id_2, loser_id_2, score_text, created_at,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
-          game:game_id(location, match_date)`).in('id', matchIds)
+          game:game_id(location, match_date, creator_id)`).in('id', matchIds)
       : Promise.resolve({ data: [] as any[] }),
   ]);
 

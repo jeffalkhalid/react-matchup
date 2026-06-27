@@ -49,6 +49,7 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Group title="Compte" />
           <Row emoji="✏️" label="Modifier le profil" onPress={() => act(onEdit)} />
           <Row emoji="💬" label="Qui peut commenter" onPress={() => act(onComments)} />
+          <Row emoji="💌" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
 
           <Group title="Raccourcis" />
           <Row emoji="🏆" label="Classement" onPress={() => nav('/(tabs)/ranking')} />

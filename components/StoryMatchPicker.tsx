@@ -26,7 +26,7 @@ interface Props {
   visible: boolean;
   playerId: string;
   onClose: () => void;
-  onPick: (match: StoryMatchData) => void;
+  onPick: (match: StoryMatchData, matchId: string) => void;
 }
 
 export default function StoryMatchPicker({ visible, playerId, onClose, onPick }: Props) {
@@ -54,7 +54,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
   }, [visible, playerId]);
 
   const handlePick = (m: MatchRow) => {
-    onPick(buildStoryMatch(m, playerId));
+    onPick(buildStoryMatch(m, playerId), m.id);
   };
 
   return (

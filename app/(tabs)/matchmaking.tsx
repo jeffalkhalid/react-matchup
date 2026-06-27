@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, StyleSheet, Image,
+  ActivityIndicator, StyleSheet, Image, Alert,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,9 +12,12 @@ import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
 import { getHiddenPlayerIds } from '../../lib/moderation';
 import { Colors, eloToLevel, Fonts } from '../../lib/theme';
+import { isCreatorConflict } from '../../lib/games';
+import { isReceivedChallengeVisible } from '../../lib/challenges';
 import type { Player, Challenge } from '../../types';
-import { Pill, type PillVariant } from '../../components/Pill';
-import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
+import { Pill, type PillVariant, pillAccent } from '../../components/Pill';
+import { HeaderActions } from '../../components/HeaderActions';
+import { Icon, type IconName } from '../../components/community/icons';
 import { GameCard } from './lobby';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -205,23 +208,25 @@ function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (
   return (
     <View style={{ flexDirection: 'row', backgroundColor: Colors.bgCardAlt, borderRadius: 12, padding: 3, gap: 2, marginBottom: 14 }}>
       {([
-        { val: 'compat' as SortMode, label: '⚡ Compatibilité' },
-        { val: 'elo'    as SortMode, label: '📊 Niveau'    },
+        { val: 'compat' as SortMode, label: 'Compatibilité', icon: 'zap' as IconName },
+        { val: 'elo'    as SortMode, label: 'Niveau',        icon: 'trendingUp' as IconName },
       ]).map(t => {
         const active = mode === t.val;
         const disabled = t.val === 'compat' && computing;
+        const tint = active ? Colors.brandDeep : Colors.textMuted;
         return (
           <TouchableOpacity key={t.val} onPress={() => onChange(t.val)} disabled={disabled} activeOpacity={0.75}
             style={{
-              flex: 1, paddingVertical: 7, borderRadius: 9, alignItems: 'center',
+              flex: 1, paddingVertical: 7, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
               backgroundColor: active ? Colors.bgCard : 'transparent',
               borderWidth: active ? 1 : 0, borderColor: active ? Colors.brand : 'transparent',
               opacity: disabled ? 0.6 : 1,
               shadowColor: Colors.textPrimary, shadowOpacity: active ? 0.1 : 0,
               shadowRadius: active ? 4 : 0, shadowOffset: { width: 0, height: 2 }, elevation: active ? 2 : 0,
             }}>
-            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: active ? Colors.brandDeep : Colors.textMuted }}>
-              {disabled ? '⏳ …' : t.label}
+            <Icon name={t.icon} size={13} color={tint} stroke={2.2} />
+            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: tint }}>
+              {disabled ? '…' : t.label}
             </Text>
           </TouchableOpacity>
         );
@@ -231,10 +236,12 @@ function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (
 }
 
 // ── Empty state ───────────────────────────────────────────────
-function EmptyCard({ icon, title, sub }: { icon: string; title: string; sub: string }) {
+function EmptyCard({ icon, title, sub }: { icon: IconName; title: string; sub: string }) {
   return (
     <View style={{ backgroundColor: Colors.bgCard, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, padding: 40, alignItems: 'center' }}>
-      <Text style={{ fontSize: 36, marginBottom: 10 }}>{icon}</Text>
+      <View style={{ marginBottom: 10 }}>
+        <Icon name={icon} size={40} color={Colors.textMuted} stroke={1.8} />
+      </View>
       <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, marginBottom: 4, textAlign: 'center' }}>{title}</Text>
       <Text style={{ fontSize: 12, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' }}>{sub}</Text>
     </View>
@@ -246,6 +253,7 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
   player: Player; detail?: CompatDetail; alreadyChallenged: boolean;
   onChallenge: (p: Player) => void;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const score = detail?.score ?? 0;
   const tier = compatTier(score);
@@ -269,7 +277,9 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-              <PlayerAvatar name={player.name} size={36} />
+              <TouchableOpacity onPress={() => router.push(`/player/${player.id}` as any)} activeOpacity={0.7}>
+                <PlayerAvatar name={player.name} size={36} />
+              </TouchableOpacity>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{player.name}</Text>
                 <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>Niv. {eloToLevel(player.elo_score).toFixed(1)}</Text>
@@ -283,12 +293,13 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
           </View>
           <View>
             {alreadyChallenged ? (
-              <Pill variant="warning">⏳ En attente</Pill>
+              <Pill variant="warning" icon={<Icon name="clock" size={11} color={pillAccent('warning')} stroke={2} />}>En attente</Pill>
             ) : (
               <TouchableOpacity onPress={() => onChallenge(player)}
-                style={{ backgroundColor: btnBg, borderRadius: 11, paddingHorizontal: 13, paddingVertical: 8 }}
+                style={{ backgroundColor: btnBg, borderRadius: 11, paddingHorizontal: 13, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
                 activeOpacity={0.8}>
-                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.3 }}>⚡ Défier</Text>
+                <Icon name="zap" size={12} color={Colors.textOnDark} stroke={2.2} />
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.3 }}>Défier</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -296,8 +307,8 @@ function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
 
         {((detail?.sharedClubs.length ?? 0) > 0 || (detail?.sharedDays.length ?? 0) > 0) && (
           <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt }}>
-            {detail?.sharedClubs.slice(0, 2).map(c => <Pill key={c} variant="neutral">📍 {c}</Pill>)}
-            {detail?.sharedDays.slice(0, 2).map(d => <Pill key={d} variant="neutral">📅 {d}</Pill>)}
+            {detail?.sharedClubs.slice(0, 2).map(c => <Pill key={c} variant="neutral" icon={<Icon name="mapPin" size={11} color={pillAccent('neutral')} stroke={2} />}>{c}</Pill>)}
+            {detail?.sharedDays.slice(0, 2).map(d => <Pill key={d} variant="neutral" icon={<Icon name="calendar" size={11} color={pillAccent('neutral')} stroke={2} />}>{d}</Pill>)}
           </View>
         )}
 
@@ -320,6 +331,7 @@ function IncomingCard({ challenge, detail, onAction, playerId, myElo }: {
   onAction: (id: string, action: 'accepted' | 'declined') => Promise<void>;
   playerId: string; myElo: number;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const challenger = challenge.challenger as Player | undefined;
   const isPending = challenge.status === 'pending';
@@ -361,7 +373,9 @@ function IncomingCard({ challenge, detail, onAction, playerId, myElo }: {
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <PlayerAvatar name={challenger?.name ?? '?'} size={36} />
+              <TouchableOpacity onPress={() => challenger?.id && router.push(`/player/${challenger.id}` as any)} activeOpacity={0.7} disabled={!challenger?.id}>
+                <PlayerAvatar name={challenger?.name ?? '?'} size={36} />
+              </TouchableOpacity>
               <View>
                 <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{challenger?.name ?? '?'}</Text>
                 <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>Niv. {eloToLevel(challenger?.elo_score ?? 0).toFixed(1)}</Text>
@@ -374,8 +388,8 @@ function IncomingCard({ challenge, detail, onAction, playerId, myElo }: {
             ) : null}
             {((challenge.shared_clubs?.length ?? 0) > 0 || (challenge.shared_days?.length ?? 0) > 0) && (
               <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-                {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} variant="info">📍 {c}</Pill>)}
-                {challenge.shared_days?.slice(0, 2).map(d => <Pill key={d} variant="brand">📅 {d}</Pill>)}
+                {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} variant="info" icon={<Icon name="mapPin" size={11} color={pillAccent('info')} stroke={2} />}>{c}</Pill>)}
+                {challenge.shared_days?.slice(0, 2).map(d => <Pill key={d} variant="brand" icon={<Icon name="calendar" size={11} color={pillAccent('brand')} stroke={2} />}>{d}</Pill>)}
               </View>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -469,15 +483,10 @@ export default function MatchmakingScreen() {
 
     setSuggestions(sorted);
 
-    const challenges = ((incomingRes.data ?? []) as Challenge[]).filter(c => {
-      if (hidden.has(c.challenger_id)) return false;
-      // Robustesse : masquer un défi dès que j'ai déjà répondu côté partie
-      // (accepted/declined), même si la ligne `challenges` est restée 'pending'
-      // (drift historique ou réponse via un autre chemin). On n'affiche que si
-      // je suis encore 'invited' (ou si aucune ligne participant n'existe).
-      const myPart = ((c as any).game?.participants ?? []).find((p: any) => p.player_id === player.id);
-      return !myPart || myPart.status === 'invited';
-    });
+    // Visibilité d'un défi reçu : point de vérité unique partagé avec le badge
+    // (useNotificationCount) et la liste de notifications (lib/challenges).
+    const challenges = ((incomingRes.data ?? []) as Challenge[])
+      .filter(c => isReceivedChallengeVisible(c, player.id, hidden));
     setIncoming(challenges);
     setChallengedIds(new Set(((sentRes.data ?? []) as any[]).map((c: any) => c.challenged_id)));
     setLoading(false);
@@ -511,11 +520,10 @@ export default function MatchmakingScreen() {
   const handleAction = async (id: string, action: 'accepted' | 'declined') => {
     const c = incoming.find(x => x.id === id);
 
-    // 1) Statut du défi
-    await supabase.from('challenges').update({ status: action }).eq('id', id);
-
-    // 2) Répercuter sur la partie liée — même effet qu'accepter/refuser
-    //    l'invitation depuis le Lobby (Option B2).
+    // 1) Répercuter d'abord sur la partie liée — même effet et même ordre que le
+    //    Lobby (handleAcceptInvitation, Option B2) : on écrit la partie AVANT le
+    //    défi, pour ne pas marquer le défi 'accepted' si le join est rejeté
+    //    (ex. conflit ±2h levé par le trigger eject_overlapping_candidatures).
     if (c?.game_id && player) {
       if (action === 'accepted') {
         const { error } = await supabase
@@ -523,7 +531,18 @@ export default function MatchmakingScreen() {
           .update({ status: 'accepted' })
           .eq('game_id', c.game_id)
           .eq('player_id', player.id);
-        if (error) { showToast('⚠️ Impossible de rejoindre la partie'); return; }
+        if (error) {
+          if (isCreatorConflict(error)) {
+            Alert.alert(
+              '⚠️ Conflit de créneau',
+              'Tu es déjà sur une autre partie au même créneau (±2h). Annule-la ou quitte-la avant de rejoindre celle-ci.',
+            );
+          } else {
+            console.warn('[matchmaking] join refusé:', error);
+            Alert.alert('Impossible de rejoindre', 'Une erreur est survenue, réessaie dans un instant.');
+          }
+          return;
+        }
       } else {
         await supabase
           .from('game_participants')
@@ -540,6 +559,10 @@ export default function MatchmakingScreen() {
         }
       }
     }
+
+    // 2) Statut du défi — après le succès du join (pour 'accepted'), sinon le défi
+    //    pourrait passer 'accepted' alors que la partie a refusé l'inscription.
+    await supabase.from('challenges').update({ status: action }).eq('id', id);
 
     // 3) Notifier le challengeur de la réponse
     if (c?.challenger_id && player) {
@@ -573,7 +596,7 @@ export default function MatchmakingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Pastille Profil — alignée avec le logo (cohérent avec accueil/lobby/classement). */}
-      <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 6, right: 14, zIndex: 20 }} />
+      <HeaderActions top={insets.top + 6} right={14} tint="light" />
       {/* Dark header */}
       <View style={{
         backgroundColor: Colors.heroBg,
@@ -645,7 +668,7 @@ export default function MatchmakingScreen() {
               <>
                 <SortToggle mode={sortMode} onChange={setSortMode} computing={computing} />
                 {sortedSuggestions.length === 0
-                  ? <EmptyCard icon="🔍" title="Aucune suggestion" sub="Reviens quand plus de joueurs ont rejoint l'app." />
+                  ? <EmptyCard icon="search" title="Aucune suggestion" sub="Reviens quand plus de joueurs ont rejoint l'app." />
                   : <View style={{ gap: 10 }}>
                       {sortedSuggestions.map(p => (
                         <SuggestionCard key={p.id} player={p} detail={compatMap.get(p.id)}
@@ -659,7 +682,7 @@ export default function MatchmakingScreen() {
             {tab === 'defis' && (
               <>
                 {incoming.length === 0
-                  ? <EmptyCard icon="🎯" title="Aucun défi reçu" sub="Les joueurs peuvent te défier depuis les Suggestions." />
+                  ? <EmptyCard icon="swords" title="Aucun défi reçu" sub="Les joueurs peuvent te défier depuis les Suggestions." />
                   : <View style={{ gap: 10 }}>
                       {incoming.map(c => (
                         <IncomingCard key={c.id} challenge={c} detail={incomingCompatMap.get(c.id)} onAction={handleAction} playerId={player.id} myElo={player.elo_score} />

@@ -10,30 +10,40 @@ import { usePlayer } from '../hooks/usePlayer';
 import { supabase } from '../lib/supabase';
 import { Colors, formatPadelLevel, Fonts } from '../lib/theme';
 import { Pill, type PillVariant } from '../components/Pill';
+import { CreatorCrownBadge } from '../components/CreatorCrownBadge';
 import { notifyPlayers } from '../lib/notify';
+import { isGameReadyToScore } from '../lib/games';
+import { BadgePill } from '../components/profile/BadgePill';
 
 // ─── Constants ────────────────────────────────────────────────
 const SCORE_OPTS = [0, 1, 2, 3, 4, 5, 6, 7];
 
-const BADGE_FALLBACK: Record<string, string> = {
-  'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🥅',
-  'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
-  'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
-  CANNON: '💥', SMASH: '🎯', COMEBACK: '🔥', WALL: '🧱',
-  RUNNER: '🏃', NET_KING: '🥅', BRAIN: '🧠', CAPTAIN: '⭐',
-  FAIR_PLAY: '🤝', GOOD_VIBES: '😄', DRINKS: '🍻', PUNCTUAL: '⏰',
-  'El Cañón': '💥', 'Bon Délire': '😄', 'Essuie-glace': '🏃',
-};
-
 type GameType = 'all' | 'competitive' | 'friendly' | 'challenge';
 
 interface SetScore { t1: number | null; t2: number | null }
-interface Participant { id: string; name: string; elo_score: number }
+interface Participant { id: string; name: string; elo_score: number; team_side?: string }
 interface Game {
   id: string; location: string; match_date: string;
   is_challenge?: boolean; game_format?: string;
+  creator_id?: string; creator_side?: string;
   participants: Participant[];
+}
+
+// Côté → équipe (A_GAU/A_DRO → A, B_GAU/B_DRO → B)
+const teamOf = (side?: string | null) => (side ? side.charAt(0) : null);
+
+// Coéquipier « par défaut » = le joueur de MON équipe au moment de la création.
+// On le déduit du team_side (et creator_side pour le créateur). En l'absence
+// d'info d'équipe fiable, on retombe sur le 1er autre participant (ancien défaut).
+function defaultPartnerId(game: Game, meId: string): string {
+  const me = game.participants.find(p => p.id === meId);
+  const mySide = game.creator_id === meId ? (game.creator_side ?? me?.team_side) : me?.team_side;
+  const myTeam = teamOf(mySide);
+  if (myTeam) {
+    const mate = game.participants.find(p => p.id !== meId && teamOf(p.team_side) === myTeam);
+    if (mate) return mate.id;
+  }
+  return game.participants.find(p => p.id !== meId)?.id ?? '';
 }
 
 function getGameType(g: Game): 'challenge' | 'friendly' | 'competitive' {
@@ -152,7 +162,7 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
         {votes.length > 0 && (
           <View style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
             <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.brandDeep, fontFamily: Fonts.uiBlack }}>
-              {votes.length} trophée{votes.length > 1 ? 's' : ''}
+              {votes.length} badge{votes.length > 1 ? 's' : ''}
             </Text>
           </View>
         )}
@@ -165,7 +175,7 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
               style={[sty.badgeBtn, sel && sty.badgeBtnSel]}
               activeOpacity={0.75}
             >
-              <Text style={{ fontSize: 20 }}>{BADGE_FALLBACK[b.label] ?? '🏅'}</Text>
+              <BadgePill badge={b.label} size={24} />
               <Text style={[sty.badgeTxt, sel && sty.badgeTxtSel]}>{b.label}</Text>
               {sel && (
                 <View style={sty.badgeCheck}>
@@ -208,15 +218,17 @@ export default function ScoreEntryScreen() {
   // Per-game scoring state
   const [scoringId, setScoringId] = useState<string | null>(null);
   const [partnerId, setPartnerId] = useState<string>('');
+  const [partnerChanged, setPartnerChanged] = useState(false);
   const [sets, setSets] = useState<SetScore[]>([{ t1: null, t2: null }]);
   const [votes, setVotes] = useState<Record<string, string[]>>({});
+  const [contestReason, setContestReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const fetchGames = useCallback(async () => {
     if (!player) return;
     setLoading(true);
     const now = new Date().toISOString();
-    const GAME_SELECT = 'id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, player:player_id(id, name, elo_score))';
+    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, creator_id, creator_side, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
 
     // Games where I'm a participant (accepted)
     const { data: partEntries } = await supabase
@@ -231,7 +243,9 @@ export default function ScoreEntryScreen() {
     // parties (jouées il y a 24-48 h) que cet écran ne montre pas.
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    // Build query: creator OR participant — exclude closed & cancelled, within 48h window
+    // Build query: creator OR participant — exclude closed & cancelled, within 48h window.
+    // L'occupation (« partie pleine ») et les critères « à scorer » sont jugés par
+    // lib/games.isGameReadyToScore (dérivé des participants), pas par spots_available.
     const baseQuery = supabase
       .from('open_games')
       .select(GAME_SELECT)
@@ -239,7 +253,6 @@ export default function ScoreEntryScreen() {
       .neq('status', 'closed')
       .lt('match_date', now)
       .gte('match_date', twoDaysAgo)
-      .eq('spots_available', 0)
       .order('match_date', { ascending: false })
       .limit(20);
 
@@ -247,26 +260,24 @@ export default function ScoreEntryScreen() {
       ? baseQuery.or(`creator_id.eq.${player.id},id.in.(${partIds.join(',')})`)
       : baseQuery.eq('creator_id', player.id));
 
+    // Parties déjà closes (donc scorées) déjà exclues par la requête → set vide.
+    const noScored = new Set<string>();
     const seen = new Set<string>();
     const enriched: Game[] = (data ?? [])
       .filter((g: any) => {
         if (seen.has(g.id)) return false;
         seen.add(g.id);
-        const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
-        // Doubles uniquement (pas de 1v1) : il faut 4 joueurs au total
-        // (le créateur + 3 participants acceptés, sauf s'il est lui-même accepté).
-        const creatorAccepted = accepted.some((p: any) => p.player_id === g.creator_id);
-        const total = accepted.length + (creatorAccepted ? 0 : 1);
-        return total >= 4;
+        return isGameReadyToScore(g, player.id, noScored);
       })
       .map((g: any) => {
         const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
-        const allParticipants: { id: string; name: string; elo_score: number }[] = accepted.map((p: any) => ({
+        const allParticipants: Participant[] = accepted.map((p: any) => ({
           id: p.player_id, name: p.player?.name ?? '?', elo_score: p.player?.elo_score ?? 0,
+          team_side: p.team_side ?? undefined,
         }));
         const creatorInList = allParticipants.some(p => p.id === g.creator_id);
         if (!creatorInList && g.creator) {
-          allParticipants.unshift({ id: g.creator_id, name: g.creator.name ?? '?', elo_score: g.creator.elo_score ?? 0 });
+          allParticipants.unshift({ id: g.creator_id, name: g.creator.name ?? '?', elo_score: g.creator.elo_score ?? 0, team_side: g.creator_side ?? undefined });
         }
         return {
           id: g.id,
@@ -274,6 +285,8 @@ export default function ScoreEntryScreen() {
           match_date: g.match_date,
           is_challenge: g.is_challenge ?? false,
           game_format: g.game_format ?? 'competitive',
+          creator_id: g.creator_id,
+          creator_side: g.creator_side ?? undefined,
           participants: allParticipants,
         };
       });
@@ -292,9 +305,12 @@ export default function ScoreEntryScreen() {
       .single();
 
     if (match) {
+      // team_side synthétique : vainqueurs = équipe A, perdants = équipe B, pour
+      // que defaultPartnerId retrouve le bon coéquipier en mode contestation.
+      const SIDES: Record<number, string> = { 0: 'A_GAU', 1: 'A_DRO', 2: 'B_GAU', 3: 'B_DRO' };
       const participants: Participant[] = ([match.winner, match.winner_2, match.loser, match.loser_2] as any[])
-        .filter(Boolean)
-        .map((p: any) => ({ id: p.id, name: p.name ?? '?', elo_score: p.elo_score ?? 0 }));
+        .map((p: any, i: number) => (p ? { id: p.id, name: p.name ?? '?', elo_score: p.elo_score ?? 0, team_side: SIDES[i] } : null))
+        .filter(Boolean) as Participant[];
 
       let location = '—';
       let match_date = new Date().toISOString();
@@ -356,17 +372,20 @@ export default function ScoreEntryScreen() {
   }, [sets]);
 
   const openScoring = (game: Game) => {
-    const others = game.participants.filter(p => p.id !== player?.id);
     setScoringId(game.id);
-    setPartnerId(others[0]?.id ?? '');
+    setPartnerId(defaultPartnerId(game, player?.id ?? ''));
+    setPartnerChanged(false);
     setSets([{ t1: null, t2: null }, { t1: null, t2: null }]);
     setVotes({});
+    setContestReason('');
   };
 
   const closeScoring = () => {
     setScoringId(null);
+    setPartnerChanged(false);
     setSets([{ t1: null, t2: null }]);
     setVotes({});
+    setContestReason('');
   };
 
 
@@ -398,13 +417,23 @@ export default function ScoreEntryScreen() {
     // ── Contest (counter-proposal) mode ──────────────────────
     if (contestMatchId) {
       try {
+        // On mémorise le RÉSULTAT COMPLET proposé (pas juste le score) pour que
+        // l'auteur original puisse l'« accepter » et que le trigger ELO reçoive
+        // le bon vainqueur (cf. migration counter_resolution.sql).
+        const iWon = t1Sets > t2Sets;
+        const opponents = game.participants.filter(p => p.id !== partnerId && p.id !== player!.id);
         const { data: origMatch, error } = await supabase
           .from('matches')
           .update({
             status: 'counter_proposed',
             counter_score_text: scoreText,
+            counter_reason: contestReason.trim() || null,
             counter_by: player!.id,
             counter_proposed_at: new Date().toISOString(),
+            counter_winner_id:   iWon ? player!.id        : opponents[0]?.id ?? null,
+            counter_winner_id_2: iWon ? partnerId || null : opponents[1]?.id ?? null,
+            counter_loser_id:    iWon ? opponents[0]?.id ?? null : player!.id,
+            counter_loser_id_2:  iWon ? opponents[1]?.id ?? null : partnerId || null,
           })
           .eq('id', contestMatchId)
           .select('created_by')
@@ -644,37 +673,90 @@ export default function ScoreEntryScreen() {
                   {/* Partner */}
                   <View style={{ marginBottom: 16 }}>
                     <Text style={sty.sectionLabel}>🤝 Avec qui as-tu joué ?</Text>
-                    <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 10 }}>
-                      Sélectionne ton partenaire — les 2 autres seront tes adversaires.
+
+                    {/* Partenaire par défaut (celui de la création) — affiché tant qu'on n'a pas changé */}
+                    {!partnerChanged && (
+                      partner ? (
+                        <View style={[sty.partnerChip, sty.partnerChipSel, { marginTop: 8 }]}>
+                          <View style={[sty.partnerAvatar, { backgroundColor: Colors.primary }]}>
+                            <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.textOnDark }}>
+                              {partner.name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[sty.partnerName, { color: Colors.primary }]} numberOfLines={1}>{partner.name}</Text>
+                            <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
+                              Niv. {formatPadelLevel(partner.elo_score)}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: Colors.danger, fontWeight: '700', marginTop: 8 }}>
+                          Partenaire introuvable — réponds « Oui » pour le sélectionner.
+                        </Text>
+                      )
+                    )}
+
+                    {/* As-tu changé de partenaire ? Non (défaut) / Oui */}
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '700', marginTop: 12, marginBottom: 8 }}>
+                      As-tu changé de partenaire ?
                     </Text>
-                    <View style={{ gap: 8 }}>
-                      {others.map(p => {
-                        const sel = partnerId === p.id;
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {([['Non', false], ['Oui', true]] as const).map(([label, val]) => {
+                        const active = partnerChanged === val;
                         return (
-                          <TouchableOpacity key={p.id} onPress={() => setPartnerId(p.id)}
-                            style={[sty.partnerChip, sel && sty.partnerChipSel]}
-                            activeOpacity={0.75}
+                          <TouchableOpacity key={label} activeOpacity={0.8}
+                            onPress={() => {
+                              if (val) setPartnerChanged(true);
+                              else { setPartnerChanged(false); setPartnerId(defaultPartnerId(game, player?.id ?? '')); }
+                            }}
+                            style={{ flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center',
+                              borderWidth: 2, borderColor: active ? Colors.primary : Colors.border,
+                              backgroundColor: active ? Colors.primary : Colors.bgCard }}
                           >
-                            <View style={[sty.partnerAvatar, { backgroundColor: sel ? Colors.primary : Colors.border }]}>
-                              <Text style={{ fontSize: 15, fontWeight: '900', color: sel ? Colors.textOnDark : Colors.textSecondary }}>
-                                {p.name.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[sty.partnerName, sel && { color: Colors.primary }]} numberOfLines={1}>{p.name}</Text>
-                              <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
-                                Niv. {formatPadelLevel(p.elo_score)}
-                              </Text>
-                            </View>
-                            {sel && (
-                              <View style={{ marginLeft: 'auto', backgroundColor: Colors.primary, borderRadius: 999, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ fontSize: 8, color: Colors.textOnDark, fontWeight: '900' }}>✓</Text>
-                              </View>
-                            )}
+                            <Text style={{ fontSize: 13, fontWeight: '900', color: active ? Colors.textOnDark : Colors.textSecondary }}>{label}</Text>
                           </TouchableOpacity>
                         );
                       })}
                     </View>
+
+                    {/* Sélecteur du nouveau partenaire — seulement si « Oui » */}
+                    {partnerChanged && (
+                      <>
+                        <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginTop: 12, marginBottom: 10 }}>
+                          Sélectionne ton partenaire — les 2 autres seront tes adversaires.
+                        </Text>
+                        <View style={{ gap: 8 }}>
+                          {others.map(p => {
+                            const sel = partnerId === p.id;
+                            return (
+                              <TouchableOpacity key={p.id} onPress={() => setPartnerId(p.id)}
+                                style={[sty.partnerChip, sel && sty.partnerChipSel]}
+                                activeOpacity={0.75}
+                              >
+                                <View style={[sty.partnerAvatar, { backgroundColor: sel ? Colors.primary : Colors.border }]}>
+                                  <Text style={{ fontSize: 15, fontWeight: '900', color: sel ? Colors.textOnDark : Colors.textSecondary }}>
+                                    {p.name.charAt(0).toUpperCase()}
+                                  </Text>
+                                  {p.id === game.creator_id ? <CreatorCrownBadge avatarSize={36} /> : null}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[sty.partnerName, sel && { color: Colors.primary }]} numberOfLines={1}>{p.name}</Text>
+                                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
+                                    Niv. {formatPadelLevel(p.elo_score)}
+                                  </Text>
+                                </View>
+                                {sel && (
+                                  <View style={{ marginLeft: 'auto', backgroundColor: Colors.primary, borderRadius: 999, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+                                    <Text style={{ fontSize: 8, color: Colors.textOnDark, fontWeight: '900' }}>✓</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </>
+                    )}
                   </View>
 
                   {/* Score sets */}
@@ -708,13 +790,34 @@ export default function ScoreEntryScreen() {
                   {/* Badges */}
                   {others.length > 0 && badges.length > 0 && (
                     <View style={{ marginBottom: 16 }}>
-                      <Text style={sty.sectionLabel}>🌟 Distribue tes trophées</Text>
+                      <Text style={sty.sectionLabel}>🌟 Distribue tes badges</Text>
                       <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 10 }}>
                         Optionnel — tu peux en donner plusieurs par joueur
                       </Text>
                       {others.map(p => (
                         <BadgeGrid key={p.id} player={p} votes={votes[p.id] ?? []} badges={badges} onToggle={label => toggleVote(p.id, label)} />
                       ))}
+                    </View>
+                  )}
+
+                  {/* Motif de contestation (mode contestation uniquement) */}
+                  {contestMatchId && (
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={sty.sectionLabel}>✏️ Pourquoi contestes-tu ce score ?</Text>
+                      <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginBottom: 8 }}>
+                        Optionnel — aide l'administrateur à trancher en cas de litige
+                      </Text>
+                      <TextInput
+                        value={contestReason}
+                        onChangeText={t => setContestReason(t.slice(0, 200))}
+                        placeholder="Ex. : le 3e set était 7-5, pas 6-4"
+                        placeholderTextColor={Colors.textMuted}
+                        multiline
+                        style={sty.reasonInput}
+                      />
+                      <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textAlign: 'right', marginTop: 4 }}>
+                        {contestReason.length}/200
+                      </Text>
                     </View>
                   )}
 
@@ -836,5 +939,10 @@ const sty = StyleSheet.create({
   },
   searchInput: {
     flex: 1, fontSize: 14, fontWeight: '600', color: Colors.textPrimary, padding: 0,
+  },
+  reasonInput: {
+    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontWeight: '600',
+    color: Colors.textPrimary, minHeight: 64, textAlignVertical: 'top',
   },
 });

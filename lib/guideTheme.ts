@@ -52,7 +52,7 @@ export const RUBRIC: Record<string, Rubric> = {
   recherche: { key: 'recherche', accent: '#4F46E5', soft: 'rgba(79,70,229,0.10)',  emoji: '🔎', title: 'Recherche de joueurs', sub: 'Trouve qui défier ou inviter' },
   ranking:   { key: 'ranking',   accent: '#059669', soft: 'rgba(5,150,105,0.10)',  emoji: '🏆', title: 'Classement & Ligues', sub: 'Ton ELO, tes ligues' },
   chats:     { key: 'chats',     accent: '#0891B2', soft: 'rgba(8,145,178,0.11)',  emoji: '💬', title: 'Chats',               sub: 'Un fil par partie' },
-  badges:    { key: 'badges',    accent: '#B45309', soft: 'rgba(180,83,9,0.11)',   emoji: '🎖️', title: 'Palmarès & Badges',  sub: 'Des trophées votés par tes adversaires' },
+  badges:    { key: 'badges',    accent: '#B45309', soft: 'rgba(180,83,9,0.11)',   emoji: '🎖️', title: 'Palmarès & Badges',  sub: 'Des badges votés par tes adversaires' },
   stories:   { key: 'stories',   accent: '#DB2777', soft: 'rgba(219,39,119,0.10)', emoji: '📤', title: 'Stories & Partage',  sub: 'Partage et invite en 9:16' },
   faq:       { key: 'faq',       accent: '#7C3AED', soft: 'rgba(124,58,237,0.10)', emoji: '🆘', title: 'Dépannage',          sub: 'Un souci ? On te débloque' },
 };

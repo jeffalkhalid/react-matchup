@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
+import { savePassword } from '../../lib/credentials';
 import { LEGAL } from '../../lib/legal';
 import { Fonts, formatPadelLevel } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
@@ -439,6 +440,9 @@ export default function SignupScreen() {
       if (authError) throw authError;
       if (!authData.user?.identities || authData.user.identities.length === 0) throw new Error('email_taken');
 
+      // Enregistre le nouvel identifiant dans Google Password Manager (champs
+      // encore montés) → sera proposé au prochain login. Boîte « Enregistrer ? ».
+      await savePassword(formData.email, formData.password);
       setIsSuccess(true);
     } catch (err: unknown) {
       const raw = (err as Error).message;
@@ -987,6 +991,9 @@ export default function SignupScreen() {
                     onFocus={() => setPwFocused(true)}
                     onBlur={() => setPwFocused(false)}
                     secureTextEntry={!showPassword}
+                    // Android RN attend "password-new" (PAS "new-password" iOS/web) ;
+                    // sans hint valide, pas de proposition « Enregistrer le mdp ? ».
+                    autoComplete="password-new"
                     rightElement={
                       <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={{ padding: 6 }} hitSlop={8}>
                         {showPassword

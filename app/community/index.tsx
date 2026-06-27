@@ -103,7 +103,7 @@ export default function CommunityHubScreen() {
           kicker="Invite & gagne"
           title="Fais grandir ta piste"
           titleSize={22}
-          sub="Partage ton lien : chaque ami qui rejoint débloque un trophée parrainage."
+          sub="Partage ton lien : chaque ami qui rejoint débloque un badge parrainage."
         >
           <BrandBtn
             label="Inviter des amis"

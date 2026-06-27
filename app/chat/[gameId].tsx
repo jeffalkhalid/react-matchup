@@ -12,6 +12,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
 import { getHiddenPlayerIds, reportContent, blockUser } from '../../lib/moderation';
+import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
 import type { Message } from '../../types';
 import { Colors, Fonts } from '../../lib/theme';
 
@@ -67,6 +68,7 @@ interface MsgItemProps {
 }
 
 function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, setReactingId, myId, addReaction, onOpenFullPicker, quickEmojis, readers, onReport }: MsgItemProps) {
+  const router = useRouter();
   const time = new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const senderChanged = !prevMessage || prevMessage.player_id !== m.player_id;
   const showAvatar = !isMe && senderChanged;
@@ -83,9 +85,11 @@ function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, se
         {!isMe && (
           <View style={{ width: 28, alignSelf: 'flex-end' }}>
             {showAvatar ? (
-              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.textOnDark }}>{m.player_name.charAt(0).toUpperCase()}</Text>
-              </View>
+              <TouchableOpacity onPress={() => m.player_id && router.push(`/player/${m.player_id}` as any)} activeOpacity={0.7} disabled={!m.player_id}>
+                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.textOnDark }}>{m.player_name.charAt(0).toUpperCase()}</Text>
+                </View>
+              </TouchableOpacity>
             ) : null}
           </View>
         )}
@@ -524,9 +528,12 @@ export default function ChatScreen() {
                 const initials = p.name.split(' ').map((w: string) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
                 return (
                   <View key={p.id} style={{ alignItems: 'center', gap: 4 }}>
-                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: playerColor(i), alignItems: 'center', justifyContent: 'center', shadowColor: playerColor(i), shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textOnDark }}>{initials}</Text>
-                    </View>
+                    <TouchableOpacity onPress={() => p.id && router.push(`/player/${p.id}` as any)} activeOpacity={0.7} disabled={!p.id}>
+                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: playerColor(i), alignItems: 'center', justifyContent: 'center', shadowColor: playerColor(i), shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textOnDark }}>{initials}</Text>
+                        {p.id === game.creator_id ? <CreatorCrownBadge avatarSize={40} ringColor={Colors.heroBg} /> : null}
+                      </View>
+                    </TouchableOpacity>
                     <Text style={{ fontSize: 9.5, fontWeight: '700', color: Colors.textMuted, maxWidth: 48, textAlign: 'center' }} numberOfLines={1}>
                       {isMe ? 'Toi' : p.name.split(' ')[0]}
                     </Text>

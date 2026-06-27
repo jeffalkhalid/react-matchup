@@ -10,6 +10,9 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts } from '../../lib/theme';
 import { lobbyGameLink } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
+import { openInMaps, hasMapTarget } from '../../lib/maps';
+import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
+import { Icon } from '../../components/community/icons';
 import type { OpenGame } from '../../types';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -120,7 +123,7 @@ function hashTone(name: string) {
 // Couleurs équipe (charte) — A = ink, B = brand
 const TEAM_BG = { A: Colors.primary,    B: Colors.brand };
 const TEAM_FG = { A: Colors.textOnDark, B: Colors.textOnBrand };
-function Avatar({ name, size = 36, ring, team }: { name: string; size?: number; ring?: string; team?: 'A' | 'B' }) {
+function Avatar({ name, size = 36, ring, team, creator }: { name: string; size?: number; ring?: string; team?: 'A' | 'B'; creator?: boolean }) {
   const tone = hashTone(name);
   const bg = team ? TEAM_BG[team] : tone.bg;
   const fg = team ? TEAM_FG[team] : tone.fg;
@@ -133,6 +136,7 @@ function Avatar({ name, size = 36, ring, team }: { name: string; size?: number; 
       <Text style={{ color: fg, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
+      {creator ? <CreatorCrownBadge avatarSize={size} /> : null}
     </View>
   );
 }
@@ -156,7 +160,6 @@ function CourtSlot({
     const isChange = mode === 'change';
     const borderCol = selected ? theme.accentHex : isChange ? theme.eloBorder : Colors.border;
     const bgCol = selected ? theme.eloBg : isChange ? theme.eloBg : Colors.bg;
-    const icon = selected ? '✓' : isChange ? '↔' : '+';
     const iconColor = theme.accentHex;
     const labelColor = selected || isChange ? theme.accentHex : theme.courtLabel;
     return (
@@ -165,9 +168,11 @@ function CourtSlot({
         activeOpacity={canClick ? 0.7 : 1}
         style={[s.cell, { borderColor: borderCol, backgroundColor: bgCol }]}
       >
-        <Text style={{ fontSize: selected ? 18 : isChange ? 14 : 20, color: iconColor, fontWeight: isChange ? '900' : '300' }}>
-          {icon}
-        </Text>
+        {selected
+          ? <Icon name="check" size={18} color={iconColor} stroke={2.6} />
+          : isChange
+            ? <Text style={{ fontSize: 14, color: iconColor, fontWeight: '900' }}>↔</Text>
+            : <Text style={{ fontSize: 20, color: iconColor, fontWeight: '300' }}>+</Text>}
         <Text style={{ fontSize: 8, fontWeight: '900', color: labelColor, marginTop: 2, letterSpacing: 0.5 }}>
           {SIDE_SHORT[side]}
         </Text>
@@ -182,7 +187,7 @@ function CourtSlot({
       backgroundColor: player.isInvited ? Colors.bgCardAlt : Colors.bg,
       opacity: player.isInvited ? 0.7 : 1,
     }]}>
-      <Avatar name={player.name} size={30} ring={player.isMe ? Colors.warning : undefined} team={SIDE_TEAM[side] as 'A' | 'B'} />
+      <Avatar name={player.name} size={30} ring={player.isMe ? Colors.warning : undefined} team={SIDE_TEAM[side] as 'A' | 'B'} creator={player.isCreator} />
       <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textPrimary, marginTop: 3 }} numberOfLines={1}>
         {player.isMe ? 'Toi' : player.name.split(' ')[0]}
       </Text>
@@ -512,13 +517,21 @@ export default function GameDetailsSheet({
             {/* Date + time */}
             <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 2 }}>{dateStr}</Text>
             <Text style={{ fontSize: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, marginBottom: 6 }}>{timeStr || '—'}</Text>
-            {/* Location + gender */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            {/* Location + gender — tappable → Maps */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              disabled={!hasMapTarget(game.location)}
+              onPress={() => openInMaps(game.location)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}
+            >
               <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
                 <Path stroke={Colors.textMuted} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" d="M20 10c0 7-8 13-8 13S4 17 4 10a8 8 0 0 1 16 0Z" />
                 <Circle cx={12} cy={10} r={3} stroke={Colors.textMuted} strokeWidth={2.2} />
               </Svg>
               <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.border, flex: 1 }} numberOfLines={1}>{game.location}</Text>
+              {hasMapTarget(game.location) && (
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textMuted }}>Itinéraire ›</Text>
+              )}
               {(game as any).gender_pref && (
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
                   <Text style={{ color: 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
@@ -526,7 +539,7 @@ export default function GameDetailsSheet({
                   </Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
             {/* Meta strip */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -697,12 +710,12 @@ export default function GameDetailsSheet({
                               <TouchableOpacity
                                 onPress={() => onApprovePending(p.id, game.id, p.player_id, approvals)}
                                 style={{ width: 36, height: 36, backgroundColor: Colors.success, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>✓</Text>
+                                <Icon name="check" size={14} color={Colors.textOnDark} stroke={2.6} />
                               </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() => onDeclinePending(p.id)}
                                 style={{ width: 36, height: 36, backgroundColor: Colors.bgCardAlt, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ color: Colors.textSecondary, fontWeight: '900' }}>✕</Text>
+                                <Icon name="x" size={14} color={Colors.textSecondary} stroke={2.5} />
                               </TouchableOpacity>
                             </View>
                           )}
@@ -838,7 +851,7 @@ export default function GameDetailsSheet({
                         activeOpacity={0.8}
                         style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.bgCardAlt, borderRadius: 18, padding: 14 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: total > 0 ? 10 : 0 }}>
-                          <Avatar name={p.name} size={44} ring={p.isMe ? Colors.warning : undefined} team={isTeamA ? 'A' : 'B'} />
+                          <Avatar name={p.name} size={44} ring={p.isMe ? Colors.warning : undefined} team={isTeamA ? 'A' : 'B'} creator={p.isCreator} />
                           <View style={{ flex: 1 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.isMe ? 'Toi' : p.name}</Text>

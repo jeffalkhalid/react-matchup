@@ -24,10 +24,13 @@ import { matchToView } from '../../lib/matchView';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
-import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive } from '../../lib/games';
+import { HeaderActions } from '../../components/HeaderActions';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore } from '../../lib/games';
+import { matchNeedsMyAction } from '../../lib/matches';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
 import { containsProfanity } from '../../lib/profanity';
+import { BadgePill } from '../../components/profile/BadgePill';
+import { Icon } from '../../components/community/icons';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -86,13 +89,6 @@ function formatDate(iso: string): string {
 
 function hoursUntil(iso: string): number {
   return Math.round((new Date(iso).getTime() - Date.now()) / 3600000);
-}
-
-// Raised by the eject_overlapping_candidatures DB trigger when the
-// target player is already organizer of another match within ±2h.
-function isCreatorConflict(error: unknown): boolean {
-  const msg = (error as { message?: string } | null)?.message;
-  return typeof msg === 'string' && msg.includes('CREATOR_CONFLICT');
 }
 
 // ─── Icons ───────────────────────────────────────────────────
@@ -235,11 +231,14 @@ function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?:
   );
 }
 
+// Type de match : pastille NEUTRE (gris) pour les 3 types — la couleur par type
+// a été retirée du lobby pour l'alléger. Seul le libellé (+ l'icône épées du
+// Défi) distingue le type.
 function TypePill({ game }: { game: OpenGame }) {
   const t = getGameType(game);
-  if (t === 'challenge') return <Pill variant="brand" icon={<IconSwords size={11} color={pillAccent('brand')} />}>Défi</Pill>;
-  if (t === 'friendly')  return <Pill variant="success">Amical</Pill>;
-  return <Pill variant="ink">Compétitif</Pill>;
+  if (t === 'challenge') return <Pill variant="neutral" icon={<IconSwords size={11} color={pillAccent('neutral')} />}>Défi</Pill>;
+  if (t === 'friendly')  return <Pill variant="neutral">Amical</Pill>;
+  return <Pill variant="neutral">Compétitif</Pill>;
 }
 
 function EloFitPill({ fit }: { fit: EloFit }) {
@@ -366,13 +365,13 @@ function buildGameSlots(game: EnrichedGame, myId: string) {
   return slots;
 }
 
-// ─── Slot theme by game type ──────────────────────────────────
-// Thème slot par type de jeu : Défi=brand jaune / Amical=success vert / Compétitif=ink noir doux.
-// Aligné sur les variants de Pill (cohérence visuelle dans toute la card).
-function getSlotTheme(game: OpenGame) {
-  if (game.is_challenge) return { accent: Colors.brandDeep, bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)' };
-  if ((game.game_format as string) === 'friendly') return { accent: '#047857', bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)' };
-  return { accent: Colors.textPrimary, bg: Colors.bgCardAlt, border: Colors.border };
+// ─── Slot theme ───────────────────────────────────────────────
+// Thème slot NEUTRE, identique quel que soit le type de jeu : le fond des
+// emplacements vides (joignables / à changer) reste blanc, bordure et accent
+// gris. La couleur par type a été retirée pour alléger la card — le type est
+// porté par la pastille (TypePill) seule. `game` conservé pour la signature.
+function getSlotTheme(_game: OpenGame) {
+  return { accent: Colors.textSecondary, bg: Colors.bgCard, border: Colors.border };
 }
 
 // ─── Inline slot grid ─────────────────────────────────────────
@@ -645,8 +644,9 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
     : null;
 
   const showInlineSlots = variant !== 'history' && !!playerId;
-  const st = getSlotTheme(game);
-  const stripColor = isUrgent ? Colors.danger : st.accent;
+  // Barre du haut neutre (gris fin) — la couleur par type a été retirée.
+  // Le rouge ne subsiste que pour l'état « urgent » (place unique + < 6 h).
+  const stripColor = isUrgent ? Colors.danger : Colors.border;
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={cs.card}>
@@ -826,29 +826,27 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   );
 }
 
-// ─── Badge fallback emojis ────────────────────────────────────
-const BADGE_FALLBACK: Record<string, string> = {
-  'MVP': '👑', 'La Bombe': '💥', 'Le Smash': '🎯', 'Le Phénix': '🔥',
-  'Le Mur': '🧱', "L'Essuie-glace": '🏃', 'Roi du Filet': '🥅',
-  'Le Cerveau': '🧠', 'Le Capitaine': '⭐',
-  'Fair-Play': '🤝', 'Bonne Ambiance': '😄', '3e Mi-temps': '🍻', 'Ponctuel': '⏰',
-  CANNON: '💥', SMASH: '🎯', COMEBACK: '🔥', WALL: '🧱',
-};
 
 // ─── Pending validation bottom sheet ──────────────────────────
-function PendingValidationSheet({ matches, playerId, onClose, onValidated, onContest, onOpenVote }: {
+function PendingValidationSheet({ matches, playerId, onClose, onValidated, onContest, onOpenVote, onResolved }: {
   matches: Match[];
   playerId: string;
   onClose: () => void;
   onValidated: (matchId: string) => void;
   onContest: (matchId: string) => void;
   onOpenVote: () => void;
+  onResolved: (matchId: string, status: 'validated' | 'disputed') => void;
 }) {
   const insets = useSafeAreaInsets();
   const [validatingId, setValidatingId] = useState<string | null>(null);
   const [validatedIds, setValidatedIds] = useState<Set<string>>(new Set());
+  // Litige : matchId dont le champ « motif » est déroulé + son texte.
+  const [disputingId, setDisputingId] = useState<string | null>(null);
+  const [disputeReason, setDisputeReason] = useState('');
 
-  const visible = matches.filter(m => needsMyValidation(m, playerId) || validatedIds.has(m.id));
+  // Affiche tout ce qui attend une action de ma part (validate OU resolve), plus
+  // les lignes que je viens de traiter (feedback visuel avant fermeture).
+  const visible = matches.filter(m => matchNeedsMyAction(m, playerId) !== null || validatedIds.has(m.id));
 
   const handleValidate = async (m: Match) => {
     if (validatingId) return;
@@ -861,6 +859,60 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
     if (error) { Alert.alert('Erreur', 'Impossible de valider ce match.'); return; }
     setValidatedIds(prev => new Set(prev).add(m.id));
     onValidated(m.id);
+  };
+
+  // Résolution d'un score contesté (counter_proposed) que J'AI soumis.
+  const handleResolveAccept = async (m: Match) => {
+    if (validatingId) return;
+    setValidatingId(m.id);
+    // On adopte le résultat COMPLET du contestataire → le trigger ELO se base
+    // sur le bon vainqueur au passage 'validated'.
+    const { error } = await supabase
+      .from('matches')
+      .update({
+        status: 'validated',
+        score_text: m.counter_score_text ?? m.score_text,
+        winner_id: m.counter_winner_id ?? null,
+        winner_id_2: m.counter_winner_id_2 ?? null,
+        loser_id: m.counter_loser_id ?? null,
+        loser_id_2: m.counter_loser_id_2 ?? null,
+      })
+      .eq('id', m.id);
+    setValidatingId(null);
+    if (error) { Alert.alert('Erreur', "Impossible d'accepter ce score."); return; }
+    if (m.counter_by) {
+      notifyPlayers({
+        playerIds: [m.counter_by],
+        title: '✅ Score accepté',
+        body: 'Ton score corrigé a été accepté.',
+        data: { type: 'match', matchId: m.id },
+      });
+    }
+    setValidatedIds(prev => new Set(prev).add(m.id));
+    onResolved(m.id, 'validated');
+  };
+
+  const handleResolveDispute = async (m: Match) => {
+    if (validatingId) return;
+    setValidatingId(m.id);
+    const { error } = await supabase
+      .from('matches')
+      .update({ status: 'disputed', dispute_reason: disputeReason.trim() || null })
+      .eq('id', m.id);
+    setValidatingId(null);
+    if (error) { Alert.alert('Erreur', 'Impossible de signaler le litige.'); return; }
+    setDisputingId(null);
+    setDisputeReason('');
+    if (m.counter_by) {
+      notifyPlayers({
+        playerIds: [m.counter_by],
+        title: '⚖️ Litige signalé',
+        body: 'Désaccord sur le score — un administrateur tranchera.',
+        data: { type: 'match', matchId: m.id },
+      });
+    }
+    setValidatedIds(prev => new Set(prev).add(m.id));
+    onResolved(m.id, 'disputed');
   };
 
   return (
@@ -880,7 +932,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
             </View>
             <TouchableOpacity onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: Colors.textSecondary, fontSize: 14, fontFamily: Fonts.uiBlack }}>✕</Text>
+              <Icon name="x" size={14} color={Colors.textSecondary} stroke={2.5} />
             </TouchableOpacity>
           </View>
 
@@ -902,6 +954,120 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
               const won = m.winner_id === playerId || m.winner_id_2 === playerId;
               const winnerNames = [m.winner, m.winner_2].filter(Boolean).map(p => displayName(p, won ? 'partner' : 'opponent')).join(' & ') || '?';
               const loserNames  = [m.loser,  m.loser_2 ].filter(Boolean).map(p => displayName(p, won ? 'opponent' : 'partner')).join(' & ') || '?';
+
+              // Contexte du match (lieu · date) — pour savoir QUELLE partie on valide.
+              const loc = m.game?.location;
+              const md = m.game?.match_date;
+              const metaLine = (loc || md) ? (
+                <Text style={{ fontSize: 11, fontWeight: '600', color: Colors.textMuted, marginBottom: 10 }} numberOfLines={1}>
+                  {loc ? `📍 ${loc}` : ''}{loc && md ? '  ·  ' : ''}{md ? `📅 ${formatDate(md)}` : ''}
+                </Text>
+              ) : null;
+
+              // ── Score contesté que J'AI soumis : résolution (accepter / litige) ──
+              if (!isValidated && matchNeedsMyAction(m, playerId) === 'resolve') {
+                const iWonCounter = m.counter_winner_id === playerId || m.counter_winner_id_2 === playerId;
+                return (
+                  <View key={m.id} style={{
+                    backgroundColor: Colors.bgCard,
+                    borderWidth: 1, borderColor: 'rgba(245,158,11,0.55)',
+                    borderRadius: 14, padding: 14, marginBottom: 10,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                      <Pill variant="warning">⚠️ Score contesté</Pill>
+                    </View>
+                    {metaLine}
+                    <View style={{ gap: 8, marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary }}>Ton score</Text>
+                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: won ? '#047857' : '#B91C1C' }}>
+                          {m.score_text} · {won ? 'victoire' : 'défaite'}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary }}>Leur version</Text>
+                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: iWonCounter ? '#047857' : '#B91C1C' }}>
+                          {m.counter_score_text} · {iWonCounter ? 'victoire' : 'défaite'}
+                        </Text>
+                      </View>
+                    </View>
+                    {disputingId === m.id ? (
+                      /* Motif du litige déroulé → confirmation */
+                      <View>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: 6 }}>
+                          Explique le désaccord — un administrateur tranchera
+                        </Text>
+                        <TextInput
+                          value={disputeReason}
+                          onChangeText={t => setDisputeReason(t.slice(0, 200))}
+                          placeholder="Ex. : on a bien gagné 6-4, 6-3"
+                          placeholderTextColor={Colors.textMuted}
+                          multiline
+                          style={{
+                            backgroundColor: Colors.bgCardAlt, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+                            paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, fontWeight: '600',
+                            color: Colors.textPrimary, minHeight: 56, textAlignVertical: 'top',
+                          }}
+                        />
+                        <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', textAlign: 'right', marginTop: 4, marginBottom: 8 }}>
+                          {disputeReason.length}/200 · optionnel
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity
+                            onPress={() => { setDisputingId(null); setDisputeReason(''); }}
+                            disabled={isValidating}
+                            activeOpacity={0.85}
+                            style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}
+                          >
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>Annuler</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleResolveDispute(m)}
+                            disabled={isValidating}
+                            activeOpacity={0.85}
+                            style={{
+                              flex: 1, backgroundColor: '#B91C1C', borderRadius: 12,
+                              paddingVertical: 11, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
+                            }}
+                          >
+                            {isValidating
+                              ? <ActivityIndicator color={Colors.textOnDark} />
+                              : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>⚖️ Confirmer le litige</Text>}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => handleResolveAccept(m)}
+                          disabled={isValidating}
+                          activeOpacity={0.85}
+                          style={{
+                            flex: 1, backgroundColor: Colors.success, borderRadius: 12,
+                            paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
+                          }}
+                        >
+                          {isValidating
+                            ? <ActivityIndicator color={Colors.textOnDark} />
+                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Accepter leur score</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => { setDisputingId(m.id); setDisputeReason(''); }}
+                          disabled={isValidating}
+                          activeOpacity={0.85}
+                          style={{
+                            flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(220,38,38,0.50)',
+                            borderRadius: 12, paddingVertical: 11, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#B91C1C' }}>⚖️ Maintenir (litige)</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              }
+
               return (
                 <View key={m.id} style={{
                   backgroundColor: isValidated ? 'rgba(16,185,129,0.06)' : Colors.bgCard,
@@ -923,6 +1089,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                       </Text>
                     ) : null}
                   </View>
+                  {metaLine}
                   <View style={{ marginBottom: 12 }}>
                     <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: '#047857' }} numberOfLines={1}>
                       🏆 {winnerNames}
@@ -941,7 +1108,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                         borderRadius: 12, paddingVertical: 11, alignItems: 'center',
                       }}
                     >
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#4338ca' }}>🏅 Noter tes partenaires</Text>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#4338ca' }}>🏅 Distribue tes badges</Text>
                     </TouchableOpacity>
                   ) : (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -1055,7 +1222,7 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                     backgroundColor: Colors.bgCardAlt, borderRadius: 20,
                     paddingHorizontal: 12, paddingVertical: 6,
                   }}>
-                    <Text style={{ fontSize: 16 }}>{BADGE_FALLBACK[b.badge_type] ?? '🏅'}</Text>
+                    <BadgePill badge={b.badge_type} size={24} />
                     <View>
                       <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.textPrimary }}>{b.badge_type}</Text>
                       {b.giver?.name ? (
@@ -1148,19 +1315,9 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
   );
 }
 
-// Pending matches the player must validate: excludes scores submitted by the
-// player or their partner (those count as the team's submission already).
+// Pending matches the player must validate (source unique lib/matches).
 function needsMyValidation(m: Match, playerId: string): boolean {
-  if (m.status !== 'pending') return false;
-  if (m.created_by === playerId) return false;
-  const cb = m.created_by;
-  if (
-    (cb === m.winner_id   && m.winner_id_2 === playerId) ||
-    (cb === m.winner_id_2 && m.winner_id   === playerId) ||
-    (cb === m.loser_id    && m.loser_id_2  === playerId) ||
-    (cb === m.loser_id_2  && m.loser_id    === playerId)
-  ) return false;
-  return true;
+  return matchNeedsMyAction(m, playerId) === 'validate';
 }
 
 // ─── Match card (history) ─────────────────────────────────────
@@ -1239,7 +1396,7 @@ function filterExploreGames(
 }
 
 // ─── Explorer tab ─────────────────────────────────────────────
-function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTypeFilter, search, setSearch, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide }: {
+function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTypeFilter, search, setSearch, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate }: {
   games: EnrichedGame[]; myElo: number;
   filterMode: FilterMode; setFilterMode: (v: FilterMode) => void;
   typeFilter: TypeFilter; setTypeFilter: (v: TypeFilter) => void;
@@ -1248,6 +1405,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
   onApply: (gameId: string, side: string) => void;
   onChangeSide: (participantId: string, side: string) => void;
   onCreatorChangeSide: (gameId: string, side: string) => void;
+  onCreate: () => void;
 }) {
   const filtered = useMemo(
     () => filterExploreGames(games, filterMode, typeFilter, search),
@@ -1361,7 +1519,24 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
                     </TouchableOpacity>
                   </View>
                 )
-                : <EmptyState text="Aucune partie disponible" sub="Crée la tienne pour lancer le jeu" />)
+                : (
+                    <View style={{
+                      paddingVertical: 32, paddingHorizontal: 16, alignItems: 'center',
+                      backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+                      borderStyle: 'dashed', borderRadius: 18,
+                    }}>
+                      <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary, fontSize: 14, textAlign: 'center' }}>
+                        Aucune partie pour l'instant
+                      </Text>
+                      <Text style={{ color: Colors.textMuted, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>
+                        Sois le premier à lancer une partie aujourd'hui
+                      </Text>
+                      <TouchableOpacity onPress={onCreate} activeOpacity={0.85}
+                        style={{ marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11 }}>
+                        <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontSize: 14 }}>＋ Créer une partie</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
             : <View style={{ gap: 10 }}>
                 {mainList.map(g => (
                   <GameCard key={g.id} game={g} variant="explore" myElo={myElo} playerId={playerId}
@@ -1391,17 +1566,24 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
 
   const byType = (g: EnrichedGame) => typeFilter === 'all' || getGameType(g) === typeFilter;
 
+  // Tri par date croissante : le match le plus proche en premier. Les parties
+  // sans date (rare) sont rejetées en fin de liste.
+  const byDateAsc = (a: EnrichedGame, b: EnrichedGame) => {
+    const ta = a.match_date ? new Date(a.match_date).getTime() : Infinity;
+    const tb = b.match_date ? new Date(b.match_date).getTime() : Infinity;
+    return ta - tb;
+  };
+
   const created = games.filter(g => g.is_creator).filter(byType);
   const accepted = games.filter(g => !g.is_creator && g.my_status === 'accepted').filter(byType);
-  const invited  = games.filter(g => !g.is_creator && g.my_status === 'invited').filter(byType);
-  const pending  = games.filter(g => !g.is_creator && g.my_status === 'pending').filter(byType);
-  const waitlisted = games.filter(g => !g.is_creator && g.my_status === 'waitlist').filter(byType);
+  const invited  = games.filter(g => !g.is_creator && g.my_status === 'invited').filter(byType).sort(byDateAsc);
+  const pending  = games.filter(g => !g.is_creator && g.my_status === 'pending').filter(byType).sort(byDateAsc);
+  const waitlisted = games.filter(g => !g.is_creator && g.my_status === 'waitlist').filter(byType).sort(byDateAsc);
 
-  const showCreated = roleFilter === 'all' || roleFilter === 'creator' || roleFilter === 'playing';
-  const showAccepted = roleFilter === 'all' || roleFilter === 'playing';
-  const showInvited = roleFilter === 'all' || roleFilter === 'pending';
-  const showPending = roleFilter === 'all' || roleFilter === 'pending';
-  const showWaitlist = roleFilter === 'all' || roleFilter === 'pending';
+  // Liste plate « mes parties » : j'organise + je joue fusionnés (classification
+  // de rôle retirée), triés par date croissante. Seules les invitations à
+  // répondre restent en haut, et l'attente/approbation + liste d'attente en bas.
+  const mine = [...created, ...accepted].sort(byDateAsc);
 
   const cardProps = { playerId, onChangeSide, onCreatorChangeSide };
 
@@ -1432,7 +1614,8 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
       </ScrollView>
       */}
 
-      {showInvited && invited.length > 0 && (
+      {/* En haut : invitations à répondre (action requise). */}
+      {invited.length > 0 && (
         <Section title="À répondre" count={invited.length} color={Colors.brand} icon={<IconMail color={Colors.textOnBrand} />}>
           {invited.map(g => (
             <GameCard
@@ -1448,22 +1631,20 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
           ))}
         </Section>
       )}
-      {showCreated && created.length > 0 && (
-        <Section title="J'organise" count={created.length} color={Colors.primary} icon={<IconMegaphone color={Colors.textOnDark} />}>
-          {created.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
-        </Section>
+      {/* Liste plate : mes parties (organisées + jointes), triées par date,
+          sans bannière de rôle. Chaque carte porte déjà sa pastille de statut. */}
+      {mine.length > 0 && (
+        <View style={{ gap: 10, marginBottom: 18 }}>
+          {mine.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
+        </View>
       )}
-      {showAccepted && accepted.length > 0 && (
-        <Section title="Je joue" count={accepted.length} color={Colors.success} icon={<IconCheck color={Colors.textOnDark} />}>
-          {accepted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
-        </Section>
-      )}
-      {showPending && pending.length > 0 && (
+      {/* En bas : statuts non confirmés. */}
+      {pending.length > 0 && (
         <Section title="En attente d'approbation" count={pending.length} color={Colors.warning} icon={<IconHourglass color={Colors.textOnDark} />}>
-          {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} />)}
+          {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
-      {showWaitlist && waitlisted.length > 0 && (
+      {waitlisted.length > 0 && (
         <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted} icon={<IconWaitClock color={Colors.textOnDark} />}>
           {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
@@ -1642,9 +1823,9 @@ export default function LobbyScreen() {
         .limit(10),
       supabase
         .from('matches')
-        .select('*, winner:winner_id(id, name, deleted_at, elo_score), winner_2:winner_id_2(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score), game:game_id(location, match_date)')
+        .select('*, winner:winner_id(id, name, deleted_at, elo_score), winner_2:winner_id_2(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score), game:game_id(location, match_date, creator_id)')
         .or(`winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`)
-        .in('status', ['pending', 'validated'])
+        .in('status', ['pending', 'validated', 'counter_proposed'])
         .order('created_at', { ascending: false })
         .limit(20),
     ]);
@@ -1744,24 +1925,14 @@ export default function LobbyScreen() {
 
     const allUpcoming = [...creatorGames, ...participantGames];
     const now = new Date();
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const scoredGameIds = new Set(
       (matchesRes.data ?? []).map((m: any) => m.game_id).filter(Boolean) as string[]
     );
-    // Mêmes critères que score-entry: la partie doit être full, ni close ni cancel,
-    // et le joueur doit y avoir réellement joué (créateur ou accepté).
-    const readyToScore = (g: EnrichedGame) => {
-      if (!g.match_date) return false;
-      const matchDate = new Date(g.match_date);
-      if (matchDate >= now) return false;
-      if (matchDate < fortyEightHoursAgo) return false;
-      if (scoredGameIds.has(g.id)) return false;
-      if ((g as any).status === 'closed' || (g as any).status === 'cancelled') return false;
-      if (!g.is_creator && g.my_status !== 'accepted') return false;
-      if (g.spots_available !== 0) return false;
-      const acceptedCount = (g.participants ?? []).filter((p: any) => p.status === 'accepted').length;
-      return 1 + acceptedCount >= 4;
-    };
+    // Point de vérité unique partagé avec badge / notifications / score-entry
+    // (lib/games.isGameReadyToScore) : full DÉRIVÉ des participants (plus de
+    // dépendance à spots_available), ni close/cancel, dans la fenêtre 48 h,
+    // pas déjà scoré, et j'y ai joué (créateur ou accepté).
+    const readyToScore = (g: EnrichedGame) => isGameReadyToScore(g, player.id, scoredGameIds);
 
     setUpcomingGames(allUpcoming.filter(g =>
       (g as any).status !== 'cancelled' &&
@@ -1857,11 +2028,12 @@ export default function LobbyScreen() {
     } catch (error: any) {
       if (isCreatorConflict(error)) {
         Alert.alert(
-          'Créneau déjà occupé',
-          "Tu es l'organisateur·trice d'un match sur un créneau équivalent ou rapproché (~2h). Annule-le ou transfère-en l'organisation avant de créer ou rejoindre une partie.",
+          '⚠️ Conflit de créneau',
+          'Tu es déjà sur une autre partie au même créneau (±2h). Annule-la ou quitte-la avant de rejoindre celle-ci.',
         );
       } else {
-        Alert.alert('Erreur', error.message ?? 'Candidature échouée');
+        console.warn('[lobby] candidature refusée:', error);
+        Alert.alert('Impossible de rejoindre', 'Une erreur est survenue, réessaie dans un instant.');
       }
       throw error;
     }
@@ -1941,6 +2113,7 @@ export default function LobbyScreen() {
     // exclure l'écart pile de 2h (qui ne se chevauche pas).
     const createdConflicts = (myCreated ?? []).filter((g: any) =>
       g.match_date && Math.abs(new Date(g.match_date).getTime() - matchDate.getTime()) < OVERLAP_MS);
+    const nowMs = Date.now();
     const joinedConflicts = (myJoined ?? []).filter((p: any) => {
       const g = p.game;
       if (!g || g.status === 'cancelled') return false;
@@ -1948,6 +2121,9 @@ export default function LobbyScreen() {
       // Invitation expirée → plus un engagement, pas un conflit.
       if (p.status === 'invited' && !isInviteActive(p)) return false;
       const t = new Date(g.match_date).getTime();
+      // Engagement non confirmé (candidature/invité/liste d'attente) sur une partie
+      // déjà commencée → elle s'est faite (ou non) sans moi, plus un conflit.
+      if (p.status !== 'accepted' && t <= nowMs) return false;
       return Math.abs(t - matchDate.getTime()) < OVERLAP_MS;
     });
     const totalConflicts = createdConflicts.length + joinedConflicts.length;
@@ -2122,8 +2298,8 @@ export default function LobbyScreen() {
     if (error) {
       if (isCreatorConflict(error)) {
         Alert.alert(
-          'Créneau déjà occupé',
-          'Ce joueur organise une autre partie à un créneau équivalent ou rapproché (~2h) — sa candidature ne peut pas être acceptée.',
+          '⚠️ Conflit de créneau',
+          'Ce joueur est déjà engagé sur une autre partie au même créneau (±2h) — sa candidature ne peut pas être acceptée.',
         );
       } else {
         Alert.alert('Erreur', error.message);
@@ -2376,11 +2552,12 @@ export default function LobbyScreen() {
     if (error) {
       if (isCreatorConflict(error)) {
         Alert.alert(
-          'Créneau déjà occupé',
-          "Tu es l'organisateur·trice d'un match sur un créneau équivalent ou rapproché (~2h). Annule-le ou transfère-en l'organisation avant de créer ou rejoindre une partie.",
+          '⚠️ Conflit de créneau',
+          'Tu es déjà sur une autre partie au même créneau (±2h). Annule-la ou quitte-la avant de rejoindre celle-ci.',
         );
       } else {
-        Alert.alert('Erreur', error.message);
+        console.warn('[lobby] acceptation invitation refusée:', error);
+        Alert.alert('Impossible de rejoindre', 'Une erreur est survenue, réessaie dans un instant.');
       }
       return;
     }
@@ -2458,7 +2635,7 @@ export default function LobbyScreen() {
     () => filterExploreGames(games, filterMode, typeFilter, search).length,
     [games, filterMode, typeFilter, search],
   );
-  const scoresToValidate = matches.filter(m => needsMyValidation(m, player.id)).length;
+  const scoresToValidate = matches.filter(m => matchNeedsMyAction(m, player.id) !== null).length;
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -2468,7 +2645,7 @@ export default function LobbyScreen() {
         paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16,
         borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
       }}>
-        <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 20 }} />
+        <HeaderActions top={insets.top + 8} right={16} tint="light" />
 
         {/* Brand lockup — raquette + wordmark PAGMATCH */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
@@ -2568,6 +2745,7 @@ export default function LobbyScreen() {
               onApply={(gameId, side) => handleApply(gameId, false, side)}
               onChangeSide={handleChangeSide}
               onCreatorChangeSide={handleCreatorChangeSide}
+              onCreate={() => setShowCreate(true)}
             />
           )}
           {tab === 'upcoming' && (
@@ -2682,6 +2860,10 @@ export default function LobbyScreen() {
           onOpenVote={() => {
             setPendingSheetOpen(false);
             router.push('/(tabs)?openBadge=1' as any);
+          }}
+          onResolved={(matchId, status) => {
+            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status } : m));
+            reloadNotifs();
           }}
         />
       )}

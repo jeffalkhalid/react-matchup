@@ -72,8 +72,8 @@ export const HELP: Record<string, HelpEntry> = {
     illust: 'badges',
     steps: [
       'Après chaque match, note tes adversaires.',
-      'Attribue des trophées : MVP 👑, La Bombe 💥, Fair-Play 🤝…',
-      'Les trophées reçus s’affichent sur ton palmarès.',
+      'Attribue des badges : MVP 👑, La Bombe 💥, Fair-Play 🤝…',
+      'Les badges reçus s’affichent sur ton palmarès.',
       'Une réputation se construit, match après match.',
     ],
     cta: null,

@@ -6,6 +6,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Polygon, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
+import { getBadge } from '../../../lib/badges';
+import { Glyph } from '../../../components/profile/glyphs';
 import { usePlayer } from '../../../hooks/usePlayer';
 import { supabase } from '../../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../../lib/theme';
@@ -28,6 +30,9 @@ import type { StoryMode } from '../../../components/story/StoryStyles';
 import type { StoryPlayer, StoryMatchData, InviteData } from '../../../components/story/storyTheme';
 import { buildStoryMatch } from '../../../components/story/storyTheme';
 import { isDeleted, displayName, type JoinedPlayer } from '../../../lib/players';
+import { startDirectConversation } from '../../../lib/directChats';
+import DirectMessageComposer from '../../../components/DirectMessageComposer';
+import ReportReasonSheet from '../../../components/ReportReasonSheet';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -51,43 +56,12 @@ interface MatchRow {
 }
 
 // ── Constants ────────────────────────────────────────────────────────
-const BADGES_INFO: Record<string, { icon: string; label: string }> = {
-  MVP:            { icon: '👑', label: 'MVP' },
-  'La Bombe':     { icon: '💥', label: 'La Bombe' },
-  'Le Smash':     { icon: '🎯', label: 'Le Smash' },
-  'Le Phénix':    { icon: '🔥', label: 'Le Phénix' },
-  'Le Mur':       { icon: '🧱', label: 'Le Mur' },
-  "L'Essuie-glace": { icon: '🏃', label: "L'Essuie-glace" },
-  'Roi du Filet': { icon: '🥅', label: 'Roi du Filet' },
-  'Le Cerveau':   { icon: '🧠', label: 'Le Cerveau' },
-  'Le Capitaine': { icon: '⭐', label: 'Le Capitaine' },
-  'Fair-Play':    { icon: '🤝', label: 'Fair-Play' },
-  'Bonne Ambiance':{ icon: '😄', label: 'Bonne Ambiance' },
-  '3e Mi-temps':  { icon: '🍻', label: '3e Mi-temps' },
-  Ponctuel:       { icon: '⏰', label: 'Ponctuel' },
-  CANNON:         { icon: '💥', label: 'La Bombe' },
-  SMASH:          { icon: '🎯', label: 'Le Smash' },
-  COMEBACK:       { icon: '🔥', label: 'Le Phénix' },
-  WALL:           { icon: '🧱', label: 'Le Mur' },
-  RUNNER:         { icon: '🏃', label: "L'Essuie-glace" },
-  NET_KING:       { icon: '🥅', label: 'Roi du Filet' },
-  BRAIN:          { icon: '🧠', label: 'Le Cerveau' },
-  CAPTAIN:        { icon: '⭐', label: 'Le Capitaine' },
-  FAIR_PLAY:      { icon: '🤝', label: 'Fair-Play' },
-  GOOD_VIBES:     { icon: '😄', label: 'Bonne Ambiance' },
-  DRINKS:         { icon: '🍻', label: '3e Mi-temps' },
-  PUNCTUAL:       { icon: '⏰', label: 'Ponctuel' },
-  'El Cañón':     { icon: '💥', label: 'La Bombe' },
-  'Bon Délire':   { icon: '😄', label: 'Bonne Ambiance' },
-  'Essuie-glace': { icon: '🏃', label: "L'Essuie-glace" },
-};
-
 const DNA_AXES = [
-  { key: 'Puissance', emoji: '💥', angle: -90 },
-  { key: 'Vitesse',   emoji: '🏃', angle: -18 },
-  { key: 'Ambiance',  emoji: '😄', angle:  54 },
-  { key: 'Défense',   emoji: '🧱', angle: 126 },
-  { key: 'Tactique',  emoji: '🧠', angle: 198 },
+  { key: 'Puissance', glyph: 'bomb',   angle: -90 },
+  { key: 'Vitesse',   glyph: 'runner', angle: -18 },
+  { key: 'Ambiance',  glyph: 'smile',  angle:  54 },
+  { key: 'Défense',   glyph: 'brick',  angle: 126 },
+  { key: 'Tactique',  glyph: 'brain',  angle: 198 },
 ] as const;
 
 const COURT_SIDE_LABEL: Record<string, string> = { left: 'Gauche', right: 'Droit', both: 'Les deux' };
@@ -237,7 +211,9 @@ function DnaRadar({ values }: { values: Record<string, number> }) {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: -4 }}>
         {DNA_AXES.map(a => (
           <View key={a.key} style={{ alignItems: 'center', width: 58 }}>
-            <Text style={{ fontSize: 14 }}>{a.emoji}</Text>
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+              <Glyph name={a.glyph} color={Colors.textMuted} strokeWidth={1.7} />
+            </Svg>
             <Text style={{ fontSize: 8, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{a.key}</Text>
             {(values[a.key] ?? 0) > 0 && (
               <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.brand }}>×{values[a.key]}</Text>
@@ -628,9 +604,11 @@ export function PlayerProfile({ id }: { id: string }) {
   const [followingCount, setFollowingCount] = useState(0);
 
   const isSelf = self?.id === id;
-  const [menuOpen,     setMenuOpen]     = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [deleteOpen,   setDeleteOpen]   = useState(false);
+  const [menuOpen,       setMenuOpen]       = useState(false);
+  const [commentsOpen,   setCommentsOpen]   = useState(false);
+  const [deleteOpen,     setDeleteOpen]     = useState(false);
+  const [msgSheetOpen,   setMsgSheetOpen]   = useState(false);
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
 
   const reactToActivity = async (eventId: string) => {
     const myId = self?.id ?? '';
@@ -679,7 +657,7 @@ export function PlayerProfile({ id }: { id: string }) {
           winner_id, loser_id, winner_id_2, loser_id_2,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
-          game:game_id(location, match_date)`)
+          game:game_id(location, match_date, creator_id)`)
         .or(`winner_id.eq.${id},loser_id.eq.${id},winner_id_2.eq.${id},loser_id_2.eq.${id}`)
         .eq('status', 'validated')
         .order('created_at', { ascending: false }),
@@ -810,20 +788,18 @@ export function PlayerProfile({ id }: { id: string }) {
 
   const handleReportProfile = () => {
     if (!self?.id || isSelf) return;
-    Alert.alert('Signaler ce profil', 'Confirmer le signalement de ce profil à la modération ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Signaler', style: 'destructive',
-        onPress: async () => {
-          try {
-            await reportContent({ reporterId: self.id, targetType: 'player', targetId: id, reportedPlayerId: id });
-            Alert.alert('Merci', 'Signalement envoyé à la modération.');
-          } catch {
-            Alert.alert('Erreur', "Le signalement n'a pas pu être envoyé.");
-          }
-        },
-      },
-    ]);
+    setReportSheetOpen(true);
+  };
+
+  const submitReport = async (reason: string) => {
+    setReportSheetOpen(false);
+    if (!self?.id) return;
+    try {
+      await reportContent({ reporterId: self.id, targetType: 'player', targetId: id, reportedPlayerId: id, reason: reason || null });
+      Alert.alert('Merci', 'Signalement envoyé à la modération.');
+    } catch {
+      Alert.alert('Erreur', "Le signalement n'a pas pu être envoyé.");
+    }
   };
 
   const openModerationMenu = () => {
@@ -1033,6 +1009,36 @@ export function PlayerProfile({ id }: { id: string }) {
     router.push((`/(tabs)/lobby?create=1&challenge=1&with=${profile.id}&pname=${encodeURIComponent(profile.name)}&pelo=${profile.elo_score}${sideParam}`) as any);
   };
 
+  function mapDmError(msg: string): string {
+    if (msg.includes('does not accept')) return "Ce joueur n'accepte pas les messages.";
+    if (msg.includes('past partners')) return "Ce joueur n'accepte les messages que de joueurs avec qui il a déjà joué.";
+    if (msg.includes('blocked')) return 'Conversation indisponible.';
+    if (msg.includes('previous request was declined')) return "Ta demande précédente a été refusée.";
+    if (msg.includes('already exists')) return 'Une conversation existe déjà.';
+    return "Le message n'a pas pu être envoyé.";
+  }
+
+  const onMessage = async () => {
+    if (!self || !profile) return;
+    const { data: existing } = await supabase.from('direct_conversations').select('id')
+      .or(`and(requester_id.eq.${self.id},addressee_id.eq.${profile.id}),and(requester_id.eq.${profile.id},addressee_id.eq.${self.id})`)
+      .neq('status', 'declined')
+      .maybeSingle();
+    if (existing?.id) { router.push(`/dm/${existing.id}` as any); return; }
+    setMsgSheetOpen(true);
+  };
+
+  const submitFirstMessage = async (note: string) => {
+    if (!note.trim()) { setMsgSheetOpen(false); return; }
+    setMsgSheetOpen(false);
+    try {
+      const conv = await startDirectConversation(profile.id, note, profile.name, self!.name);
+      router.push(`/dm/${conv.id}` as any);
+    } catch (e: any) {
+      Alert.alert('Impossible', mapDmError(String(e?.message ?? e)));
+    }
+  };
+
   // Ouvre le composer de story directement (mode Match) avec ce match pré-rempli.
   const shareMatch = (m: MatchRow) => {
     const d = eloChangeByMatch[m.id];
@@ -1102,11 +1108,14 @@ export function PlayerProfile({ id }: { id: string }) {
     const meEntry = mine.find(x => x.pid === id);
     const partnerEntry = mine.find(x => x.pid !== id);
     const lvlOf = (p: JoinedPlayer | null | undefined) => (p?.elo_score != null ? eloToLevel(p.elo_score) : undefined);
+    // Créateur/organisateur du match → couronne (cohérent lobby/détails/chat).
+    const creatorId = (m.game as { creator_id?: string | null } | null | undefined)?.creator_id ?? undefined;
+    const isCreator = (pid?: string) => !!creatorId && pid === creatorId;
     const myTeam: PlayerLite[] = [
-      { name: meEntry?.p?.name ?? profile.name, lvl: lvlOf(meEntry?.p) ?? curLevel, me: true },
-      ...(is2 && partnerEntry ? [{ id: partnerEntry.pid ?? undefined, name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p) }] : []),
+      { name: meEntry?.p?.name ?? profile.name, lvl: lvlOf(meEntry?.p) ?? curLevel, me: true, isCreator: isCreator(id) },
+      ...(is2 && partnerEntry ? [{ id: partnerEntry.pid ?? undefined, name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p), isCreator: isCreator(partnerEntry.pid ?? undefined) }] : []),
     ];
-    const oppTeam: PlayerLite[] = opp.map(x => ({ id: x.pid ?? undefined, name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p) }));
+    const oppTeam: PlayerLite[] = opp.map(x => ({ id: x.pid ?? undefined, name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p), isCreator: isCreator(x.pid ?? undefined) }));
     const sets = parseSets(m.score_text).map(([w, l]) => (win ? [w, l] : [l, w]) as [number, number]);
     const dt = new Date(m.game?.match_date ?? m.created_at);
     const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -1133,12 +1142,14 @@ export function PlayerProfile({ id }: { id: string }) {
       return { lvl: eloToLevel(h.elo_score), result: (win ? 'Victoire' : 'Défaite') as 'Victoire' | 'Défaite', match: mapMatch(m) };
     });
   const formVD = recentForm.map(r => (r === 'W' ? 'V' : 'D')) as ('V' | 'D')[];
-  const repMap = new Map<string, { emoji: string; label: string; n: number }>();
+  const repMap = new Map<string, { label: string; n: number }>();
   for (const [key, n] of Object.entries(karmaCounts)) {
-    const info = BADGES_INFO[key];
-    if (!info) continue;
-    const cur = repMap.get(info.label) ?? { emoji: info.icon, label: info.label, n: 0 };
-    cur.n += n; repMap.set(info.label, cur);
+    const badgeStyle = getBadge(key);
+    // Skip unknown keys (getBadge fallback has glyph='star' + slate color — label = key itself).
+    // We filter those that resolve to a known canonical label (not a raw unknown key).
+    const label = badgeStyle.label;
+    const cur = repMap.get(label) ?? { label, n: 0 };
+    cur.n += n; repMap.set(label, cur);
   }
   const repBadges = [...repMap.values()];
   const nowMs = Date.now();
@@ -1196,6 +1207,7 @@ export function PlayerProfile({ id }: { id: string }) {
         onEdit={openEdit}
         onShareProfile={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }}
         onDefier={handleDefier}
+        onMessage={isSelf ? undefined : onMessage}
         tab={tab}
         setTab={setTab}
         topInset={insets.top}
@@ -1521,6 +1533,18 @@ export function PlayerProfile({ id }: { id: string }) {
         />
       </>
     )}
+    <DirectMessageComposer
+      visible={msgSheetOpen}
+      recipientName={profile?.name ?? ''}
+      onCancel={() => setMsgSheetOpen(false)}
+      onSubmit={submitFirstMessage}
+    />
+    <ReportReasonSheet
+      visible={reportSheetOpen}
+      title="Signaler ce profil"
+      onCancel={() => setReportSheetOpen(false)}
+      onSubmit={submitReport}
+    />
     </View>
   );
 }

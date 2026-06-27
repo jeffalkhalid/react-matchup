@@ -6,6 +6,7 @@ import {
   Section, WinRing, StatTile, FilterPills, MatchCard, LevelChart, AchievementMedal,
   type MatchView, type TimelinePoint, type RepBadge, type AchievementView,
 } from './components';
+import { BadgePill } from './BadgePill';
 
 const A = accentOf(ACCENT);
 
@@ -206,7 +207,7 @@ export function PalmaresTab({ achievements }: { achievements: AchievementView[] 
       <View style={{ backgroundColor: PM.ink, borderRadius: 18, padding: 18, gap: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <View>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Trophées débloqués</Text>
+            <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Badges débloqués</Text>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 4 }}>
               <Text style={{ fontFamily: PFonts.anton, fontSize: 34, lineHeight: 36, color: ACCENT }}>{unlocked}</Text>
               <Text style={{ fontFamily: PFonts.anton, fontSize: 18, color: 'rgba(255,255,255,0.45)' }}>/ {total}</Text>
@@ -252,7 +253,7 @@ export function BadgesTab({ badges }: { badges: RepBadge[] }) {
     <View style={{ gap: 14 }}>
       <View style={{ backgroundColor: PM.ink, borderRadius: 18, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
         <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: A.soft, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 26 }}>{top.emoji}</Text>
+          <BadgePill badge={top.label} size={44} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Badge signature</Text>
@@ -279,7 +280,7 @@ export function BadgesTab({ badges }: { badges: RepBadge[] }) {
                     backgroundColor: hi ? A.soft : PM.page,
                     borderWidth: 1, borderColor: hi ? A.line : PM.border, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8,
                   }}>
-                    <Text style={{ fontSize: 16 }}>{b.emoji}</Text>
+                    <BadgePill badge={b.label} size={22} />
                     <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, fontWeight: '700', color: PM.text }}>{b.label}</Text>
                     <Text style={{ fontSize: 12, fontWeight: '900', color: A.deep }}>×{b.n}</Text>
                   </View>

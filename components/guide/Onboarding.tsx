@@ -22,7 +22,7 @@ const SLIDES: Slide[] = [
   { kind: 'feature', rubric: 'recherche', illust: 'recherche', tag: 'Recherche',           title: 'Trouve les\nbons joueurs',              body: 'Cherche un partenaire à ton niveau, ou laisse les suggestions te proposer qui défier. Niveau, forme, fiabilité : tout est là.' },
   { kind: 'feature', rubric: 'defis',     illust: 'defis',     tag: 'Les Défis',           title: 'Lance un défi\nà n’importe qui',        body: 'Provoque un joueur depuis son profil ou via nos suggestions. Il accepte, vous jouez, l’ELO décide.' },
   { kind: 'feature', rubric: 'ranking',   illust: 'ranking',   tag: 'Classement & Ligues', title: 'Grimpe\nles ligues',                    body: 'Chaque match validé fait bouger ton niveau. Découverte → Bronze → Argent → Or → Diamant. Bats plus fort, gagne plus.' },
-  { kind: 'feature', rubric: 'badges',    illust: 'badges',    tag: 'Chats & Palmarès',    title: 'Joue, échange,\ngagne des badges',     body: 'Un chat dédié par partie pour tout caler. Après le match, tes adversaires votent tes trophées 👑.' },
+  { kind: 'feature', rubric: 'badges',    illust: 'badges',    tag: 'Chats & Palmarès',    title: 'Joue, échange,\ngagne des badges',     body: 'Un chat dédié par partie pour tout caler. Après le match, tes adversaires votent tes badges 👑.' },
   { kind: 'feature', rubric: 'stories',   illust: 'stories',   tag: 'Stories & Partage',   title: 'Partage tes\nexploits',                 body: 'Transforme une victoire en story 9:16 prête à poster. Le QR « Rejoins-moi » intégré fait grandir ta communauté.' },
   { kind: 'final' },
 ];
@@ -188,7 +188,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         </View>
         <View style={{ width: 60, alignItems: 'flex-end' }}>
           {!last && (
-            <Pressable onPress={onDone} hitSlop={8}>
+            // « Passer » saute l'onboarding AVANT la slide notifs → le joueur n'a
+            // jamais vu le choix. On déclenche quand même le prompt OS une fois
+            // (qui garde son propre Autoriser/Refuser) pour que personne ne soit
+            // oublié. « Plus tard » (dernière slide) reste, lui, un refus assumé.
+            <Pressable onPress={finishWithPush} hitSlop={8}>
               <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13.5, color: T.muted }}>Passer</Text>
             </Pressable>
           )}

@@ -12,6 +12,7 @@ import { BarlowCondensed_900Black_Italic } from '@expo-google-fonts/barlow-conde
 import * as SplashScreen from 'expo-splash-screen';
 import { PlayerProvider, usePlayer } from '../hooks/usePlayer';
 import { NotificationProvider } from '../hooks/useNotificationCount';
+import { BadgeDefsProvider } from '../components/profile/BadgeDefsProvider';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import InAppBanner from '../components/InAppBanner';
 import { Colors } from '../lib/theme';
@@ -43,8 +44,10 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="community" />
         <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="dm/[conversationId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="archived-chats" options={{ presentation: 'card' }} />
         <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="bilan/[month]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
       </Stack.Protected>
     </Stack>
   );
@@ -73,10 +76,12 @@ export default function RootLayout() {
   return (
     <PlayerProvider>
       <NotificationProvider>
-        <StatusBar style="auto" backgroundColor="transparent" translucent />
-        <RootNavigator />
-        {/* Bannière notif in-app — par-dessus la navigation, sous les providers. */}
-        <InAppBanner />
+        <BadgeDefsProvider>
+          <StatusBar style="auto" backgroundColor="transparent" translucent />
+          <RootNavigator />
+          {/* Bannière notif in-app — par-dessus la navigation, sous les providers. */}
+          <InAppBanner />
+        </BadgeDefsProvider>
       </NotificationProvider>
     </PlayerProvider>
   );

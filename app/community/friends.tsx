@@ -139,7 +139,7 @@ function SearchBody({ myId, onInvite, player }: {
                 ))}
               </Card>
             ) : null}
-            <InviteBlock title="Tu ne trouves pas le joueur ?" sub="Invite-le sur PagMatch — il rejoint, tu gagnes un trophée parrainage." onInvite={onInvite} />
+            <InviteBlock title="Tu ne trouves pas le joueur ?" sub="Invite-le sur PagMatch — il rejoint, tu gagnes un badge parrainage." onInvite={onInvite} />
           </View>
         )}
 

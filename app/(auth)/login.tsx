@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
+import { savePassword, getSavedPassword } from '../../lib/credentials';
 import { usePlayer } from '../../hooks/usePlayer';
 import { Fonts } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
@@ -218,6 +219,28 @@ export default function LoginScreen() {
       .catch(() => {});
   }, []);
 
+  // Propose les identifiants enregistrés dans Google Password Manager (sélecteur
+  // système) au 1er focus d'un champ — solution fiable qui marche partout, y
+  // compris sur Samsung où l'autofill auto ne s'engage pas sur cet écran.
+  const offeredCredRef = useRef(false);
+  // Mémorise l'identifiant récupéré du gestionnaire : s'il est resté inchangé au
+  // login, c'est qu'il est DÉJÀ enregistré → inutile de re-proposer « Enregistrer ? ».
+  const savedCredRef = useRef<{ username: string; password: string } | null>(null);
+  const offerSavedCredential = () => {
+    if (offeredCredRef.current) return;
+    offeredCredRef.current = true;
+    getSavedPassword().then(cred => {
+      if (cred) {
+        savedCredRef.current = { username: cred.username, password: cred.password };
+        setEmail(cred.username);
+        setPassword(cred.password);
+        setEmailError(false);
+        setPwError(false);
+        setError(null);
+      }
+    });
+  };
+
   const handleCaptchaMessage = (event: any) => {
     const data: string = event.nativeEvent?.data ?? '';
     if (data === 'cancel' || data === 'error' || data === 'expired') {
@@ -257,6 +280,12 @@ export default function LoginScreen() {
       }
       // Mémorise l'email pour le pré-remplir au prochain lancement.
       AsyncStorage.setItem(LAST_EMAIL_KEY, email.trim()).catch(() => {});
+      // Enregistre l'identifiant dans Google Password Manager (boîte « Enregistrer
+      // le mot de passe ? »), SAUF s'il vient juste d'être récupéré du gestionnaire
+      // inchangé (déjà enregistré → ne pas re-proposer à chaque login).
+      const sc = savedCredRef.current;
+      const alreadySaved = !!sc && sc.username === email.trim() && sc.password === password;
+      if (!alreadySaved) await savePassword(email.trim(), password);
       await refresh();
       router.replace('/(tabs)');
     } catch {
@@ -332,7 +361,7 @@ export default function LoginScreen() {
                 placeholder="toi@exemple.fr"
                 icon={<IconMail size={18} color={emailFocused ? AUTH_BRAND : tokens.fieldIcon} />}
                 focused={emailFocused}
-                onFocus={() => setEmailFocused(true)}
+                onFocus={() => { setEmailFocused(true); offerSavedCredential(); }}
                 onBlur={() => setEmailFocused(false)}
                 keyboardType="email-address"
                 autoComplete="email"
@@ -350,10 +379,14 @@ export default function LoginScreen() {
                 placeholder="Ton mot de passe"
                 icon={<IconLock size={18} color={pwFocused ? AUTH_BRAND : tokens.fieldIcon} />}
                 focused={pwFocused}
-                onFocus={() => setPwFocused(true)}
+                onFocus={() => { setPwFocused(true); offerSavedCredential(); }}
                 onBlur={() => setPwFocused(false)}
                 secureTextEntry={!showPassword}
-                autoComplete="current-password"
+                // ⚠️ Android RN ne connaît que "password"/"password-new" — PAS les
+                // valeurs iOS/web "current-password"/"new-password". Une valeur
+                // inconnue force IMPORTANT_FOR_AUTOFILL_NO et DÉSACTIVE l'autofill
+                // (ni suggestion ni « Enregistrer ? »). textContentType reste iOS.
+                autoComplete="password"
                 textContentType="password"
                 importantForAutofill="yes"
                 rightElement={

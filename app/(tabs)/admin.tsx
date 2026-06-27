@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, FlatList, Modal, StyleSheet,
+  Alert, ActivityIndicator, FlatList, Modal, StyleSheet, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,8 +13,12 @@ import {
 } from '../../lib/elo';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
+import { Icon } from '../../components/community/icons';
+import { BADGE_ICONS, BADGE_ICON_VIEWBOX, FALLBACK_ICON_KEY } from '../../components/profile/badgeIcons';
+import { SvgXml } from 'react-native-svg';
+import { loadBadgeDefs } from '../../lib/badges';
 
-type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players';
+type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -42,7 +46,7 @@ function EloSimCard({ sim }: { sim: EloSimResult }) {
       </View>
       {sim.players.map(p => (
         <View key={p.id} style={sty.simRow}>
-          <Text style={{ fontSize: 13, flex: 1, fontWeight: '700', color: Colors.textOnDark }} numberOfLines={1}>
+          <Text style={{ fontSize: 13, flex: 1, fontWeight: '700', color: Colors.textPrimary }} numberOfLines={1}>
             {p.isWinner ? '🏆' : '💔'} {p.name}
             {p.decayFactor < 1 && (
               <Text style={{ fontSize: 10, color: '#f97316' }}> (-{Math.round((1 - p.decayFactor) * 100)}% inact.)</Text>
@@ -54,7 +58,7 @@ function EloSimCard({ sim }: { sim: EloSimResult }) {
             </View>
             <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '700' }}>{p.oldElo}</Text>
             <Text style={{ fontSize: 10, color: Colors.textSecondary }}>→</Text>
-            <Text style={{ fontSize: 12, color: Colors.textOnDark, fontWeight: '900' }}>{p.newElo}</Text>
+            <Text style={{ fontSize: 12, color: Colors.textPrimary, fontWeight: '900' }}>{p.newElo}</Text>
             <View style={{
               backgroundColor: p.change >= 0 ? '#05966915' : '#dc262615',
               borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
@@ -116,10 +120,13 @@ function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForc
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: match.counter_reason ? 3 : 0 }}>
                   <Text style={{ fontSize: 10, color: Colors.warning, fontWeight: '900', textTransform: 'uppercase' }}>Contesté :</Text>
-                  <Text style={{ fontSize: 12, color: Colors.textOnDark, fontWeight: '900' }}>{match.counter_score_text}</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textPrimary, fontWeight: '900' }}>{match.counter_score_text}</Text>
                 </View>
                 {match.counter_reason && (
-                  <Text style={{ fontSize: 11, color: Colors.textMuted, fontStyle: 'italic' }}>"{match.counter_reason}"</Text>
+                  <Text style={{ fontSize: 11, color: Colors.textMuted, fontStyle: 'italic' }}>Contestataire : "{match.counter_reason}"</Text>
+                )}
+                {match.dispute_reason && (
+                  <Text style={{ fontSize: 11, color: Colors.textMuted, fontStyle: 'italic', marginTop: match.counter_reason ? 3 : 0 }}>Auteur : "{match.dispute_reason}"</Text>
                 )}
               </View>
             )}
@@ -223,7 +230,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
       {/* Stats */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
         {[
-          { label: 'Inscrits', value: players.length, color: Colors.textOnDark },
+          { label: 'Inscrits', value: players.length, color: Colors.textPrimary },
           { label: 'Vérifiés', value: verifiedCount, color: Colors.success },
           { label: 'Bloqués', value: blockedCount, color: Colors.danger },
         ].map(s => (
@@ -237,13 +244,13 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
       {/* Search + refresh */}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <View style={[sty.searchRow, { flex: 1 }]}>
-          <Text style={{ fontSize: 13, color: Colors.textSecondary }}>🔍</Text>
+          <Icon name="search" size={13} color={Colors.textSecondary} stroke={2.2} />
           <TextInput
             value={search}
             onChangeText={v => { setSearch(v); setPage(1); }}
             placeholder="Rechercher un joueur…"
             placeholderTextColor={Colors.textSecondary}
-            style={{ flex: 1, fontSize: 13, color: Colors.textOnDark, fontWeight: '600' }}
+            style={{ flex: 1, fontSize: 13, color: Colors.textPrimary, fontWeight: '600' }}
           />
         </View>
         <TouchableOpacity onPress={() => onRefresh()} style={sty.refreshBtn}>
@@ -279,7 +286,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
             return (
               <View key={p.id} style={[sty.frmtRow, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack, flexShrink: 1 }} numberOfLines={1}>{p.name}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack, flexShrink: 1 }} numberOfLines={1}>{p.name}</Text>
                   {p.frmt_blocked && (
                     <View style={{ backgroundColor: '#ef444420', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: '#ef444450' }}>
                       <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.danger }}>🚫 Bloqué</Text>
@@ -293,7 +300,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
                   {frmt ? `FRMT ${frmt.text} ✓` : (p.frmt_full_name ? `FRMT non lié (${p.frmt_full_name})` : 'Pas de FRMT déclaré')}
                 </Text>
                 <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>
-                  Dernier match : <Text style={{ color: p.last_match_at ? Colors.textOnDark : Colors.textSecondary, fontWeight: '900' }}>{lastMatchStr}</Text>
+                  Dernier match : <Text style={{ color: p.last_match_at ? Colors.textPrimary : Colors.textSecondary, fontWeight: '900' }}>{lastMatchStr}</Text>
                   {'  ·  '}
                   <Text style={{ color: pushOn ? Colors.success : Colors.textSecondary, fontWeight: '900' }}>
                     {pushOn ? '🔔 Notifs ON' : '🔕 Notifs OFF'}
@@ -426,7 +433,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: Fonts.uiBlack }}>Dernier scrape</Text>
-          <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack }}>{lastScrapeLabel}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>{lastScrapeLabel}</Text>
         </View>
         <TouchableOpacity onPress={() => onRefresh()} style={sty.refreshBtn}>
           <Text style={{ fontSize: 16 }}>⟳</Text>
@@ -436,7 +443,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
       {/* Stats */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
         {[
-          { label: 'Total', value: entries.length, color: Colors.textOnDark },
+          { label: 'Total', value: entries.length, color: Colors.textPrimary },
           { label: 'Liés', value: linkedCount, color: Colors.success },
           { label: 'Non liés', value: entries.length - linkedCount, color: Colors.textSecondary },
         ].map(s => (
@@ -449,13 +456,13 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
 
       {/* Search */}
       <View style={sty.searchRow}>
-        <Text style={{ fontSize: 13, color: Colors.textSecondary }}>🔍</Text>
+        <Icon name="search" size={13} color={Colors.textSecondary} stroke={2.2} />
         <TextInput
           value={search}
           onChangeText={v => { setSearch(v); setPage(1); }}
           placeholder="Rechercher un joueur FRMT…"
           placeholderTextColor={Colors.textSecondary}
-          style={{ flex: 1, fontSize: 13, color: Colors.textOnDark, fontWeight: '600' }}
+          style={{ flex: 1, fontSize: 13, color: Colors.textPrimary, fontWeight: '600' }}
         />
       </View>
 
@@ -487,7 +494,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                 <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700', minWidth: 26 }}>#{entry.ranking_position ?? '—'}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textOnDark, flex: 1 }} numberOfLines={1}>{entry.frmt_name}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>{entry.frmt_name}</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {entry.ranking_points != null && (
@@ -546,22 +553,22 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
       <Modal visible={!!pickerEntry} animationType="slide" transparent statusBarTranslucent onRequestClose={() => setPickerEntry(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setPickerEntry(null)} />
-          <View style={{ backgroundColor: Colors.bgDark, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%', borderWidth: 1, borderColor: '#1e293b' }}>
+          <View style={{ backgroundColor: Colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%', borderWidth: 1, borderColor: Colors.border }}>
             <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
-              <View style={{ width: 36, height: 4, backgroundColor: '#334155', borderRadius: 2 }} />
+              <View style={{ width: 36, height: 4, backgroundColor: Colors.border, borderRadius: 2 }} />
             </View>
             <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textOnDark, marginBottom: 10, fontFamily: Fonts.uiBlack }}>
+              <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textPrimary, marginBottom: 10, fontFamily: Fonts.uiBlack }}>
                 Lier à {pickerEntry?.frmt_name}
               </Text>
               <View style={[sty.searchRow, { marginBottom: 8 }]}>
-                <Text style={{ fontSize: 13, color: Colors.textSecondary }}>🔍</Text>
+                <Icon name="search" size={13} color={Colors.textSecondary} stroke={2.2} />
                 <TextInput
                   value={pickerSearch}
                   onChangeText={setPickerSearch}
                   placeholder="Nom du joueur…"
                   placeholderTextColor={Colors.textSecondary}
-                  style={{ flex: 1, fontSize: 13, color: Colors.textOnDark }}
+                  style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
                   autoFocus
                 />
               </View>
@@ -570,14 +577,14 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
               data={pickerPlayers.slice(0, 50)}
               keyExtractor={p => p.id}
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-              ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: '#1e293b' }} />}
+              ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: Colors.border }} />}
               renderItem={({ item: p }) => (
                 <TouchableOpacity onPress={() => handleLink(p.id)} disabled={linking}
                   style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 }}>
-                  <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.brand, fontFamily: Fonts.uiBlack }}>{(p.name || '?').charAt(0).toUpperCase()}</Text>
                   </View>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textOnDark, flex: 1, fontFamily: Fonts.uiBold }}>{p.name}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textPrimary, flex: 1, fontFamily: Fonts.uiBold }}>{p.name}</Text>
                   {linking && <ActivityIndicator size="small" color={Colors.brand} />}
                 </TouchableOpacity>
               )}
@@ -619,7 +626,7 @@ function GamesTab({ games, loading, deletingId, onDelete, onRefresh }: {
           {games.map(game => (
             <View key={game.id} style={sty.gameRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textOnDark, marginBottom: 3, fontFamily: Fonts.uiBlack }} numberOfLines={1}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginBottom: 3, fontFamily: Fonts.uiBlack }} numberOfLines={1}>
                   {game.location ?? '—'}
                 </Text>
                 <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '600' }}>
@@ -636,8 +643,8 @@ function GamesTab({ games, loading, deletingId, onDelete, onRefresh }: {
                     </Text>
                   </View>
                   <View style={{
-                    backgroundColor: '#1e293b', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-                    borderWidth: 1, borderColor: '#334155',
+                    backgroundColor: Colors.bgCard, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+                    borderWidth: 1, borderColor: Colors.border,
                   }}>
                     <Text style={{ fontSize: 9, fontWeight: '700', color: Colors.textMuted }}>{game.status}</Text>
                   </View>
@@ -960,23 +967,23 @@ export default function AdminScreen() {
 
   if (!player?.is_admin) {
     return (
-      <View style={{ flex: 1, backgroundColor: Colors.bgDark, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={Colors.brand} size="large" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bgDark }}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Header */}
-      <View style={{ backgroundColor: Colors.bgDarkTo, paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1e293b' }}>
+      <View style={{ backgroundColor: Colors.bgCard, paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }}>
           <TouchableOpacity onPress={() => router.back()}
-            style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border }}>
             <Text style={{ color: Colors.textMuted, fontSize: 18 }}>‹</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 26, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
+            <Text style={{ fontSize: 26, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
             <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>🛡️ Administration</Text>
           </View>
           {disputes.length > 0 && (
@@ -986,30 +993,46 @@ export default function AdminScreen() {
           )}
         </View>
 
-        {/* Tab bar */}
-        <View style={{ flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, padding: 3, gap: 2 }}>
+        {/* Tab bar — blocs de groupes (titre + sous-onglets dessous), wrap si étroit */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
           {([
-            { key: 'disputes' as AdminTab, label: '⚖️ Litiges',  badge: disputes.length },
-            { key: 'reports'  as AdminTab, label: '🚩 Signalements', badge: reports.length },
-            { key: 'gender'   as AdminTab, label: '⚧ Genre',     badge: genderReqs.length },
-            { key: 'frmt'     as AdminTab, label: '🏆 FRMT',     badge: 0 },
-            { key: 'players'  as AdminTab, label: '👥 Joueurs',  badge: 0 },
-            { key: 'games'    as AdminTab, label: 'Parties',  badge: 0 },
-          ]).map(t => {
-            const active = tab === t.key;
-            return (
-              <TouchableOpacity key={t.key} onPress={() => setTab(t.key)} activeOpacity={0.7}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-                  backgroundColor: active ? Colors.bgCard : 'transparent', borderRadius: 11, paddingVertical: 9 }}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: active ? Colors.textPrimary : Colors.textSecondary, fontFamily: Fonts.uiBlack }}>{t.label}</Text>
-                {t.badge > 0 && (
-                  <View style={{ backgroundColor: active ? Colors.danger : '#ef444455', borderRadius: 999, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
-                    <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack }}>{t.badge}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
+            { title: 'Modération', items: [
+              { key: 'disputes' as AdminTab, label: '⚖️ Litiges',     badge: disputes.length },
+              { key: 'reports'  as AdminTab, label: '🚩 Signalements', badge: reports.length },
+              { key: 'gender'   as AdminTab, label: '⚧ Genre',         badge: genderReqs.length },
+            ] },
+            { title: 'Données', items: [
+              { key: 'frmt'    as AdminTab, label: '🏆 FRMT',    badge: 0 },
+              { key: 'players' as AdminTab, label: '👥 Joueurs', badge: 0 },
+              { key: 'games'   as AdminTab, label: '🎾 Parties', badge: 0 },
+            ] },
+            { title: 'Config', items: [
+              { key: 'badges' as AdminTab, label: '🏅 Badges', badge: 0 },
+            ] },
+          ]).map(group => (
+            <View key={group.title} style={{ gap: 6 }}>
+              <Text style={{ fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: Fonts.uiBlack }}>{group.title}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {group.items.map(t => {
+                  const active = tab === t.key;
+                  return (
+                    <TouchableOpacity key={t.key} onPress={() => setTab(t.key)} activeOpacity={0.7}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+                        backgroundColor: active ? Colors.primary : Colors.bgCard,
+                        borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12,
+                        borderWidth: 1, borderColor: active ? Colors.primary : Colors.border }}>
+                      <Text style={{ fontSize: 11, fontWeight: '900', color: active ? Colors.textOnDark : Colors.textSecondary, fontFamily: Fonts.uiBlack }}>{t.label}</Text>
+                      {t.badge > 0 && (
+                        <View style={{ backgroundColor: active ? Colors.textOnDark : Colors.danger, borderRadius: 999, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+                          <Text style={{ fontSize: 9, fontWeight: '900', color: active ? Colors.danger : Colors.textOnDark, fontFamily: Fonts.uiBlack }}>{t.badge}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </View>
       </View>
 
@@ -1074,7 +1097,301 @@ export default function AdminScreen() {
             onOpenPlayer={(id) => router.push(`/player/${id}` as any)}
           />
         )}
+        {tab === 'badges' && <BadgesTab />}
       </ScrollView>
+    </View>
+  );
+}
+
+// ─── Badges tab ───────────────────────────────────────────────
+const BADGE_COLOR_PRESETS = ['#E6A21A', '#E5484D', '#F2750A', '#5B6B82', '#1FA8B0', '#7C5CD6', '#16A34A', '#D98A1A'];
+
+interface BadgeRow {
+  key: string;
+  label: string;
+  icon_key: string;
+  color: string;
+  active: boolean;
+  sort: number;
+}
+
+function BadgeIconPreview({ iconKey, color, size = 56 }: { iconKey: string; color: string; size?: number }) {
+  const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BADGE_ICON_VIEWBOX}" fill="#ffffff">${BADGE_ICONS[iconKey] ?? BADGE_ICONS[FALLBACK_ICON_KEY]}</svg>`;
+  const iconSize = Math.round(size * 0.6);
+  return (
+    <View style={{ width: size, height: size, borderRadius: 999, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+      <SvgXml xml={xml} width={iconSize} height={iconSize} />
+    </View>
+  );
+}
+
+function BadgesTab() {
+  const [rows, setRows] = useState<BadgeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, BadgeRow>>({});
+
+  // Add form state
+  const [newKey, setNewKey] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [newIconKey, setNewIconKey] = useState('medal');
+  const [newColor, setNewColor] = useState('#5B6B82');
+  const [adding, setAdding] = useState(false);
+
+  const allIconKeys = Object.keys(BADGE_ICONS);
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('badge_defs').select('*').order('sort');
+    if (error) { Alert.alert('Erreur', error.message); setLoading(false); return; }
+    const fetched: BadgeRow[] = (data ?? []) as BadgeRow[];
+    setRows(fetched);
+    const initDrafts: Record<string, BadgeRow> = {};
+    fetched.forEach(r => { initDrafts[r.key] = { ...r }; });
+    setDrafts(initDrafts);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadRows(); }, [loadRows]);
+
+  const setDraftField = (key: string, field: keyof BadgeRow, value: any) => {
+    setDrafts(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  };
+
+  const handleSave = async (rowKey: string) => {
+    const draft = drafts[rowKey];
+    if (!draft) return;
+    setSavingKey(rowKey);
+    const { error } = await supabase
+      .from('badge_defs')
+      .update({ label: draft.label, icon_key: draft.icon_key, color: draft.color, active: draft.active, sort: draft.sort })
+      .eq('key', rowKey);
+    setSavingKey(null);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    await loadBadgeDefs();
+    await loadRows();
+    Alert.alert('', 'Badge enregistré.');
+  };
+
+  const handleDelete = (rowKey: string) => {
+    Alert.alert(
+      'Supprimer ce badge ?',
+      `La clé "${rowKey}" sera supprimée définitivement.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer', style: 'destructive', onPress: async () => {
+            setSavingKey(rowKey);
+            const { error } = await supabase.from('badge_defs').delete().eq('key', rowKey);
+            setSavingKey(null);
+            if (error) { Alert.alert('Erreur', error.message); return; }
+            await loadBadgeDefs();
+            await loadRows();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleAdd = async () => {
+    if (!newKey.trim() || !newLabel.trim()) { Alert.alert('Erreur', 'La clé et le label sont requis.'); return; }
+    const maxSort = rows.reduce((m, r) => Math.max(m, r.sort ?? 0), 0);
+    setAdding(true);
+    const { error } = await supabase.from('badge_defs').insert({
+      key: newKey.trim(),
+      label: newLabel.trim(),
+      icon_key: newIconKey,
+      color: newColor,
+      active: true,
+      sort: maxSort + 1,
+    });
+    setAdding(false);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    await loadBadgeDefs();
+    await loadRows();
+    setNewKey('');
+    setNewLabel('');
+    setNewIconKey('medal');
+    setNewColor('#5B6B82');
+  };
+
+  if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
+
+  return (
+    <View style={{ gap: 16 }}>
+      {/* ── Ajouter un badge ── */}
+      <View style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5, borderColor: Colors.brand + '44', padding: 16, gap: 12 }}>
+        <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.brand, textTransform: 'uppercase', letterSpacing: 1, fontFamily: Fonts.uiBlack }}>
+          + Nouveau badge
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Clé (badge_type)</Text>
+            <TextInput
+              value={newKey}
+              onChangeText={setNewKey}
+              placeholder="ex: MVP"
+              placeholderTextColor={Colors.textSecondary}
+              style={sty.scoreInput}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Label affiché</Text>
+            <TextInput
+              value={newLabel}
+              onChangeText={setNewLabel}
+              placeholder="ex: MVP"
+              placeholderTextColor={Colors.textSecondary}
+              style={sty.scoreInput}
+            />
+          </View>
+        </View>
+        {/* Aperçu + icône + couleur */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <BadgeIconPreview iconKey={newIconKey} color={newColor} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {BADGE_COLOR_PRESETS.map(c => (
+                <TouchableOpacity key={c} onPress={() => setNewColor(c)}
+                  style={{ width: 24, height: 24, borderRadius: 999, backgroundColor: c, borderWidth: newColor === c ? 2.5 : 0, borderColor: Colors.textPrimary }} />
+              ))}
+            </View>
+            <TextInput
+              value={newColor}
+              onChangeText={setNewColor}
+              placeholder="#5B6B82"
+              placeholderTextColor={Colors.textSecondary}
+              style={[sty.scoreInput, { fontSize: 12 }]}
+              autoCapitalize="characters"
+              maxLength={7}
+            />
+          </View>
+        </View>
+        <Text style={sty.fieldLabel}>Icône</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {allIconKeys.map(ik => {
+            const selected = newIconKey === ik;
+            const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BADGE_ICON_VIEWBOX}" fill="${selected ? '#ffffff' : Colors.textPrimary}">${BADGE_ICONS[ik]}</svg>`;
+            return (
+              <TouchableOpacity key={ik} onPress={() => setNewIconKey(ik)}
+                style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: selected ? Colors.primary : Colors.bg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: selected ? Colors.primary : Colors.border }}>
+                <SvgXml xml={xml} width={22} height={22} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <TouchableOpacity onPress={handleAdd} disabled={adding} style={[sty.btnValidate, { opacity: adding ? 0.5 : 1 }]}>
+          {adding
+            ? <ActivityIndicator color={Colors.textOnDark} size="small" />
+            : <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack }}>Ajouter le badge</Text>
+          }
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Badges existants ── */}
+      {rows.map(row => {
+        const draft = drafts[row.key] ?? row;
+        const saving = savingKey === row.key;
+        const iconXml = (ik: string, fill: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BADGE_ICON_VIEWBOX}" fill="${fill}">${BADGE_ICONS[ik] ?? BADGE_ICONS[FALLBACK_ICON_KEY]}</svg>`;
+        return (
+          <View key={row.key} style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 16, gap: 12 }}>
+            {/* Clé en lecture seule */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ backgroundColor: Colors.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: Colors.border }}>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, fontFamily: Fonts.uiBlack }}>{row.key}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>Actif</Text>
+                <Switch
+                  value={draft.active}
+                  onValueChange={v => setDraftField(row.key, 'active', v)}
+                  trackColor={{ false: Colors.border, true: Colors.primary + '88' }}
+                  thumbColor={draft.active ? Colors.primary : Colors.textMuted}
+                />
+              </View>
+            </View>
+
+            {/* Aperçu live */}
+            <View style={{ alignItems: 'center' }}>
+              <BadgeIconPreview iconKey={draft.icon_key} color={draft.color} />
+            </View>
+
+            {/* Label */}
+            <View>
+              <Text style={sty.fieldLabel}>Label</Text>
+              <TextInput
+                value={draft.label}
+                onChangeText={v => setDraftField(row.key, 'label', v)}
+                placeholderTextColor={Colors.textSecondary}
+                style={sty.scoreInput}
+              />
+            </View>
+
+            {/* Couleur */}
+            <View>
+              <Text style={sty.fieldLabel}>Couleur</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {BADGE_COLOR_PRESETS.map(c => (
+                  <TouchableOpacity key={c} onPress={() => setDraftField(row.key, 'color', c)}
+                    style={{ width: 28, height: 28, borderRadius: 999, backgroundColor: c, borderWidth: draft.color === c ? 2.5 : 0, borderColor: Colors.textPrimary }} />
+                ))}
+              </View>
+              <TextInput
+                value={draft.color}
+                onChangeText={v => setDraftField(row.key, 'color', v)}
+                placeholder="#E6A21A"
+                placeholderTextColor={Colors.textSecondary}
+                style={[sty.scoreInput, { fontSize: 13 }]}
+                autoCapitalize="characters"
+                maxLength={7}
+              />
+            </View>
+
+            {/* Icône */}
+            <View>
+              <Text style={sty.fieldLabel}>Icône</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {allIconKeys.map(ik => {
+                  const selected = draft.icon_key === ik;
+                  return (
+                    <TouchableOpacity key={ik} onPress={() => setDraftField(row.key, 'icon_key', ik)}
+                      style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: selected ? Colors.primary : Colors.bg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: selected ? Colors.primary : Colors.border }}>
+                      <SvgXml xml={iconXml(ik, selected ? '#ffffff' : Colors.textPrimary)} width={22} height={22} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Sort */}
+            <View>
+              <Text style={sty.fieldLabel}>Ordre (sort)</Text>
+              <TextInput
+                value={String(draft.sort ?? 0)}
+                onChangeText={v => setDraftField(row.key, 'sort', parseInt(v, 10) || 0)}
+                keyboardType="number-pad"
+                placeholderTextColor={Colors.textSecondary}
+                style={sty.scoreInput}
+              />
+            </View>
+
+            {/* Actions */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={() => handleSave(row.key)} disabled={saving}
+                style={[sty.btnValidate, { opacity: saving ? 0.5 : 1 }]}>
+                {saving
+                  ? <ActivityIndicator color={Colors.textOnDark} size="small" />
+                  : <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack }}>Enregistrer</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(row.key)} disabled={saving}
+                style={[sty.btnCancel, { opacity: saving ? 0.5 : 1 }]}>
+                <Text style={{ color: Colors.danger, fontWeight: '700', fontSize: 13, fontFamily: Fonts.uiBold }}>🗑️ Suppr.</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -1092,14 +1409,14 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
     return (
       <View style={sty.emptyCard}>
         <Text style={{ fontSize: 32, marginBottom: 8 }}>⚧</Text>
-        <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textOnDark, fontSize: 14, textAlign: 'center' }}>
+        <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary, fontSize: 14, textAlign: 'center' }}>
           Aucune demande en attente
         </Text>
         <Text style={{ color: Colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 4 }}>
           Les demandes de changement de genre apparaîtront ici.
         </Text>
-        <TouchableOpacity onPress={onRefresh} style={{ marginTop: 14, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#334155' }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '800' }}>Rafraîchir</Text>
+        <TouchableOpacity onPress={onRefresh} style={{ marginTop: 14, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border }}>
+          <Text style={{ color: Colors.textPrimary, fontSize: 12, fontWeight: '800' }}>Rafraîchir</Text>
         </TouchableOpacity>
       </View>
     );
@@ -1108,7 +1425,7 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
     <View style={{ gap: 12 }}>
       {requests.map(req => (
         <View key={req.id} style={{
-          backgroundColor: '#1e293b', borderRadius: 18, borderWidth: 1.5, borderColor: '#fbbf2433',
+          backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5, borderColor: '#fbbf2433',
           padding: 16,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -1118,7 +1435,7 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
               </Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>{req.player?.name ?? '?'}</Text>
+              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{req.player?.name ?? '?'}</Text>
               <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 2 }}>
                 Demandé le {new Date(req.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </Text>
@@ -1126,9 +1443,9 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <View style={{ flex: 1, backgroundColor: '#0f172a', borderRadius: 10, padding: 10 }}>
+            <View style={{ flex: 1, backgroundColor: Colors.bg, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: Colors.border }}>
               <Text style={{ fontSize: 9, fontWeight: '800', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Actuel</Text>
-              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, marginTop: 2 }}>{genderLabel(req.current_gender)}</Text>
+              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, marginTop: 2 }}>{genderLabel(req.current_gender)}</Text>
             </View>
             <Text style={{ fontSize: 16, color: Colors.brand }}>→</Text>
             <View style={{ flex: 1, backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: 'rgba(255,193,26,0.5)' }}>
@@ -1138,7 +1455,7 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
           </View>
 
           {req.reason ? (
-            <View style={{ backgroundColor: '#0f172a', borderRadius: 10, padding: 10, marginBottom: 10 }}>
+            <View style={{ backgroundColor: Colors.bg, borderRadius: 10, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: Colors.border }}>
               <Text style={{ fontSize: 9, fontWeight: '800', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Raison</Text>
               <Text style={{ fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' }}>{req.reason}</Text>
             </View>
@@ -1148,9 +1465,10 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
             <TouchableOpacity
               disabled={resolvingId === req.id}
               onPress={() => onReject(req)}
-              style={{ flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center', backgroundColor: '#334155', opacity: resolvingId === req.id ? 0.5 : 1 }}
+              style={{ flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center', backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, opacity: resolvingId === req.id ? 0.5 : 1 }}
             >
               <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.danger }}>Refuser</Text>
+
             </TouchableOpacity>
             <TouchableOpacity
               disabled={resolvingId === req.id}
@@ -1186,7 +1504,7 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
     return (
       <View style={sty.emptyCard}>
         <Text style={{ fontSize: 32, marginBottom: 8 }}>🚩</Text>
-        <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textOnDark, fontSize: 14, textAlign: 'center' }}>
+        <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary, fontSize: 14, textAlign: 'center' }}>
           Aucun signalement en attente
         </Text>
         <Text style={{ color: Colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 4 }}>
@@ -1198,16 +1516,16 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
   return (
     <View style={{ gap: 12 }}>
       {reports.map(r => (
-        <View key={r.id} style={{ backgroundColor: '#1e293b', borderRadius: 18, borderWidth: 1.5, borderColor: '#ef444433', padding: 16 }}>
+        <View key={r.id} style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5, borderColor: '#ef444433', padding: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>{typeLabel(r.target_type)}</Text>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{typeLabel(r.target_type)}</Text>
             <Text style={{ fontSize: 10, color: Colors.textMuted }}>
               {new Date(r.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </Text>
           </View>
 
           <Text style={{ fontSize: 12, color: Colors.textSecondary, marginBottom: 4 }}>
-            Signalé par <Text style={{ fontFamily: Fonts.uiBold, color: Colors.textOnDark }}>{r.reporter?.name ?? '?'}</Text>
+            Signalé par <Text style={{ fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>{r.reporter?.name ?? '?'}</Text>
           </Text>
           {r.reported?.name ? (
             <TouchableOpacity onPress={() => r.reported?.id && onOpenPlayer(r.reported.id)} activeOpacity={0.7}>
@@ -1218,7 +1536,7 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
           ) : null}
           <Text style={{ fontSize: 10, color: Colors.textMuted, marginBottom: r.reason ? 8 : 12 }}>ref : {r.target_id}</Text>
           {r.reason ? (
-            <View style={{ backgroundColor: '#0f172a', borderRadius: 10, padding: 10, marginBottom: 12 }}>
+            <View style={{ backgroundColor: Colors.bg, borderRadius: 10, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: Colors.border }}>
               <Text style={{ fontSize: 12, color: Colors.textSecondary, fontStyle: 'italic' }}>{r.reason}</Text>
             </View>
           ) : null}
@@ -1231,8 +1549,8 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
               </Text>
             </TouchableOpacity>
             <TouchableOpacity disabled={resolvingId === r.id} onPress={() => onResolve(r, 'dismissed')} activeOpacity={0.7}
-              style={{ flex: 1, alignItems: 'center', backgroundColor: '#334155', borderRadius: 10, paddingVertical: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textOnDark, fontFamily: Fonts.uiBlack }}>Rejeter</Text>
+              style={{ flex: 1, alignItems: 'center', backgroundColor: Colors.bg, borderRadius: 10, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border }}>
+              <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textSecondary, fontFamily: Fonts.uiBlack }}>Rejeter</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1244,11 +1562,11 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
 // ─── Styles ───────────────────────────────────────────────────
 const sty = StyleSheet.create({
   emptyCard: {
-    backgroundColor: '#1e293b', borderRadius: 20, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: Colors.bgCard, borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
     padding: 40, alignItems: 'center',
   },
   disputeCard: {
-    backgroundColor: '#1e293b', borderRadius: 18, borderWidth: 1.5, borderColor: '#ef444430',
+    backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5, borderColor: '#ef444430',
     padding: 16, overflow: 'hidden',
   },
   disputeTag: {
@@ -1257,18 +1575,18 @@ const sty = StyleSheet.create({
   },
   disputeTagText: { fontSize: 9, fontWeight: '900', color: Colors.textOnDark, textTransform: 'uppercase', letterSpacing: 1 },
   counterBox: {
-    backgroundColor: Colors.bgDark, borderRadius: 12, borderWidth: 1, borderColor: '#f59e0b30',
+    backgroundColor: Colors.bg, borderRadius: 12, borderWidth: 1, borderColor: '#f59e0b30',
     padding: 10, marginBottom: 10,
   },
   matchTitle: { fontSize: 16, fontWeight: '900', fontFamily: Fonts.uiBlack },
   fieldLabel: { fontSize: 10, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
   scoreInput: {
-    backgroundColor: Colors.bgDark, borderWidth: 1, borderColor: '#334155', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 11, color: Colors.textOnDark, fontSize: 15, fontWeight: '900',
+    backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 11, color: Colors.textPrimary, fontSize: 15, fontWeight: '900',
     fontFamily: Fonts.uiBlack,
   },
   simCard: {
-    backgroundColor: Colors.bgDark, borderRadius: 14, borderWidth: 1, borderColor: '#1e293b', padding: 12,
+    backgroundColor: Colors.bg, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, padding: 12,
   },
   simLabel: { fontSize: 10, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
   simBadge: {
@@ -1277,7 +1595,8 @@ const sty = StyleSheet.create({
   simBadgeText: { fontSize: 11, fontWeight: '900', color: Colors.brand, fontFamily: Fonts.uiBlack },
   simRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#1e293b', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 6, gap: 8,
+    backgroundColor: Colors.bgCard, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 6, gap: 8,
+    borderWidth: 1, borderColor: Colors.border,
   },
   btnValidate: {
     flex: 1, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center',
@@ -1287,8 +1606,8 @@ const sty = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#ef444450', alignItems: 'center', justifyContent: 'center',
   },
   statBox: {
-    flex: 1, backgroundColor: '#1e293b', borderRadius: 14, padding: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: '#334155', gap: 2,
+    flex: 1, backgroundColor: Colors.bgCard, borderRadius: 14, padding: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.border, gap: 2,
   },
   scrapeBtn: {
     backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
@@ -1296,28 +1615,28 @@ const sty = StyleSheet.create({
   },
   scrapeBtnText: { fontSize: 13, fontWeight: '900', color: Colors.textOnBrand, fontFamily: Fonts.uiBlack },
   refreshBtn: {
-    backgroundColor: '#1e293b', borderRadius: 12, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: Colors.bgCard, borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
     width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
   },
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#1e293b', borderRadius: 12, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: Colors.bgCard, borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
     paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8,
   },
   chip: {
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155',
+    backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
   },
-  chipActive: { backgroundColor: Colors.bgCard },
+  chipActive: { backgroundColor: Colors.primary },
   chipText: { fontSize: 11, fontWeight: '900', color: Colors.textSecondary, fontFamily: Fonts.uiBlack },
-  chipTextActive: { color: Colors.textPrimary },
+  chipTextActive: { color: Colors.textOnDark },
   frmtRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#1e293b', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: Colors.bgCard, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: Colors.border,
   },
   gameRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#1e293b', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#334155',
+    backgroundColor: Colors.bgCard, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border,
   },
   btnDelete: {
     backgroundColor: '#ef444415', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,

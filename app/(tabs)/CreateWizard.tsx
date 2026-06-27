@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   View, Text, ScrollView, TouchableOpacity, Modal, TextInput,
   Alert, ActivityIndicator, StyleSheet, Dimensions, KeyboardAvoidingView, Platform,
@@ -9,7 +10,10 @@ import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
 import { lobbyGameLink } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
+import { consumePickedVenue } from '../../lib/venuePicker';
 import { Pill } from '../../components/Pill';
+import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
+import { Icon } from '../../components/community/icons';
 
 // ─── Types ────────────────────────────────────────────────────
 type GameType = 'Compétitif' | 'Amical' | 'Défi';
@@ -110,6 +114,19 @@ function getTheme(type: GameType) {
     libreBg: Colors.bgCardAlt, libreBorder: Colors.border, libreColor: Colors.textSecondary,
     selectBg: 'rgba(255,193,26,0.14)', selectColor: Colors.brandDeep,
   };
+}
+
+// ─── Bande de niveau par défaut ───────────────────────────────
+// SOURCE UNIQUE : utilisée à la fois à l'ouverture (effet de reset) et lors
+// d'une bascule manuelle de type, pour que les deux chemins soient iso et que
+// l'invariant min <= max soit toujours respecté.
+//  • Compétitif / Amical : bande [niveau-0.5, niveau+0.5]
+//  • Défi                 : min verrouillé à niveau+0.5, bande [niveau+0.5, niveau+1.5]
+function defaultLevelBand(gameType: GameType, lv: number): { min: number; max: number } {
+  const mn = Math.max(1.0, +(lv - 0.5).toFixed(2));
+  const mx = Math.min(8.0, +(lv + 0.5).toFixed(2));
+  if (gameType === 'Défi') return { min: mx, max: Math.min(8.0, +(lv + 1.5).toFixed(2)) };
+  return { min: mn, max: mx };
 }
 
 // ─── Avatar ───────────────────────────────────────────────────
@@ -235,8 +252,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   // Form
   const myLevel = player ? eloToLevel(player.elo_score) : 4.0;
-  const defaultMin = Math.max(1.0, Math.round((myLevel - 0.5) * 2) / 2);
-  const defaultMax = Math.min(8.0, Math.round((myLevel + 0.5) * 2) / 2);
+  const defaultBand = defaultLevelBand('Compétitif', myLevel);
 
   const [form, setFormState] = useState({
     day:            QUICK_DAYS[1]?.val ?? '',
@@ -245,8 +261,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     hasReservation: false,
     gameType:       'Compétitif' as GameType,
     genre:          'mixed' as Genre,
-    minLevel:       defaultMin,
-    maxLevel:       defaultMax,
+    minLevel:       defaultBand.min,
+    maxLevel:       defaultBand.max,
     mySlot:         'A0' as string | null,
     invites:        {} as Record<string, { id: string; name: string; elo_score: number }>,
   });
@@ -262,13 +278,18 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   }, []);
 
   const t = getTheme(form.gameType);
+  const router = useRouter();
+  useFocusEffect(
+    useCallback(() => {
+      const v = consumePickedVenue();
+      if (v) set('location', v);
+    }, []),
+  );
 
   // Reset on open
   useEffect(() => {
     if (!visible) return;
     const lv = player ? eloToLevel(player.elo_score) : 4.0;
-    const mn = Math.max(1.0, Math.round((lv - 0.5) * 2) / 2);
-    const mx = Math.min(8.0, Math.round((lv + 0.5) * 2) / 2);
     setStep(0); setPublished(false); setPublishedGameId(null); setSubmitting(false);
     setShowAbandon(false); setShowCal(false); setVenueOpen(false); setVenueSearch('');
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
@@ -289,10 +310,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     }
     const defaultGenre: Genre =
       player?.gender === 'male' ? 'men' : player?.gender === 'female' ? 'women' : 'mixed';
+    const band = defaultLevelBand(gameType, lv);
     setFormState({
       day: QUICK_DAYS[1]?.val ?? '', time: '19:00', location: '',
       hasReservation: false, gameType, genre: defaultGenre,
-      minLevel: mn, maxLevel: mx, mySlot: 'A0', invites,
+      minLevel: band.min, maxLevel: band.max, mySlot: 'A0', invites,
     });
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -359,6 +381,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       const ROLE: Record<string, string> = {
         accepted: 'inscrit', invited: 'invité', waitlist: "liste d'attente", pending: 'candidature',
       };
+      const now = Date.now();
       (joined ?? []).forEach((p: any) => {
         const g = p.game;
         if (!g || g.status === 'cancelled' || !g.match_date) return;
@@ -367,6 +390,10 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         if (p.status === 'invited' && !isInviteActive(p)) return;
         const ts = new Date(g.match_date).getTime();
         if (ts < todayStart.getTime()) return;
+        // Engagement non confirmé (candidature/invité/liste d'attente) sur une partie
+        // déjà commencée → la partie s'est faite (ou non) sans moi : ce n'est plus
+        // un conflit. Seuls 'accepted'/organisateur restent un vrai créneau occupé.
+        if (p.status !== 'accepted' && ts <= now) return;
         games.push({ ts, location: g.location ?? null, role: ROLE[p.status] ?? 'engagement' });
       });
       setBusyGames(games);
@@ -503,14 +530,19 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Venue */}
-        <Text style={sty.sectionLabel}>Terrain</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={sty.sectionLabel}>Terrain</Text>
+          <TouchableOpacity onPress={() => router.push('/clubs-map')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.brandDeep }}>🗺 Chercher sur la carte</Text>
+          </TouchableOpacity>
+        </View>
         {/* Reservation toggle */}
         <TouchableOpacity onPress={() => set('hasReservation', !form.hasReservation)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12,
             backgroundColor: form.hasReservation ? 'rgba(255,193,26,0.14)' : Colors.bg,
             borderWidth: 1.5, borderColor: form.hasReservation ? 'rgba(255,193,26,0.55)' : Colors.border, marginBottom: 10,
           }}>
-          <Text style={{ fontSize: 15 }}>📅</Text>
+          <Icon name="calendar" size={15} color={form.hasReservation ? Colors.brandDeep : Colors.textSecondary} stroke={2} />
           <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: form.hasReservation ? Colors.brandDeep : Colors.textSecondary }}>
             J'ai une réservation
           </Text>
@@ -526,7 +558,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             backgroundColor: form.location ? t.selectBg : Colors.bgCard, marginBottom: venueOpen ? 0 : 10,
           }}>
           <View style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: form.location ? t.btnBg : Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 14 }}>📍</Text>
+            <Icon name="mapPin" size={14} color={form.location ? Colors.textOnDark : Colors.textSecondary} stroke={2.2} />
           </View>
           <Text style={{ flex: 1, fontSize: 13, fontWeight: form.location ? '900' : '500', color: form.location ? t.selectColor : Colors.textMuted }}>
             {form.location || 'Choisir un terrain…'}
@@ -537,14 +569,14 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         {venueOpen && (
           <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: t.eloBorder, borderTopWidth: 0, borderBottomLeftRadius: 13, borderBottomRightRadius: 13, marginBottom: 10, overflow: 'hidden' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
-              <Text style={{ fontSize: 13 }}>🔍</Text>
+              <Icon name="search" size={13} color={Colors.textMuted} stroke={2.2} />
               <TextInput
                 value={venueSearch} onChangeText={setVenueSearch}
                 placeholder="Rechercher…" placeholderTextColor={Colors.textMuted}
                 style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
                 autoFocus
               />
-              {venueSearch ? <TouchableOpacity onPress={() => setVenueSearch('')}><Text style={{ color: Colors.textMuted }}>✕</Text></TouchableOpacity> : null}
+              {venueSearch ? <TouchableOpacity onPress={() => setVenueSearch('')}><Icon name="x" size={13} color={Colors.textMuted} stroke={2.5} /></TouchableOpacity> : null}
             </View>
             <ScrollView
               style={{ maxHeight: 200 }}
@@ -558,7 +590,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   <TouchableOpacity key={club} onPress={() => { set('location', club); setVenueOpen(false); setVenueSearch(''); }}
                     style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.bg, backgroundColor: active ? t.selectBg : Colors.bgCard }}>
                     <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: active ? t.selectColor : Colors.textPrimary }}>{club}</Text>
-                    {active && <Text style={{ color: t.accent, fontWeight: '900' }}>✓</Text>}
+                    {active && <Icon name="check" size={14} color={t.accent} stroke={2.5} />}
                   </TouchableOpacity>
                 );
               })}
@@ -617,12 +649,12 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         {form.day && !QUICK_DAYS.find(d => d.val === form.day) && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10,
             backgroundColor: t.selectBg, borderWidth: 1.5, borderColor: t.eloBorder, borderRadius: 10, padding: 9 }}>
-            <Text style={{ fontSize: 13 }}>📅</Text>
+            <Icon name="calendar" size={13} color={t.selectColor} stroke={2} />
             <Text style={{ fontSize: 12, fontWeight: '900', color: t.selectColor, flex: 1 }}>
               {ALL_DAYS.find(d => d.val === form.day)?.label || form.day}
             </Text>
             <TouchableOpacity onPress={() => pickDay(QUICK_DAYS[0].val)}>
-              <Text style={{ color: t.selectColor, fontWeight: '900' }}>✕</Text>
+              <Icon name="x" size={13} color={t.selectColor} stroke={2.5} />
             </TouchableOpacity>
           </View>
         )}
@@ -706,11 +738,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <TouchableOpacity key={opt.val} activeOpacity={0.8}
                 onPress={() => {
                   const lv = player ? eloToLevel(player.elo_score) : 4.0;
-                  const mn = Math.max(1.0, +(lv - 0.5).toFixed(2));
-                  const mx = Math.min(8.0, +(lv + 0.5).toFixed(2));
-                  if (opt.val === 'Compétitif') setFormState(f => ({ ...f, gameType: opt.val, minLevel: mn, maxLevel: mx }));
-                  else if (opt.val === 'Défi')  setFormState(f => ({ ...f, gameType: opt.val, minLevel: mx }));
-                  else set('gameType', opt.val);
+                  // Compétitif / Défi : (re)pose la bande via la source unique → garantit min <= max
+                  // et reste iso avec l'ouverture (effet de reset). Amical : on garde les niveaux
+                  // courants pour préserver les réglages manuels de l'utilisateur.
+                  if (opt.val === 'Compétitif' || opt.val === 'Défi') {
+                    const band = defaultLevelBand(opt.val, lv);
+                    setFormState(f => ({ ...f, gameType: opt.val, minLevel: band.min, maxLevel: band.max }));
+                  } else set('gameType', opt.val);
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
                   borderWidth: 2, borderColor: active ? ot.eloBorder : Colors.border,
@@ -723,7 +757,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: active ? ot.eloColor : Colors.textPrimary }}>{opt.val}</Text>
                   <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 1 }}>{opt.desc}</Text>
                 </View>
-                {active && <Text style={{ color: ot.accent, fontWeight: '900', fontSize: 16 }}>✓</Text>}
+                {active && <Icon name="check" size={16} color={ot.accent} stroke={2.5} />}
               </TouchableOpacity>
             );
           })}
@@ -743,7 +777,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 <Text style={{ fontSize: 22 }}>{opt.icon}</Text>
                 <Text style={{ fontSize: 12, fontWeight: '900', color: active ? t.selectColor : Colors.textPrimary, textAlign: 'center' }}>{opt.label}</Text>
                 <Text style={{ fontSize: 9.5, color: Colors.textMuted, textAlign: 'center' }}>{opt.desc}</Text>
-                {active && <Text style={{ color: t.accent, fontWeight: '900' }}>✓</Text>}
+                {active && <Icon name="check" size={14} color={t.accent} stroke={2.5} />}
               </TouchableOpacity>
             );
           })}
@@ -769,7 +803,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   {form.minLevel.toFixed(2)}
                 </Text>
                 {!lockMin && (
-                  <TouchableOpacity onPress={() => set('minLevel', Math.min(8.0, +(form.minLevel + 0.1).toFixed(2)))}
+                  <TouchableOpacity onPress={() => set('minLevel', Math.min(form.maxLevel, +(form.minLevel + 0.1).toFixed(2)))}
                     style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                   </TouchableOpacity>
@@ -865,6 +899,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   const isMe   = form.mySlot === key;
                   const inv    = form.invites[key];
                   const isEmpty = !isMe && !inv;
+                  // Couleur par ÉQUIPE relative à moi : mon équipe garde ma couleur
+                  // (noir), l'équipe adverse en jaune. Mon partenaire invité partage
+                  // donc la même couleur que moi.
+                  const myTeam   = form.mySlot ? form.mySlot.charAt(0) : 'A';
+                  const isMyTeam = team === myTeam;
+                  const teamFill = isMyTeam ? Colors.primary : Colors.brand;
+                  const teamFg   = isMyTeam ? Colors.textOnDark : Colors.textOnBrand;
                   return (
                     <View key={pos} style={{ alignItems: 'center', gap: 5 }}>
                       <TouchableOpacity
@@ -876,17 +917,18 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                         }}
                         activeOpacity={0.7}
                         style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: isMe ? Colors.primary : inv ? Colors.brand : t.libreBg,
+                          backgroundColor: isEmpty ? t.libreBg : teamFill,
                           borderWidth: isEmpty ? 2 : isMe ? 2.5 : 0,
                           borderStyle: isEmpty ? 'dashed' : 'solid',
                           borderColor: isEmpty ? t.libreBorder : isMe ? Colors.bgCard : 'transparent',
                         }}>
                         {isMe
-                          ? <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 14 }}>{(player?.name || '?').charAt(0).toUpperCase()}</Text>
+                          ? <Text style={{ color: teamFg, fontWeight: '900', fontSize: 14 }}>{(player?.name || '?').charAt(0).toUpperCase()}</Text>
                           : inv
-                            ? <Text style={{ color: Colors.textOnBrand, fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
+                            ? <Text style={{ color: teamFg, fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
                             : <Text style={{ color: t.libreColor, fontSize: 20, fontWeight: '300' }}>+</Text>
                         }
+                        {isMe ? <CreatorCrownBadge avatarSize={48} /> : null}
                       </TouchableOpacity>
                       <Text style={{ fontSize: 9.5, fontWeight: '700', color: isMe ? Colors.primary : inv ? Colors.primary : t.libreColor, maxWidth: 52, textAlign: 'center' }} numberOfLines={1}>
                         {isMe ? 'Vous' : inv ? inv.name.split(' ')[0] : 'Libre'}
@@ -921,11 +963,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 </Text>
                 <TouchableOpacity onPress={() => { setInviteTarget(null); setSearchQ(''); }}
                   style={{ width: 24, height: 24, backgroundColor: Colors.bgCardAlt, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '900' }}>✕</Text>
+                  <Icon name="x" size={11} color={Colors.textSecondary} stroke={2.5} />
                 </TouchableOpacity>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.bg, borderRadius: 10, padding: 10, borderWidth: 1.5, borderColor: Colors.border, marginBottom: 10 }}>
-                <Text style={{ fontSize: 13 }}>🔍</Text>
+                <Icon name="search" size={13} color={Colors.textMuted} stroke={2.2} />
                 <TextInput
                   value={searchQ} onChangeText={setSearchQ}
                   placeholder="Nom du joueur…" placeholderTextColor={Colors.textMuted}
@@ -1030,14 +1072,14 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 flex: 1, padding: 13, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
                 backgroundColor: Colors.bgCard, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
               }}>
-                <Text style={{ fontSize: 15 }}>📤</Text>
+                <Icon name="share" size={15} color={Colors.textPrimary} stroke={2} />
                 <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiExtraBold, fontWeight: '800', fontSize: 13 }}>Partager</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={addCreatedGameToCalendar} style={{
                 flex: 1, padding: 13, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
                 backgroundColor: Colors.bgCard, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
               }}>
-                <Text style={{ fontSize: 15 }}>📅</Text>
+                <Icon name="calendar" size={15} color={Colors.textPrimary} stroke={2} />
                 <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiExtraBold, fontWeight: '800', fontSize: 13 }}>Calendrier</Text>
               </TouchableOpacity>
             </View>
@@ -1102,7 +1144,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             </View>
             <TouchableOpacity onPress={() => setShowAbandon(true)}
               style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '900' }}>✕</Text>
+              <Icon name="x" size={14} color="rgba(255,255,255,0.7)" stroke={2.5} />
             </TouchableOpacity>
           </View>
           {/* Progress bar */}
