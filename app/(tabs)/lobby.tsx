@@ -1703,6 +1703,7 @@ export default function LobbyScreen() {
         .from('open_games')
         .select(GAME_SELECT)
         .eq('status', 'open')
+        .neq('status', 'draft') // défi non publié tant que le partenaire n'a pas accepté
         .neq('creator_id', player.id)
         .order('created_at', { ascending: false })
         .limit(30),
