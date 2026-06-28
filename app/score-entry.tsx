@@ -24,7 +24,7 @@ interface SetScore { t1: number | null; t2: number | null }
 interface Participant { id: string; name: string; elo_score: number; team_side?: string }
 interface Game {
   id: string; location: string; match_date: string;
-  is_challenge?: boolean; game_format?: string;
+  is_challenge?: boolean; game_format?: string; stake_multiplier?: number;
   creator_id?: string; creator_side?: string;
   participants: Participant[];
 }
@@ -228,7 +228,7 @@ export default function ScoreEntryScreen() {
     if (!player) return;
     setLoading(true);
     const now = new Date().toISOString();
-    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, creator_id, creator_side, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
+    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, stake_multiplier, creator_id, creator_side, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
 
     // Games where I'm a participant (accepted)
     const { data: partEntries } = await supabase
@@ -285,6 +285,7 @@ export default function ScoreEntryScreen() {
           match_date: g.match_date,
           is_challenge: g.is_challenge ?? false,
           game_format: g.game_format ?? 'competitive',
+          stake_multiplier: g.stake_multiplier ?? 1.0,
           creator_id: g.creator_id,
           creator_side: g.creator_side ?? undefined,
           participants: allParticipants,
@@ -329,6 +330,7 @@ export default function ScoreEntryScreen() {
         match_date,
         is_challenge: (match as any).is_challenge ?? false,
         game_format: (match as any).game_format ?? 'competitive',
+        stake_multiplier: (match as any).stake_multiplier ?? 1.0,
         participants,
       }]);
       autoOpened.current = false;
@@ -482,6 +484,7 @@ export default function ScoreEntryScreen() {
       game_id: game.id,
       game_format: game.game_format ?? 'competitive',
       is_challenge: game.is_challenge ?? false,
+      stake_multiplier: game.stake_multiplier ?? 1.0,
     };
     try {
       const { data: newMatch, error } = await supabase.from('matches').insert([matchPayload]).select().single();
