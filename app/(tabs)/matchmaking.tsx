@@ -19,9 +19,14 @@ import { Pill, type PillVariant, pillAccent } from '../../components/Pill';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
 import { GameCard } from './lobby';
+import {
+  fetchOpenDefis, fetchMyDefis, fetchCandidaturesOnMyDefis, fetchBinomeInvitations,
+  acceptBinomeInvitation, applyToDefi,
+  type DefiGame, type DefiApplication,
+} from '../../lib/defis';
 
 // ── Types ─────────────────────────────────────────────────────
-type Tab = 'suggestions' | 'defis';
+type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations';
 type SortMode = 'compat' | 'elo';
 
 interface CompatDetail {
@@ -248,6 +253,93 @@ function EmptyCard({ icon, title, sub }: { icon: IconName; title: string; sub: s
   );
 }
 
+// ── 2v2 Défi card helpers ─────────────────────────────────────
+function bandLabel(g: DefiGame): string {
+  const lo = g.min_elo != null ? eloToLevel(g.min_elo).toFixed(1) : '?';
+  const hi = g.max_elo != null ? eloToLevel(g.max_elo).toFixed(1) : '?';
+  return `Moy. ${lo} → ${hi}`;
+}
+
+function DefiReleverCard({ game, myElo, onRelever }: { game: DefiGame; myElo: number; onRelever: () => void; }) {
+  const teamA = (game.participants ?? []).filter(p => (p.team_side ?? '').startsWith('A') || p.player_id === game.creator_id);
+  return (
+    <View style={sty.card}>
+      <View style={{ padding: 14, gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <PlayerAvatar name={game.creator?.name ?? '?'} size={34} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+              {game.creator?.name ?? '?'} & {teamA.find(p => p.player_id !== game.creator_id)?.player?.name ?? '—'}
+            </Text>
+            <Text style={{ fontSize: 10.5, color: Colors.textMuted }}>{bandLabel(game)}</Text>
+          </View>
+          <Pill variant="ink">⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Pill>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+          {game.location ? <Pill variant="info">{game.location}</Pill> : null}
+          {game.match_date ? <Pill variant="brand">{new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</Pill> : null}
+        </View>
+        <TouchableOpacity onPress={onRelever} style={[sty.actionBtn, { backgroundColor: Colors.primary }]}>
+          <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Relever — choisir mon binôme</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function MyDefiCard({ game }: { game: DefiGame }) {
+  const label = game.status === 'draft' ? '⏳ Brouillon (partenaire pas encore OK)'
+    : game.status === 'open' ? '🟢 Ouvert — en attente d\'un binôme'
+    : '✅ Confirmé';
+  return (
+    <View style={sty.card}>
+      <View style={{ padding: 14, gap: 6 }}>
+        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{bandLabel(game)} · ⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Text>
+        <Text style={{ fontSize: 11.5, color: Colors.textSecondary }}>{label}</Text>
+        {game.location || game.match_date ? (
+          <Text style={{ fontSize: 11, color: Colors.textMuted }}>
+            {game.location ?? ''}{game.match_date ? ` · ${new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function CandidatureCard({ app }: { app: DefiApplication }) {
+  const locked = app.status === 'locked';
+  return (
+    <View style={sty.card}>
+      <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <PlayerAvatar name={app.initiator?.name ?? '?'} size={32} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>
+            {app.initiator?.name ?? '?'} & {app.partner?.name ?? '?'}
+          </Text>
+          <Text style={{ fontSize: 10.5, color: Colors.textMuted }}>{locked ? '🏁 Binôme retenu' : '⏳ En attente du partenaire'}</Text>
+        </View>
+        <Pill variant={locked ? 'success' : 'neutral'}>{locked ? 'Retenu' : 'Pending'}</Pill>
+      </View>
+    </View>
+  );
+}
+
+function BinomeInviteCard({ app, onAccept }: { app: DefiApplication; onAccept: () => void; }) {
+  return (
+    <View style={sty.card}>
+      <View style={{ padding: 14, gap: 8 }}>
+        <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>
+          {app.initiator?.name ?? '?'} t'invite comme binôme pour relever un défi
+        </Text>
+        {app.game ? <Text style={{ fontSize: 11, color: Colors.textMuted }}>{bandLabel(app.game)} · ⚡ ×{(app.game.stake_multiplier ?? 1).toFixed(1)}</Text> : null}
+        <TouchableOpacity onPress={onAccept} style={[sty.actionBtn, { backgroundColor: Colors.brand }]}>
+          <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter & verrouiller le binôme</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ── Suggestion card ───────────────────────────────────────────
 function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
   player: Player; detail?: CompatDetail; alreadyChallenged: boolean;
@@ -432,16 +524,13 @@ export default function MatchmakingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [tab, setTab] = useState<Tab>('suggestions');
-  const [sortMode, setSortMode] = useState<SortMode>('compat');
-  const [suggestions, setSuggestions] = useState<Player[]>([]);
-  const [incoming, setIncoming] = useState<Challenge[]>([]);
-  const [challengedIds, setChallengedIds] = useState<Set<string>>(new Set());
-  const [compatMap, setCompatMap] = useState<Map<string, CompatDetail>>(new Map());
-  const [incomingCompatMap, setIncomingCompatMap] = useState<Map<string, CompatDetail>>(new Map());
+  const [tab, setTab] = useState<Tab>('relever');
+  const [openDefis, setOpenDefis] = useState<DefiGame[]>([]);
+  const [myDefis, setMyDefis] = useState<DefiGame[]>([]);
+  const [candidatures, setCandidatures] = useState<DefiApplication[]>([]);
+  const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [computing, setComputing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
@@ -449,147 +538,40 @@ export default function MatchmakingScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
     setLoading(true);
-
-    const nowIso = new Date().toISOString();
-    const [playersRes, incomingRes, sentRes] = await Promise.all([
-      supabase.from('players')
-        .select('*')
-        .is('deleted_at', null)
-        .neq('id', player.id)
-        .order('elo_score', { ascending: false })
-        .limit(50),
-      // Défis reçus : uniquement en attente et non expirés
-      supabase.from('challenges')
-        .select('*, challenger:challenger_id(*), game:game_id(*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count)))')
-        .eq('challenged_id', player.id)
-        .eq('status', 'pending')
-        .gt('expires_at', nowIso)
-        .order('compat_score', { ascending: false }),
-      // Défis envoyés (pour griser "déjà défié") : en attente et non expirés
-      supabase.from('challenges')
-        .select('challenged_id, status')
-        .eq('challenger_id', player.id)
-        .eq('status', 'pending')
-        .gt('expires_at', nowIso),
+    const [open, mine, cands, invites] = await Promise.all([
+      fetchOpenDefis(player.id),
+      fetchMyDefis(player.id),
+      fetchCandidaturesOnMyDefis(player.id),
+      fetchBinomeInvitations(player.id),
     ]);
-
-    // Modération : ne pas suggérer / afficher les utilisateurs bloqués (2 sens).
-    const hidden = await getHiddenPlayerIds(player.id);
-
-    const allPlayers = ((playersRes.data ?? []) as Player[]).filter(p => !hidden.has(p.id));
-    const sorted = [...allPlayers]
-      .sort((a, b) => Math.abs(a.elo_score - player.elo_score) - Math.abs(b.elo_score - player.elo_score))
-      .slice(0, 20);
-
-    setSuggestions(sorted);
-
-    // Visibilité d'un défi reçu : point de vérité unique partagé avec le badge
-    // (useNotificationCount) et la liste de notifications (lib/challenges).
-    const challenges = ((incomingRes.data ?? []) as Challenge[])
-      .filter(c => isReceivedChallengeVisible(c, player.id, hidden));
-    setIncoming(challenges);
-    setChallengedIds(new Set(((sentRes.data ?? []) as any[]).map((c: any) => c.challenged_id)));
+    setOpenDefis(open);
+    setMyDefis(mine);
+    setCandidatures(cands);
+    setBinomeInvites(invites);
     setLoading(false);
-
-    setComputing(true);
-    // Fetch my game data once, reuse for all computations
-    const myData = await getPlayerGameData(player.id);
-
-    const [detailMap, incDetailMap] = await Promise.all([
-      Promise.all(sorted.map(async s => {
-        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, s.id, s.elo_score, s.court_side);
-        return [s.id, detail] as const;
-      })).then(entries => new Map(entries)),
-
-      Promise.all(challenges.map(async c => {
-        const ch = c.challenger as Player | undefined;
-        if (!ch) return null;
-        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, ch.id, ch.elo_score, ch.court_side);
-        return [c.id, detail] as const;
-      })).then(entries => new Map(entries.filter(Boolean) as [string, CompatDetail][])),
-    ]);
-
-    setCompatMap(detailMap);
-    setIncomingCompatMap(incDetailMap);
-    setComputing(false);
   }, [player]);
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
-  const handleAction = async (id: string, action: 'accepted' | 'declined') => {
-    const c = incoming.find(x => x.id === id);
-
-    // 1) Répercuter d'abord sur la partie liée — même effet et même ordre que le
-    //    Lobby (handleAcceptInvitation, Option B2) : on écrit la partie AVANT le
-    //    défi, pour ne pas marquer le défi 'accepted' si le join est rejeté
-    //    (ex. conflit ±2h levé par le trigger eject_overlapping_candidatures).
-    if (c?.game_id && player) {
-      if (action === 'accepted') {
-        const { error } = await supabase
-          .from('game_participants')
-          .update({ status: 'accepted' })
-          .eq('game_id', c.game_id)
-          .eq('player_id', player.id);
-        if (error) {
-          if (isCreatorConflict(error)) {
-            Alert.alert(
-              '⚠️ Conflit de créneau',
-              'Tu es déjà sur une autre partie au même créneau (±2h). Annule-la ou quitte-la avant de rejoindre celle-ci.',
-            );
-          } else {
-            console.warn('[matchmaking] join refusé:', error);
-            Alert.alert('Impossible de rejoindre', 'Une erreur est survenue, réessaie dans un instant.');
-          }
-          return;
-        }
-      } else {
-        await supabase
-          .from('game_participants')
-          .update({ status: 'declined' })
-          .eq('game_id', c.game_id)
-          .eq('player_id', player.id);
-        // Libérer la place tenue par l'invitation
-        const { data: g } = await supabase
-          .from('open_games').select('spots_available').eq('id', c.game_id).single();
-        if (g) {
-          await supabase.from('open_games')
-            .update({ spots_available: Math.min(3, (g.spots_available ?? 0) + 1) })
-            .eq('id', c.game_id);
-        }
-      }
-    }
-
-    // 2) Statut du défi — après le succès du join (pour 'accepted'), sinon le défi
-    //    pourrait passer 'accepted' alors que la partie a refusé l'inscription.
-    await supabase.from('challenges').update({ status: action }).eq('id', id);
-
-    // 3) Notifier le challengeur de la réponse
-    if (c?.challenger_id && player) {
-      notifyPlayers({
-        playerIds: [c.challenger_id],
-        title: action === 'accepted' ? '✅ Défi accepté !' : '❌ Défi décliné',
-        body: action === 'accepted'
-          ? `${player.name} a accepté ton défi — rendez-vous sur le terrain !`
-          : `${player.name} a décliné ton défi`,
-        data: c.game_id ? { type: 'lobby', gameId: c.game_id } : { type: 'challenge' },
-      });
-    }
-
-    setIncoming(prev => prev.map(x => x.id === id
-      ? { ...x, status: action, game: (x as any).game ? { ...(x as any).game, my_status: action === 'accepted' ? 'accepted' : 'declined' } : (x as any).game }
-      : x));
-    showToast(action === 'accepted' ? '✅ Défi accepté ! Tu es inscrit à la partie.' : 'Défi décliné');
-    // Rafraîchit l'état notif PARTAGÉ → le badge Défi (navbar) et le badge avatar
-    // Profil se vident immédiatement, sans devoir rouvrir la cloche ou redémarrer.
-    reloadNotifs();
+  const handleRelever = (_game: DefiGame) => {
+    // Phase 3b : ouvrir un vrai sélecteur de partenaire (recherche + suggestions compat).
+    // Phase 3a : on signale juste que l'action arrive.
+    showToast('Choix du partenaire — bientôt (Phase 3b)');
   };
 
-  const sortedSuggestions = sortMode === 'compat' && compatMap.size > 0
-    ? [...suggestions].sort((a, b) => (compatMap.get(b.id)?.score ?? 0) - (compatMap.get(a.id)?.score ?? 0))
-    : [...suggestions].sort((a, b) => Math.abs(a.elo_score - (player?.elo_score ?? 1000)) - Math.abs(b.elo_score - (player?.elo_score ?? 1000)));
+  const handleAcceptBinome = async (app: DefiApplication) => {
+    try {
+      const res = await acceptBinomeInvitation(app.id);
+      showToast(res === 'locked' ? '✅ Binôme verrouillé — défi confirmé !' : '⏳ Trop tard : un autre binôme a pris la place');
+      fetchData();
+      reloadNotifs();
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+    }
+  };
 
-  const pendingCount = incoming.filter(c => c.status === 'pending').length;
+  const pendingCount = binomeInvites.length + candidatures.filter(c => c.status === 'pending').length;
 
   if (!player) return null;
 
@@ -634,8 +616,10 @@ export default function MatchmakingScreen() {
         </View>
         <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
           {([
-            { id: 'suggestions' as Tab, label: 'Suggestions', badge: 0 },
-            { id: 'defis'       as Tab, label: 'Défis reçus', badge: pendingCount },
+            { id: 'relever'      as Tab, label: 'À relever',  badge: 0 },
+            { id: 'mes'          as Tab, label: 'Mes défis',  badge: 0 },
+            { id: 'candidatures' as Tab, label: 'Candidat.',  badge: candidatures.filter(c => c.status === 'pending').length },
+            { id: 'invitations'  as Tab, label: 'Binôme',     badge: binomeInvites.length },
           ]).map(t => {
             const active = tab === t.id;
             return (
@@ -664,32 +648,36 @@ export default function MatchmakingScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}>
           <View style={{ padding: 14, paddingBottom: 100 }}>
-            {tab === 'suggestions' && (
-              <>
-                <SortToggle mode={sortMode} onChange={setSortMode} computing={computing} />
-                {sortedSuggestions.length === 0
-                  ? <EmptyCard icon="search" title="Aucune suggestion" sub="Reviens quand plus de joueurs ont rejoint l'app." />
-                  : <View style={{ gap: 10 }}>
-                      {sortedSuggestions.map(p => (
-                        <SuggestionCard key={p.id} player={p} detail={compatMap.get(p.id)}
-                          alreadyChallenged={challengedIds.has(p.id)}
-                          onChallenge={(target) => router.push((`/(tabs)/lobby?create=1&challenge=1&with=${target.id}&pname=${encodeURIComponent(target.name)}&pelo=${target.elo_score}`) as any)} />
-                      ))}
-                    </View>
-                }
-              </>
+            {tab === 'relever' && (
+              openDefis.length === 0
+                ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />
+                : <View style={{ gap: 10 }}>
+                    {openDefis.map(g => (
+                      <DefiReleverCard key={g.id} game={g} myElo={player.elo_score}
+                        onRelever={() => handleRelever(g)} />
+                    ))}
+                  </View>
             )}
-            {tab === 'defis' && (
-              <>
-                {incoming.length === 0
-                  ? <EmptyCard icon="swords" title="Aucun défi reçu" sub="Les joueurs peuvent te défier depuis les Suggestions." />
-                  : <View style={{ gap: 10 }}>
-                      {incoming.map(c => (
-                        <IncomingCard key={c.id} challenge={c} detail={incomingCompatMap.get(c.id)} onAction={handleAction} playerId={player.id} myElo={player.elo_score} />
-                      ))}
-                    </View>
-                }
-              </>
+            {tab === 'mes' && (
+              myDefis.length === 0
+                ? <EmptyCard icon="swords" title="Aucun défi créé" sub="Lance un défi depuis le bouton Créer." />
+                : <View style={{ gap: 10 }}>
+                    {myDefis.map(g => <MyDefiCard key={g.id} game={g} />)}
+                  </View>
+            )}
+            {tab === 'candidatures' && (
+              candidatures.length === 0
+                ? <EmptyCard icon="users" title="Aucune candidature" sub="Les binômes qui relèvent tes défis apparaîtront ici." />
+                : <View style={{ gap: 10 }}>
+                    {candidatures.map(c => <CandidatureCard key={c.id} app={c} />)}
+                  </View>
+            )}
+            {tab === 'invitations' && (
+              binomeInvites.length === 0
+                ? <EmptyCard icon="users" title="Aucune invitation" sub="Quand un joueur t'invite comme binôme pour relever un défi, c'est ici." />
+                : <View style={{ gap: 10 }}>
+                    {binomeInvites.map(c => <BinomeInviteCard key={c.id} app={c} onAccept={() => handleAcceptBinome(c)} />)}
+                  </View>
             )}
           </View>
         </ScrollView>
