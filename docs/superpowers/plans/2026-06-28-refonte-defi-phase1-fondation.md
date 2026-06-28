@@ -93,6 +93,8 @@ git commit -m "feat(defi): colonne stake_multiplier sur open_games + matches"
 - Consumes: `matches.stake_multiplier` (Task 1).
 - Produces: `delta_i` multiplié par `coalesce(NEW.stake_multiplier,1.0)` côté SQL ; `simulateElo(players, scoreText, stakeMultiplier=1)` et `computeEloExchange(..., stakeMultiplier=1)` côté TS.
 
+> ⚠️ **CORRECTION (revue finale)** : la version ci-dessous part de `elo_per_player_k.sql`, qui est **antérieur** et **n'a pas la phase de placement**. La définition CANONIQUE/live est `elo_placement_phase.sql` (branche placement K=85 / blowout 2.5 / cap 90 pour les 4 premiers matchs). Le fichier livré (commit `3b7f45f`) repart du corps de `elo_placement_phase.sql` et multiplie **les deux branches** du `delta` par `stake` (cap 90 appliqué APRÈS le stake, comme `lib/elo.ts`). Voir le contenu réel dans `supabase/migrations/defi_stake_elo.sql`. Ne pas régénérer depuis le bloc ci-dessous tel quel.
+
 - [ ] **Step 1 : Écrire la migration (CREATE OR REPLACE du trigger)**
 
 ```sql
