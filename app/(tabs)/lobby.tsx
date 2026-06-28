@@ -2074,13 +2074,14 @@ export default function LobbyScreen() {
         creator_side: data.creatorSide,
         game_format: data.gameType === 'Amical' ? 'friendly' : 'competitive',
         is_challenge: data.gameType === 'Défi',
+        stake_multiplier: data.gameType === 'Défi' ? data.stakeMultiplier : 1.0,
         gender_pref: data.genre,
         match_date: matchDateIso,
         location: data.location,
         has_reservation: data.hasReservation,
         min_elo: padelLevelToElo(data.minLevel),
         max_elo: padelLevelToElo(data.maxLevel),
-        status: 'open',
+        status: data.gameType === 'Défi' ? 'draft' : 'open',
         spots_available: 3 - data.confirmedPlayers.length,
       })
       .select('id')
@@ -2107,18 +2108,6 @@ export default function LobbyScreen() {
         data: { type: 'lobby', gameId: game.id },
       });
 
-      // Option B2 : tracer le défi dans `challenges` (lié au game_id) pour
-      // l'afficher et le gérer (accept/decline) depuis l'onglet Matchmaking.
-      if (isChallenge) {
-        await supabase.from('challenges').insert(
-          invites.map(i => ({
-            challenger_id: player.id,
-            challenged_id: i.player_id,
-            game_id: game.id,
-            status: 'pending' as const,
-          })),
-        );
-      }
     }
 
     // Pousse une notif aux joueurs dont une alerte correspond à cette partie

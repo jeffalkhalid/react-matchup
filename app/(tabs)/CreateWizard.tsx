@@ -25,6 +25,7 @@ export interface WizardResult {
   matchDate: string; matchTime: string;
   location: string; hasReservation: boolean;
   minLevel: number; maxLevel: number;
+  stakeMultiplier: number;
   creatorSide: string;
   confirmedPlayers: Array<{ id: string; name: string; elo_score: number; team_side?: string }>;
 }
@@ -43,7 +44,12 @@ interface Props {
 
 // ─── Constants ────────────────────────────────────────────────
 const SLOT_TO_SIDE: Record<string, string> = { A0: 'A_GAU', A1: 'A_DRO', B0: 'B_GAU', B1: 'B_DRO' };
-const SCREEN_LABELS = ['Quand & Où', 'La partie', "L'équipe"];
+
+// Étapes selon le type : le Défi insère « Mon binôme » avant « Mise & plafond ».
+function screenLabels(gameType: GameType): string[] {
+  if (gameType === 'Défi') return ['Quand & Où', 'La partie', 'Mon binôme', 'Mise & plafond'];
+  return ['Quand & Où', 'La partie', "L'équipe"];
+}
 
 const TIMES = [
   '08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30',
@@ -263,6 +269,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     genre:          'mixed' as Genre,
     minLevel:       defaultBand.min,
     maxLevel:       defaultBand.max,
+    stakeMultiplier: 2.0,
     mySlot:         'A0' as string | null,
     invites:        {} as Record<string, { id: string; name: string; elo_score: number }>,
   });
@@ -278,6 +285,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   }, []);
 
   const t = getTheme(form.gameType);
+  const STEP_LABELS = screenLabels(form.gameType);
+  const LAST_STEP = STEP_LABELS.length - 1;
+  const isDefi = form.gameType === 'Défi';
   const router = useRouter();
   useFocusEffect(
     useCallback(() => {
@@ -314,7 +324,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     setFormState({
       day: QUICK_DAYS[1]?.val ?? '', time: '19:00', location: '',
       hasReservation: false, gameType, genre: defaultGenre,
-      minLevel: band.min, maxLevel: band.max, mySlot: 'A0', invites,
+      minLevel: band.min, maxLevel: band.max, stakeMultiplier: 2.0, mySlot: 'A0', invites,
     });
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -418,11 +428,15 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   }, [searchQ, player]);
 
   // Step validation
-  const canNext = [
-    !!form.day && !!form.time && !!form.location && !isPastSlot(form.day, form.time),
-    !!form.gameType && form.minLevel <= form.maxLevel,
-    true,
-  ][step] ?? true;
+  // partenaire créateur choisi = exactement 1 invité sur Team A (slot A0/A1)
+  const defiPartnerChosen = isDefi && Object.keys(form.invites).some(k => k.startsWith('A'));
+  const canNext = (() => {
+    if (step === 0) return !!form.day && !!form.time && !!form.location && !isPastSlot(form.day, form.time);
+    if (step === 1) return !!form.gameType && (isDefi || form.minLevel <= form.maxLevel);
+    if (isDefi && step === 2) return defiPartnerChosen;          // Mon binôme
+    if (isDefi && step === 3) return form.maxLevel >= form.minLevel && form.stakeMultiplier >= 1.5 && form.stakeMultiplier <= 3.0;
+    return true; // L'équipe (non-défi) : publication libre comme aujourd'hui
+  })();
 
   // ── Dérivés conflit d'horaire (depuis busyGames) ──
   const daysWithGames = useMemo(
@@ -445,6 +459,15 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (isNaN(slotTs)) return [];
     return busyGames.filter(g => Math.abs(g.ts - slotTs) < OVERLAP_MS);
   }, [busyGames, form.day, form.time]);
+
+  // Plancher de niveau du défi = moyenne (créateur, partenaire choisi).
+  // Le partenaire est l'unique invité sur un slot Team A (A0/A1).
+  const defiPartner = Object.entries(form.invites).find(([k]) => k.startsWith('A'))?.[1] ?? null;
+  const defiFloorLevel = (() => {
+    const meLv = player ? eloToLevel(player.elo_score) : 4.0;
+    if (!defiPartner) return meLv;
+    return +(((meLv + eloToLevel(defiPartner.elo_score)) / 2)).toFixed(2);
+  })();
 
   // Step 2 helpers
   const invitedPlayers = Object.values(form.invites);
@@ -486,6 +509,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         hasReservation: form.hasReservation,
         minLevel:       form.minLevel,
         maxLevel:       form.maxLevel,
+        stakeMultiplier: form.gameType === 'Défi' ? form.stakeMultiplier : 1.0,
         creatorSide:    form.mySlot ? SLOT_TO_SIDE[form.mySlot] : 'A_GAU',
         confirmedPlayers: Object.entries(form.invites).map(([slot, p]) => ({ ...p, team_side: SLOT_TO_SIDE[slot] })),
       });
@@ -523,6 +547,17 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     });
     Linking.openURL(`https://calendar.google.com/calendar/render?${params}`);
   }
+
+  // En Défi, fige minLevel au plancher dès que le binôme/plancher change,
+  // et remonte maxLevel s'il est sous le plancher.
+  useEffect(() => {
+    if (form.gameType !== 'Défi') return;
+    setFormState(f => ({
+      ...f,
+      minLevel: defiFloorLevel,
+      maxLevel: Math.max(f.maxLevel, defiFloorLevel),
+    }));
+  }, [form.gameType, defiFloorLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Step 0: When & Where ──────────────────────────────────
   function renderStep0() {
@@ -755,6 +790,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                     const band = defaultLevelBand(opt.val, lv);
                     setFormState(f => ({ ...f, gameType: opt.val, minLevel: band.min, maxLevel: band.max }));
                   } else set('gameType', opt.val);
+                  // Clamp step si on revient à un type avec moins d'étapes
+                  setStep(s => Math.min(s, screenLabels(opt.val).length - 1));
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
                   borderWidth: 2, borderColor: active ? ot.eloBorder : Colors.border,
@@ -793,73 +830,77 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           })}
         </View>
 
-        {/* Level range */}
-        <Text style={sty.sectionLabel}>Niveau (Padel)</Text>
-        <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            {/* Min */}
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 6 }}>
-                Minimum{lockMin ? ' 🔒' : ''}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {!lockMin && (
-                  <TouchableOpacity onPress={() => set('minLevel', Math.max(1.0, +(form.minLevel - 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
-                  </TouchableOpacity>
-                )}
-                <Text style={{ fontSize: 26, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
-                  {form.minLevel.toFixed(2)}
-                </Text>
-                {!lockMin && (
-                  <TouchableOpacity onPress={() => set('minLevel', Math.min(form.maxLevel, +(form.minLevel + 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
-                  </TouchableOpacity>
-                )}
+        {/* Level range — masqué en Défi (géré à l'étape « Mise & plafond ») */}
+        {form.gameType !== 'Défi' && (
+          <>
+            <Text style={sty.sectionLabel}>Niveau (Padel)</Text>
+            <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                {/* Min */}
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 6 }}>
+                    Minimum{lockMin ? ' 🔒' : ''}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {!lockMin && (
+                      <TouchableOpacity onPress={() => set('minLevel', Math.max(1.0, +(form.minLevel - 0.1).toFixed(2)))}
+                        style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={{ fontSize: 26, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
+                      {form.minLevel.toFixed(2)}
+                    </Text>
+                    {!lockMin && (
+                      <TouchableOpacity onPress={() => set('minLevel', Math.min(form.maxLevel, +(form.minLevel + 0.1).toFixed(2)))}
+                        style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+                <View style={{ width: 1, height: 40, backgroundColor: Colors.border }} />
+                {/* Max */}
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 6 }}>
+                    Maximum{lockMax ? ' 🔒' : ''}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {!lockMax && (
+                      <TouchableOpacity onPress={() => set('maxLevel', Math.max(form.minLevel, +(form.maxLevel - 0.1).toFixed(2)))}
+                        style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={{ fontSize: 26, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
+                      {form.maxLevel.toFixed(2)}
+                    </Text>
+                    {!lockMax && (
+                      <TouchableOpacity onPress={() => set('maxLevel', Math.min(8.0, +(form.maxLevel + 0.1).toFixed(2)))}
+                        style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
               </View>
-            </View>
-            <View style={{ width: 1, height: 40, backgroundColor: Colors.border }} />
-            {/* Max */}
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 6 }}>
-                Maximum{lockMax ? ' 🔒' : ''}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {!lockMax && (
-                  <TouchableOpacity onPress={() => set('maxLevel', Math.max(form.minLevel, +(form.maxLevel - 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
-                  </TouchableOpacity>
-                )}
-                <Text style={{ fontSize: 26, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 42, textAlign: 'center' }}>
-                  {form.maxLevel.toFixed(2)}
-                </Text>
-                {!lockMax && (
-                  <TouchableOpacity onPress={() => set('maxLevel', Math.min(8.0, +(form.maxLevel + 0.1).toFixed(2)))}
-                    style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
-                  </TouchableOpacity>
-                )}
+              {/* Range bar */}
+              <View style={{ height: 5, borderRadius: 99, backgroundColor: Colors.bgCardAlt, overflow: 'hidden' }}>
+                <View style={{ position: 'absolute', height: '100%', borderRadius: 99, backgroundColor: t.btnBg,
+                  left: `${((form.minLevel - 1) / 7) * 100}%`,
+                  right: `${100 - ((form.maxLevel - 1) / 7) * 100}%`,
+                }} />
               </View>
+              {lockMin && (
+                <View style={{ marginTop: 8, backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 8, padding: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: t.eloColor, textAlign: 'center' }}>
+                    {lockMax ? '🔒 Niveaux fixés selon votre niveau' : '🔒 Niveau minimum fixé selon votre niveau'}
+                  </Text>
+                </View>
+              )}
             </View>
-          </View>
-          {/* Range bar */}
-          <View style={{ height: 5, borderRadius: 99, backgroundColor: Colors.bgCardAlt, overflow: 'hidden' }}>
-            <View style={{ position: 'absolute', height: '100%', borderRadius: 99, backgroundColor: t.btnBg,
-              left: `${((form.minLevel - 1) / 7) * 100}%`,
-              right: `${100 - ((form.maxLevel - 1) / 7) * 100}%`,
-            }} />
-          </View>
-          {lockMin && (
-            <View style={{ marginTop: 8, backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 8, padding: 8 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: t.eloColor, textAlign: 'center' }}>
-                {lockMax ? '🔒 Niveaux fixés selon votre niveau' : '🔒 Niveau minimum fixé selon votre niveau'}
-              </Text>
-            </View>
-          )}
-        </View>
+          </>
+        )}
       </ScrollView>
     );
   }
@@ -964,65 +1005,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         </View>
 
         {/* Invite panel */}
-        {inviteTarget && (
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  Inviter — Éq. {inviteTarget[0]} · {inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}
-                </Text>
-                <TouchableOpacity onPress={() => { setInviteTarget(null); setSearchQ(''); }}
-                  style={{ width: 24, height: 24, backgroundColor: Colors.bgCardAlt, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="x" size={11} color={Colors.textSecondary} stroke={2.5} />
-                </TouchableOpacity>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.bg, borderRadius: 10, padding: 10, borderWidth: 1.5, borderColor: Colors.border, marginBottom: 10 }}>
-                <Icon name="search" size={13} color={Colors.textMuted} stroke={2.2} />
-                <TextInput
-                  value={searchQ} onChangeText={setSearchQ}
-                  placeholder="Nom du joueur…" placeholderTextColor={Colors.textMuted}
-                  style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
-                  autoFocus
-                />
-                {searching && <ActivityIndicator size="small" color={Colors.primary} />}
-              </View>
-              {/* Frequent players */}
-              {!searchQ && freqAvail.length > 0 && (
-                <>
-                  <Text style={[sty.sectionLabel, { marginBottom: 6 }]}>Habituels</Text>
-                  <View style={{ gap: 5, marginBottom: searchAvail.length > 0 ? 10 : 0 }}>
-                    {freqAvail.map(p => (
-                      <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard }}>
-                        <Avatar name={p.name} size={32} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
-                          <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
-                        </View>
-                        <Pill variant="brand">Habituel</Pill>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
-              {/* Search results */}
-              {searchAvail.length > 0 && (
-                <View style={{ gap: 5 }}>
-                  {searchAvail.map(p => (
-                    <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }}>
-                      <Avatar name={p.name} size={32} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{p.name}</Text>
-                        <Text style={{ fontSize: 10, color: '#94a3b8' }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          </KeyboardAvoidingView>
-        )}
+        {renderInvitePanel()}
 
         {/* Recap */}
         <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, overflow: 'hidden', marginBottom: 8 }}>
@@ -1036,6 +1019,164 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               ))}
             </View>
           </View>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ─── Panneau d'invitation (DRY — partagé entre renderStep2 et renderDefiBinome) ──
+  function renderInvitePanel() {
+    if (!inviteTarget) return null;
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              Inviter — Éq. {inviteTarget[0]} · {inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}
+            </Text>
+            <TouchableOpacity onPress={() => { setInviteTarget(null); setSearchQ(''); }}
+              style={{ width: 24, height: 24, backgroundColor: Colors.bgCardAlt, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="x" size={11} color={Colors.textSecondary} stroke={2.5} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.bg, borderRadius: 10, padding: 10, borderWidth: 1.5, borderColor: Colors.border, marginBottom: 10 }}>
+            <Icon name="search" size={13} color={Colors.textMuted} stroke={2.2} />
+            <TextInput
+              value={searchQ} onChangeText={setSearchQ}
+              placeholder="Nom du joueur…" placeholderTextColor={Colors.textMuted}
+              style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
+              autoFocus
+            />
+            {searching && <ActivityIndicator size="small" color={Colors.primary} />}
+          </View>
+          {/* Frequent players */}
+          {!searchQ && freqAvail.length > 0 && (
+            <>
+              <Text style={[sty.sectionLabel, { marginBottom: 6 }]}>Habituels</Text>
+              <View style={{ gap: 5, marginBottom: searchAvail.length > 0 ? 10 : 0 }}>
+                {freqAvail.map(p => (
+                  <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard }}>
+                    <Avatar name={p.name} size={32} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                      <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
+                    </View>
+                    <Pill variant="brand">Habituel</Pill>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+          {/* Search results */}
+          {searchAvail.length > 0 && (
+            <View style={{ gap: 5 }}>
+              {searchAvail.map(p => (
+                <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }}>
+                  <Avatar name={p.name} size={32} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{p.name}</Text>
+                    <Text style={{ fontSize: 10, color: '#94a3b8' }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // ── Étape Défi : choisir mon binôme (Team A = moi + 1 partenaire) ──
+  function renderDefiBinome() {
+    return (
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+        <Text style={sty.sectionLabel}>Mon binôme</Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+          {/* Moi (A0) */}
+          <View style={{ flex: 1, backgroundColor: t.teamABg, borderWidth: 1.5, borderColor: t.teamABorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
+            <Avatar name={player?.name ?? '?'} size={44} />
+            <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>Vous</Text>
+            <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {player ? formatPadelLevel(player.elo_score) : '—'}</Text>
+          </View>
+          {/* Partenaire (A1) */}
+          <TouchableOpacity activeOpacity={0.8}
+            onPress={() => defiPartner ? (() => { const ni = { ...form.invites }; Object.keys(ni).filter(k => k.startsWith('A')).forEach(k => delete ni[k]); set('invites', ni); })() : openInvite('A1')}
+            style={{ flex: 1, backgroundColor: defiPartner ? t.teamABg : t.libreBg, borderWidth: 1.5, borderStyle: defiPartner ? 'solid' : 'dashed', borderColor: defiPartner ? t.teamABorder : t.libreBorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
+            {defiPartner ? (
+              <>
+                <Avatar name={defiPartner.name} size={44} />
+                <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{defiPartner.name.split(' ')[0]}</Text>
+                <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(defiPartner.elo_score)}</Text>
+              </>
+            ) : (
+              <>
+                <View style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderStyle: 'dashed', borderColor: t.libreBorder, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 22, color: t.libreColor, fontWeight: '300' }}>+</Text>
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: t.libreColor }}>Choisir</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {defiPartner && (
+          <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 10, padding: 10, marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, fontWeight: '900', color: t.eloColor, textAlign: 'center' }}>
+              Plancher d'éligibilité : niveau {defiFloorLevel.toFixed(2)} (moyenne du binôme)
+            </Text>
+          </View>
+        )}
+
+        {/* Panneau d'invitation (réutilise le rendu existant : recherche + habituels) */}
+        {renderInvitePanel()}
+      </ScrollView>
+    );
+  }
+
+  // ── Étape Défi : mise (×1.5→×3) + plafond de niveau adverse ──
+  function renderDefiSettings() {
+    const setStake = (v: number) => set('stakeMultiplier', +Math.min(3.0, Math.max(1.5, v)).toFixed(1));
+    const setCap   = (v: number) => set('maxLevel', +Math.min(8.0, Math.max(defiFloorLevel, v)).toFixed(2));
+    return (
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Mise */}
+        <Text style={sty.sectionLabel}>Mise — points en jeu</Text>
+        <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 16, alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <TouchableOpacity onPress={() => setStake(form.stakeMultiplier - 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>−</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 70, textAlign: 'center' }}>×{form.stakeMultiplier.toFixed(1)}</Text>
+            <TouchableOpacity onPress={() => setStake(form.stakeMultiplier + 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>+</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: 'center' }}>Le delta ELO du match est multiplié par {form.stakeMultiplier.toFixed(1)} pour les 4 joueurs. Plus la mise est haute, plus on gagne… ou perd.</Text>
+        </View>
+
+        {/* Plafond de niveau adverse */}
+        <Text style={sty.sectionLabel}>Plafond de niveau adverse</Text>
+        <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 12, alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <TouchableOpacity onPress={() => setCap(form.maxLevel - 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>−</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 70, textAlign: 'center' }}>{form.maxLevel.toFixed(2)}</Text>
+            <TouchableOpacity onPress={() => setCap(form.maxLevel + 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>+</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: t.eloColor, textAlign: 'center' }}>
+            Éligibles : binômes de moyenne {defiFloorLevel.toFixed(2)} → {form.maxLevel.toFixed(2)}
+          </Text>
+        </View>
+
+        <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 10, padding: 10 }}>
+          <Text style={{ fontSize: 11, color: Colors.textSecondary, textAlign: 'center', lineHeight: 16 }}>
+            À la publication, le défi reste invisible tant que {defiPartner?.name?.split(' ')[0] ?? 'ton partenaire'} n'a pas accepté.
+          </Text>
         </View>
       </ScrollView>
     );
@@ -1144,11 +1285,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <Text style={{ fontSize: 22, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
                 Nouvelle <Text style={{ color: Colors.brand }}>partie</Text>
               </Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: Fonts.uiSemi, fontWeight: '600' }}>{SCREEN_LABELS[step]}</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: Fonts.uiSemi, fontWeight: '600' }}>{STEP_LABELS[step]}</Text>
             </View>
             {/* Step dots */}
             <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
-              {[0, 1, 2].map(i => (
+              {STEP_LABELS.map((_, i) => (
                 <View key={i} style={{ height: 6, borderRadius: 99, backgroundColor: i < step ? 'rgba(255,255,255,0.55)' : i === step ? Colors.textOnDark : 'rgba(255,255,255,0.18)', width: i === step ? 18 : 6 }} />
               ))}
             </View>
@@ -1159,7 +1300,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </View>
           {/* Progress bar */}
           <View style={{ flexDirection: 'row', gap: 4 }}>
-            {[0, 1, 2].map(i => (
+            {STEP_LABELS.map((_, i) => (
               <View key={i} style={{ flex: 1, height: 3, borderRadius: 99,
                 backgroundColor: i < step ? 'rgba(255,255,255,0.75)' : i === step ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.12)',
               }} />
@@ -1171,7 +1312,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 18 }}>
           {step === 0 && renderStep0()}
           {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
+          {step === 2 && (isDefi ? renderDefiBinome() : renderStep2())}
+          {step === 3 && isDefi && renderDefiSettings()}
         </View>
 
         {/* CTA */}
@@ -1182,7 +1324,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <Text style={{ color: Colors.textSecondary, fontWeight: '900', fontSize: 16 }}>‹</Text>
             </TouchableOpacity>
           )}
-          {step < 2 ? (
+          {step < LAST_STEP ? (
             <TouchableOpacity onPress={() => canNext && setStep(s => s + 1)}
               activeOpacity={canNext ? 0.8 : 1}
               style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: canNext ? t.btnBg : Colors.border, alignItems: 'center', justifyContent: 'center',
