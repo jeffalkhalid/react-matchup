@@ -290,7 +290,7 @@ export default function ResetPasswordScreen() {
                   Ton mot de passe a été modifié. Tu es connecté.
                 </Text>
                 <TouchableOpacity
-                  onPress={() => router.replace('/(tabs)')}
+                  onPress={() => router.replace('/(tabs)/lobby')}
                   activeOpacity={0.88}
                   style={{ backgroundColor: tokens.ctaBg, borderRadius: 999, height: 54, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}
                 >

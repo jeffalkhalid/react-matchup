@@ -28,7 +28,7 @@ export default function IndexScreen() {
     // Ne rediriger que si l'index est réellement la route active (segments
     // vides). Sinon, sur un cold start via deep link (ex. reset-password),
     // l'index monté « dessous » arracherait l'utilisateur de l'écran ouvert.
-    if (player && (segments as string[]).length === 0) router.replace('/(tabs)');
+    if (player && (segments as string[]).length === 0) router.replace('/(tabs)/lobby');
   }, [player, loading, splashDone, segments]);
 
   if (loading || !splashDone) {

@@ -6,7 +6,6 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Line, Polyline, Rect } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
@@ -91,103 +90,7 @@ function hoursUntil(iso: string): number {
   return Math.round((new Date(iso).getTime() - Date.now()) / 3600000);
 }
 
-// ─── Icons ───────────────────────────────────────────────────
-const IconSearch = ({ size = 16, color = Colors.textMuted }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Circle cx={11} cy={11} r={7} stroke={color} />
-    <Path stroke={color} d="m20 20-3-3" />
-  </Svg>
-);
-const IconPlus = ({ size = 18, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M12 5v14M5 12h14" />
-  </Svg>
-);
-
-const IconPin = ({ size = 13, color = Colors.textSecondary }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-    <Circle cx={12} cy={10} r={3} stroke={color} />
-  </Svg>
-);
-const IconClock = ({ size = 12, color = Colors.textSecondary }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Circle cx={12} cy={12} r={9} stroke={color} />
-    <Path stroke={color} d="M12 7v5l3 2" />
-  </Svg>
-);
-const IconX = ({ size = 14, color = Colors.textSecondary }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M18 6 6 18M6 6l12 12" />
-  </Svg>
-);
-const IconSwords = ({ size = 11, color = '#92400e' }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Polyline stroke={color} points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" />
-    <Line stroke={color} x1={13} y1={19} x2={19} y2={13} />
-    <Line stroke={color} x1={16} y1={16} x2={20} y2={20} />
-    <Line stroke={color} x1={19} y1={21} x2={21} y2={19} />
-    <Polyline stroke={color} points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" />
-    <Line stroke={color} x1={5} y1={14} x2={9} y2={18} />
-    <Line stroke={color} x1={7} y1={17} x2={4} y2={20} />
-    <Line stroke={color} x1={3} y1={19} x2={5} y2={21} />
-  </Svg>
-);
-const IconFire = ({ size = 12, color = Colors.danger }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none">
-    <Path fill={color} d="M12 2s4 5 4 9a4 4 0 1 1-8 0c0-1.5 1-3 1-3s-3 1-3 5a6 6 0 0 0 12 0c0-5-6-11-6-11Z" />
-  </Svg>
-);
-
-// ─── Role icons (section bandeaux « À venir ») ────────────────
-// Style trait minimal, charte noir/jaune. Couleur passée depuis la pastille.
-const IconMail = ({ size = 14, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Rect x={3} y={5} width={18} height={14} rx={2} stroke={color} />
-    <Path stroke={color} d="m3 7 9 6 9-6" />
-  </Svg>
-);
-const IconMegaphone = ({ size = 14, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="m3 11 18-5v12L3 14v-3z" />
-    <Path stroke={color} d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
-  </Svg>
-);
-const IconCrown = ({ size = 14, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} fill={color} d="M3 8.5 6.5 12l3-5 2.5 4 2.5-4 3 5L21 8.5 19 19H5L3 8.5z" />
-  </Svg>
-);
-const IconCheck = ({ size = 15, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M20 6 9 17l-5-5" />
-  </Svg>
-);
-const IconHourglass = ({ size = 14, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M5 2h14M5 22h14" />
-    <Path stroke={color} d="M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4A2 2 0 0 0 17 6.2V2" />
-    <Path stroke={color} d="M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4A2 2 0 0 0 7 17.8V22" />
-  </Svg>
-);
-const IconWaitClock = ({ size = 14, color = Colors.textOnDark }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-    <Circle cx={12} cy={12} r={9} stroke={color} />
-    <Path stroke={color} d="M12 7.5v5l3 2" />
-  </Svg>
-);
+// ─── Icons ── (inline components replaced by registry <Icon …>) ──────────────
 
 // ─── Avatar ──────────────────────────────────────────────────
 // Charte jaune/noir : par défaut on alterne ink ↔ brand selon le nom,
@@ -224,7 +127,7 @@ function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?:
           backgroundColor: Colors.brand, borderWidth: 1.5, borderColor: Colors.bgCard,
           alignItems: 'center', justifyContent: 'center',
         }}>
-          <IconCrown size={Math.round(bs * 0.62)} color={Colors.primary} />
+          <Icon name="crown" size={Math.round(bs * 0.62)} color={Colors.primary} fill={Colors.primary} stroke={2.2} />
         </View>
       ) : null}
     </View>
@@ -236,7 +139,7 @@ function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?:
 // Défi) distingue le type.
 function TypePill({ game }: { game: OpenGame }) {
   const t = getGameType(game);
-  if (t === 'challenge') return <Pill variant="neutral" icon={<IconSwords size={11} color={pillAccent('neutral')} />}>Défi</Pill>;
+  if (t === 'challenge') return <Pill variant="neutral" icon={<Icon name="swords" size={11} color={pillAccent('neutral')} stroke={2.2} />}>Défi</Pill>;
   if (t === 'friendly')  return <Pill variant="neutral">Amical</Pill>;
   return <Pill variant="neutral">Compétitif</Pill>;
 }
@@ -542,7 +445,7 @@ function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: str
           borderWidth: 2, borderColor: Colors.border, borderStyle: 'dashed',
           backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center',
         }}>
-          <IconPlus size={11} color={Colors.textMuted} />
+          <Icon name="plus" size={11} color={Colors.textMuted} stroke={2.5} />
         </View>
       ))}
     </View>
@@ -695,7 +598,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
           <View style={{ flex: 1, minWidth: 0 }}>
             {game.location ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                <IconPin size={13} color={Colors.textSecondary} />
+                <Icon name="mapPin" size={13} color={Colors.textSecondary} stroke={2.2} />
                 <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
                   {game.location}
                 </Text>
@@ -703,7 +606,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
             ) : null}
             {game.match_date ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <IconClock size={12} color={Colors.textSecondary} />
+                <Icon name="clock" size={12} color={Colors.textSecondary} stroke={2.2} />
                 <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.textSecondary }}>{formatDate(game.match_date)}</Text>
               </View>
             ) : null}
@@ -782,41 +685,30 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation?.(); openCalendar(game); }}
-                  style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 8 }}
+                  style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 10 }}
                   activeOpacity={0.7}
                   accessibilityLabel="Ajouter au calendrier"
                 >
-                  <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <Rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <Line x1="16" y1="2" x2="16" y2="6" />
-                    <Line x1="8" y1="2" x2="8" y2="6" />
-                    <Line x1="3" y1="10" x2="21" y2="10" />
-                  </Svg>
+                  <Icon name="calendar" size={17} color={Colors.textSecondary} />
                 </TouchableOpacity>
               )}
               {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation?.(); router.push(`/chat/${game.id}` as any); }}
-                  style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 8 }}
+                  style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 10 }}
                   activeOpacity={0.7}
                   accessibilityLabel="Discussion"
                 >
-                  <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <Path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </Svg>
+                  <Icon name="message" size={17} color={Colors.textSecondary} />
                 </TouchableOpacity>
               )}
               <TouchableOpacity
                 onPress={(e) => { e.stopPropagation?.(); shareGame(game); }}
-                style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 8 }}
+                style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 10 }}
                 activeOpacity={0.7}
                 accessibilityLabel="Partager"
               >
-                <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <Path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                  <Path d="M16 6l-4-4-4 4" />
-                  <Line x1="12" y1="2" x2="12" y2="15" />
-                </Svg>
+                <Icon name="share" size={17} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
           </>
@@ -1338,7 +1230,7 @@ function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
           activeOpacity={0.85}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }}
         >
-          <Text style={{ fontSize: 13 }}>🔄</Text>
+          <Icon name="repeat" size={14} color={Colors.textPrimary} stroke={2} />
           <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>Rejouer</Text>
         </TouchableOpacity>
       )}
@@ -1348,7 +1240,7 @@ function MatchCard({ match, playerId, onPress, onRematch, onShare }: {
           activeOpacity={0.85}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }}
         >
-          <Text style={{ fontSize: 13 }}>📸</Text>
+          <Icon name="share" size={14} color={Colors.textPrimary} stroke={2} />
           <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>Partager</Text>
         </TouchableOpacity>
       )}
@@ -1442,7 +1334,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         marginTop: 12, marginBottom: 2, backgroundColor: Colors.bgCard, borderRadius: 12,
         borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
       }}>
-        <IconSearch size={16} color={Colors.textMuted} />
+        <Icon name="search" size={16} color={Colors.textMuted} stroke={2.2} />
         <TextInput
           value={search} onChangeText={setSearch}
           placeholder="Rechercher un club, un joueur…"
@@ -1456,7 +1348,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 10, gap: 8 }}>
         <ModePill active={filterMode === 'all'} onPress={() => setFilterMode('all')}>Toutes</ModePill>
         <ModePill active={filterMode === 'urgent'} onPress={() => setFilterMode('urgent')}
-          icon={<IconFire size={12} color={filterMode === 'urgent' ? Colors.textOnDark : Colors.danger} />}>
+          icon={<Icon name="flame" size={12} color={filterMode === 'urgent' ? Colors.textOnDark : Colors.danger} fill={filterMode === 'urgent' ? Colors.textOnDark : Colors.danger} />}>
           {urgentCount > 0 ? `Urgent (${urgentCount})` : 'Urgent'}
         </ModePill>
       </ScrollView>
@@ -1616,7 +1508,7 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
 
       {/* En haut : invitations à répondre (action requise). */}
       {invited.length > 0 && (
-        <Section title="À répondre" count={invited.length} color={Colors.brand} icon={<IconMail color={Colors.textOnBrand} />}>
+        <Section title="À répondre" count={invited.length} color={Colors.brand} icon={<Icon name="mail" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
           {invited.map(g => (
             <GameCard
               key={g.id}
@@ -1640,12 +1532,12 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
       )}
       {/* En bas : statuts non confirmés. */}
       {pending.length > 0 && (
-        <Section title="En attente d'approbation" count={pending.length} color={Colors.warning} icon={<IconHourglass color={Colors.textOnDark} />}>
+        <Section title="En attente d'approbation" count={pending.length} color={Colors.warning} icon={<Icon name="hourglass" size={14} color={Colors.textOnDark} stroke={2.2} />}>
           {pending.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
       {waitlisted.length > 0 && (
-        <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted} icon={<IconWaitClock color={Colors.textOnDark} />}>
+        <Section title="Liste d'attente" count={waitlisted.length} color={Colors.textMuted} icon={<Icon name="clock" size={14} color={Colors.textOnDark} stroke={2.2} />}>
           {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
@@ -1701,7 +1593,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
         marginBottom: 12, backgroundColor: Colors.bgCard, borderRadius: 12,
         borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
       }}>
-        <IconSearch size={16} color={Colors.textMuted} />
+        <Icon name="search" size={16} color={Colors.textMuted} stroke={2.2} />
         <TextInput
           value={search} onChangeText={setSearch}
           placeholder="Rechercher un joueur, un lieu…"
@@ -1710,7 +1602,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <IconX size={14} color={Colors.textMuted} />
+            <Icon name="x" size={14} color={Colors.textMuted} stroke={2.5} />
           </TouchableOpacity>
         )}
       </View>

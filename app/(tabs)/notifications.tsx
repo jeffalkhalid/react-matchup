@@ -4,79 +4,13 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { getNotificationsEnabled, enableNotificationsFromApp } from '../../hooks/usePushNotifications';
 import { supabase } from '../../lib/supabase';
 import { buildNotificationItems, isDismissibleNotif, type NotifItem } from '../../lib/notifications';
 import { Colors, Fonts } from '../../lib/theme';
-
-// ─── Icons ───────────────────────────────────────────────────
-const IconChevronLeft = ({ size = 20, color = Colors.textPrimary }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M15 18l-6-6 6-6" />
-  </Svg>
-);
-
-const IconBell = ({ size = 32, color = Colors.border }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-    <Path stroke={color} d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-  </Svg>
-);
-
-const IconSwords = ({ size = 18, color = Colors.brandDeep }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M14.5 17.5 3 6V3h3l11.5 11.5" />
-    <Path stroke={color} d="m13 19 6-6" />
-    <Path stroke={color} d="m2 22 6-6" />
-    <Path stroke={color} d="M17.5 14.5 21 21h-3l-3.5-3.5" />
-    <Path stroke={color} d="M3 3h3v3L21 21h-3L3 6V3z" />
-    <Path stroke={color} d="m13.5 6.5 3-3" />
-  </Svg>
-);
-
-const IconCheckSquare = ({ size = 18, color = '#d97706' }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M9 11l3 3L22 4" />
-    <Path stroke={color} d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-  </Svg>
-);
-
-const IconMedal = ({ size = 18, color = Colors.success }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <Circle cx="12" cy="8" r="6" stroke={color} />
-    <Path stroke={color} d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
-  </Svg>
-);
-
-const IconTrendingUp = ({ size = 18, color = '#b45309' }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M22 7l-8.5 8.5-5-5L2 17" />
-    <Path stroke={color} d="M16 7h6v6" />
-  </Svg>
-);
-
-const IconChevronRight = ({ size = 16, color = Colors.border }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M9 18l6-6-6-6" />
-  </Svg>
-);
-
-const IconX = ({ size = 14, color = Colors.textMuted }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-    <Path stroke={color} d="M18 6L6 18M6 6l12 12" />
-  </Svg>
-);
+import { Icon } from '../../components/community/icons';
 
 // ─── Screen ───────────────────────────────────────────────────
 export default function NotificationsScreen() {
@@ -148,17 +82,19 @@ export default function NotificationsScreen() {
   }, [player]);
 
   const iconFor = (type: NotifItem['type']) => {
-    if (type === 'challenge')  return <IconSwords size={18} color={Colors.brandDeep} />;
-    if (type === 'invitation') return <IconSwords size={18} color="#0891b2" />;
-    if (type === 'to_approve') return <IconCheckSquare size={18} color="#7c3aed" />;
-    if (type === 'joined')     return <IconMedal size={18} color={Colors.success} />;
-    if (type === 'badge')      return <IconMedal size={18} color={Colors.success} />;
-    if (type === 'levelup')    return <IconTrendingUp size={18} color="#b45309" />;
-    if (type === 'to_score')   return <IconCheckSquare size={18} color="#0891b2" />;
-    return <IconCheckSquare size={18} color="#d97706" />;
+    if (type === 'dm_request') return <Icon name="message" size={18} color="#4f46e5" />;
+    if (type === 'challenge')  return <Icon name="swords" size={18} color={Colors.brandDeep} />;
+    if (type === 'invitation') return <Icon name="swords" size={18} color="#0891b2" />;
+    if (type === 'to_approve') return <Icon name="checkSquare" size={18} color="#7c3aed" />;
+    if (type === 'joined')     return <Icon name="medal" size={18} color={Colors.success} />;
+    if (type === 'badge')      return <Icon name="medal" size={18} color={Colors.success} />;
+    if (type === 'levelup')    return <Icon name="trendingUp" size={18} color="#b45309" />;
+    if (type === 'to_score')   return <Icon name="checkSquare" size={18} color="#0891b2" />;
+    return <Icon name="checkSquare" size={18} color="#d97706" />;
   };
 
   const bgFor = (type: NotifItem['type']) => {
+    if (type === 'dm_request') return { bg: 'rgba(79,70,229,0.10)',  border: 'rgba(79,70,229,0.40)' };
     if (type === 'challenge')  return { bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)' };
     if (type === 'invitation') return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
     if (type === 'to_approve') return { bg: 'rgba(124,58,237,0.10)', border: 'rgba(124,58,237,0.40)' };
@@ -170,6 +106,7 @@ export default function NotificationsScreen() {
   };
 
   const textFor = (type: NotifItem['type']) => {
+    if (type === 'dm_request') return { title: '#3730a3', sub: '#4f46e5' };
     if (type === 'challenge')  return { title: Colors.brandDeep, sub: '#A16207' };
     if (type === 'invitation') return { title: '#155e75', sub: '#0e7490' };
     if (type === 'to_approve') return { title: '#5b21b6', sub: '#7c3aed' };
@@ -203,7 +140,7 @@ export default function NotificationsScreen() {
             alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <IconChevronLeft size={20} color={Colors.textPrimary} />
+          <Icon name="chevronLeft" size={20} color={Colors.textPrimary} stroke={2.5} />
         </TouchableOpacity>
         <Text style={{ fontSize: 26, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>
           Tes <Text style={{ color: Colors.brand }}>notifications</Text>
@@ -249,7 +186,7 @@ export default function NotificationsScreen() {
             backgroundColor: Colors.bgCard,
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <IconBell size={20} color={Colors.brandDeep} />
+            <Icon name="bell" size={20} color={Colors.brandDeep} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.brandDeep, fontFamily: Fonts.uiBlack }}>
@@ -280,7 +217,7 @@ export default function NotificationsScreen() {
             alignItems: 'center', justifyContent: 'center',
             marginBottom: 16,
           }}>
-            <IconBell size={32} color={Colors.border} />
+            <Icon name="bell" size={32} color={Colors.border} />
           </View>
           <Text style={{ fontSize: 17, fontWeight: '900', color: Colors.textSecondary, textAlign: 'center', fontFamily: Fonts.uiBlack }}>
             Tout est à jour !
@@ -327,7 +264,7 @@ export default function NotificationsScreen() {
                     {item.subtitle}
                   </Text>
                 </View>
-                <IconChevronRight size={16} color={Colors.border} />
+                <Icon name="chevronRight" size={16} color={Colors.border} stroke={2.5} />
                 {isDismissibleNotif(item.type) && (
                   <TouchableOpacity
                     onPress={() => dismissOne(item)}
@@ -339,7 +276,7 @@ export default function NotificationsScreen() {
                       marginLeft: 4,
                     }}
                   >
-                    <IconX size={14} color={Colors.textSecondary} />
+                    <Icon name="x" size={14} color={Colors.textSecondary} stroke={2.5} />
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>

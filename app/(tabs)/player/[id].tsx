@@ -33,6 +33,7 @@ import { isDeleted, displayName, type JoinedPlayer } from '../../../lib/players'
 import { startDirectConversation } from '../../../lib/directChats';
 import DirectMessageComposer from '../../../components/DirectMessageComposer';
 import ReportReasonSheet from '../../../components/ReportReasonSheet';
+import { Icon } from '../../../components/community/icons';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -92,36 +93,6 @@ function relativeDate(iso: string): string {
   if (days < 30) return `Il y a ${Math.floor(days / 7)} sem.`;
   if (days < 365) return `Il y a ${Math.floor(days / 30)} mois`;
   return `Il y a ${Math.floor(days / 365)} an${Math.floor(days / 365) > 1 ? 's' : ''}`;
-}
-
-// ── SVG Icons ────────────────────────────────────────────────────────
-function IconBack({ color = Colors.textPrimary }: { color?: string }) {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M15 18l-6-6 6-6" />
-    </Svg>
-  );
-}
-
-function IconEdit({ color = Colors.textOnDark, size = 18 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </Svg>
-  );
-}
-
-function IconStar({ filled = false, color = Colors.textMuted, size = 18 }: { filled?: boolean; color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24"
-      fill={filled ? color : 'none'} stroke={color} strokeWidth={2}
-      strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-    </Svg>
-  );
 }
 
 // ── ELO Line Chart ───────────────────────────────────────────────────
@@ -481,15 +452,6 @@ function ReliabilityRing({ pct, color, size = 76, stroke = 8 }: {
   );
 }
 
-function IconCamera({ color = LIGHT.sub, size = 19 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2z" />
-      <Circle cx={12} cy={13} r={3.6} />
-    </Svg>
-  );
-}
-
 // Avatar carré arrondi à dégradé ligue→or, initiales en Anton (design épuré).
 function GradientAvatar({ name, color, size = 76 }: { name: string; color: string; size?: number }) {
   const gid = 'avgrad';
@@ -554,7 +516,7 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
           <Text style={{ fontSize: 15 }}>🔄</Text>
         </TouchableOpacity>
       )}
-      {isSelf && <IconCamera color={LIGHT.muted} size={15} />}
+      {isSelf && <Icon name="camera" size={15} color={LIGHT.muted} />}
     </TouchableOpacity>
   );
 }

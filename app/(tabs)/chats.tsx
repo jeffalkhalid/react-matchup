@@ -19,7 +19,7 @@ export default function ChatsScreen() {
   const { player } = usePlayer();
   const router = useRouter();
   const { games, loading, loadGames } = useGameChats();
-  const { conversations: dms, requests, requestsCount, load: loadDms } = useDirectChats();
+  const { conversations: dms, requests, requestsCount, load: loadDms, isConversationBlocked } = useDirectChats();
   const [section, setSection] = useState<'parties' | 'directs'>('parties');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -265,6 +265,7 @@ export default function ChatsScreen() {
           renderItem={({ item: conv }) => {
             const name = otherName(conv, player?.id ?? '');
             const photo = otherPhoto(conv, player?.id ?? '');
+            const blocked = isConversationBlocked(conv);
             return (
               <TouchableOpacity
                 onPress={() => router.push(`/dm/${conv.id}` as any)}
@@ -273,6 +274,7 @@ export default function ChatsScreen() {
                   paddingHorizontal: Spacing.lg, paddingVertical: 13,
                   borderBottomWidth: 1, borderBottomColor: Colors.border,
                   backgroundColor: Colors.bg,
+                  opacity: blocked ? 0.55 : 1,
                 }}>
                 <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                   {photo
@@ -281,7 +283,14 @@ export default function ChatsScreen() {
                   }
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: '800', fontFamily: Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: '800', fontFamily: Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>
+                    {blocked && (
+                      <View style={{ backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                        <Text style={{ color: Colors.danger, fontSize: 10, fontWeight: '900' }}>🚫 Bloqué</Text>
+                      </View>
+                    )}
+                  </View>
                   {conv.last_message_at && (
                     <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, marginTop: 2 }}>
                       {new Date(conv.last_message_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}

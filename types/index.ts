@@ -209,6 +209,7 @@ export interface ActivityEvent {
   };
   caption?: string | null;     // légende libre (Moment partagé)
   is_highlight?: boolean;      // mis en avant dans le rail Moments
+  highlighted_at?: string | null; // date de MISE EN AVANT (≠ created_at = date du match)
   reactions: Record<string, string[]>;   // { "🔥": [player_id, ...] }
   created_at: string;
   // Hydraté côté client :

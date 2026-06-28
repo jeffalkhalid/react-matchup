@@ -16,7 +16,7 @@ import { getLeague, getLeagueLabel, eloToLevel } from './theme';
 // présents dans la liste mais pas dans le compteur, etc.).
 export interface NotifItem {
   id: string;
-  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined';
+  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined' | 'dm_request';
   title: string;
   subtitle: string;
   route: string;
@@ -61,6 +61,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: invitations },
     { data: myGames },
     { data: dismissedRows },
+    { data: dmRequests },
   ] = await Promise.all([
     supabase
       .from('challenges')
@@ -114,6 +115,12 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .from('dismissed_notifications')
       .select('notif_key')
       .eq('player_id', playerId),
+    // Demandes de message directes (DM) en attente, adressées à moi.
+    supabase
+      .from('direct_conversations')
+      .select('id, requester_id, requester:players!requester_id(name)')
+      .eq('addressee_id', playerId)
+      .eq('status', 'pending'),
   ]);
 
   const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
@@ -216,7 +223,20 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     });
   }
 
+  // Demandes de message (DM) : une carte par personne (→ « plusieurs » si
+  // plusieurs demandes). Masque les demandeurs bloqués (deux sens).
+  const dmRequestItems: NotifItem[] = (dmRequests ?? [])
+    .filter((c: any) => !hidden.has(c.requester_id))
+    .map((c: any) => ({
+      id: `dmreq-${c.id}`,
+      type: 'dm_request' as const,
+      title: 'Demande de message',
+      subtitle: `${c.requester?.name ?? 'Quelqu’un'} souhaite te contacter`,
+      route: `/dm/${c.id}`,
+    }));
+
   const result: NotifItem[] = [
+    ...dmRequestItems,
     ...pendingReqItems,
     ...joinedItems,
     ...activeInvites.map((inv: any) => {
@@ -266,7 +286,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     ...(unvotedCount > 0 ? [{
       id: 'badge-prompt',
       type: 'badge' as const,
-      title: unvotedCount > 1 ? `Donne tes badges · ${unvotedCount} matchs` : 'Donne tes badges',
+      title: unvotedCount > 1 ? `Distribue des badges · ${unvotedCount} matchs` : 'Distribue des badges',
       subtitle: unvotedCount > 1
         ? `Attribue des badges à tes coéquipiers sur ${unvotedCount} matchs`
         : 'Attribue des badges à tes coéquipiers',

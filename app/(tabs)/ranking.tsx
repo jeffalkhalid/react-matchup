@@ -5,13 +5,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { getFollowingIds, setFollow } from '../../lib/community';
 import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
+import { Icon } from '../../components/community/icons';
 import type { Player } from '../../types';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -46,26 +46,6 @@ const PODIUM_SLOTS = [
 ];
 
 type RankedPlayer = Player & { rank: number };
-
-// ── Icons ────────────────────────────────────────────────────────────
-function IconStar({ size = 16, filled = false, color = Colors.textMuted }: { size?: number; filled?: boolean; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24"
-      fill={filled ? color : 'none'} stroke={color} strokeWidth={2}
-      strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-    </Svg>
-  );
-}
-
-function IconSearch() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-      <Circle cx={6} cy={6} r={4.5} stroke={Colors.textMuted} strokeWidth={1.5} />
-      <Line x1={9.5} y1={9.5} x2={12} y2={12} stroke={Colors.textMuted} strokeWidth={1.5} strokeLinecap="round" />
-    </Svg>
-  );
-}
 
 // ── Main screen ──────────────────────────────────────────────────────
 export default function RankingScreen() {
@@ -230,7 +210,7 @@ export default function RankingScreen() {
             paddingHorizontal: 12, paddingVertical: 10,
             borderWidth: 1.5, borderColor: Colors.border,
           }}>
-            <IconSearch />
+            <Icon name="search" size={14} color={Colors.textMuted} stroke={1.5} />
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -357,7 +337,7 @@ export default function RankingScreen() {
                   backgroundColor: '#fef3c7',
                   alignItems: 'center', justifyContent: 'center', marginBottom: 12,
                 }}>
-                  <IconStar size={22} color="#f59e0b" />
+                  <Icon name="star" size={22} color="#f59e0b" fill="none" />
                 </View>
                 <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginBottom: 6, fontFamily: Fonts.uiBlack }}>
                   Tu ne suis personne pour l'instant
@@ -447,7 +427,7 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
                       opacity: isLoading ? 0.4 : 1,
                     }}
                   >
-                    <IconStar size={10} filled={isFav} color={isFav ? '#f59e0b' : 'rgba(255,255,255,0.7)'} />
+                    <Icon name="star" size={10} color={isFav ? '#f59e0b' : 'rgba(255,255,255,0.7)'} fill={isFav ? '#f59e0b' : 'none'} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -607,7 +587,7 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
             opacity: favLoading ? 0.4 : 1,
           }}
         >
-          <IconStar size={16} filled={isFav} color={isFav ? '#f59e0b' : '#cbd5e1'} />
+          <Icon name="star" size={16} color={isFav ? '#f59e0b' : '#cbd5e1'} fill={isFav ? '#f59e0b' : 'none'} />
         </TouchableOpacity>
       )}
     </TouchableOpacity>

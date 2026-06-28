@@ -13,7 +13,7 @@ import {
   DirectConversation, DirectMessage, fetchMessages, sendDirectMessage,
   respondDirectRequest, markConversationRead, otherId, otherName, otherPhoto, isRequestFor,
 } from '../../lib/directChats';
-import { blockUser, reportContent } from '../../lib/moderation';
+import { blockUser, unblockUser, reportContent, getBlockedByMe, getHiddenPlayerIds } from '../../lib/moderation';
 import ReportReasonSheet from '../../components/ReportReasonSheet';
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -89,19 +89,35 @@ export default function DirectChatScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [iBlocked, setIBlocked] = useState(false);     // j'ai bloqué l'autre
+  const [theyBlocked, setTheyBlocked] = useState(false); // l'autre m'a bloqué
   const listRef = useRef<FlatList>(null);
 
   const reload = useCallback(async () => {
     if (!conversationId || !player) return;
     const { data: c } = await supabase
       .from('direct_conversations')
-      .select('*, requester:players!requester_id(name,avatar_url), addressee:players!addressee_id(name,avatar_url)')
+      .select('*, requester:players!requester_id(name), addressee:players!addressee_id(name)')
       .eq('id', conversationId)
       .single();
-    setConv((c as DirectConversation) ?? null);
+    const conv = (c as DirectConversation) ?? null;
+    setConv(conv);
     setMessages(await fetchMessages(conversationId));
     setLoading(false);
-    if (c) markConversationRead(c as DirectConversation, player.id);
+    if (conv) {
+      markConversationRead(conv, player.id);
+      // État de blocage (les deux sens) pour adapter l'UI.
+      const target = otherId(conv, player.id);
+      try {
+        const [mine, hidden] = await Promise.all([
+          getBlockedByMe(player.id),
+          getHiddenPlayerIds(player.id),
+        ]);
+        const blockedByMe = mine.includes(target);
+        setIBlocked(blockedByMe);
+        setTheyBlocked(hidden.has(target) && !blockedByMe);
+      } catch {}
+    }
   }, [conversationId, player]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -156,11 +172,18 @@ export default function DirectChatScreen() {
     if (accept) reload(); else router.back();
   };
 
+  const openProfile = () => { if (conv) router.push(`/player/${otherId(conv, myId)}` as any); };
+
   const onBlock = async () => {
     if (!player || !conv) return;
     const target = otherId(conv, player.id);
-    try { await blockUser(player.id, target); } catch {}
-    router.back();
+    try { await blockUser(player.id, target); setIBlocked(true); } catch {}
+  };
+
+  const onUnblock = async () => {
+    if (!player || !conv) return;
+    const target = otherId(conv, player.id);
+    try { await unblockUser(player.id, target); setIBlocked(false); } catch {}
   };
 
   const submitReport = async (reason: string) => {
@@ -177,10 +200,12 @@ export default function DirectChatScreen() {
 
   const openOptions = () => {
     Alert.alert('Options', undefined, [
-      { text: 'Voir le profil', onPress: () => conv && router.push(`/player/${otherId(conv, myId)}` as any) },
-      { text: 'Bloquer', style: 'destructive', onPress: onBlock },
+      { text: 'Voir le profil', onPress: openProfile },
+      iBlocked
+        ? { text: 'Débloquer', onPress: onUnblock }
+        : { text: 'Bloquer', style: 'destructive' as const, onPress: onBlock },
       { text: 'Signaler', onPress: () => setReportSheetOpen(true) },
-      { text: 'Annuler', style: 'cancel' },
+      { text: 'Annuler', style: 'cancel' as const },
     ]);
   };
 
@@ -197,19 +222,19 @@ export default function DirectChatScreen() {
             </Svg>
           </TouchableOpacity>
 
-          <TouchableOpacity activeOpacity={0.7} disabled={!conv}
-            onPress={() => conv && router.push(`/player/${otherId(conv, myId)}` as any)}>
+          {/* Avatar + nom = accès au profil */}
+          <TouchableOpacity activeOpacity={0.7} disabled={!conv} onPress={openProfile}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <Avatar name={otherNameStr} photo={otherPhotoStr} size={38} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }} numberOfLines={1}>
+                {otherNameStr || 'Conversation'}
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: Fonts.uiSemi, fontWeight: '600', color: iBlocked || theyBlocked ? Colors.danger : Colors.textSecondary }} numberOfLines={1}>
+                {iBlocked ? 'Tu as bloqué ce joueur' : theyBlocked ? 'Indisponible' : subtitle}
+              </Text>
+            </View>
           </TouchableOpacity>
-
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }} numberOfLines={1}>
-              {otherNameStr || 'Conversation'}
-            </Text>
-            <Text style={{ fontSize: 11, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary }} numberOfLines={1}>
-              {subtitle}
-            </Text>
-          </View>
 
           <TouchableOpacity onPress={openOptions}
             style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' }}>
@@ -262,7 +287,7 @@ export default function DirectChatScreen() {
       </View>
 
       {/* ── Request banner (demande reçue) ── */}
-      {isIncomingRequest && (
+      {isIncomingRequest && !iBlocked && !theyBlocked && (
         <View style={{ backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.border, paddingHorizontal: 14, paddingTop: 12, paddingBottom: insets.bottom + 12, gap: 10 }}>
           <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary, textAlign: 'center' }}>
             Accepte pour répondre à {otherNameStr}.
@@ -281,8 +306,22 @@ export default function DirectChatScreen() {
         </View>
       )}
 
+      {/* ── Block banner (conversation bloquée) ── */}
+      {(iBlocked || theyBlocked) && (
+        <View style={{ backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.border, paddingHorizontal: 14, paddingTop: 14, paddingBottom: insets.bottom + 14, alignItems: 'center', gap: 10 }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.danger, textAlign: 'center' }}>
+            {iBlocked ? `Tu as bloqué ${otherNameStr}` : 'Tu ne peux plus écrire à ce joueur'}
+          </Text>
+          {iBlocked && (
+            <TouchableOpacity onPress={onUnblock} style={{ borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 28 }}>
+              <Text style={{ color: Colors.textPrimary, fontWeight: '900', fontSize: 14 }}>Débloquer</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* ── Input bar ── */}
-      {!isIncomingRequest && (
+      {!isIncomingRequest && !iBlocked && !theyBlocked && (
         <View style={{
           backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: '#e2e8f0',
           flexDirection: 'row', alignItems: 'flex-end', gap: 8,

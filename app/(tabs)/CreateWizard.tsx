@@ -530,12 +530,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Venue */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={sty.sectionLabel}>Terrain</Text>
-          <TouchableOpacity onPress={() => router.push('/clubs-map')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.brandDeep }}>🗺 Chercher sur la carte</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={sty.sectionLabel}>Terrain</Text>
         {/* Reservation toggle */}
         <TouchableOpacity onPress={() => set('hasReservation', !form.hasReservation)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12,
@@ -551,12 +546,14 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </View>
         </TouchableOpacity>
 
-        {/* Venue picker */}
-        <TouchableOpacity onPress={() => setVenueOpen(v => !v)}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 13,
-            borderWidth: 1.5, borderColor: form.location ? t.eloBorder : Colors.border,
-            backgroundColor: form.location ? t.selectBg : Colors.bgCard, marginBottom: venueOpen ? 0 : 10,
-          }}>
+        {/* Venue picker + bouton Plan à côté */}
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity onPress={() => setVenueOpen(v => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 13,
+                borderWidth: 1.5, borderColor: form.location ? t.eloBorder : Colors.border,
+                backgroundColor: form.location ? t.selectBg : Colors.bgCard,
+              }}>
           <View style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: form.location ? t.btnBg : Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="mapPin" size={14} color={form.location ? Colors.textOnDark : Colors.textSecondary} stroke={2.2} />
           </View>
@@ -567,7 +564,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         </TouchableOpacity>
 
         {venueOpen && (
-          <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: t.eloBorder, borderTopWidth: 0, borderBottomLeftRadius: 13, borderBottomRightRadius: 13, marginBottom: 10, overflow: 'hidden' }}>
+          <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: t.eloBorder, borderTopWidth: 0, borderBottomLeftRadius: 13, borderBottomRightRadius: 13, overflow: 'hidden' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
               <Icon name="search" size={13} color={Colors.textMuted} stroke={2.2} />
               <TextInput
@@ -608,6 +605,19 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             </ScrollView>
           </View>
         )}
+          </View>
+          <TouchableOpacity onPress={() => router.push('/clubs-map')} activeOpacity={0.85}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
+              backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10,
+              borderWidth: 1, borderColor: Colors.border,
+              shadowColor: Colors.textPrimary, shadowOpacity: 0.08, shadowRadius: 6,
+              shadowOffset: { width: 0, height: 2 }, elevation: 2,
+            }}>
+            <Icon name="map" size={16} color={Colors.textPrimary} stroke={2} />
+            <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Plan</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Date */}
         <Text style={[sty.sectionLabel, { marginTop: 4 }]}>Jour</Text>

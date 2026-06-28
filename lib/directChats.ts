@@ -6,7 +6,6 @@ export type DirectStatus = 'pending' | 'accepted' | 'declined';
 
 export interface DirectPlayerInfo {
   name: string;
-  avatar_url: string | null;
 }
 
 export interface DirectConversation {
@@ -28,9 +27,10 @@ export function otherName(conv: DirectConversation, myId: string): string {
   return side?.name ?? (conv.requester_id === myId ? conv.addressee_id : conv.requester_id).slice(0, 8);
 }
 
-export function otherPhoto(conv: DirectConversation, myId: string): string | null {
-  const side = conv.requester_id === myId ? conv.addressee : conv.requester;
-  return side?.avatar_url ?? null;
+// La table players n'a pas de colonne photo → toujours initiales (null).
+// Fonction conservée pour l'API ; à brancher si une colonne avatar est ajoutée.
+export function otherPhoto(_conv: DirectConversation, _myId: string): string | null {
+  return null;
 }
 
 export interface DirectMessage {
@@ -62,7 +62,7 @@ export function unreadFor(conv: DirectConversation, myId: string): number {
 export async function fetchConversations(): Promise<DirectConversation[]> {
   const { data, error } = await supabase
     .from('direct_conversations')
-    .select('*, requester:players!requester_id(name,avatar_url), addressee:players!addressee_id(name,avatar_url)')
+    .select('*, requester:players!requester_id(name), addressee:players!addressee_id(name)')
     .neq('status', 'declined')
     .order('last_message_at', { ascending: false });
   if (error) throw error;

@@ -150,8 +150,10 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
         </View>
       ) : null}
 
-      {/* Légende libre (Moment partagé) */}
-      {e.caption ? (
+      {/* Légende libre (Moment partagé) — visible tant que c'est un Moment
+          (is_highlight). Le cron cleanup-stale-moments retire is_highlight après
+          7 j → la légende disparaît du fil (donnée conservée, juste masquée). */}
+      {e.caption && e.is_highlight ? (
         <Text style={{ fontFamily: Fonts.ui, fontSize: 13.5, color: Colors.textPrimary, marginBottom: 12, lineHeight: 19 }}>{e.caption}</Text>
       ) : null}
       </TouchableOpacity>

@@ -287,7 +287,7 @@ export default function LoginScreen() {
       const alreadySaved = !!sc && sc.username === email.trim() && sc.password === password;
       if (!alreadySaved) await savePassword(email.trim(), password);
       await refresh();
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/lobby');
     } catch {
       setCaptchaToken(null);
       captchaRef.current?.reset();

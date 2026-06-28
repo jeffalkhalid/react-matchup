@@ -8,7 +8,8 @@ export type IconName =
   | 'mapPin' | 'check' | 'x' | 'arrowRight' | 'arrowLeft' | 'message' | 'camera'
   | 'clock' | 'trophy' | 'zap' | 'swords' | 'radar' | 'bellRing' | 'send' | 'qr'
   | 'sliders' | 'trendingUp' | 'share' | 'lifeBuoy' | 'settings'
-  | 'calendar' | 'pencil' | 'heart' | 'eye' | 'flame';
+  | 'calendar' | 'pencil' | 'heart' | 'eye' | 'flame' | 'map' | 'bookOpen' | 'repeat'
+  | 'medal' | 'mail' | 'megaphone' | 'crown' | 'hourglass' | 'star' | 'checkSquare';
 
 export interface IconProps {
   name: IconName;
@@ -200,6 +201,63 @@ export function Icon({ name, size = 24, color = '#0A0A0A', stroke = 2, fill = 'n
         </G>;
       case 'flame':
         return <Path {...common} d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z" />;
+      case 'map':
+        return <G>
+          <Polygon {...common} points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+          <Line {...common} x1="8" y1="2" x2="8" y2="18" />
+          <Line {...common} x1="16" y1="6" x2="16" y2="22" />
+        </G>;
+      case 'bookOpen':
+        return <G>
+          <Path {...common} d="M12 7v14" />
+          <Path {...common} d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+        </G>;
+      case 'repeat':
+        return <G>
+          <Path {...common} d="m17 2 4 4-4 4" />
+          <Path {...common} d="M3 11v-1a4 4 0 0 1 4-4h14" />
+          <Path {...common} d="m7 22-4-4 4-4" />
+          <Path {...common} d="M21 13v1a4 4 0 0 1-4 4H3" />
+        </G>;
+      case 'medal':
+        return <G>
+          <Path {...common} d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15" />
+          <Path {...common} d="M11 12 5.12 2.2" />
+          <Path {...common} d="m13 12 5.88-9.8" />
+          <Path {...common} d="M8 7h8" />
+          <Circle {...common} cx="12" cy="17" r="5" />
+          <Path {...common} d="M12 18v-2h-.5" />
+        </G>;
+      case 'mail':
+        return <G>
+          <Rect {...common} x="2" y="4" width="20" height="16" rx="2" />
+          <Path {...common} d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+        </G>;
+      case 'megaphone':
+        return <G>
+          <Path {...common} d="m3 11 18-5v12L3 14v-3z" />
+          <Path {...common} d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+        </G>;
+      case 'crown':
+        return <G>
+          <Path {...common} d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z" />
+          <Path {...common} d="M5 21h14" />
+        </G>;
+      case 'hourglass':
+        return <G>
+          <Path {...common} d="M5 22h14" />
+          <Path {...common} d="M5 2h14" />
+          <Path {...common} d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+          <Path {...common} d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+        </G>;
+      case 'star':
+        return <Polygon {...common} fill={fill === 'none' ? 'none' : color}
+          points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />;
+      case 'checkSquare':
+        return <G>
+          <Path {...common} d="M9 11l3 3L22 4" />
+          <Path {...common} d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </G>;
       default:
         return null;
     }

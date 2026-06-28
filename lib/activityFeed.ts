@@ -108,11 +108,19 @@ export async function getOpenGames(uid: string, limit = 8): Promise<WeekendGame[
 
 // ── Moments = highlights curés (matchs partagés + bilans), 7 j ──────
 // (rendus depuis activity_events, AUCUN média serveur)
-export function pickMoments(feed: ActivityEvent[], max = 3, days = 7): ActivityEvent[] {
+// Fenêtre + tri sur la DATE DE MISE EN AVANT (`highlighted_at`, repli `created_at`
+// pour les anciens highlights) : partager un match ancien le fait bien apparaître
+// dans « Moments de la semaine ». Tri robuste : MES moments d'abord (récent →
+// ancien), PUIS ceux des amis (récent → ancien) → mon partage toujours visible en
+// tête, indépendamment de l'activité des amis. `myId` optionnel (rétro-compat).
+export function pickMoments(feed: ActivityEvent[], myId?: string, max = 6, days = 7): ActivityEvent[] {
   const since = Date.now() - days * 24 * 60 * 60 * 1000;
-  return feed
-    .filter(e => e.is_highlight && new Date(e.created_at).getTime() >= since)
-    .slice(0, max);
+  const ts = (e: ActivityEvent) => new Date(e.highlighted_at ?? e.created_at).getTime();
+  const byRecency = (a: ActivityEvent, b: ActivityEvent) => ts(b) - ts(a);
+  const highlights = feed.filter(e => e.is_highlight && ts(e) >= since);
+  const mine = highlights.filter(e => e.player_id === myId).sort(byRecency);
+  const others = highlights.filter(e => e.player_id !== myId).sort(byRecency);
+  return [...mine, ...others].slice(0, max);
 }
 
 // ── Partage in-app ───────────────────────────────────────────

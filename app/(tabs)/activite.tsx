@@ -136,7 +136,7 @@ export default function ActiviteTab() {
   const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
   const recentFeed = visibleFeed.filter(e => Date.now() - new Date(e.created_at).getTime() <= TWO_WEEKS);
   const shown = sel ? recentFeed.filter(e => e.player_id === sel) : recentFeed;
-  const moments = pickMoments(visibleFeed);
+  const moments = pickMoments(visibleFeed, myId);
   const liveMoment = openMomentId ? visibleFeed.find(e => e.id === openMomentId) ?? null : null;
 
   const recentFriendActivity = feed.filter(
@@ -196,10 +196,16 @@ export default function ActiviteTab() {
             <>
               <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} />
               <WeekStatsCard stats={week} levelDelta={weekLevelDelta} />
-              <EmptyHero variant="expand"
-                subtitle="Anime le fil — partage un moment ou propose une partie."
-                ctaLabel="Partage un moment"
-                onPress={() => setPickerOpen(true)} />
+              {/* Mes propres moments restent visibles même quand les amis sont
+                  inactifs ; sinon on invite à en partager un. */}
+              {moments.length > 0 ? (
+                <MomentsRail moments={moments} onShareMatch={() => setPickerOpen(true)} onOpen={(e) => setOpenMomentId(e.id)} />
+              ) : (
+                <EmptyHero variant="expand"
+                  subtitle="Anime le fil — partage un moment ou propose une partie."
+                  ctaLabel="Partage un moment"
+                  onPress={() => setPickerOpen(true)} />
+              )}
               <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} dimmed />
               <QuietFeedCard friends={friends} onPing={pingFriend} />
             </>
@@ -244,6 +250,8 @@ export default function ActiviteTab() {
           <StoryMatchPicker
             visible={pickerOpen}
             playerId={myId}
+            recentWithinDays={7}
+            subtitle="pour un Moment de la semaine"
             onClose={() => setPickerOpen(false)}
             onPick={(m, id) => { setPickerOpen(false); setPendingMatch(m); setPendingMatchId(id); setComposerOpen(true); }}
           />

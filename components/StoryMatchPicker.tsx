@@ -27,9 +27,14 @@ interface Props {
   playerId: string;
   onClose: () => void;
   onPick: (match: StoryMatchData, matchId: string) => void;
+  // Quand fourni (ex. 7), restreint la liste aux matchs joués dans les N derniers
+  // jours — pour le flux « Moment de la semaine » (un moment >1 semaine n'a pas
+  // de sens). Absent → tous les matchs (story externe sur le profil).
+  recentWithinDays?: number;
+  subtitle?: string;
 }
 
-export default function StoryMatchPicker({ visible, playerId, onClose, onPick }: Props) {
+export default function StoryMatchPicker({ visible, playerId, onClose, onPick, recentWithinDays, subtitle }: Props) {
   const insets = useSafeAreaInsets();
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,10 +53,15 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
       .order('created_at', { ascending: false })
       .limit(30)
       .then(({ data }) => {
-        setMatches((data ?? []) as unknown as MatchRow[]);
+        let rows = (data ?? []) as unknown as MatchRow[];
+        if (recentWithinDays) {
+          const cutoff = Date.now() - recentWithinDays * 24 * 60 * 60 * 1000;
+          rows = rows.filter(m => new Date(m.game?.match_date ?? m.created_at).getTime() >= cutoff);
+        }
+        setMatches(rows);
         setLoading(false);
       });
-  }, [visible, playerId]);
+  }, [visible, playerId, recentWithinDays]);
 
   const handlePick = (m: MatchRow) => {
     onPick(buildStoryMatch(m, playerId), m.id);
@@ -71,7 +81,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
             <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Choisir un match</Text>
-            <Text style={{ fontSize: 11, color: Colors.textMuted }}>pour ta story</Text>
+            <Text style={{ fontSize: 11, color: Colors.textMuted }}>{subtitle ?? 'pour ta story'}</Text>
           </View>
           <View style={{ width: 36 }} />
         </View>
@@ -82,10 +92,12 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick }:
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
             <Image source={require('../assets/auth/splash-racket.png')} style={{ width: 40, height: 40, marginBottom: 8 }} resizeMode="contain" />
             <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center' }}>
-              Aucun match validé encore
+              {recentWithinDays ? 'Aucun match cette semaine' : 'Aucun match validé encore'}
             </Text>
             <Text style={{ fontSize: 12, color: Colors.textMuted, textAlign: 'center', marginTop: 4 }}>
-              Joue ta première partie pour pouvoir créer une story.
+              {recentWithinDays
+                ? 'Joue un match cette semaine pour le mettre en avant dans tes Moments.'
+                : 'Joue ta première partie pour pouvoir créer une story.'}
             </Text>
           </View>
         ) : (

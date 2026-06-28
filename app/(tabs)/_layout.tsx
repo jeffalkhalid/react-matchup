@@ -178,13 +178,17 @@ export default function TabLayout() {
         unreadByGame.set(gid, count ?? 0);
       }));
       recomputeTotal();
+      await recomputeDirect();
+    };
 
-      // Direct chats unread — wrapped in try/catch so any failure never breaks the game badge.
+    // Non-lus directs = demandes reçues NON ENCORE OUVERTES + messages non lus des
+    // conversations acceptées. Basé sur le non-lu → l'ouverture (mark_direct_read)
+    // efface le badge. Try/catch : un échec ne casse jamais le badge des parties.
+    const recomputeDirect = async () => {
       try {
         const convs = await fetchConversations();
-        // Non-lus des conversations acceptées + chaque demande reçue (pending) compte pour 1.
         const dUnread = convs.reduce((s, c) =>
-          s + (isRequestFor(c, player.id) ? 1 : c.status === 'accepted' ? unreadFor(c, player.id) : 0), 0);
+          s + ((isRequestFor(c, player.id) || c.status === 'accepted') ? unreadFor(c, player.id) : 0), 0);
         if (!cancelled) setDirectUnread(dUnread);
       } catch {}
     };
@@ -215,19 +219,23 @@ export default function TabLayout() {
       })
       .subscribe();
 
-    // Subscribe to direct_messages INSERTs to keep the direct-unread count live.
+    // Nouveau message direct → recalcul du non-lu.
     const dmCh = supabase
       .channel(`tab-chat-badge-dm:${player.id}:${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, payload => {
         const dm = payload.new as { sender_id: string } | null;
         if (!dm || dm.sender_id === player.id) return;
-        // Re-fetch all conversations to get accurate last_message_at / last_read values.
-        fetchConversations().then(convs => {
-          if (cancelled) return;
-          const dUnread = convs.reduce((s, c) =>
-            s + (isRequestFor(c, player.id) ? 1 : c.status === 'accepted' ? unreadFor(c, player.id) : 0), 0);
-          setDirectUnread(dUnread);
-        }).catch(() => {});
+        recomputeDirect();
+      })
+      .subscribe();
+
+    // Changement de conversation directe (nouvelle demande, accusé de lecture,
+    // acceptation/refus) → recalcul. C'est ce qui fait DISPARAÎTRE le badge dès
+    // que j'ouvre la demande (mark_direct_read met à jour la conversation).
+    const convCh = supabase
+      .channel(`tab-chat-badge-dmconv:${player.id}:${suffix}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_conversations' }, () => {
+        recomputeDirect();
       })
       .subscribe();
 
@@ -236,6 +244,7 @@ export default function TabLayout() {
       supabase.removeChannel(msgCh);
       supabase.removeChannel(readCh);
       supabase.removeChannel(dmCh);
+      supabase.removeChannel(convCh);
     };
   }, [player]);
 
