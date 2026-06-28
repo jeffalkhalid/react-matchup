@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PAG MATCH — Maquette Défi 2v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #F5F5F4; --card: #FFFFFF; --dark: #0A0A0A; --darkAlt: #1A1A1C;
+    --border: #E7E5E4; --brand: #FFC11A; --brandBright: #FFD23F; --brandDeep: #E8A906;
+    --danger: #EF4444; --warning: #F59E0B; --info: #3B82F6; --success: #10B981;
+    --txt: #0A0A0A; --txt2: #52525B; --muted: #A1A1AA;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    background: #18181B; color: var(--txt);
+    min-height: 100vh; padding: 28px 16px 60px;
+    display: flex; flex-direction: column; align-items: center; gap: 22px;
+  }
+  .pagetitle { color: #fff; font-weight: 900; font-size: 22px; letter-spacing: -0.4px; text-align: center; }
+  .pagetitle span { color: var(--brand); }
+  .subtitle { color: #A1A1AA; font-size: 13px; text-align: center; max-width: 640px; line-height: 1.5; margin-top: -12px; }
+  .frames { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  /* Phone frame */
+  .phone {
+    width: 340px; background: var(--bg); border-radius: 38px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5); border: 9px solid #000;
+    display: flex; flex-direction: column; height: 720px;
+  }
+  .phone-label { color:#fff; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:1px; text-align:center; margin-bottom:8px; opacity:.7;}
+  .notch { height: 26px; background:#000; border-radius: 0 0 16px 16px; width:120px; margin:0 auto; }
+  .screen { flex: 1; overflow-y: auto; }
+  .screen::-webkit-scrollbar { width: 0; }
+
+  /* Header */
+  .hdr { background: var(--dark); padding: 16px 16px 14px; position: sticky; top:0; z-index:5; }
+  .hdr-row { display:flex; align-items:center; justify-content:space-between; }
+  .hdr h1 { color:#fff; font-size: 20px; font-weight: 900; letter-spacing:-0.5px; }
+  .hdr h1 b { color: var(--brand); }
+  .cta {
+    background: var(--brand); color:#0A0A0A; border:none; font-weight:800; font-size:12.5px;
+    padding: 9px 13px; border-radius: 999px; cursor:pointer; display:flex; align-items:center; gap:5px;
+  }
+  /* Tabs */
+  .tabs { display:flex; gap:6px; margin-top:14px; background: rgba(255,255,255,.07); padding:4px; border-radius:12px; }
+  .tab { flex:1; text-align:center; font-size:12px; font-weight:700; color:#A1A1AA; padding:8px 4px; border-radius:9px; cursor:pointer; }
+  .tab.active { background: var(--brand); color:#0A0A0A; }
+  .tab .count { display:inline-block; min-width:16px; font-size:10px; }
+
+  /* Body */
+  .body { padding: 14px 13px 28px; display:flex; flex-direction:column; gap:12px; }
+  .section-pane { display:none; flex-direction:column; gap:12px; }
+  .section-pane.active { display:flex; }
+
+  /* Défi card */
+  .dcard { background: var(--card); border:1px solid var(--border); border-radius: 18px; padding: 14px; box-shadow: 0 2px 6px rgba(0,0,0,.04); }
+  .dcard.draft { border-style: dashed; opacity:.92; }
+  .versus { display:flex; align-items:center; gap:10px; }
+  .team { display:flex; align-items:center; gap:-6px; }
+  .avs { display:flex; }
+  .av { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#3F3F46,#18181B); color:#fff; font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; border:2px solid #fff; }
+  .av.b { background:linear-gradient(135deg,var(--brandDeep),var(--brand)); color:#0A0A0A; }
+  .av:not(:first-child){ margin-left:-10px; }
+  .av.ghost { background:#E7E5E4; color:#A1A1AA; border:2px dashed #C9C7C4; }
+  .tnames { font-size:12.5px; font-weight:700; line-height:1.25; }
+  .tnames small { display:block; color:var(--muted); font-weight:600; font-size:10.5px; }
+  .vs { font-weight:900; color:var(--muted); font-size:12px; padding:0 2px; }
+
+  .meta { display:flex; flex-wrap:wrap; gap:6px; margin-top:11px; }
+  .pill { font-size:10.5px; font-weight:700; padding:4px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; }
+  .pill.info { background:#EFF6FF; color:#2563EB; }
+  .pill.brand { background:#FFF7E0; color:#B7791F; }
+  .pill.stake { background:#0A0A0A; color:var(--brand); font-weight:800; }
+  .pill.elig { background:#ECFDF5; color:#059669; }
+  .pill.warn { background:#FEF3C7; color:#B45309; }
+  .pill.places { background:#F4F4F5; color:#52525B; }
+
+  .cardfoot { display:flex; align-items:center; justify-content:space-between; margin-top:13px; gap:10px; }
+  .relever { flex:1; background:var(--dark); color:#fff; border:none; font-weight:800; font-size:13px; padding:11px; border-radius:12px; cursor:pointer; }
+  .relever.ghost { background:#F4F4F5; color:var(--muted); }
+  .statustag { font-size:11px; font-weight:800; padding:6px 10px; border-radius:999px; }
+  .statustag.draft { background:#FEF3C7; color:#B45309; }
+  .statustag.open { background:#DBEAFE; color:#1D4ED8; }
+  .statustag.confirmed { background:#D1FAE5; color:#047857; }
+
+  .applicant { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-top:1px solid var(--border); }
+  .applicant:first-of-type { border-top:none; }
+
+  .empty { text-align:center; color:var(--muted); font-size:12.5px; padding:26px 12px; line-height:1.6; }
+
+  /* Navbar */
+  .nav { background:#0A0A0A; display:flex; justify-content:space-around; padding:10px 6px 16px; border-top:1px solid #222; }
+  .navitem { display:flex; flex-direction:column; align-items:center; gap:3px; color:#71717A; font-size:9.5px; font-weight:600; }
+  .navitem.active { color:var(--brand); }
+  .navicon { font-size:18px; }
+  .navplus { width:42px; height:42px; border-radius:50%; background:var(--brand); color:#0A0A0A; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; margin-top:-14px; box-shadow:0 4px 12px rgba(255,193,26,.5); }
+
+  /* Creation form */
+  .form { padding:16px 15px 30px; display:flex; flex-direction:column; gap:18px; }
+  .fld label { font-size:12px; font-weight:800; color:var(--txt2); text-transform:uppercase; letter-spacing:.5px; display:block; margin-bottom:7px; }
+  .selectbox { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 13px; font-size:13.5px; font-weight:600; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
+  .selectbox .ph { color:var(--muted); font-weight:500;}
+  .partnerchip { display:flex; align-items:center; gap:9px; background:#FFF7E0; border:1px solid #F5E2A8; border-radius:12px; padding:9px 11px; }
+  .partnerchip .av { width:30px; height:30px; font-size:12px; }
+  .partnerchip .x { margin-left:auto; color:var(--muted); font-weight:800; cursor:pointer; }
+  .sliderwrap { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 14px 10px; }
+  .sliderhead { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+  .sliderval { font-size:24px; font-weight:900; color:var(--txt); }
+  .sliderval small { font-size:12px; color:var(--muted); font-weight:600; }
+  input[type=range]{ width:100%; accent-color: var(--brand); height:24px; }
+  .hint { font-size:11px; color:var(--txt2); margin-top:6px; line-height:1.5; }
+  .hint b { color:var(--txt); }
+  .floorinfo { font-size:11px; color:var(--success); font-weight:700; }
+  .submit { background:var(--brand); color:#0A0A0A; border:none; font-weight:900; font-size:15px; padding:15px; border-radius:14px; cursor:pointer; margin-top:4px; }
+  .formnote { font-size:11px; color:var(--muted); text-align:center; line-height:1.6; }
+  .legend { color:#A1A1AA; font-size:11.5px; max-width:340px; text-align:center; line-height:1.6; }
+  .legend b { color:var(--brand); }
+</style>
+</head>
+<body>
+  <div class="pagetitle">PAG <span>MATCH</span> — Maquette du défi 2v2</div>
+  <div class="subtitle">Aperçu visuel non-fonctionnel des écrans clés. Les curseurs de l'écran « Créer un défi » sont vivants (mise + plafond de niveau) pour montrer la mécanique d'éligibilité.</div>
+
+  <div class="frames">
+
+    <!-- ============ HUB DÉFI ============ -->
+    <div>
+      <div class="phone-label">Hub Défi</div>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="screen">
+          <div class="hdr">
+            <div class="hdr-row">
+              <h1>Dé<b>fis</b></h1>
+              <button class="cta">＋ Lancer un défi</button>
+            </div>
+            <div class="tabs">
+              <div class="tab active" onclick="showPane('relever', this)">À relever <span class="count">·3</span></div>
+              <div class="tab" onclick="showPane('mes', this)">Mes défis <span class="count">·3</span></div>
+              <div class="tab" onclick="showPane('cand', this)">Candidatures <span class="count">·2</span></div>
+            </div>
+          </div>
+
+          <div class="body">
+            <!-- À RELEVER -->
+            <div class="section-pane active" id="pane-relever">
+              <!-- card 1 -->
+              <div class="dcard">
+                <div class="versus">
+                  <div class="avs"><div class="av">YK</div><div class="av">SA</div></div>
+                  <div class="tnames">Youssef &amp; Salma<small>moy. niv. 4.5</small></div>
+                  <div class="vs">VS</div>
+                  <div class="avs"><div class="av ghost">?</div><div class="av ghost">?</div></div>
+                </div>
+                <div class="meta">
+                  <span class="pill stake">⚡ Mise ×2.0</span>
+                  <span class="pill elig">✓ Éligible · moy. 4.5 → 6.0</span>
+                  <span class="pill info">📍 Padel Club Casa</span>
+                  <span class="pill brand">📅 Sam. 14h</span>
+                  <span class="pill places">👥 0/2</span>
+                </div>
+                <div class="cardfoot">
+                  <button class="relever">Relever — choisir mon binôme</button>
+                </div>
+              </div>
+              <!-- card 2 -->
+              <div class="dcard">
+                <div class="versus">
+                  <div class="avs"><div class="av">MR</div><div class="av">TA</div></div>
+                  <div class="tnames">Mehdi &amp; Tarik<small>moy. niv. 5.8</small></div>
+                  <div class="vs">VS</div>
+                  <div class="avs"><div class="av ghost">?</div><div class="av ghost">?</div></div>
+                </div>
+                <div class="meta">
+                  <span class="pill stake">⚡ Mise ×2.7</span>
+                  <span class="pill elig">✓ Éligible · moy. 5.8 → 7.0</span>
+                  <span class="pill info">📍 Smash Académie</span>
+                  <span class="pill brand">📅 Dim. 11h</span>
+                  <span class="pill places">👥 0/2</span>
+                </div>
+                <div class="cardfoot">
+                  <button class="relever">Relever — choisir mon binôme</button>
+                </div>
+              </div>
+              <!-- card 3 non éligible -->
+              <div class="dcard">
+                <div class="versus">
+                  <div class="avs"><div class="av">LB</div><div class="av">NB</div></div>
+                  <div class="tnames">Leila &amp; Nadia<small>moy. niv. 6.9</small></div>
+                  <div class="vs">VS</div>
+                  <div class="avs"><div class="av ghost">?</div><div class="av ghost">?</div></div>
+                </div>
+                <div class="meta">
+                  <span class="pill stake">⚡ Mise ×1.8</span>
+                  <span class="pill warn">⚠ Ton binôme moy. 4.5 &lt; plancher 6.9</span>
+                  <span class="pill info">📍 Anfa Padel</span>
+                  <span class="pill brand">📅 Lun. 19h</span>
+                </div>
+                <div class="cardfoot">
+                  <button class="relever ghost">Binôme trop faible pour ce défi</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- MES DÉFIS -->
+            <div class="section-pane" id="pane-mes">
+              <div class="dcard draft">
+                <div class="versus">
+                  <div class="avs"><div class="av b">MOI</div><div class="av ghost">?</div></div>
+                  <div class="tnames">Moi &amp; <i>Karim (invité)</i><small>en attente de sa réponse</small></div>
+                  <div class="vs">VS</div>
+                  <div class="avs"><div class="av ghost">?</div><div class="av ghost">?</div></div>
+                </div>
+                <div class="meta">
+                  <span class="pill stake">⚡ ×2.0</span>
+                  <span class="pill info">📍 Padel Club Casa</span>
+                  <span class="pill brand">📅 Sam. 14h</span>
+                </div>
+                <div class="cardfoot">
+                  <span class="statustag draft">⏳ Brouillon — non publié</span>
+                  <span style="font-size:11px;color:var(--muted);font-weight:600;">Visible une fois Karim OK</span>
+                </div>
+              </div>
+
+              <div class="dcard">
+                <div class="versus">
+                  <div class="avs"><div class="av b">MOI</div><div class="av b">RA</div></div>
+                  <div class="tnames">Moi &amp; Rachid<small>moy. niv. 4.5</small></div>
+                  <div class="vs">VS</div>
+                  <div class="avs"><div class="av ghost">?</div><div class="av ghost">?</div></div>
+                </div>
+                <div class="meta">
+                  <span class="pill stake">⚡ ×2.0</span>
+                  <span class="pill elig">moy. 4.5 → 6.0</span>
+                  <span class="pill places">👥 2 binômes candidats</span>
+                </div>
+                <div class="cardfoot">
+                  <span class="statustag open">🟢 Ouvert — course en cours</span>
+                </div>
+              </div>
+
+              <div class="dcard">
+                <div class="versus">
+                  <div class="avs"><div class="av b">MOI</div><div class="av b">RA</div></div>
+                  <div class="tnames">Moi &amp; Rachid<small>moy. niv. 4.5</small></div>
+                  <div class="vs">VS</div>
+                  <div class="avs"><div class="av">OF</div><div class="av">HM</div></div>
+                </div>
+                <div class="meta">
+                  <span class="pill stake">⚡ ×2.0</span>
+                  <span class="pill info">📍 Smash Académie</span>
+                  <span class="pill brand">📅 Ven. 20h</span>
+                </div>
+                <div class="cardfoot">
+                  <span class="statustag confirmed">✅ Confirmé 4/4 — vs Omar &amp; Hamza</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- CANDIDATURES -->
+            <div class="section-pane" id="pane-cand">
+              <div class="dcard">
+                <div style="font-size:12px;font-weight:800;color:var(--txt2);margin-bottom:4px;">Sur ton défi vs <b>Moi &amp; Rachid</b> · ⚡×2.0</div>
+                <div class="applicant">
+                  <div class="versus" style="gap:8px;">
+                    <div class="avs"><div class="av">OF</div><div class="av">HM</div></div>
+                    <div class="tnames">Omar &amp; Hamza<small>moy. 5.2 · ✓ complet</small></div>
+                  </div>
+                  <span class="statustag confirmed">🏁 1er complet</span>
+                </div>
+                <div class="applicant">
+                  <div class="versus" style="gap:8px;">
+                    <div class="avs"><div class="av">JD</div><div class="av ghost">?</div></div>
+                    <div class="tnames">Jamal &amp; <i>partenaire ?</i><small>en attente du partenaire</small></div>
+                  </div>
+                  <span class="statustag draft">⏳ Incomplet</span>
+                </div>
+                <div class="hint" style="margin-top:10px;">Résolution <b>automatique</b> : le premier binôme complet rafle les deux places, l'autre est notifié du refus. Aucune action requise de ta part.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="nav">
+            <div class="navitem"><span class="navicon">🏠</span>Accueil</div>
+            <div class="navitem"><span class="navicon">📊</span>Activité</div>
+            <div class="navitem"><span class="navplus">＋</span></div>
+            <div class="navitem active"><span class="navicon">⚔️</span>Défi</div>
+            <div class="navitem"><span class="navicon">💬</span>Chats</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ CRÉATION (dans le CreateWizard) ============ -->
+    <div>
+      <div class="phone-label">Créer un défi · CreateWizard</div>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="screen">
+          <div class="hdr">
+            <div class="hdr-row">
+              <button class="cta" style="background:#27272A;color:#fff;padding:8px 11px;">‹</button>
+              <h1 style="font-size:16px;">Créer un <b>défi</b></h1>
+              <button class="cta" style="background:#27272A;color:#fff;padding:8px 11px;">✕</button>
+            </div>
+            <!-- Stepper du wizard (mode Défi : Quand&Où · Mon binôme · La partie) -->
+            <div style="display:flex;align-items:center;gap:6px;margin-top:13px;">
+              <div style="flex:1;height:4px;border-radius:9px;background:var(--brand);"></div>
+              <div style="flex:1;height:4px;border-radius:9px;background:var(--brand);"></div>
+              <div style="flex:1;height:4px;border-radius:9px;background:var(--brand);"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:10px;font-weight:700;color:#71717A;">
+              <span>Quand &amp; Où</span><span>Mon binôme</span><span style="color:var(--brand);">La partie</span>
+            </div>
+          </div>
+
+          <div class="form" style="gap:16px;">
+            <!-- Rappel binôme (choisi à l'étape précédente) -->
+            <div class="fld">
+              <label>Mon binôme <span style="color:var(--brandDeep);font-size:10px;">NOUVELLE ÉTAPE</span></label>
+              <div style="display:flex;gap:8px;">
+                <div class="partnerchip" style="flex:1;">
+                  <div class="av b">MOI</div>
+                  <div><div style="font-weight:700;font-size:12.5px;">Moi</div><div style="font-size:10.5px;color:var(--txt2);">Niv. 4.0</div></div>
+                </div>
+                <div class="partnerchip" style="flex:1;">
+                  <div class="av b">KA</div>
+                  <div><div style="font-weight:700;font-size:12.5px;">Karim</div><div style="font-size:10.5px;color:var(--txt2);">Niv. 5.0</div></div>
+                  <span class="x">✕</span>
+                </div>
+              </div>
+              <div class="hint"><span class="floorinfo">→ Plancher d'éligibilité = moyenne du binôme : <b>4.5</b></span> (calculé ici, sert de borne basse au plafond ci-dessous).</div>
+            </div>
+
+            <!-- Type de match (Défi pré-sélectionné) -->
+            <div class="fld">
+              <label>Type de match</label>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px;border-radius:12px;border:2px solid var(--brand);background:rgba(255,193,26,.10);">
+                <span style="font-size:18px;">⚡</span><div><div style="font-weight:900;font-size:13px;color:var(--brandDeep);">Défi</div><div style="font-size:10.5px;color:var(--muted);">Défier une équipe adverse</div></div>
+                <span style="margin-left:auto;color:var(--brandDeep);font-weight:900;">✓</span>
+              </div>
+            </div>
+
+            <!-- Mise (NOUVEAU, Défi only) -->
+            <div class="fld">
+              <label>⚡ Mise — points en jeu <span style="color:var(--brandDeep);font-size:10px;">NOUVEAU</span></label>
+              <div class="sliderwrap">
+                <div class="sliderhead">
+                  <div class="sliderval" id="stakeval">×2.0</div>
+                  <div style="font-size:11px;font-weight:700;color:var(--muted);">risque ELO</div>
+                </div>
+                <input type="range" id="stake" min="1.5" max="3" step="0.1" value="2.0" oninput="upd()" />
+                <div class="hint">Le delta ELO du match est multiplié par <b id="staketxt">2.0</b> pour les 4 joueurs. Plus la mise est haute, plus on gagne… ou perd.</div>
+              </div>
+            </div>
+
+            <!-- Plafond (remplace la bande de niveau du Défi) -->
+            <div class="fld">
+              <label>Plafond de niveau adverse <span style="color:var(--brandDeep);font-size:10px;">NOUVEAU</span></label>
+              <div class="sliderwrap">
+                <div class="sliderhead">
+                  <div class="sliderval" id="capval">6.0</div>
+                  <div style="font-size:11px;font-weight:700;color:var(--muted);">moyenne max</div>
+                </div>
+                <input type="range" id="cap" min="4.5" max="8" step="0.1" value="6.0" oninput="upd()" />
+                <div class="hint">Éligibles : binômes dont la <b>moyenne</b> ∈ [ <b id="bandlo">4.5</b> plancher · <b id="bandhi">6.0</b> plafond ].<br/><span class="floorinfo">Plancher 4.5 = moyenne de ton binôme (toi 4.0 + Karim 5.0), défini à l'étape « Mon binôme ».</span></div>
+              </div>
+            </div>
+
+            <!-- Note Team B verrouillée -->
+            <div style="background:#FFF7E0;border:1px solid #F5E2A8;border-radius:12px;padding:11px;font-size:11px;color:#8a6d1f;line-height:1.5;">
+              🔒 En mode Défi, <b>Team A = ton binôme</b> (toi + Karim, défini à l'étape précédente). Le <b>binôme adverse reste ouvert</b> — il sera rempli par la <b>course de candidatures</b>, pas par toi.
+            </div>
+
+            <button class="submit">Publier le défi</button>
+            <div class="formnote">À la publication, le défi reste <b>invisible</b> tant que ton partenaire n'a pas accepté.<br/>Dès qu'il accepte → publié dans « À relever ».</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    Mécanique : <b>plancher</b> = moyenne de la paire créatrice (auto) · <b>plafond</b> = curseur du défieur · un binôme est éligible si sa moyenne ∈ [plancher, plafond] · la <b>mise</b> multiplie le delta ELO (×1.5→×3) · côté adverse, <b>premier binôme complet gagne la place</b>.
+  </div>
+
+<script>
+  function showPane(id, el){
+    document.querySelectorAll('.section-pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById('pane-'+id).classList.add('active');
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+  }
+  function upd(){
+    const s = parseFloat(document.getElementById('stake').value).toFixed(1);
+    const c = parseFloat(document.getElementById('cap').value).toFixed(1);
+    document.getElementById('stakeval').textContent = '×'+s;
+    document.getElementById('staketxt').textContent = s;
+    document.getElementById('capval').textContent = c;
+    document.getElementById('bandhi').textContent = c;
+    // plafond ne peut pas descendre sous le plancher 4.5 (garde-fou)
+    const cap = document.getElementById('cap');
+    if (parseFloat(cap.value) < 4.5){ cap.value = 4.5; }
+  }
+  upd();
+</script>
+</body>
+</html>

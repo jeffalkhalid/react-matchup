@@ -165,15 +165,36 @@ Trois sections :
 
 Le 1v1 « Défier depuis Suggestions » est **retiré**.
 
-### Création du défi — formulaire unique, deux portes
+### Création du défi — DANS le `CreateWizard` existant (cohérence)
 
-Un **seul composant** de création de défi, atteignable depuis :
-- le bouton « Lancer un défi » du **hub Défi** ;
-- une option « Défi » dans le **⊕Créer / `CreateWizard`** (sans surcharger la logique du
-  wizard de partie : l'option route vers le même composant de création de défi).
+La création de défi **réutilise le `CreateWizard`**, qui possède **déjà un type
+« Défi »** (3ᵉ option de l'étape « La partie », thème jaune `getTheme('Défi')`, bande de
+niveau dédiée, slots 2v2). On n'ajoute **aucun écran** : toute porte d'entrée ouvre le
+wizard avec `initialGameType='Défi'`.
 
-Champs : club + date (sélecteurs existants réutilisés), **invite partenaire**, **curseur
-de mise** (×1.5→×3), **curseur de plafond de niveau** (≥ plancher auto-calculé et affiché).
+Portes d'entrée :
+- bouton « Lancer un défi » du **hub Défi** → `CreateWizard` (Défi pré-sélectionné) ;
+- le **⊕Créer** de la navbar → wizard, où « Défi » reste un type sélectionnable.
+
+Extensions à apporter au type Défi du wizard (la refonte) :
+- **Nouvelle étape « Mon binôme », placée AVANT le réglage mise/plafond** (Défi
+  uniquement). Le créateur y **choisit son partenaire** ; dès qu'il est désigné, le
+  **plancher de niveau = `moyenne(niveau créateur, niveau partenaire)`** est calculé et
+  affiché. *Raison* : le plafond se règle relativement au plancher, donc le binôme doit
+  être connu d'abord. Ordre des étapes en mode Défi :
+  `Quand & Où → Mon binôme → La partie (mise + plafond) → récap/publication`.
+- Étape « La partie » : **curseur de mise** (×1.5→×3) + **curseur de plafond de niveau**,
+  ce dernier borné `≥ plancher` (déjà connu grâce à l'étape précédente) et affichant la
+  bande d'éligibilité `[plancher, plafond]` en direct.
+- Plus de slots adverses : en mode Défi, **Team A = créateur + partenaire** (issus de
+  l'étape « Mon binôme »), **Team B reste « ouverte »** — remplie par la course de
+  candidatures-binômes, pas par le créateur. (Aujourd'hui le wizard laisse assigner
+  B0/B1 ; on le supprime en Défi → l'ancienne étape « L'équipe » disparaît au profit de
+  « Mon binôme ».)
+- Le nouveau plancher data-driven **remplace** l'actuel `defaultLevelBand('Défi')` (min
+  verrouillé à niveau+0.5) qui ignorait le partenaire.
+- Le bouton de publication crée le défi en **`draft`** (non publié) tant que le
+  partenaire n'a pas accepté — la course adverse ne démarre qu'après.
 
 ### Nettoyage
 
