@@ -12,7 +12,7 @@
 
 - **Parties normales inchangées** : Compétitif/Amical gardent `Quand & Où → La partie → L'équipe` (3 étapes), level range, slots A/B éditables. Aucune régression visible ni logique.
 - **Défi = 4 étapes**, type choisi à l'étape « La partie » (ou pré-fixé via `initialGameType='Défi'`). L'étape « Mon binôme » vient **AVANT** « Mise & plafond » (le plancher = moyenne du binôme borne le plafond).
-- **Plancher** `minLevel = moyenne(niveau créateur, niveau partenaire)` ; **plafond** `maxLevel = curseur ∈ [plancher, 8.0]` ; **mise** `stakeMultiplier ∈ [1.5, 3.0]`. Contrainte DB Phase 1 : `is_challenge ⇒ stake ∈ [1.5,3.0] ET max_elo ≥ min_elo` → toujours respecter à l'insert.
+- **Plancher** `minLevel = moyenne(niveau créateur, niveau partenaire)` ; **plafond** `maxLevel = curseur ∈ [plancher, 8.0]` ; **mise** `stakeMultiplier ∈ [1.5, 3.0]`. Contrainte DB Phase 1 (`open_games_defi_stake_chk`) : `stake_multiplier = 1.0 OU ∈ [1.5,3.0]` → un défi DOIT poser une valeur dans [1.5,3.0] (les curseurs la garantissent). Le `max_elo ≥ min_elo` n'est PAS dans la contrainte mais reste garanti par le clamp du curseur de plafond.
 - **Niveau→ELO** : `padelLevelToElo()` / `eloToLevel()` (déjà importés dans le wizard). `min_elo = padelLevelToElo(minLevel)`, `max_elo = padelLevelToElo(maxLevel)`.
 - **Statut `draft`** : `open_games.status` n'a PAS de contrainte CHECK → `'draft'` est libre. Un défi `draft` doit être EXCLU des listes publiques (Explorer/Lobby) jusqu'à publication.
 - **Ne plus écrire dans `challenges`** : retirer le bloc `supabase.from('challenges').insert(...)` du publish (lobby.tsx ~2109-2120). Table laissée dormante (Phase 5).
@@ -463,7 +463,7 @@ git commit -m "feat(defi): étape « Mise & plafond » (curseurs ×1.5→×3 et 
 ## Self-review (Phase 2)
 
 - **Couverture spec** : type Défi → 4 étapes (Task 3) ✓ ; « Mon binôme » avant mise/plafond (Tasks 3-4) ✓ ; plancher = moyenne du binôme (Task 4) ✓ ; mise ×1.5→×3 → `stake_multiplier` (Tasks 2,5) ✓ ; plafond → `max_elo`, plancher → `min_elo` (Tasks 2,5) ✓ ; Team B non éditable par le créateur (le créateur ne pose qu'un partenaire A) ✓ ; publication différée `draft`→`open` (Task 1) ✓ ; retrait écriture `challenges` (Task 2) ✓ ; parties normales inchangées (rendus non-Défi intacts) ✓.
-- **Contrainte DB Phase 1** : à l'insert défi, `stake ∈ [1.5,3.0]` (clampé par les curseurs) et `max_elo ≥ min_elo` (`maxLevel ≥ defiFloorLevel` garanti par `setCap`/le useEffect) → la contrainte `open_games_defi_stake_chk` ne peut pas être violée.
+- **Contrainte DB Phase 1** : à l'insert défi, `stake ∈ [1.5,3.0]` (clampé par les curseurs) → la contrainte `open_games_defi_stake_chk` (domaine `1.0 OU [1.5,3.0]`) ne peut pas être violée. `max_elo ≥ min_elo` reste garanti par `setCap`/le useEffect (clamp `maxLevel ≥ defiFloorLevel`), même si ce n'est plus dans la contrainte DB.
 - **Risque identifié** : la liste des requêtes de listing public à filtrer `draft` (Task 1 Step 3) doit être vérifiée une à une (ne pas filtrer « mes parties »). L'implémenteur DOIT lire chaque requête avant d'éditer.
 - **Hors Phase 2** : surface de relève (hub, `defi_apply`/`defi_accept` côté client), notifications défi, retrait `lib/challenges.ts` → Phases 3-5.
 

@@ -102,8 +102,12 @@ delta = round( K × (1 − attendu) × antiFarm × marge × stake )
 | `open_games` | `stake_multiplier` | `numeric(3,2) DEFAULT 1.0` | mise ELO 1.50 → 3.00 (1.0 si non-défi) |
 | `matches` | `stake_multiplier` | `numeric(3,2) DEFAULT 1.0` | mise copiée depuis l'`open_game`, lue par le trigger ELO |
 
-Contrainte sur `open_games` : si `is_challenge`, alors
-`stake_multiplier ∈ [1.5, 3.0]` ET `max_elo ≥ min_elo` (garde-fou plafond ≥ plancher).
+Contrainte sur `open_games` (`open_games_defi_stake_chk`) : valide seulement le
+**domaine du stake** — `stake_multiplier = 1.0` (non-défis + anciens défis sans mise)
+**OU** `∈ [1.5, 3.0]`. On ne couple PAS à `is_challenge` : des `open_games`
+`is_challenge=true` préexistent (ancien wizard) et ont hérité du défaut `1.0` ; les
+coupler casserait la contrainte sur l'existant. Le `max_elo ≥ min_elo` est garanti côté
+création (curseur de plafond borné au plancher), pas par la contrainte.
 
 ### `defi_applications` — nouvelle table
 

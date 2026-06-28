@@ -45,16 +45,14 @@ ALTER TABLE public.open_games
 ALTER TABLE public.matches
   ADD COLUMN IF NOT EXISTS stake_multiplier numeric(3,2) NOT NULL DEFAULT 1.0;
 
--- Garde-fou : un défi (is_challenge) doit avoir une mise dans [1.5, 3.0]
--- ET un plafond >= plancher (max_elo >= min_elo). Les non-défis : stake = 1.0.
+-- Garde-fou : valide UNIQUEMENT le domaine du stake — 1.0 (non-défis + anciens
+-- défis is_challenge=true qui héritent du défaut) OU [1.5, 3.0]. NE PAS coupler
+-- à is_challenge (sinon la contrainte casse sur les défis existants à 1.0).
 ALTER TABLE public.open_games DROP CONSTRAINT IF EXISTS open_games_defi_stake_chk;
 ALTER TABLE public.open_games
   ADD CONSTRAINT open_games_defi_stake_chk CHECK (
-    (is_challenge IS NOT TRUE AND stake_multiplier = 1.0)
-    OR
-    (is_challenge IS TRUE
-      AND stake_multiplier >= 1.5 AND stake_multiplier <= 3.0
-      AND coalesce(max_elo, 0) >= coalesce(min_elo, 0))
+    stake_multiplier = 1.0
+    OR (stake_multiplier >= 1.5 AND stake_multiplier <= 3.0)
   );
 
 COMMIT;
