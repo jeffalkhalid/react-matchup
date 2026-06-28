@@ -1,10 +1,16 @@
 -- react-matchup/supabase/migrations/defi_stake_elo.sql
 -- ============================================================
--- Défi 2v2 — applique la MISE au delta ELO per-joueur.
--- Reprend fn_distribute_elo_on_validate (elo_per_player_k.sql) à
--- l'IDENTIQUE, seule la ligne du delta change :
---   delta_i = round(greatest(1, round(k_i*factor)) * marge * STAKE)
--- avec STAKE = coalesce(NEW.stake_multiplier, 1.0).
+-- Défi 2v2 — applique la MISE (stake) au delta ELO per-joueur.
+-- Reprend fn_distribute_elo_on_validate dans son état CANONIQUE
+-- (elo_placement_phase.sql : phase de placement K=85 / blowout 2.5
+-- / cap 90 pour les 4 premiers matchs) — surtout NE PAS repartir de
+-- elo_per_player_k.sql qui est antérieur et n'a pas la phase de
+-- placement (sinon on la supprimerait en prod).
+-- Seules les DEUX branches du delta sont multipliées par STAKE :
+--   STAKE = coalesce(NEW.stake_multiplier, 1.0).
+-- En placement, le cap 90 s'applique APRÈS le stake (identique à
+-- lib/elo.ts : Math.min(delta, 90) après *stakeMultiplier) → une
+-- grosse mise ne fait pas exploser un match de placement.
 -- Non-défi → stake 1.0 → comportement inchangé.
 -- ============================================================
 BEGIN;
@@ -63,11 +69,26 @@ BEGIN
   margin := public.elo_margin_multiplier(NEW.score_text);
   factor := (1 - expected) * anti;
 
-  -- delta PAR JOUEUR × MISE (seule ligne modifiée vs elo_per_player_k.sql)
+  -- delta PAR JOUEUR × MISE (les DEUX branches multipliées par stake).
+  --   Placement (matchs joués < 4) : K=85, blowout (1.5) amplifié à 2.5,
+  --     cap 90 APRÈS le stake.
+  --   Sinon : K per-joueur sur la fiabilité, marge inchangée.
   CREATE TEMP TABLE _elo_delta ON COMMIT DROP AS
     SELECT
       s.id, s.decayed, s.elo_score,
-      round(greatest(1, round(public.elo_k_factor(s.fiability_pct) * factor)) * margin * stake)::int AS delta
+      CASE
+        WHEN (coalesce(s.win_count, 0) + coalesce(s.loss_count, 0)) < 4 THEN
+          least(
+            90,
+            round(
+              greatest(1, round(85 * factor))
+              * (CASE WHEN margin = 1.5 THEN 2.5 ELSE margin END)
+              * stake
+            )
+          )::int
+        ELSE
+          round(greatest(1, round(public.elo_k_factor(s.fiability_pct) * factor)) * margin * stake)::int
+      END AS delta
     FROM _elo_snap s;
 
   UPDATE public.players p SET
