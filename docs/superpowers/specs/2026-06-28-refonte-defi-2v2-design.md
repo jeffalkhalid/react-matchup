@@ -39,7 +39,7 @@ partenaires se greffent après) ; on n'implémente ici que le **défi classique 
 
 ### 1. Le défi est une `open_game`, pas une entité séparée
 
-Un défi = une `open_game` **2v2** marquée `is_defi`. On **réutilise** l'infrastructure
+Un défi = une `open_game` **2v2** marquée `is_challenge`. On **réutilise** l'infrastructure
 existante (lobby, saisie de score, anti-chevauchement ±2h, calcul ELO). On n'ajoute
 que les champs de défi et la mécanique de candidature-binôme. Raison : le scoring/ELO
 existant est robuste ; une entité `defi_matches` autonome dupliquerait beaucoup et
@@ -73,23 +73,37 @@ delta = round( K × (1 − attendu) × antiFarm × marge × stake )
 - Symétrique : appliqué aux 4 joueurs (gagnants comme perdants).
 - **`antiFarm` conservé** : un binôme qui écrase un binôme bien plus faible gagne moins,
   même en défi (anti-farm préservé malgré la mise).
-- Autorité = le trigger SQL `fn_distribute_elo_on_validate` (`elo_per_player_k.sql`).
-  **Répliquer à l'identique** dans `lib/elo.ts` (le simulateur de l'admin), sinon
-  divergence simulateur/réalité.
+- `stake = coalesce(NEW.stake_multiplier, 1.0)` lu sur la ligne `matches` (copié depuis
+  l'`open_game` à la saisie de score). Pour toute partie non-défi, `stake = 1.0` → aucun
+  changement de comportement.
+- Autorité = le trigger SQL `fn_distribute_elo_on_validate` (`elo_per_player_k.sql`),
+  ligne du `delta` per-joueur. **Répliquer à l'identique** dans `lib/elo.ts` (simulateur
+  admin), sinon divergence simulateur/réalité.
 
 ## Modèle de données
 
-### `open_games` — colonnes ajoutées
+### Réutilisation de l'existant (DRY — découvertes du code)
 
-| Colonne | Type | Rôle |
-|---|---|---|
-| `is_defi` | `boolean NOT NULL DEFAULT false` | marque la partie comme défi |
-| `stake_multiplier` | `numeric(3,2)` | mise ELO 1.50 → 3.00 (NULL si non-défi) |
-| `defi_level_floor` | `numeric` | plancher = moyenne de niveau de la paire créatrice (figé à la création) |
-| `defi_level_cap` | `numeric` | plafond de niveau choisi par le défieur |
+- **`open_games.is_challenge`** existe DÉJÀ et vaut `true` pour un Défi (posé par le
+  wizard, `lobby.tsx:2075`). On le **réutilise** — pas de colonne `is_defi`.
+- **`open_games.min_elo` / `max_elo`** stockent déjà la bande de niveau (en ELO, via
+  `padelLevelToElo`). Pour un défi on y met **plancher = `padelLevelToElo(moyenne paire)`**
+  et **plafond = `padelLevelToElo(cap choisi)`**. Pas de colonnes `defi_level_*`. La
+  bande défi est une **moyenne de binôme** (≠ filtre par-joueur des parties normales) :
+  c'est la **RPC de candidature** qui l'interprète ainsi (les défis ne passent pas par
+  `join_game`).
+- **`matches.is_challenge` / `game_format`** existent déjà et sont copiés depuis
+  l'`open_game` au moment de la saisie de score (`score-entry.tsx:484`).
 
-Contrainte : si `is_defi`, alors `stake_multiplier ∈ [1.5, 3.0]` et
-`defi_level_cap ≥ defi_level_floor`.
+### Colonnes réellement ajoutées
+
+| Table | Colonne | Type | Rôle |
+|---|---|---|---|
+| `open_games` | `stake_multiplier` | `numeric(3,2) DEFAULT 1.0` | mise ELO 1.50 → 3.00 (1.0 si non-défi) |
+| `matches` | `stake_multiplier` | `numeric(3,2) DEFAULT 1.0` | mise copiée depuis l'`open_game`, lue par le trigger ELO |
+
+Contrainte sur `open_games` : si `is_challenge`, alors
+`stake_multiplier ∈ [1.5, 3.0]` ET `max_elo ≥ min_elo` (garde-fou plafond ≥ plancher).
 
 ### `defi_applications` — nouvelle table
 
@@ -135,15 +149,15 @@ requêtes du hub tant que le partenaire créateur n'a pas accepté.
 
 ## Éligibilité
 
-Un binôme candidat `(a, b)` peut relever un défi ssi :
+Un binôme candidat `(a, b)` peut relever un défi ssi (en ELO, sur `min_elo`/`max_elo`) :
 
 ```
-defi_level_floor ≤ moyenne(level(a), level(b)) ≤ defi_level_cap
+min_elo ≤ moyenne(elo(a), elo(b)) ≤ max_elo
 ```
 
-- `defi_level_floor` = `moyenne(level(créateur), level(partenaire créateur))`, figé à
-  la création. Exemple : créateur niv. 4 + partenaire niv. 5 → plancher **4.5**.
-- `defi_level_cap` = curseur du défieur, contraint `≥ defi_level_floor`.
+- `min_elo` (plancher) = `padelLevelToElo(moyenne(level(créateur), level(partenaire)))`,
+  figé à la création. Exemple : créateur niv. 4 + partenaire niv. 5 → plancher niv. **4.5**.
+- `max_elo` (plafond) = `padelLevelToElo(cap choisi)`, contraint `≥ min_elo`.
 - Le niveau dérive de l'ELO via `eloToLevel` (échelle existante, saturation niv. 8 à
   ELO 1750). Le filtre s'applique **côté requête** du hub (ne montrer que les défis
   éligibles) **et** est revalidé **côté RPC** au moment du lock (anti-triche / anti-race
