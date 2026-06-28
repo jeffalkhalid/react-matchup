@@ -462,7 +462,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   // Plancher de niveau du défi = moyenne (créateur, partenaire choisi).
   // Le partenaire est l'unique invité sur un slot Team A (A0/A1).
-  const defiPartner = Object.entries(form.invites).find(([k]) => k.startsWith('A'))?.[1] ?? null;
+  const defiPartner = Object.entries(form.invites).find(([k]) => k === 'A1')?.[1] ?? null;
   const defiFloorLevel = (() => {
     const meLv = player ? eloToLevel(player.elo_score) : 4.0;
     if (!defiPartner) return meLv;
@@ -1032,7 +1032,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-              Inviter — Éq. {inviteTarget[0]} · {inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}
+              {form.gameType === 'Défi' ? 'Mon binôme' : `Inviter — Éq. ${inviteTarget[0]} · ${inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}`}
             </Text>
             <TouchableOpacity onPress={() => { setInviteTarget(null); setSearchQ(''); }}
               style={{ width: 24, height: 24, backgroundColor: Colors.bgCardAlt, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
@@ -1102,7 +1102,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </View>
           {/* Partenaire (A1) */}
           <TouchableOpacity activeOpacity={0.8}
-            onPress={() => defiPartner ? (() => { const ni = { ...form.invites }; Object.keys(ni).filter(k => k.startsWith('A')).forEach(k => delete ni[k]); set('invites', ni); })() : openInvite('A1')}
+            onPress={() => defiPartner ? (() => { const ni = { ...form.invites }; delete ni['A1']; set('invites', ni); })() : openInvite('A1')}
             style={{ flex: 1, backgroundColor: defiPartner ? t.teamABg : t.libreBg, borderWidth: 1.5, borderStyle: defiPartner ? 'solid' : 'dashed', borderColor: defiPartner ? t.teamABorder : t.libreBorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
             {defiPartner ? (
               <>
