@@ -172,9 +172,18 @@ La création de défi **réutilise le `CreateWizard`**, qui possède **déjà un
 niveau dédiée, slots 2v2). On n'ajoute **aucun écran** : toute porte d'entrée ouvre le
 wizard avec `initialGameType='Défi'`.
 
-Portes d'entrée :
-- bouton « Lancer un défi » du **hub Défi** → `CreateWizard` (Défi pré-sélectionné) ;
-- le **⊕Créer** de la navbar → wizard, où « Défi » reste un type sélectionnable.
+Portes d'entrée (les **deux** créent des défis, même wizard) :
+- bouton « Lancer un défi » du **hub Défi** → `CreateWizard` avec `initialGameType='Défi'`
+  (l'étape de choix du type est sautée) ;
+- le **⊕Créer** de la navbar → wizard ouvert sans type imposé ; « Défi » reste un type
+  sélectionnable à l'étape « La partie ».
+
+**Les parties normales (Compétitif / Amical) ne changent pas** : elles conservent le
+flux actuel `Quand & Où → La partie → L'équipe`. Les écrans spécifiques au défi (étape
+« Mon binôme », curseurs mise/plafond, Team B verrouillée) ne sont **insérés que si le
+type = Défi**. Séquencement Défi, identique depuis les deux portes :
+`Quand & Où → (choix du type = Défi) → Mon binôme → Mise & plafond → publication`
+(depuis le hub, le choix du type est pré-fait et sauté).
 
 Extensions à apporter au type Défi du wizard (la refonte) :
 - **Nouvelle étape « Mon binôme », placée AVANT le réglage mise/plafond** (Défi
