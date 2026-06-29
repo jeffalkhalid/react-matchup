@@ -31,6 +31,7 @@ import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { Icon } from '../../components/community/icons';
 import { fetchBinomeInvitations, acceptBinomeInvitation, type DefiApplication } from '../../lib/defis';
+import { notifyDefiConfirmed } from '../../lib/defiNotify';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -2152,9 +2153,9 @@ export default function LobbyScreen() {
       const isChallenge = data.gameType === 'Défi';
       notifyPlayers({
         playerIds: invites.map(i => i.player_id),
-        title: isChallenge ? '⚡ Tu as été défié !' : '⚡ Invitation reçue',
+        title: isChallenge ? '🎾 Invitation à un défi' : '⚡ Invitation reçue',
         body: isChallenge
-          ? `${player.name} te défie en duel sur le padel`
+          ? `${player.name} t'invite comme binôme pour un défi 2v2`
           : `${player.name} t'invite à une partie de padel`,
         data: { type: 'lobby', gameId: game.id },
       });
@@ -2563,6 +2564,7 @@ export default function LobbyScreen() {
   const acceptBinomeFromLobby = async (app: DefiApplication) => {
     try {
       const res = await acceptBinomeInvitation(app.id);
+      if (res === 'locked') notifyDefiConfirmed(app, player?.id ?? '');
       Alert.alert(
         res === 'locked' ? '✅ Binôme verrouillé' : '⏳ Trop tard',
         res === 'locked' ? 'Le défi est confirmé — rendez-vous sur le terrain !' : 'Un autre binôme a pris la place.',

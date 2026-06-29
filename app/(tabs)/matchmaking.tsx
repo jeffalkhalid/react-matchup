@@ -16,6 +16,7 @@ import {
   acceptBinomeInvitation, applyToDefi,
   type DefiGame, type DefiApplication,
 } from '../../lib/defis';
+import { notifyPartnerInvitedToRelever, notifyDefiConfirmed } from '../../lib/defiNotify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
 
@@ -297,6 +298,7 @@ export default function MatchmakingScreen() {
     setApplying(true);
     try {
       await applyToDefi(releverGame.id, partner.id);
+      notifyPartnerInvitedToRelever(partner.id, player?.name ?? '');
       setReleverGame(null);
       showToast(`Candidature envoyée — ${partner.name} doit accepter pour verrouiller le binôme.`);
       fetchData();
@@ -315,6 +317,7 @@ export default function MatchmakingScreen() {
   const handleAcceptBinome = async (app: DefiApplication) => {
     try {
       const res = await acceptBinomeInvitation(app.id);
+      if (res === 'locked') notifyDefiConfirmed(app, player?.id ?? '');
       showToast(res === 'locked' ? '✅ Binôme verrouillé — défi confirmé !' : '⏳ Trop tard : un autre binôme a pris la place');
       await fetchData();
       reloadNotifs();
