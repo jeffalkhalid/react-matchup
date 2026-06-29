@@ -112,3 +112,7 @@ export async function acceptBinomeInvitation(appId: string): Promise<string> {
   if (error) throw error;
   return data as string; // 'locked' | 'too_late'
 }
+export async function cancelDefi(gameId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_defi', { p_game_id: gameId });
+  if (error) throw error;
+}

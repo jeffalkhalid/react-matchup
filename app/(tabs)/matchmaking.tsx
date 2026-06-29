@@ -13,7 +13,7 @@ import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
 import {
   fetchOpenDefis, fetchMyDefis, fetchCandidaturesOnMyDefis, fetchBinomeInvitations,
-  acceptBinomeInvitation, applyToDefi,
+  acceptBinomeInvitation, applyToDefi, cancelDefi,
   type DefiGame, type DefiApplication,
 } from '../../lib/defis';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed } from '../../lib/defiNotify';
@@ -88,7 +88,7 @@ function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGa
   );
 }
 
-function MyDefiCard({ game }: { game: DefiGame }) {
+function MyDefiCard({ game, onCancel }: { game: DefiGame; onCancel?: () => void }) {
   const label = game.status === 'draft' ? '⏳ Brouillon (partenaire pas encore OK)'
     : game.status === 'open' ? '🟢 Ouvert — en attente d\'un binôme'
     : '✅ Confirmé';
@@ -102,6 +102,12 @@ function MyDefiCard({ game }: { game: DefiGame }) {
             {game.location ?? ''}{game.match_date ? ` · ${new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
           </Text>
         ) : null}
+        {onCancel && game.status !== 'confirmed' && (
+          <TouchableOpacity onPress={onCancel}
+            style={{ marginTop: 10, alignSelf: 'flex-start', paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCardAlt }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.danger }}>Annuler le défi</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -324,6 +330,30 @@ export default function MatchmakingScreen() {
     } catch (e: any) {
       Alert.alert('Erreur', e?.message ?? 'Action impossible.');
     }
+  };
+
+  const handleCancelDefi = (game: DefiGame) => {
+    Alert.alert(
+      'Annuler ce défi ?',
+      game.status === 'draft'
+        ? 'Ton brouillon sera supprimé.'
+        : 'Le défi sera retiré et les candidatures en cours annulées.',
+      [
+        { text: 'Retour', style: 'cancel' },
+        {
+          text: 'Annuler le défi', style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelDefi(game.id);
+              showToast('Défi annulé.');
+              fetchData();
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.message ?? 'Annulation impossible.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const pendingCount = binomeInvites.length + candidatures.filter(c => c.status === 'pending').length;
@@ -555,7 +585,7 @@ export default function MatchmakingScreen() {
               myDefis.length === 0
                 ? <EmptyCard icon="swords" title="Aucun défi créé" sub="Lance un défi depuis le bouton Créer." />
                 : <View style={{ gap: 10 }}>
-                    {myDefis.map(g => <MyDefiCard key={g.id} game={g} />)}
+                    {myDefis.map(g => <MyDefiCard key={g.id} game={g} onCancel={() => handleCancelDefi(g)} />)}
                   </View>
             )}
             {tab === 'candidatures' && (
