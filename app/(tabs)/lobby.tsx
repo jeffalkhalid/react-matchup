@@ -30,6 +30,7 @@ import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
 import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { Icon } from '../../components/community/icons';
+import { fetchBinomeInvitations, acceptBinomeInvitation, type DefiApplication } from '../../lib/defis';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -1444,7 +1445,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
 }
 
 // ─── Upcoming tab ─────────────────────────────────────────────
-function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, playerId, onChangeSide, onCreatorChangeSide, onAcceptInvitation, onDeclineInvitation }: {
+function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, playerId, onChangeSide, onCreatorChangeSide, onAcceptInvitation, onDeclineInvitation, binomeInvites, onAcceptBinome }: {
   games: EnrichedGame[]; myElo: number;
   roleFilter: RoleFilter; setRoleFilter: (v: RoleFilter) => void;
   onOpenGame: (g: EnrichedGame) => void;
@@ -1453,6 +1454,8 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
   onCreatorChangeSide: (gameId: string, side: string) => void;
   onAcceptInvitation: (participantId: string, gameId: string) => void;
   onDeclineInvitation: (participantId: string, gameId: string) => void;
+  binomeInvites: DefiApplication[];
+  onAcceptBinome: (app: DefiApplication) => void;
 }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
 
@@ -1506,6 +1509,51 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
       </ScrollView>
       */}
 
+      {/* Invitations binôme défi : j'ai été choisi comme partenaire pour relever un défi. */}
+      {binomeInvites.length > 0 && (
+        <Section title="Invitations binôme" count={binomeInvites.length} color={Colors.brand} icon={<Icon name="users" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
+          {binomeInvites.map(app => {
+            const g = app.game;
+            const levelMin = g?.min_elo != null ? eloToLevel(g.min_elo).toFixed(1) : null;
+            const levelMax = g?.max_elo != null ? eloToLevel(g.max_elo).toFixed(1) : null;
+            const bandLabel = levelMin && levelMax ? `Niv. ${levelMin}–${levelMax}` : levelMin ? `Niv. ≥${levelMin}` : null;
+            const stakeLabel = g?.stake_multiplier != null ? `×${g.stake_multiplier}` : null;
+            return (
+              <View key={app.id} style={{
+                backgroundColor: Colors.bgCard, borderRadius: 14,
+                borderWidth: 1, borderColor: Colors.border,
+                padding: 14, marginBottom: 10, gap: 8,
+              }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.textPrimary }}>
+                  {app.initiator?.name ?? 'Quelqu\'un'} t'invite comme binôme pour relever un défi
+                </Text>
+                {(bandLabel || stakeLabel) && (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {bandLabel ? (
+                      <Text style={{ fontSize: 12, color: Colors.textSecondary }}>{bandLabel}</Text>
+                    ) : null}
+                    {stakeLabel ? (
+                      <Text style={{ fontSize: 12, color: Colors.brand, fontWeight: '700' }}>Mise {stakeLabel}</Text>
+                    ) : null}
+                  </View>
+                )}
+                <TouchableOpacity
+                  onPress={() => onAcceptBinome(app)}
+                  style={{
+                    backgroundColor: Colors.brand, borderRadius: 10,
+                    paddingVertical: 10, alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textOnBrand }}>
+                    {'Accepter & verrouiller'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </Section>
+      )}
+
       {/* En haut : invitations à répondre (action requise). */}
       {invited.length > 0 && (
         <Section title="À répondre" count={invited.length} color={Colors.brand} icon={<Icon name="mail" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
@@ -1541,7 +1589,7 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
           {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
-      {created.length + accepted.length + invited.length + pending.length + waitlisted.length === 0 && (
+      {created.length + accepted.length + invited.length + pending.length + waitlisted.length + binomeInvites.length === 0 && (
         <EmptyState text="Aucune partie à venir" sub={typeFilter !== 'all' ? 'Aucun match de ce type' : 'Explore le lobby ou crée la tienne'} />
       )}
     </View>
@@ -1684,6 +1732,7 @@ export default function LobbyScreen() {
   const [rematchGameType, setRematchGameType] = useState<'Compétitif' | 'Amical' | 'Défi' | undefined>(undefined);
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
+  const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
 
   // Derived: always reflects latest fetched data — no stale snapshots
   const openGame = useMemo(
@@ -1698,7 +1747,7 @@ export default function LobbyScreen() {
 
     const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, application_note, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
 
-    const [explorerRes, createdRes, matchesRes] = await Promise.all([
+    const [explorerRes, createdRes, matchesRes, binomeInvitesRes] = await Promise.all([
       supabase
         .from('open_games')
         .select(GAME_SELECT)
@@ -1721,7 +1770,9 @@ export default function LobbyScreen() {
         .in('status', ['pending', 'validated', 'counter_proposed'])
         .order('created_at', { ascending: false })
         .limit(20),
+      fetchBinomeInvitations(player.id),
     ]);
+    setBinomeInvites(binomeInvitesRes);
 
     const creatorGames: EnrichedGame[] = (createdRes.data ?? []).map((g: any) => ({
       ...g,
@@ -2509,6 +2560,20 @@ export default function LobbyScreen() {
     reloadNotifs();
   };
 
+  const acceptBinomeFromLobby = async (app: DefiApplication) => {
+    try {
+      const res = await acceptBinomeInvitation(app.id);
+      Alert.alert(
+        res === 'locked' ? '✅ Binôme verrouillé' : '⏳ Trop tard',
+        res === 'locked' ? 'Le défi est confirmé — rendez-vous sur le terrain !' : 'Un autre binôme a pris la place.',
+      );
+      await fetchData();
+      reloadNotifs();
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+    }
+  };
+
   if (!player) return null;
 
   const upcomingBadge = upcomingGames.length;
@@ -2640,6 +2705,8 @@ export default function LobbyScreen() {
               onCreatorChangeSide={handleCreatorChangeSide}
               onAcceptInvitation={handleAcceptInvitation}
               onDeclineInvitation={handleDeclineInvitation}
+              binomeInvites={binomeInvites}
+              onAcceptBinome={acceptBinomeFromLobby}
             />
           )}
           {tab === 'history' && (
