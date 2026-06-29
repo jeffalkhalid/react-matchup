@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, StyleSheet, Image, Alert,
+  ActivityIndicator, StyleSheet, Image, Alert, Modal, TextInput,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,9 +13,11 @@ import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
 import {
   fetchOpenDefis, fetchMyDefis, fetchCandidaturesOnMyDefis, fetchBinomeInvitations,
-  acceptBinomeInvitation,
+  acceptBinomeInvitation, applyToDefi,
   type DefiGame, type DefiApplication,
 } from '../../lib/defis';
+import { supabase } from '../../lib/supabase';
+import { computeCompatDetail, getPlayerGameData } from '../../lib/compat';
 
 // ── Types ─────────────────────────────────────────────────────
 type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations';
@@ -150,6 +152,14 @@ export default function MatchmakingScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  // ── Partner picker state ─────────────────────────────────────
+  const [releverGame, setReleverGame] = useState<DefiGame | null>(null);
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [partnerResults, setPartnerResults] = useState<{ id: string; name: string; elo_score: number; court_side?: string }[]>([]);
+  const [applying, setApplying] = useState(false);
+  const [suggestedPartners, setSuggestedPartners] = useState<{ id: string; name: string; elo_score: number; court_side?: string; compatScore?: number }[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const fetchData = useCallback(async () => {
@@ -171,10 +181,91 @@ export default function MatchmakingScreen() {
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
-  const handleRelever = (_game: DefiGame) => {
-    // Phase 3b : ouvrir un vrai sélecteur de partenaire (recherche + suggestions compat).
-    // Phase 3a : on signale juste que l'action arrive.
-    showToast('Choix du partenaire — bientôt (Phase 3b)');
+  // ── Debounced player search ──────────────────────────────────
+  useEffect(() => {
+    if (partnerSearch.length < 2) { setPartnerResults([]); return; }
+    const t = setTimeout(() => {
+      supabase.from('players').select('id,name,elo_score,court_side')
+        .is('deleted_at', null)
+        .ilike('name', `%${partnerSearch}%`)
+        .neq('id', player?.id ?? '')
+        .limit(8)
+        .then(({ data }) => { setPartnerResults((data as any[]) || []); });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [partnerSearch, player]);
+
+  // ── Load compat suggestions when modal opens ─────────────────
+  useEffect(() => {
+    if (!releverGame || !player) return;
+    setLoadingSuggestions(true);
+    const myId = player.id;
+    (async () => {
+      try {
+        // 1) Frequent partners from matches
+        const { data: recentMatches } = await supabase.from('matches')
+          .select('winner_id,winner_id_2,loser_id,loser_id_2')
+          .or(`winner_id.eq.${myId},winner_id_2.eq.${myId},loser_id.eq.${myId},loser_id_2.eq.${myId}`)
+          .eq('status', 'validated').order('created_at', { ascending: false }).limit(30);
+        if (!recentMatches?.length) { setLoadingSuggestions(false); return; }
+        const freq: Record<string, number> = {};
+        recentMatches.forEach((m: any) => {
+          [m.winner_id, m.winner_id_2, m.loser_id, m.loser_id_2].forEach((id: string | null) => {
+            if (id && id !== myId) freq[id] = (freq[id] || 0) + 1;
+          });
+        });
+        const topIds = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => id);
+        if (!topIds.length) { setLoadingSuggestions(false); return; }
+        const { data: freqPlayers } = await supabase.from('players')
+          .select('id,name,elo_score,court_side').in('id', topIds).is('deleted_at', null);
+        if (!freqPlayers?.length) { setLoadingSuggestions(false); return; }
+        // 2) Rank by compat
+        const myData = await getPlayerGameData(myId);
+        const ranked = await Promise.all(
+          (freqPlayers as any[]).map(async (p) => {
+            const compat = await computeCompatDetail(
+              myId, player.elo_score, player.court_side,
+              myData, p.id, p.elo_score, p.court_side,
+            );
+            return { ...p, compatScore: compat.score };
+          }),
+        );
+        ranked.sort((a, b) => b.compatScore - a.compatScore);
+        setSuggestedPartners(ranked.slice(0, 5));
+      } catch {
+        // suggestions are optional — silent fail
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    })();
+  }, [releverGame, player]);
+
+  const handleRelever = (game: DefiGame) => {
+    setReleverGame(game);
+    setPartnerSearch('');
+    setPartnerResults([]);
+    setSuggestedPartners([]);
+  };
+
+  // ── Submit candidature ───────────────────────────────────────
+  const submitRelever = async (partner: { id: string; name: string }) => {
+    if (!releverGame || applying) return;
+    setApplying(true);
+    try {
+      await applyToDefi(releverGame.id, partner.id);
+      setReleverGame(null);
+      showToast(`Candidature envoyée — ${partner.name} doit accepter pour verrouiller le binôme.`);
+      fetchData();
+    } catch (e: any) {
+      const msg = e?.message?.includes('out of level band')
+        ? 'Ton binôme est hors de la bande de niveau de ce défi.'
+        : e?.message?.includes('already in game')
+        ? 'Toi ou ton partenaire êtes déjà engagés sur ce défi.'
+        : (e?.message ?? 'Candidature impossible.');
+      Alert.alert('Impossible', msg);
+    } finally {
+      setApplying(false);
+    }
   };
 
   const handleAcceptBinome = async (app: DefiApplication) => {
@@ -191,6 +282,143 @@ export default function MatchmakingScreen() {
   const pendingCount = binomeInvites.length + candidatures.filter(c => c.status === 'pending').length;
 
   if (!player) return null;
+
+  // ── Partner Picker Modal ─────────────────────────────────────
+  const partnerPickerModal = (
+    <Modal
+      visible={releverGame !== null}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setReleverGame(null)}
+    >
+      <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+        {/* Header */}
+        <View style={{
+          backgroundColor: Colors.heroBg,
+          paddingTop: 20, paddingHorizontal: 16, paddingBottom: 20,
+          borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+        }}>
+          <TouchableOpacity onPress={() => setReleverGame(null)} style={{ padding: 4 }}>
+            <Icon name="chevronLeft" size={22} color={Colors.textOnDark} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
+              Choisis ton binôme pour relever
+            </Text>
+            {releverGame && (
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+                {bandLabel(releverGame)} · ⚡ ×{(releverGame.stake_multiplier ?? 1).toFixed(1)}
+              </Text>
+            )}
+          </View>
+          {applying && <ActivityIndicator color={Colors.brand} size="small" />}
+        </View>
+
+        <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={{ padding: 14, gap: 12 }}>
+            {/* Search input */}
+            <TextInput
+              style={{
+                backgroundColor: Colors.bgCard,
+                borderWidth: 1.5, borderColor: Colors.border,
+                borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+                fontSize: 14, color: Colors.textPrimary,
+                fontFamily: Fonts.uiSemi,
+              }}
+              placeholder="Rechercher un joueur…"
+              placeholderTextColor={Colors.textMuted}
+              value={partnerSearch}
+              onChangeText={setPartnerSearch}
+              autoFocus
+              returnKeyType="search"
+            />
+
+            {/* Search results */}
+            {partnerSearch.length >= 2 && partnerResults.length > 0 && (
+              <View>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                  Résultats
+                </Text>
+                <View style={{ gap: 8 }}>
+                  {partnerResults.map(p => (
+                    <TouchableOpacity
+                      key={p.id}
+                      onPress={() => submitRelever(p)}
+                      disabled={applying}
+                      style={[sty.card, { opacity: applying ? 0.6 : 1 }]}
+                      activeOpacity={0.75}
+                    >
+                      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <PlayerAvatar name={p.name} size={38} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                          <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                        </View>
+                        <Icon name="chevronRight" size={16} color={Colors.textMuted} />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {partnerSearch.length >= 2 && partnerResults.length === 0 && (
+              <Text style={{ textAlign: 'center', color: Colors.textMuted, fontSize: 13, paddingVertical: 16 }}>
+                Aucun joueur trouvé
+              </Text>
+            )}
+
+            {/* Suggestions (shown when search is empty) */}
+            {partnerSearch.length < 2 && (
+              <View>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                  Suggérés pour toi
+                </Text>
+                {loadingSuggestions && (
+                  <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+                )}
+                {!loadingSuggestions && suggestedPartners.length === 0 && (
+                  <Text style={{ textAlign: 'center', color: Colors.textMuted, fontSize: 12, paddingVertical: 12 }}>
+                    Joue des parties pour voir des suggestions ici
+                  </Text>
+                )}
+                {!loadingSuggestions && suggestedPartners.length > 0 && (
+                  <View style={{ gap: 8 }}>
+                    {suggestedPartners.map(p => (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => submitRelever(p)}
+                        disabled={applying}
+                        style={[sty.card, { opacity: applying ? 0.6 : 1 }]}
+                        activeOpacity={0.75}
+                      >
+                        <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <PlayerAvatar name={p.name} size={38} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                          </View>
+                          {p.compatScore !== undefined && (
+                            <View style={{ backgroundColor: Colors.brand + '22', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand }}>
+                                ★ {p.compatScore}
+                              </Text>
+                            </View>
+                          )}
+                          <Icon name="chevronRight" size={16} color={Colors.textMuted} />
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -309,6 +537,8 @@ export default function MatchmakingScreen() {
           <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textOnDark }}>{toast}</Text>
         </View>
       )}
+
+      {partnerPickerModal}
     </View>
   );
 }
