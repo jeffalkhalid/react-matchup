@@ -1,7 +1,6 @@
 import { supabase } from './supabase';
 import { isInvitationVisible, isGameReadyToScore } from './games';
 import { matchNeedsMyAction } from './matches';
-import { isReceivedChallengeVisible, CHALLENGE_PARTICIPANTS_SELECT } from './challenges';
 import { getHiddenPlayerIds } from './moderation';
 import { getLeague, getLeagueLabel, eloToLevel } from './theme';
 
@@ -52,7 +51,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
   ].join(',');
 
   const [
-    { data: challenges },
+    { data: binomeInvites },
     { data: pending },
     { data: recentMatches },
     { data: alreadyVoted },
@@ -64,11 +63,10 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: dmRequests },
   ] = await Promise.all([
     supabase
-      .from('challenges')
-      .select(`id, game_id, challenger_id, challenger:players!challenger_id(name), ${CHALLENGE_PARTICIPANTS_SELECT}`)
-      .eq('challenged_id', playerId)
-      .eq('status', 'pending')
-      .gt('expires_at', nowIso),
+      .from('defi_applications')
+      .select('id, initiator:initiator_id(name)')
+      .eq('partner_id', playerId)
+      .eq('status', 'pending'),
     supabase
       .from('matches')
       .select('id, status, winner:winner_id(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
@@ -158,10 +156,10 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     return leagueChanged || levelIncreased;
   });
 
-  // Anti-doublon : un défi crée à la fois une ligne `challenges` ET un
-  // game_participants 'invited' sur la même partie. On exclut l'invitation
-  // si un défi existe déjà pour cette partie (la ligne `challenges` la couvre).
-  const challengeGameIds = new Set((challenges ?? []).map((c: any) => c.game_id).filter(Boolean));
+  // Anti-doublon défi 1v1 supprimé : les invitations binôme (defi_applications)
+  // n'ont pas de game_id associé à ce stade — aucun doublon possible avec
+  // game_participants 'invited'. On passe un Set vide à isInvitationVisible.
+  const challengeGameIds = new Set<string>();
 
   // Invitations actives — point de vérité unique partagé avec le badge
   // (lib/games.isInvitationVisible) : TTL, anti-doublon défi, partie
@@ -251,18 +249,15 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
         route: `/(tabs)/lobby?gameId=${inv.game.id}`,
       };
     }),
-    // Même filtre de visibilité que l'onglet « Défis reçus » et le badge
-    // (lib/challenges) — sinon une notif fantôme pointe vers un onglet vide
-    // (défi auto-décliné par chevauchement, lanceur bloqué, invitation expirée).
-    ...(challenges ?? [])
-      .filter((c: any) => isReceivedChallengeVisible(c, playerId, hidden))
-      .map((c: any) => ({
-        id: `challenge-${c.id}`,
-        type: 'challenge' as const,
-        title: 'Nouveau défi reçu',
-        subtitle: `${c.challenger?.name ?? '?'} t'a lancé un défi`,
-        route: '/(tabs)/matchmaking',
-      })),
+    // Invitations binôme : requête déjà filtrée partner_id + status='pending',
+    // RLS garantit la visibilité — pas de filtre supplémentaire nécessaire.
+    ...(binomeInvites ?? []).map((a: any) => ({
+      id: `binome-${a.id}`,
+      type: 'challenge' as const,
+      title: 'Invitation binôme',
+      subtitle: `${a.initiator?.name ?? '?'} veut relever un défi avec toi`,
+      route: '/(tabs)/matchmaking',
+    })),
     ...visiblePending.map(({ m, action }: any) => action === 'resolve' ? {
       id: `match-${m.id}`,
       type: 'match' as const,
