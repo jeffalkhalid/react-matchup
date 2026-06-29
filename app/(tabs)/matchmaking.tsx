@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, StyleSheet, Image, Alert, Modal, TextInput,
@@ -17,7 +17,7 @@ import {
   type DefiGame, type DefiApplication,
 } from '../../lib/defis';
 import { supabase } from '../../lib/supabase';
-import { computeCompatDetail, getPlayerGameData } from '../../lib/compat';
+import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
 
 // ── Types ─────────────────────────────────────────────────────
 type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations';
@@ -57,7 +57,7 @@ function bandLabel(g: DefiGame): string {
   return `Moy. ${lo} → ${hi}`;
 }
 
-function DefiReleverCard({ game, myElo, onRelever }: { game: DefiGame; myElo: number; onRelever: () => void; }) {
+function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGame; myElo: number; onRelever: () => void; compatScore?: number; }) {
   const teamA = (game.participants ?? []).filter(p => (p.team_side ?? '').startsWith('A') || p.player_id === game.creator_id);
   return (
     <View style={sty.card}>
@@ -70,6 +70,9 @@ function DefiReleverCard({ game, myElo, onRelever }: { game: DefiGame; myElo: nu
             </Text>
             <Text style={{ fontSize: 10.5, color: Colors.textMuted }}>{bandLabel(game)}</Text>
           </View>
+          {compatScore !== undefined && compatScore >= 60 && (
+            <Text style={{ fontSize: 13 }}>🔥</Text>
+          )}
           <Pill variant="ink">⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Pill>
         </View>
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
@@ -160,6 +163,10 @@ export default function MatchmakingScreen() {
   const [suggestedPartners, setSuggestedPartners] = useState<{ id: string; name: string; elo_score: number; court_side?: string; compatScore?: number }[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
+  // ── Per-défi compat scores (for "À relever" sort) ────────────
+  const myGameDataRef = useRef<{ clubs: Map<string, number>; days: Set<number> } | null>(null);
+  const [defiCompatScores, setDefiCompatScores] = useState<Map<string, number>>(new Map());
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const fetchData = useCallback(async () => {
@@ -194,6 +201,43 @@ export default function MatchmakingScreen() {
     }, 300);
     return () => clearTimeout(t);
   }, [partnerSearch, player]);
+
+  // ── Compute per-défi compat scores (drives "À relever" sort) ─
+  useEffect(() => {
+    if (!player || openDefis.length === 0) return;
+    const myElo = player.elo_score;
+    const myId = player.id;
+    (async () => {
+      // Load myGameData once; reuse the cached ref on subsequent openDefis changes
+      if (!myGameDataRef.current) {
+        myGameDataRef.current = await getPlayerGameData(myId);
+      }
+      const { clubs: myClubs, days: myDays } = myGameDataRef.current;
+      const scores = new Map<string, number>();
+      for (const g of openDefis) {
+        const bandMid = ((g.min_elo ?? myElo) + (g.max_elo ?? myElo)) / 2;
+        const elo = scoreElo(myElo, bandMid);
+        const { score: club } = scoreClubs(myClubs, new Map(g.location ? [[g.location, 1]] : []));
+        const { score: day } = scoreDays(myDays, new Set(g.match_date ? [new Date(g.match_date).getDay()] : []));
+        scores.set(g.id, elo + club + day);
+      }
+      setDefiCompatScores(scores);
+    })();
+  }, [openDefis, player]);
+
+  // ── Sorted "À relever" list (DESC by compat, then ASC by date) ─
+  const sortedOpenDefis = useMemo(() => {
+    if (defiCompatScores.size === 0) return openDefis;
+    return [...openDefis].sort((a, b) => {
+      const sa = defiCompatScores.get(a.id) ?? 0;
+      const sb = defiCompatScores.get(b.id) ?? 0;
+      if (sb !== sa) return sb - sa;
+      // Fallback: earlier date first
+      const da = a.match_date ? new Date(a.match_date).getTime() : Infinity;
+      const db = b.match_date ? new Date(b.match_date).getTime() : Infinity;
+      return da - db;
+    });
+  }, [openDefis, defiCompatScores]);
 
   // ── Load compat suggestions when modal opens ─────────────────
   useEffect(() => {
@@ -497,9 +541,10 @@ export default function MatchmakingScreen() {
               openDefis.length === 0
                 ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />
                 : <View style={{ gap: 10 }}>
-                    {openDefis.map(g => (
+                    {sortedOpenDefis.map(g => (
                       <DefiReleverCard key={g.id} game={g} myElo={player.elo_score}
-                        onRelever={() => handleRelever(g)} />
+                        onRelever={() => handleRelever(g)}
+                        compatScore={defiCompatScores.get(g.id)} />
                     ))}
                   </View>
             )}
