@@ -2496,16 +2496,6 @@ export default function LobbyScreen() {
       return;
     }
 
-    // Si cette invitation est un défi, refléter la réponse sur la table
-    // `challenges` (sinon le défi reste 'pending' → toujours compté dans le badge
-    // et affiché dans l'onglet « Défis reçus »). No-op si ce n'est pas un défi.
-    await supabase
-      .from('challenges')
-      .update({ status: 'accepted' })
-      .eq('game_id', gameId)
-      .eq('challenged_id', player.id)
-      .eq('status', 'pending');
-
     if (game?.creator_id) {
       const otherIds = [
         game.creator_id,
@@ -2533,14 +2523,6 @@ export default function LobbyScreen() {
       .update({ status: 'declined' })
       .eq('id', participantId);
     if (error) { Alert.alert('Erreur', error.message); return; }
-
-    // Refléter le refus sur la table `challenges` (no-op si ce n'est pas un défi).
-    await supabase
-      .from('challenges')
-      .update({ status: 'declined' })
-      .eq('game_id', gameId)
-      .eq('challenged_id', player.id)
-      .eq('status', 'pending');
 
     // Free the spot that was held by the invitation
     if (game) {

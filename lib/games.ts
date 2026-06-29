@@ -59,13 +59,10 @@ export function isGameReadyToScore(
 // ─── Source de vérité UNIQUE : « cette invitation à une partie est-elle encore
 // visible/actionnable ? » ────────────────────────────────────────────────────
 // Partagée par la liste de notifications (Source A) et le compteur de badge,
-// pour qu'ils affichent EXACTEMENT le même ensemble (cf. le même principe que
-// `isReceivedChallengeVisible` côté défis). Pré-requis : l'appelant a déjà
-// filtré côté requête `status='invited'`. Reste à vérifier ici :
+// pour qu'ils affichent EXACTEMENT le même ensemble. Pré-requis : l'appelant a
+// déjà filtré côté requête `status='invited'`. Reste à vérifier ici :
 //   • l'invitation est encore vivante (`isInviteActive` : TTL non dépassé — le
 //     cron de bascule 'invited'→'expired' peut avoir jusqu'à 10 min de retard) ;
-//   • anti-doublon : si un défi couvre déjà cette partie, c'est lui qui porte la
-//     notif (route Matchmaking) — on n'affiche pas l'invitation en double ;
 //   • la partie n'est ni close/annulée ni déjà passée.
 export function isInvitationVisible(
   inv: {
