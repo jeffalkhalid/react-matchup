@@ -313,8 +313,8 @@ export default function MatchmakingScreen() {
         const lo = releverGame.min_elo != null ? eloToLevel(releverGame.min_elo).toFixed(1) : '?';
         const hi = releverGame.max_elo != null ? eloToLevel(releverGame.max_elo).toFixed(1) : '?';
         Alert.alert(
-          'Binôme trop juste pour ce défi',
-          `Pour relever ce défi, ton binôme doit avoir un niveau MOYEN entre ${lo} et ${hi}.\n\nLe niveau moyen de ${player?.name ?? 'toi'} + ${partner.name} est en dehors. Choisis un partenaire qui rapproche votre moyenne de cette fourchette.`,
+          'Niveau de la paire',
+          `Pour relever ce défi, la paire doit avoir un niveau moyen entre ${lo} et ${hi}.\n\nLa moyenne de ${player?.name ?? 'toi'} + ${partner.name} est en dehors. Choisis un partenaire pour rapprocher la moyenne de cette fourchette.`,
         );
       } else if (e?.message?.includes('already in game')) {
         Alert.alert('Déjà engagés', 'Toi ou ton partenaire êtes déjà engagés sur ce défi.');
