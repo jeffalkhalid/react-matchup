@@ -309,12 +309,18 @@ export default function MatchmakingScreen() {
       showToast(`Candidature envoyée — ${partner.name} doit accepter pour verrouiller le binôme.`);
       fetchData();
     } catch (e: any) {
-      const msg = e?.message?.includes('out of level band')
-        ? 'Ton binôme est hors de la bande de niveau de ce défi.'
-        : e?.message?.includes('already in game')
-        ? 'Toi ou ton partenaire êtes déjà engagés sur ce défi.'
-        : (e?.message ?? 'Candidature impossible.');
-      Alert.alert('Impossible', msg);
+      if (e?.message?.includes('out of level band')) {
+        const lo = releverGame.min_elo != null ? eloToLevel(releverGame.min_elo).toFixed(1) : '?';
+        const hi = releverGame.max_elo != null ? eloToLevel(releverGame.max_elo).toFixed(1) : '?';
+        Alert.alert(
+          'Binôme trop juste pour ce défi',
+          `Pour relever ce défi, ton binôme doit avoir un niveau MOYEN entre ${lo} et ${hi}.\n\nLe niveau moyen de ${player?.name ?? 'toi'} + ${partner.name} est en dehors. Choisis un partenaire qui rapproche votre moyenne de cette fourchette.`,
+        );
+      } else if (e?.message?.includes('already in game')) {
+        Alert.alert('Déjà engagés', 'Toi ou ton partenaire êtes déjà engagés sur ce défi.');
+      } else {
+        Alert.alert('Impossible', e?.message ?? 'Candidature impossible.');
+      }
     } finally {
       setApplying(false);
     }
