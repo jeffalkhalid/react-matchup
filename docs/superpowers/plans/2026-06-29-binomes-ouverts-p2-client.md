@@ -241,8 +241,10 @@ git commit -m "feat(vitrine): section « Binômes ouverts » du hub + « Défier
 
 ### Task 5 : Profil — déclarer / gérer ses binômes + confirmer une nomination
 
+> ⚠️ **`ProfileMenuSheet.tsx` est un fichier WIP non commité de l'utilisateur → NE PAS le toucher.** Le point d'entrée va dans la **vue self de `player/[id].tsx`** (non WIP) à la place.
+
 **Files:**
-- Modify: `react-matchup/components/profile/ProfileMenuSheet.tsx` (entrée « M'ouvrir aux défis »)
+- Modify: `react-matchup/app/(tabs)/player/[id].tsx` (entrée « M'ouvrir aux défis » en vue self)
 - Create: `react-matchup/components/profile/ShowcaseManager.tsx` (feuille de gestion)
 
 **Interfaces:**
@@ -257,14 +259,14 @@ Créer un composant feuille (Modal/overlay, style maison) qui, pour le joueur co
 - Un bouton « M'ouvrir aux défis avec… » → recherche joueur (même pattern `players` ilike que le sélecteur de partenaire du hub) → `openShowcase(partnerId)` → toast + refetch.
 Réutiliser `PlayerAvatar`, `Colors`, `Fonts`, `Alert`. Erreurs mappées (`showcase already exists` → « Tu as déjà une vitrine avec ce joueur »).
 
-- [ ] **Step 2 : Entrée dans `ProfileMenuSheet`**
+- [ ] **Step 2 : Entrée dans la vue self de `player/[id].tsx`**
 
-Dans `react-matchup/components/profile/ProfileMenuSheet.tsx`, ajouter une entrée de menu « ⚔️ M'ouvrir aux défis » (visible en self) qui ouvre `ShowcaseManager`. (Suivre le pattern des entrées existantes du menu.)
+Dans `react-matchup/app/(tabs)/player/[id].tsx`, dans `PlayerProfile({ id })`, quand c'est **mon propre profil** (`id === player.id` / le prédicat self existant du fichier), ajouter un bouton/carte « ⚔️ M'ouvrir aux défis » qui ouvre `ShowcaseManager` (état local `showcaseOpen`). Placer près des autres actions self. Lire le fichier pour trouver le prédicat self et l'endroit d'insertion ; NE PAS toucher `ProfileMenuSheet.tsx` (WIP).
 
 - [ ] **Step 3 : Typecheck + Commit**
 ```bash
 cd react-matchup && npx tsc --noEmit
-git add react-matchup/components/profile/ShowcaseManager.tsx react-matchup/components/profile/ProfileMenuSheet.tsx
+git add react-matchup/components/profile/ShowcaseManager.tsx "react-matchup/app/(tabs)/player/[id].tsx"
 git commit -m "feat(vitrine): profil — déclarer/gérer ses binômes ouverts + confirmer une nomination"
 ```
 
