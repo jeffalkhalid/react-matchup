@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, StyleSheet, Image, Alert, Modal, TextInput,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
@@ -58,30 +58,64 @@ function bandLabel(g: DefiGame): string {
   return `Moy. ${lo} → ${hi}`;
 }
 
+function GhostAvatar({ size = 38 }: { size?: number }) {
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderStyle: 'dashed',
+      borderColor: Colors.border, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: size * 0.42, color: Colors.textMuted, fontWeight: '700' }}>?</Text>
+    </View>
+  );
+}
+
 function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGame; myElo: number; onRelever: () => void; compatScore?: number; }) {
   const teamA = (game.participants ?? []).filter(p => (p.team_side ?? '').startsWith('A') || p.player_id === game.creator_id);
+  const partnerName = teamA.find(p => p.player_id !== game.creator_id)?.player?.name ?? '—';
+  const avgLvl = game.min_elo != null ? eloToLevel(game.min_elo).toFixed(1) : '?';
+  const hot = compatScore !== undefined && compatScore >= 60;
+  const when = game.match_date
+    ? new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
   return (
-    <View style={sty.card}>
-      <View style={{ padding: 14, gap: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <PlayerAvatar name={game.creator?.name ?? '?'} size={34} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
-              {game.creator?.name ?? '?'} & {teamA.find(p => p.player_id !== game.creator_id)?.player?.name ?? '—'}
-            </Text>
-            <Text style={{ fontSize: 10.5, color: Colors.textMuted }}>{bandLabel(game)}</Text>
+    <View style={[sty.card, { overflow: 'hidden' }]}>
+      {/* bandeau accent */}
+      <View style={{ height: 3, backgroundColor: hot ? Colors.brand : Colors.primary }} />
+      <View style={{ padding: 14, gap: 12 }}>
+        {/* Ligne VERSUS : paire créatrice vs binôme à trouver */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row' }}>
+            <PlayerAvatar name={game.creator?.name ?? '?'} size={38} />
+            <View style={{ marginLeft: -13 }}><PlayerAvatar name={partnerName} size={38} /></View>
           </View>
-          {compatScore !== undefined && compatScore >= 60 && (
-            <Text style={{ fontSize: 13 }}>🔥</Text>
-          )}
-          <Pill variant="ink">⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Pill>
+          <View style={{ flex: 1, marginLeft: 11 }}>
+            <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+              {game.creator?.name ?? '?'} & {partnerName}
+            </Text>
+            <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>moy. niv. {avgLvl}</Text>
+          </View>
+          <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, marginHorizontal: 8 }}>VS</Text>
+          <View style={{ flexDirection: 'row' }}>
+            <GhostAvatar />
+            <View style={{ marginLeft: -13 }}><GhostAvatar /></View>
+          </View>
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+
+        {/* Bande de pills : mise, niveau, lieu, date, compat */}
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <View style={{ backgroundColor: Colors.primary, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ color: Colors.brand, fontSize: 11.5, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Text>
+          </View>
+          <Pill variant="brand">Niv. {avgLvl}+</Pill>
           {game.location ? <Pill variant="info">{game.location}</Pill> : null}
-          {game.match_date ? <Pill variant="brand">{new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</Pill> : null}
+          {when ? <Pill variant="neutral">{when}</Pill> : null}
+          {hot ? <Pill variant="warning">🔥 Compatible</Pill> : null}
         </View>
-        <TouchableOpacity onPress={onRelever} style={[sty.actionBtn, { backgroundColor: Colors.primary }]}>
-          <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Relever — choisir mon binôme</Text>
+
+        {/* Bouton */}
+        <TouchableOpacity onPress={onRelever} activeOpacity={0.85}
+          style={{ backgroundColor: Colors.primary, borderRadius: 13, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
+            shadowColor: Colors.primary, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
+          <Icon name="swords" size={15} color={Colors.brand} stroke={2.2} />
+          <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13.5, letterSpacing: 0.2 }}>Relever le défi</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -191,6 +225,9 @@ export default function MatchmakingScreen() {
     setBinomeInvites(invites);
     setLoading(false);
   }, [player]);
+
+  const router = useRouter();
+  const launchDefi = () => router.push('/(tabs)/lobby?create=1&challenge=1' as any);
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
@@ -576,6 +613,13 @@ export default function MatchmakingScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}>
           <View style={{ padding: 14, paddingBottom: 100 }}>
+            {/* CTA : lancer un défi (ouvre le wizard en mode Défi) */}
+            <TouchableOpacity onPress={launchDefi} activeOpacity={0.85}
+              style={{ backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginBottom: 14,
+                shadowColor: Colors.brand, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+              <Icon name="swords" size={17} color={Colors.textOnBrand} stroke={2.4} />
+              <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14.5, letterSpacing: 0.2 }}>Lancer un défi</Text>
+            </TouchableOpacity>
             {tab === 'relever' && (
               openDefis.length === 0
                 ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />

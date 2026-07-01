@@ -1141,8 +1141,9 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                     shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
                   }}
                 >
+                  <Icon name="repeat" size={16} color={Colors.textOnDark} stroke={2} />
                   <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>
-                    🔄 Rejouer avec la même équipe
+                    Rejouer avec la même équipe
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1156,8 +1157,9 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                     borderWidth: 1, borderColor: Colors.border,
                   }}
                 >
+                  <Icon name="camera" size={16} color={Colors.textPrimary} stroke={2} />
                   <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>
-                    📸 Partager en story
+                    Partager en story
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1729,6 +1731,8 @@ export default function LobbyScreen() {
   const [pendingSheetOpen, setPendingSheetOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [challengeWith, setChallengeWith] = useState<{ id: string; name: string; elo_score: number; court_side?: string } | null>(null);
+  // Ouverture du wizard directement en mode Défi 2v2 (depuis le hub Défi, sans cible).
+  const [openDefiMode, setOpenDefiMode] = useState(false);
   const [rematchInvites, setRematchInvites] = useState<Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
   const [rematchGameType, setRematchGameType] = useState<'Compétitif' | 'Amical' | 'Défi' | undefined>(undefined);
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
@@ -1900,6 +1904,9 @@ export default function LobbyScreen() {
           elo_score: Number(pelo ?? 0),
           court_side: pside || undefined,
         });
+      } else if (challenge === '1') {
+        // Défi 2v2 sans cible (depuis le hub) → wizard en mode Défi
+        setOpenDefiMode(true);
       }
       setShowCreate(true);
       router.setParams({ create: undefined, challenge: undefined, with: undefined, pname: undefined, pelo: undefined, pside: undefined });
@@ -2739,11 +2746,11 @@ export default function LobbyScreen() {
 
       <CreateWizard
         visible={showCreate}
-        onClose={() => { setShowCreate(false); setChallengeWith(null); setRematchInvites(null); setRematchGameType(undefined); }}
-        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setRematchInvites(null); setRematchGameType(undefined); setTab('upcoming'); }}
+        onClose={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); }}
+        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTab('upcoming'); }}
         onPublish={handlePublish}
         player={player}
-        initialGameType={rematchGameType ?? (challengeWith ? 'Défi' : undefined)}
+        initialGameType={rematchGameType ?? (challengeWith || openDefiMode ? 'Défi' : undefined)}
         initialInvite={challengeWith ?? undefined}
         initialInvites={rematchInvites ?? undefined}
       />
