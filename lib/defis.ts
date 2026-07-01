@@ -45,6 +45,7 @@ export async function fetchOpenDefis(playerId: string): Promise<DefiGame[]> {
     .select(GAME_COLS)
     .eq('is_challenge', true)
     .eq('status', 'open')
+    .eq('is_targeted', false)
     .neq('creator_id', playerId)
     .order('match_date', { ascending: true });
   if (error) { console.warn('[defis] fetchOpenDefis', error); return []; }
