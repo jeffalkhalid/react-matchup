@@ -34,6 +34,7 @@ import { startDirectConversation } from '../../../lib/directChats';
 import DirectMessageComposer from '../../../components/DirectMessageComposer';
 import ReportReasonSheet from '../../../components/ReportReasonSheet';
 import { Icon } from '../../../components/community/icons';
+import ShowcaseManager from '../../../components/profile/ShowcaseManager';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -571,6 +572,7 @@ export function PlayerProfile({ id }: { id: string }) {
   const [deleteOpen,     setDeleteOpen]     = useState(false);
   const [msgSheetOpen,   setMsgSheetOpen]   = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [showcaseOpen,   setShowcaseOpen]   = useState(false);
 
   const reactToActivity = async (eventId: string) => {
     const myId = self?.id ?? '';
@@ -1446,6 +1448,30 @@ export function PlayerProfile({ id }: { id: string }) {
       </Pressable>
     </Modal>
 
+    {/* ── Vitrine binômes (self only) ── */}
+    {isSelf && (
+      <TouchableOpacity
+        onPress={() => setShowcaseOpen(true)}
+        activeOpacity={0.85}
+        style={{
+          position: 'absolute',
+          bottom: 80,
+          alignSelf: 'center',
+          flexDirection: 'row', alignItems: 'center', gap: 7,
+          paddingHorizontal: 18, paddingVertical: 11,
+          borderRadius: 24, backgroundColor: Colors.bgCard,
+          borderWidth: 1, borderColor: Colors.border,
+          shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+          elevation: 3,
+        }}
+      >
+        <Text style={{ fontSize: 16 }}>⚔️</Text>
+        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+          M'ouvrir aux défis
+        </Text>
+      </TouchableOpacity>
+    )}
+
     {/* ── Story flow ── */}
     {isSelf && (
       <>
@@ -1492,6 +1518,11 @@ export function PlayerProfile({ id }: { id: string }) {
             if (error) { Alert.alert('Suppression impossible', error.message); return; }
             signOut();
           }}
+        />
+        <ShowcaseManager
+          visible={showcaseOpen}
+          onClose={() => setShowcaseOpen(false)}
+          player={{ id: profile.id, name: profile.name }}
         />
       </>
     )}
