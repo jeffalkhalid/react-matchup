@@ -16,6 +16,18 @@ export function notifyPartnerInvitedToRelever(partnerId: string, inviterName: st
   });
 }
 
+// Suite à openShowcase : prévenir le partenaire nominé qu'il doit confirmer.
+// Tap → hub Défi (section « Binômes ouverts »).
+export function notifyShowcaseNominated(partnerId: string, byName: string): void {
+  if (!partnerId) return;
+  notifyPlayers({
+    playerIds: [partnerId],
+    title: '🤝 Binôme ouvert',
+    body: `${byName} veut être ton binôme ouvert aux défis — confirme depuis ton profil.`,
+    data: { type: 'challenge' },
+  });
+}
+
 // Suite à defi_accept = 'locked' : prévenir les 3 AUTRES joueurs (créateur + son
 // partenaire Team A, + l'initiateur de la candidature Team B) que le défi est
 // confirmé. L'appelant (le partenaire qui accepte) est exclu via accepterId.

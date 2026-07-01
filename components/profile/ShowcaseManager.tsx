@@ -11,6 +11,7 @@ import {
   fetchMyShowcases, fetchShowcaseInvites, openShowcase, confirmShowcase, closeShowcase,
   type ShowcaseBinome,
 } from '../../lib/showcase';
+import { notifyShowcaseNominated } from '../../lib/defiNotify';
 
 // ── Types ────────────────────────────────────────────────────────────
 interface PlayerLite { id: string; name: string; elo_score: number; }
@@ -112,10 +113,6 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
     finally { setActionIds(s => { const n = new Set(s); n.delete(id); return n; }); }
   };
 
-  const handleClose = withAction;
-
-  const handleConfirm = (id: string) => withAction(id, () => confirmShowcase(id))();
-  const handleDecline = (id: string) => withAction(id, () => closeShowcase(id))();
   const handleRemove  = (id: string) => withAction(id, () => closeShowcase(id))();
 
   const handleOpen = async (partner: PlayerLite) => {
@@ -126,6 +123,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
     setActionIds(s => new Set(s).add(key));
     try {
       await openShowcase(partner.id);
+      notifyShowcaseNominated(partner.id, player.name);
       await load();
       Alert.alert('Vitrine créée', `Tu as proposé à ${partner.name} d'être ton binôme ouvert aux défis. Il/Elle doit confirmer.`);
     } catch (e: any) {
