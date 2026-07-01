@@ -232,6 +232,19 @@ export default function MatchmakingScreen() {
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
+  // Joueurs à EXCLURE du sélecteur de partenaire : moi + tous ceux déjà dans le
+  // défi que je relève (créateur + son partenaire Team A). On ne peut pas prendre
+  // comme binôme quelqu'un qui est déjà côté défieur (defi_apply le rejette aussi).
+  const excludedPartnerIds = useMemo(() => {
+    const s = new Set<string>();
+    if (player) s.add(player.id);
+    if (releverGame) {
+      if (releverGame.creator_id) s.add(releverGame.creator_id);
+      (releverGame.participants ?? []).forEach(p => p.player_id && s.add(p.player_id));
+    }
+    return s;
+  }, [releverGame, player]);
+
   // ── Debounced player search ──────────────────────────────────
   useEffect(() => {
     if (partnerSearch.length < 2) { setPartnerResults([]); return; }
@@ -240,11 +253,13 @@ export default function MatchmakingScreen() {
         .is('deleted_at', null)
         .ilike('name', `%${partnerSearch}%`)
         .neq('id', player?.id ?? '')
-        .limit(8)
-        .then(({ data }) => { setPartnerResults((data as any[]) || []); });
+        .limit(12)
+        .then(({ data }) => {
+          setPartnerResults(((data as any[]) || []).filter(p => !excludedPartnerIds.has(p.id)).slice(0, 8));
+        });
     }, 300);
     return () => clearTimeout(t);
-  }, [partnerSearch, player]);
+  }, [partnerSearch, player, excludedPartnerIds]);
 
   // ── Compute per-défi compat scores (drives "À relever" sort) ─
   useEffect(() => {
@@ -319,14 +334,14 @@ export default function MatchmakingScreen() {
           }),
         );
         ranked.sort((a, b) => b.compatScore - a.compatScore);
-        setSuggestedPartners(ranked.slice(0, 5));
+        setSuggestedPartners(ranked.filter(p => !excludedPartnerIds.has(p.id)).slice(0, 5));
       } catch {
         // suggestions are optional — silent fail
       } finally {
         setLoadingSuggestions(false);
       }
     })();
-  }, [releverGame, player]);
+  }, [releverGame, player, excludedPartnerIds]);
 
   const handleRelever = (game: DefiGame) => {
     setReleverGame(game);
