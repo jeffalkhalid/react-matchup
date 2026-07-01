@@ -1710,7 +1710,7 @@ export default function LobbyScreen() {
   const { player } = usePlayer();
   const { reload: reloadNotifs } = useNotificationCount();
   const insets = useSafeAreaInsets();
-  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, rematch: rematchParam } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; rematch?: string }>();
+  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, rematch: rematchParam, targeted, b0, b0n, b0e, b1, b1n, b1e } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; rematch?: string; targeted?: string; b0?: string; b0n?: string; b0e?: string; b1?: string; b1n?: string; b1e?: string }>();
   const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>('explorer');
@@ -1735,6 +1735,8 @@ export default function LobbyScreen() {
   const [openDefiMode, setOpenDefiMode] = useState(false);
   const [rematchInvites, setRematchInvites] = useState<Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
   const [rematchGameType, setRematchGameType] = useState<'Compétitif' | 'Amical' | 'Défi' | undefined>(undefined);
+  const [targetedInvites, setTargetedInvites] = useState<Partial<Record<'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
+  const [targetedMode, setTargetedMode] = useState(false);
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
   const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
@@ -1897,19 +1899,31 @@ export default function LobbyScreen() {
 
   useEffect(() => {
     if (create === '1') {
-      if (challenge === '1' && withId) {
+      if (targeted === '1' && b0 && b1) {
+        // Défi ciblé (« Défier ce binôme » depuis la vitrine) → wizard en mode Défi + invites pré-remplies
+        setTargetedInvites({
+          B0: { id: b0, name: decodeURIComponent(b0n ?? ''), elo_score: Number(b0e ?? 0) },
+          B1: { id: b1, name: decodeURIComponent(b1n ?? ''), elo_score: Number(b1e ?? 0) },
+        });
+        setTargetedMode(true);
+        setOpenDefiMode(true);
+        router.setParams({ create: undefined, challenge: undefined, targeted: undefined, b0: undefined, b0n: undefined, b0e: undefined, b1: undefined, b1n: undefined, b1e: undefined });
+      } else if (challenge === '1' && withId) {
         setChallengeWith({
           id: withId,
           name: decodeURIComponent(pname ?? ''),
           elo_score: Number(pelo ?? 0),
           court_side: pside || undefined,
         });
+        router.setParams({ create: undefined, challenge: undefined, with: undefined, pname: undefined, pelo: undefined, pside: undefined });
       } else if (challenge === '1') {
         // Défi 2v2 sans cible (depuis le hub) → wizard en mode Défi
         setOpenDefiMode(true);
+        router.setParams({ create: undefined, challenge: undefined, with: undefined, pname: undefined, pelo: undefined, pside: undefined });
+      } else {
+        router.setParams({ create: undefined, challenge: undefined, with: undefined, pname: undefined, pelo: undefined, pside: undefined });
       }
       setShowCreate(true);
-      router.setParams({ create: undefined, challenge: undefined, with: undefined, pname: undefined, pelo: undefined, pside: undefined });
     }
   }, [create]);
 
@@ -2747,13 +2761,14 @@ export default function LobbyScreen() {
 
       <CreateWizard
         visible={showCreate}
-        onClose={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); }}
-        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTab('upcoming'); }}
+        onClose={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTargetedInvites(null); setTargetedMode(false); }}
+        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTargetedInvites(null); setTargetedMode(false); setTab('upcoming'); }}
         onPublish={handlePublish}
         player={player}
         initialGameType={rematchGameType ?? (challengeWith || openDefiMode ? 'Défi' : undefined)}
         initialInvite={challengeWith ?? undefined}
-        initialInvites={rematchInvites ?? undefined}
+        initialInvites={targetedInvites ?? rematchInvites ?? undefined}
+        targeted={targetedMode}
       />
 
       {openMatch && (

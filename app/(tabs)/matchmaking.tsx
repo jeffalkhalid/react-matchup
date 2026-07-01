@@ -16,12 +16,13 @@ import {
   acceptBinomeInvitation, applyToDefi, cancelDefi,
   type DefiGame, type DefiApplication,
 } from '../../lib/defis';
+import { fetchVitrine, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed } from '../../lib/defiNotify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
 
 // ── Types ─────────────────────────────────────────────────────
-type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations';
+type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations' | 'vitrine';
 
 // ── Avatar ────────────────────────────────────────────────────
 const AV_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899', '#8b5cf6'];
@@ -181,6 +182,47 @@ function BinomeInviteCard({ app, onAccept }: { app: DefiApplication; onAccept: (
   );
 }
 
+// ── Vitrine card ──────────────────────────────────────────────
+function VitrineCard({ sb, onDefier }: { sb: ShowcaseBinome; onDefier: () => void }) {
+  const a = sb.a;
+  const b = sb.b;
+  const avgElo = (a && b) ? (a.elo_score + b.elo_score) / 2 : null;
+  const avgLevel = avgElo != null ? eloToLevel(avgElo).toFixed(1) : '?';
+  return (
+    <View style={[sty.card, { overflow: 'hidden' }]}>
+      <View style={{ height: 3, backgroundColor: Colors.brand }} />
+      <View style={{ padding: 14, gap: 12 }}>
+        {/* Paire */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row' }}>
+            <PlayerAvatar name={a?.name ?? '?'} size={38} />
+            <View style={{ marginLeft: -13 }}><PlayerAvatar name={b?.name ?? '?'} size={38} /></View>
+          </View>
+          <View style={{ flex: 1, marginLeft: 11 }}>
+            <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+              {a?.name ?? '?'} & {b?.name ?? '?'}
+            </Text>
+            <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>moy. niv. {avgLevel}</Text>
+          </View>
+        </View>
+        {/* Pills */}
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Pill variant="brand">Niv. {avgLevel}</Pill>
+          {a && <Pill variant="neutral">{a.name.split(' ')[0]} Niv.{eloToLevel(a.elo_score).toFixed(1)}</Pill>}
+          {b && <Pill variant="neutral">{b.name.split(' ')[0]} Niv.{eloToLevel(b.elo_score).toFixed(1)}</Pill>}
+        </View>
+        {/* Bouton */}
+        <TouchableOpacity onPress={onDefier} activeOpacity={0.85}
+          style={{ backgroundColor: Colors.primary, borderRadius: 13, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
+            shadowColor: Colors.primary, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
+          <Icon name="swords" size={15} color={Colors.brand} stroke={2.2} />
+          <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13.5, letterSpacing: 0.2 }}>Défier ce binôme</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────
 export default function MatchmakingScreen() {
   const { player } = usePlayer();
@@ -188,6 +230,7 @@ export default function MatchmakingScreen() {
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<Tab>('relever');
+  const [vitrine, setVitrine] = useState<ShowcaseBinome[]>([]);
   const [openDefis, setOpenDefis] = useState<DefiGame[]>([]);
   const [myDefis, setMyDefis] = useState<DefiGame[]>([]);
   const [candidatures, setCandidatures] = useState<DefiApplication[]>([]);
@@ -213,21 +256,31 @@ export default function MatchmakingScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
     setLoading(true);
-    const [open, mine, cands, invites] = await Promise.all([
+    const [open, mine, cands, invites, vit] = await Promise.all([
       fetchOpenDefis(player.id),
       fetchMyDefis(player.id),
       fetchCandidaturesOnMyDefis(player.id),
       fetchBinomeInvitations(player.id),
+      fetchVitrine(player.id),
     ]);
     setOpenDefis(open);
     setMyDefis(mine);
     setCandidatures(cands);
     setBinomeInvites(invites);
+    setVitrine(vit);
     setLoading(false);
   }, [player]);
 
   const router = useRouter();
   const launchDefi = () => router.push('/(tabs)/lobby?create=1&challenge=1' as any);
+
+  const handleDefierBinome = (sb: ShowcaseBinome) => {
+    const a = sb.a, b = sb.b;
+    if (!a || !b) return;
+    router.push(('/(tabs)/lobby?create=1&challenge=1&targeted=1'
+      + `&b0=${a.id}&b0n=${encodeURIComponent(a.name)}&b0e=${a.elo_score}`
+      + `&b1=${b.id}&b1n=${encodeURIComponent(b.name)}&b1e=${b.elo_score}`) as any);
+  };
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
@@ -600,6 +653,7 @@ export default function MatchmakingScreen() {
             { id: 'mes'          as Tab, label: 'Mes défis',  badge: 0 },
             { id: 'candidatures' as Tab, label: 'Candidat.',  badge: candidatures.filter(c => c.status === 'pending').length },
             { id: 'invitations'  as Tab, label: 'Binôme',     badge: binomeInvites.length },
+            { id: 'vitrine'      as Tab, label: 'Ouverts',    badge: 0 },
           ]).map(t => {
             const active = tab === t.id;
             return (
@@ -665,6 +719,13 @@ export default function MatchmakingScreen() {
                 ? <EmptyCard icon="users" title="Aucune invitation" sub="Quand un joueur t'invite comme binôme pour relever un défi, c'est ici." />
                 : <View style={{ gap: 10 }}>
                     {binomeInvites.map(c => <BinomeInviteCard key={c.id} app={c} onAccept={() => handleAcceptBinome(c)} />)}
+                  </View>
+            )}
+            {tab === 'vitrine' && (
+              vitrine.length === 0
+                ? <EmptyCard icon="users" title="Aucun binôme ouvert" sub="Déclare le tien depuis ton profil, ou reviens plus tard." />
+                : <View style={{ gap: 10 }}>
+                    {vitrine.map(sb => <VitrineCard key={sb.id} sb={sb} onDefier={() => handleDefierBinome(sb)} />)}
                   </View>
             )}
           </View>
