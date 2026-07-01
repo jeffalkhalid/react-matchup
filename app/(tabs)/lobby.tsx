@@ -2133,14 +2133,15 @@ export default function LobbyScreen() {
         creator_side: data.creatorSide,
         game_format: data.gameType === 'Amical' ? 'friendly' : 'competitive',
         is_challenge: data.gameType === 'Défi',
+        is_targeted: data.isTargeted === true,
         stake_multiplier: data.gameType === 'Défi' ? data.stakeMultiplier : 1.0,
         gender_pref: data.genre,
         match_date: matchDateIso,
         location: data.location,
         has_reservation: data.hasReservation,
-        min_elo: padelLevelToElo(data.minLevel),
-        max_elo: padelLevelToElo(data.maxLevel),
-        status: data.gameType === 'Défi' ? 'draft' : 'open',
+        min_elo: data.isTargeted ? null : padelLevelToElo(data.minLevel),
+        max_elo: data.isTargeted ? null : padelLevelToElo(data.maxLevel),
+        status: data.gameType === 'Défi' ? (data.isTargeted ? 'open' : 'draft') : 'open',
         spots_available: 3 - data.confirmedPlayers.length,
       })
       .select('id')

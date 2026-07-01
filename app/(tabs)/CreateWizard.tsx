@@ -28,6 +28,7 @@ export interface WizardResult {
   stakeMultiplier: number;
   creatorSide: string;
   confirmedPlayers: Array<{ id: string; name: string; elo_score: number; team_side?: string }>;
+  isTargeted: boolean;
 }
 
 interface Props {
@@ -40,6 +41,7 @@ interface Props {
   initialGameType?: GameType;
   initialInvite?: { id: string; name: string; elo_score: number; court_side?: string };
   initialInvites?: Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>>;
+  targeted?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -232,7 +234,7 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays, daysWithGames }: {
 }
 
 // ─── Main component ───────────────────────────────────────────
-export default function CreateWizard({ visible, onClose, onPublishedDone, onPublish, player, initialGameType, initialInvite, initialInvites }: Props) {
+export default function CreateWizard({ visible, onClose, onPublishedDone, onPublish, player, initialGameType, initialInvite, initialInvites, targeted }: Props) {
   const insets = useSafeAreaInsets();
   const ALL_DAYS   = buildDays(92);
   const QUICK_DAYS = ALL_DAYS.slice(0, 7);
@@ -512,6 +514,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         stakeMultiplier: form.gameType === 'Défi' ? form.stakeMultiplier : 1.0,
         creatorSide:    form.mySlot ? SLOT_TO_SIDE[form.mySlot] : 'A_GAU',
         confirmedPlayers: Object.entries(form.invites).map(([slot, p]) => ({ ...p, team_side: SLOT_TO_SIDE[slot] })),
+        isTargeted: form.gameType === 'Défi' && !!targeted,
       });
       setPublishedGameId(newId ?? null);
       setPublished(true);
@@ -1090,6 +1093,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   // ── Étape Défi : choisir mon binôme (Team A = moi + 1 partenaire) ──
   function renderDefiBinome() {
+    const teamBSlots = (['B0', 'B1'] as const);
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <Text style={sty.sectionLabel}>Mon binôme</Text>
@@ -1121,12 +1125,49 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </TouchableOpacity>
         </View>
 
-        {defiPartner && (
+        {defiPartner && !targeted && (
           <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 10, padding: 10, marginBottom: 12 }}>
             <Text style={{ fontSize: 12, fontWeight: '900', color: t.eloColor, textAlign: 'center' }}>
               Plancher d'éligibilité : niveau {defiFloorLevel.toFixed(2)} (moyenne du binôme)
             </Text>
           </View>
+        )}
+
+        {/* En mode ciblé : afficher Team B verrouillée (lecture seule) */}
+        {targeted && (
+          <>
+            <Text style={[sty.sectionLabel, { marginTop: 10 }]}>Adversaires (verrouillés)</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {teamBSlots.map(slot => {
+                const opp = form.invites[slot];
+                return (
+                  <View key={slot} style={{
+                    flex: 1, backgroundColor: t.teamBBg, borderWidth: 1.5,
+                    borderColor: t.teamBBorder, borderRadius: 14, padding: 12,
+                    alignItems: 'center', gap: 6, opacity: 0.85,
+                  }}>
+                    {opp ? (
+                      <>
+                        <Avatar name={opp.name} size={44} />
+                        <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
+                          {opp.name.split(' ')[0]}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(opp.elo_score)}</Text>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5 }}>🔒</Text>
+                      </>
+                    ) : (
+                      <>
+                        <View style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderStyle: 'dashed', borderColor: t.teamBBorder, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 16, color: Colors.textMuted }}>?</Text>
+                        </View>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textMuted }}>Libre</Text>
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </>
         )}
 
         {/* Panneau d'invitation (réutilise le rendu existant : recherche + habituels) */}
@@ -1156,26 +1197,33 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: 'center' }}>Le delta ELO du match est multiplié par {form.stakeMultiplier.toFixed(1)} pour les 4 joueurs. Plus la mise est haute, plus on gagne… ou perd.</Text>
         </View>
 
-        {/* Plafond de niveau adverse */}
-        <Text style={sty.sectionLabel}>Plafond de niveau adverse</Text>
-        <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 12, alignItems: 'center', gap: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <TouchableOpacity onPress={() => setCap(form.maxLevel - 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>−</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 70, textAlign: 'center' }}>{form.maxLevel.toFixed(2)}</Text>
-            <TouchableOpacity onPress={() => setCap(form.maxLevel + 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>+</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: t.eloColor, textAlign: 'center' }}>
-            Éligibles : binômes de moyenne {defiFloorLevel.toFixed(2)} → {form.maxLevel.toFixed(2)}
-          </Text>
-        </View>
+        {/* Plafond de niveau adverse — masqué en mode ciblé (adversaires pré-désignés) */}
+        {!targeted && (
+          <>
+            <Text style={sty.sectionLabel}>Plafond de niveau adverse</Text>
+            <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 12, alignItems: 'center', gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <TouchableOpacity onPress={() => setCap(form.maxLevel - 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 20, color: Colors.textPrimary }}>−</Text>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 70, textAlign: 'center' }}>{form.maxLevel.toFixed(2)}</Text>
+                <TouchableOpacity onPress={() => setCap(form.maxLevel + 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 20, color: Colors.textPrimary }}>+</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: t.eloColor, textAlign: 'center' }}>
+                Éligibles : binômes de moyenne {defiFloorLevel.toFixed(2)} → {form.maxLevel.toFixed(2)}
+              </Text>
+            </View>
+          </>
+        )}
 
         <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 10, padding: 10 }}>
           <Text style={{ fontSize: 11, color: Colors.textSecondary, textAlign: 'center', lineHeight: 16 }}>
-            À la publication, le défi reste invisible tant que {defiPartner?.name?.split(' ')[0] ?? 'ton partenaire'} n'a pas accepté.
+            {targeted
+              ? "Les adversaires sont pré-désignés. La partie démarre dès que les 3 invités acceptent."
+              : `À la publication, le défi reste invisible tant que ${defiPartner?.name?.split(' ')[0] ?? 'ton partenaire'} n'a pas accepté.`
+            }
           </Text>
         </View>
       </ScrollView>
