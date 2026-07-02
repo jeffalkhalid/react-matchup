@@ -255,6 +255,7 @@ export default function MatchmakingScreen() {
   const [releverGame, setReleverGame] = useState<DefiGame | null>(null);
   const [partnerSearch, setPartnerSearch] = useState('');
   const [partnerResults, setPartnerResults] = useState<{ id: string; name: string; elo_score: number; court_side?: string }[]>([]);
+  const [partnerBusy, setPartnerBusy] = useState<Set<string>>(new Set()); // résultats occupés au créneau du défi
   const [applying, setApplying] = useState(false);
   const [suggestedPartners, setSuggestedPartners] = useState<{ id: string; name: string; elo_score: number; court_side?: string; compatScore?: number }[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -312,19 +313,38 @@ export default function MatchmakingScreen() {
 
   // ── Debounced player search ──────────────────────────────────
   useEffect(() => {
-    if (partnerSearch.length < 2) { setPartnerResults([]); return; }
+    if (partnerSearch.length < 2) { setPartnerResults([]); setPartnerBusy(new Set()); return; }
     const t = setTimeout(() => {
       supabase.from('players').select('id,name,elo_score,court_side')
         .is('deleted_at', null)
         .ilike('name', `%${partnerSearch}%`)
         .neq('id', player?.id ?? '')
         .limit(12)
-        .then(({ data }) => {
-          setPartnerResults(((data as any[]) || []).filter(p => !excludedPartnerIds.has(p.id)).slice(0, 8));
+        .then(async ({ data }) => {
+          const results = ((data as any[]) || []).filter(p => !excludedPartnerIds.has(p.id)).slice(0, 8);
+          setPartnerResults(results);
+          // Dispo au créneau du défi : marquer ceux déjà pris ±2h (pastille « Occupé »).
+          const slotTs = releverGame?.match_date ? new Date(releverGame.match_date).getTime() : null;
+          if (slotTs != null && results.length > 0) {
+            const { data: busyRows } = await supabase
+              .from('game_participants')
+              .select('player_id, game:game_id(match_date, status)')
+              .in('player_id', results.map(p => p.id))
+              .eq('status', 'accepted');
+            const busy = new Set<string>();
+            (busyRows ?? []).forEach((r: any) => {
+              const g = r.game;
+              if (!g || g.status === 'cancelled' || g.status === 'closed' || !g.match_date) return;
+              if (Math.abs(new Date(g.match_date).getTime() - slotTs) < 2 * 60 * 60 * 1000) busy.add(r.player_id);
+            });
+            setPartnerBusy(busy);
+          } else {
+            setPartnerBusy(new Set());
+          }
         });
     }, 300);
     return () => clearTimeout(t);
-  }, [partnerSearch, player, excludedPartnerIds]);
+  }, [partnerSearch, player, excludedPartnerIds, releverGame]);
 
   // ── Compute per-défi compat scores (drives "À relever" sort) ─
   useEffect(() => {
@@ -572,24 +592,32 @@ export default function MatchmakingScreen() {
                   Résultats
                 </Text>
                 <View style={{ gap: 8 }}>
-                  {partnerResults.map(p => (
-                    <TouchableOpacity
-                      key={p.id}
-                      onPress={() => submitRelever(p)}
-                      disabled={applying}
-                      style={[sty.card, { opacity: applying ? 0.6 : 1 }]}
-                      activeOpacity={0.75}
-                    >
-                      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <PlayerAvatar name={p.name} size={38} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
-                          <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                  {partnerResults.map(p => {
+                    const avg = ((player?.elo_score ?? 0) + p.elo_score) / 2;
+                    const eligible = !releverGame || (avg >= (releverGame.min_elo ?? 0) && avg <= (releverGame.max_elo ?? 999999));
+                    const busy = partnerBusy.has(p.id);
+                    const selectable = eligible && !busy && !applying;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => submitRelever(p)}
+                        disabled={!selectable}
+                        style={[sty.card, { opacity: selectable ? 1 : 0.55 }]}
+                        activeOpacity={0.75}
+                      >
+                        <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <PlayerAvatar name={p.name} size={38} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                          </View>
+                          {!eligible ? <Pill variant="danger">Non éligible</Pill>
+                            : busy ? <Pill variant="warning">Occupé</Pill>
+                            : <Icon name="chevronRight" size={16} color={Colors.textMuted} />}
                         </View>
-                        <Icon name="chevronRight" size={16} color={Colors.textMuted} />
-                      </View>
-                    </TouchableOpacity>
-                  ))}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
             )}
