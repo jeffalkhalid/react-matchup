@@ -526,11 +526,11 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
 
 // ── Main screen ──────────────────────────────────────────────────────
 export default function PlayerProfileScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  return <PlayerProfile id={id} />;
+  const { id, showcase } = useLocalSearchParams<{ id: string; showcase?: string }>();
+  return <PlayerProfile id={id} showcase={showcase} />;
 }
 
-export function PlayerProfile({ id }: { id: string }) {
+export function PlayerProfile({ id, showcase }: { id: string; showcase?: string }) {
   const { player: self, signOut } = usePlayer();
   const router           = useRouter();
   const insets           = useSafeAreaInsets();
@@ -575,6 +575,11 @@ export function PlayerProfile({ id }: { id: string }) {
   const [msgSheetOpen,   setMsgSheetOpen]   = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [showcaseOpen,   setShowcaseOpen]   = useState(false);
+
+  // Ouverture directe du gestionnaire de vitrine depuis une notif (?showcase=1).
+  useEffect(() => {
+    if (showcase === '1' && isSelf) setShowcaseOpen(true);
+  }, [showcase, isSelf]);
 
   const reactToActivity = async (eventId: string) => {
     const myId = self?.id ?? '';

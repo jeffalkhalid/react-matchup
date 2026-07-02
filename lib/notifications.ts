@@ -61,6 +61,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: myGames },
     { data: dismissedRows },
     { data: dmRequests },
+    { data: showcaseNoms },
   ] = await Promise.all([
     supabase
       .from('defi_applications')
@@ -118,6 +119,12 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .from('direct_conversations')
       .select('id, requester_id, requester:players!requester_id(name)')
       .eq('addressee_id', playerId)
+      .eq('status', 'pending'),
+    // Nominations de binôme en vitrine à confirmer (on me propose comme binôme ouvert).
+    supabase
+      .from('showcase_binomes')
+      .select('id, a:player_a(name)')
+      .eq('player_b', playerId)
       .eq('status', 'pending'),
   ]);
 
@@ -257,6 +264,15 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       title: 'Invitation binôme',
       subtitle: `${a.initiator?.name ?? '?'} veut relever un défi avec toi`,
       route: '/(tabs)/matchmaking',
+    })),
+    // Nominations de binôme en vitrine à confirmer → route vers MON profil
+    // (section « À confirmer » du gestionnaire de vitrine).
+    ...(showcaseNoms ?? []).map((s: any) => ({
+      id: `showcase-${s.id}`,
+      type: 'challenge' as const,
+      title: 'Proposition de binôme',
+      subtitle: `${s.a?.name ?? '?'} veut être ton binôme ouvert aux défis — confirme depuis ton profil.`,
+      route: `/(tabs)/player/${playerId}?showcase=1`,
     })),
     ...visiblePending.map(({ m, action }: any) => action === 'resolve' ? {
       id: `match-${m.id}`,
