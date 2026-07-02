@@ -20,6 +20,7 @@ import { fetchVitrine, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed } from '../../lib/defiNotify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
+import { getHiddenPlayerIds } from '../../lib/moderation';
 
 // ── Types ─────────────────────────────────────────────────────
 type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations' | 'vitrine';
@@ -256,6 +257,7 @@ export default function MatchmakingScreen() {
   const [partnerSearch, setPartnerSearch] = useState('');
   const [partnerResults, setPartnerResults] = useState<{ id: string; name: string; elo_score: number; court_side?: string }[]>([]);
   const [partnerBusy, setPartnerBusy] = useState<Set<string>>(new Set()); // résultats occupés au créneau du défi
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());     // joueurs bloqués (modération, 2 sens)
   const [applying, setApplying] = useState(false);
   const [suggestedPartners, setSuggestedPartners] = useState<{ id: string; name: string; elo_score: number; court_side?: string; compatScore?: number }[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -302,13 +304,19 @@ export default function MatchmakingScreen() {
   // défi que je relève (créateur + son partenaire Team A). On ne peut pas prendre
   // comme binôme quelqu'un qui est déjà côté défieur (defi_apply le rejette aussi).
   const excludedPartnerIds = useMemo(() => {
-    const s = new Set<string>();
+    const s = new Set<string>(hiddenIds);   // joueurs bloqués exclus du sélecteur
     if (player) s.add(player.id);
     if (releverGame) {
       if (releverGame.creator_id) s.add(releverGame.creator_id);
       (releverGame.participants ?? []).forEach(p => p.player_id && s.add(p.player_id));
     }
     return s;
+  }, [releverGame, player, hiddenIds]);
+
+  // Charger les joueurs bloqués à l'ouverture du sélecteur (modération, 2 sens).
+  useEffect(() => {
+    if (!releverGame || !player) return;
+    getHiddenPlayerIds(player.id).then(setHiddenIds);
   }, [releverGame, player]);
 
   // ── Debounced player search ──────────────────────────────────

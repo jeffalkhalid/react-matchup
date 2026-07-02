@@ -1,6 +1,7 @@
 // react-matchup/lib/showcase.ts
 // Couche données UNIQUE de la vitrine « binômes ouverts aux défis ».
 import { supabase } from './supabase';
+import { getHiddenPlayerIds } from './moderation';
 
 export interface ShowcasePlayer { id: string; name: string; elo_score: number; court_side?: string | null; }
 export interface ShowcaseBinome {
@@ -22,7 +23,9 @@ export async function fetchVitrine(playerId: string): Promise<ShowcaseBinome[]> 
     .neq('player_b', playerId)
     .order('created_at', { ascending: false });
   if (error) { console.warn('[showcase] fetchVitrine', error); return []; }
-  return (data ?? []) as unknown as ShowcaseBinome[];
+  const hidden = await getHiddenPlayerIds(playerId);   // modération : masquer les binômes avec un joueur bloqué
+  return ((data ?? []) as unknown as ShowcaseBinome[])
+    .filter(sb => !hidden.has(sb.player_a) && !hidden.has(sb.player_b));
 }
 
 // Mes vitrines (actives + en attente de confirmation de mon partenaire).

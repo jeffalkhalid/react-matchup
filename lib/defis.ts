@@ -3,6 +3,7 @@
 // + defi_applications + RPC defi_apply/defi_accept). Tout accès Supabase lié aux
 // défis passe par ici — les écrans ne font pas de requête défi en direct.
 import { supabase } from './supabase';
+import { getHiddenPlayerIds } from './moderation';
 
 export interface DefiPlayer { id: string; name: string; elo_score: number; }
 export interface DefiParticipant {
@@ -50,9 +51,10 @@ export async function fetchOpenDefis(playerId: string): Promise<DefiGame[]> {
     .gte('match_date', new Date().toISOString())   // pas de défis dont le créneau est déjà passé
     .order('match_date', { ascending: true });
   if (error) { console.warn('[defis] fetchOpenDefis', error); return []; }
+  const hidden = await getHiddenPlayerIds(playerId);   // modération : masquer les bloqués (2 sens)
   const rows = (data ?? []) as unknown as DefiGame[];
-  // Exclure ceux où je suis déjà participant (créateur exclu par la requête).
-  return rows.filter(g => !(g.participants ?? []).some(p => p.player_id === playerId));
+  // Exclure : créateur bloqué, ou déjà participant (créateur exclu par la requête).
+  return rows.filter(g => !hidden.has(g.creator_id) && !(g.participants ?? []).some(p => p.player_id === playerId));
 }
 
 // ── Mes défis : ceux que J'AI créés (draft/open/confirmed) ──
@@ -63,6 +65,7 @@ export async function fetchMyDefis(playerId: string): Promise<DefiGame[]> {
     .eq('is_challenge', true)
     .eq('creator_id', playerId)
     .in('status', ['draft', 'open', 'confirmed'])
+    .gte('match_date', new Date().toISOString())   // ne pas montrer mes défis dont le créneau est passé
     .order('match_date', { ascending: true });
   if (error) { console.warn('[defis] fetchMyDefis', error); return []; }
   return (data ?? []) as unknown as DefiGame[];
