@@ -152,6 +152,12 @@ export function usePushNotifications() {
           track('notif_bilan_tapped', { month: data.month });
           router.push((data.month ? `/bilan/${data.month}` : '/bilan/last') as any);
           break;
+        case 'showcase':
+          // Nomination de binôme ouvert → ouvrir MON profil (id dans le payload)
+          // sur le gestionnaire de vitrine (section « À confirmer »).
+          if (data.pid) router.push(`/(tabs)/player/${data.pid}?showcase=1` as any);
+          else router.push('/(tabs)/matchmaking');
+          break;
       }
     });
     return () => sub.remove();

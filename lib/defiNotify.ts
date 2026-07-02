@@ -24,7 +24,8 @@ export function notifyShowcaseNominated(partnerId: string, byName: string): void
     playerIds: [partnerId],
     title: '🤝 Binôme ouvert',
     body: `${byName} veut être ton binôme ouvert aux défis — confirme depuis ton profil.`,
-    data: { type: 'challenge' },
+    // 'showcase' + pid (= le destinataire) → le tap ouvre SON profil sur « À confirmer ».
+    data: { type: 'showcase', pid: partnerId },
   });
 }
 
