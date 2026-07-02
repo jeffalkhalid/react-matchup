@@ -666,7 +666,7 @@ export default function MatchmakingScreen() {
             { id: 'mes'          as Tab, label: 'Mes défis',  badge: 0 },
             { id: 'candidatures' as Tab, label: 'Candid.',    badge: candidatures.filter(c => c.status === 'pending').length },
             { id: 'invitations'  as Tab, label: 'Binôme',     badge: binomeInvites.length },
-            { id: 'vitrine'      as Tab, label: 'Vitrine',    badge: 0 },
+            { id: 'vitrine'      as Tab, label: 'À défier',   badge: 0 },
           ]).map(t => {
             const active = tab === t.id;
             return (
