@@ -444,7 +444,7 @@ export function ProfileHeader(props: {
   isSelf: boolean; isFollowing: boolean;
   onToggleFollow: () => void; onBack: () => void; onMenu: () => void; onEdit: () => void;
   onShareProfile: () => void; onDefier: () => void;
-  onMessage?: () => void; onShowcase?: () => void;
+  onMessage?: () => void; onShowcase?: () => void; onMyShowcase?: () => void;
   hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
 }) {
@@ -515,12 +515,22 @@ export function ProfileHeader(props: {
 
       {/* Actions : Modifier (soi) | Suivre + Défier (autre) */}
       {isSelf ? (
-        <TouchableOpacity onPress={props.onEdit} activeOpacity={0.85} style={{
-          marginTop: 14, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
-          paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Modifier le profil</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity onPress={props.onEdit} activeOpacity={0.85} style={{
+            marginTop: 14, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+            paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Modifier le profil</Text>
+          </TouchableOpacity>
+          {props.onMyShowcase && (
+            <TouchableOpacity onPress={props.onMyShowcase} activeOpacity={0.85} style={{
+              marginTop: 8, borderRadius: 999, borderWidth: 1.5, borderColor: ACCENT,
+              paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 13.5, fontWeight: '800', color: ACCENT }}>⚔️ M'ouvrir aux défis</Text>
+            </TouchableOpacity>
+          )}
+        </>
       ) : (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
           <TouchableOpacity onPress={props.onToggleFollow} activeOpacity={0.85} style={{

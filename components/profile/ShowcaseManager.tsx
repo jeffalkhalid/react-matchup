@@ -5,6 +5,7 @@ import {
   View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Colors, Fonts } from '../../lib/theme';
 import {
@@ -49,6 +50,7 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Main component ───────────────────────────────────────────────────
 export default function ShowcaseManager({ visible, onClose, player }: Props) {
+  const insets = useSafeAreaInsets();
   const [myShowcases, setMyShowcases] = useState<ShowcaseBinome[]>([]);
   const [invites, setInvites] = useState<ShowcaseBinome[]>([]);
   const [loading, setLoading] = useState(false);
@@ -295,7 +297,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
 
               <ScrollView
                 style={{ maxHeight: 560 }}
-                contentContainerStyle={{ padding: 20, gap: 24 }}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: insets.bottom + 28, gap: 24 }}
                 keyboardShouldPersistTaps="handled"
               >
                 {loading ? (

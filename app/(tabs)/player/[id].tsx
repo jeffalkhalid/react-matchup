@@ -1209,6 +1209,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         onDefier={handleDefier}
         onMessage={isSelf ? undefined : onMessage}
         onShowcase={isSelf ? undefined : handleProposeBinome}
+        onMyShowcase={isSelf ? () => setShowcaseOpen(true) : undefined}
         tab={tab}
         setTab={setTab}
         topInset={insets.top}
@@ -1484,30 +1485,6 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         </Pressable>
       </Pressable>
     </Modal>
-
-    {/* ── Vitrine binômes (self only) ── */}
-    {isSelf && (
-      <TouchableOpacity
-        onPress={() => setShowcaseOpen(true)}
-        activeOpacity={0.85}
-        style={{
-          position: 'absolute',
-          bottom: 80,
-          alignSelf: 'center',
-          flexDirection: 'row', alignItems: 'center', gap: 7,
-          paddingHorizontal: 18, paddingVertical: 11,
-          borderRadius: 24, backgroundColor: Colors.bgCard,
-          borderWidth: 1, borderColor: Colors.border,
-          shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
-          elevation: 3,
-        }}
-      >
-        <Text style={{ fontSize: 16 }}>⚔️</Text>
-        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
-          M'ouvrir aux défis
-        </Text>
-      </TouchableOpacity>
-    )}
 
     {/* ── Story flow ── */}
     {isSelf && (
