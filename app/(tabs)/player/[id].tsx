@@ -35,6 +35,8 @@ import DirectMessageComposer from '../../../components/DirectMessageComposer';
 import ReportReasonSheet from '../../../components/ReportReasonSheet';
 import { Icon } from '../../../components/community/icons';
 import ShowcaseManager from '../../../components/profile/ShowcaseManager';
+import { openShowcase } from '../../../lib/showcase';
+import { notifyShowcaseNominated } from '../../../lib/defiNotify';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -266,7 +268,7 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             {match.game?.location ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 11 }}>📍</Text>
+                <Icon name="mapPin" size={12} color={Colors.textSecondary} stroke={2} />
                 <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }} numberOfLines={1}>
                   {match.game.location}
                 </Text>
@@ -274,7 +276,7 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
             ) : null}
             {match.game?.match_date ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 11 }}>🕒</Text>
+                <Icon name="clock" size={12} color={Colors.textSecondary} stroke={2} />
                 <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }}>
                   {new Date(match.game.match_date).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </Text>
@@ -391,7 +393,7 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
               backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
             }}
           >
-            <Text style={{ fontSize: 13 }}>🔄</Text>
+            <Icon name="repeat" size={14} color={Colors.textPrimary} stroke={2} />
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
               Rejouer avec la même équipe
             </Text>
@@ -514,7 +516,7 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
       ) : null}
       {isSelf && onRematch && (
         <TouchableOpacity onPress={onRematch} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={{ paddingLeft: 2 }}>
-          <Text style={{ fontSize: 15 }}>🔄</Text>
+          <Icon name="repeat" size={16} color={Colors.textPrimary} stroke={2} />
         </TouchableOpacity>
       )}
       {isSelf && <Icon name="camera" size={15} color={LIGHT.muted} />}
@@ -822,7 +824,9 @@ export function PlayerProfile({ id }: { id: string }) {
   if (isDeleted(profile)) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-        <Text style={{ fontSize: 40, marginBottom: 10 }}>👤</Text>
+        <View style={{ marginBottom: 10 }}>
+          <Icon name="users" size={40} color={Colors.textMuted} stroke={1.8} />
+        </View>
         <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center' }}>
           Ce compte a été supprimé
         </Text>
@@ -971,6 +975,33 @@ export function PlayerProfile({ id }: { id: string }) {
   const handleDefier = () => {
     const sideParam = profile.court_side ? `&pside=${encodeURIComponent(profile.court_side)}` : '';
     router.push((`/(tabs)/lobby?create=1&challenge=1&with=${profile.id}&pname=${encodeURIComponent(profile.name)}&pelo=${profile.elo_score}${sideParam}`) as any);
+  };
+
+  // Proposer CE joueur comme mon binôme ouvert aux défis (raccourci depuis son profil).
+  const handleProposeBinome = () => {
+    if (!self || isSelf) return;
+    Alert.alert(
+      'Proposer un binôme',
+      `Te déclarer ouvert aux défis avec ${profile.name} ? Il devra confirmer depuis son profil.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Proposer',
+          onPress: async () => {
+            try {
+              await openShowcase(id as string);
+              notifyShowcaseNominated(id as string, self.name);
+              Alert.alert('Proposé !', `${profile.name} doit confirmer depuis son profil — votre binôme apparaîtra alors dans « À défier ».`);
+            } catch (e: any) {
+              const msg = e?.message?.includes('already exists')
+                ? 'Tu as déjà une vitrine avec ce joueur.'
+                : (e?.message ?? 'Action impossible.');
+              Alert.alert('Impossible', msg);
+            }
+          },
+        },
+      ],
+    );
   };
 
   function mapDmError(msg: string): string {
@@ -1172,6 +1203,7 @@ export function PlayerProfile({ id }: { id: string }) {
         onShareProfile={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }}
         onDefier={handleDefier}
         onMessage={isSelf ? undefined : onMessage}
+        onShowcase={isSelf ? undefined : handleProposeBinome}
         tab={tab}
         setTab={setTab}
         topInset={insets.top}

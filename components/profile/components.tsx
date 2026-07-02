@@ -444,7 +444,7 @@ export function ProfileHeader(props: {
   isSelf: boolean; isFollowing: boolean;
   onToggleFollow: () => void; onBack: () => void; onMenu: () => void; onEdit: () => void;
   onShareProfile: () => void; onDefier: () => void;
-  onMessage?: () => void;
+  onMessage?: () => void; onShowcase?: () => void;
   hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
 }) {
@@ -547,6 +547,15 @@ export function ProfileHeader(props: {
             <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Message</Text>
           </TouchableOpacity>
         </View>
+      )}
+      {/* Proposer ce joueur comme binôme ouvert (autre profil uniquement) */}
+      {!isSelf && props.onShowcase && (
+        <TouchableOpacity onPress={props.onShowcase} activeOpacity={0.85} style={{
+          marginTop: 8, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+          paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>🤝 Proposer comme binôme</Text>
+        </TouchableOpacity>
       )}
 
       {/* Onglets */}
