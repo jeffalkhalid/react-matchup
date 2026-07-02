@@ -66,6 +66,17 @@ BEGIN
   END IF;
 
   --   • membre du binôme ciblé (B) refuse/expire → conversion en défi OUVERT.
+  -- Pré-requis : Team A complète (partenaire créateur ACCEPTÉ). Sinon on ne peut
+  -- pas ouvrir un défi sans binôme créateur complet → annulation.
+  IF NOT EXISTS (
+    SELECT 1 FROM game_participants
+    WHERE game_id = NEW.game_id AND team_side LIKE 'A%'
+      AND player_id <> v_creator AND status = 'accepted'
+  ) THEN
+    UPDATE open_games SET status = 'cancelled' WHERE id = NEW.game_id;
+    RETURN NEW;
+  END IF;
+
   SELECT elo_score INTO v_a_elo FROM players WHERE id = v_creator;
   SELECT p.elo_score INTO v_p_elo
     FROM game_participants gp JOIN players p ON p.id = gp.player_id
