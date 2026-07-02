@@ -387,10 +387,41 @@ export default function MatchmakingScreen() {
         const { data: freqPlayers } = await supabase.from('players')
           .select('id,name,elo_score,court_side').in('id', topIds).is('deleted_at', null);
         if (!freqPlayers?.length) { setLoadingSuggestions(false); return; }
-        // 2) Rank by compat
+        // 2) Filtrer les candidats : éligibilité (moyenne du binôme {moi, p} dans la
+        //    bande du défi) + disponibilité au créneau (pas de partie acceptée à ±2h).
+        const myElo = player.elo_score;
+        const minE = releverGame.min_elo ?? 0;
+        const maxE = releverGame.max_elo ?? 999999;
+        const OVERLAP_MS = 2 * 60 * 60 * 1000; // même fenêtre ±2h que l'anti-chevauchement
+        const slotTs = releverGame.match_date ? new Date(releverGame.match_date).getTime() : null;
+
+        let cands = (freqPlayers as any[]).filter(p => {
+          if (excludedPartnerIds.has(p.id)) return false;
+          const avg = (myElo + p.elo_score) / 2;
+          return avg >= minE && avg <= maxE;
+        });
+
+        if (slotTs != null && cands.length > 0) {
+          const { data: busyRows } = await supabase
+            .from('game_participants')
+            .select('player_id, game:game_id(match_date, status)')
+            .in('player_id', cands.map(p => p.id))
+            .eq('status', 'accepted');
+          const busy = new Set<string>();
+          (busyRows ?? []).forEach((r: any) => {
+            const g = r.game;
+            if (!g || g.status === 'cancelled' || g.status === 'closed' || !g.match_date) return;
+            if (Math.abs(new Date(g.match_date).getTime() - slotTs) < OVERLAP_MS) busy.add(r.player_id);
+          });
+          cands = cands.filter(p => !busy.has(p.id));
+        }
+
+        if (!cands.length) { setSuggestedPartners([]); setLoadingSuggestions(false); return; }
+
+        // 3) Classer les candidats retenus par compatibilité
         const myData = await getPlayerGameData(myId);
         const ranked = await Promise.all(
-          (freqPlayers as any[]).map(async (p) => {
+          cands.map(async (p) => {
             const compat = await computeCompatDetail(
               myId, player.elo_score, player.court_side,
               myData, p.id, p.elo_score, p.court_side,
@@ -399,7 +430,7 @@ export default function MatchmakingScreen() {
           }),
         );
         ranked.sort((a, b) => b.compatScore - a.compatScore);
-        setSuggestedPartners(ranked.filter(p => !excludedPartnerIds.has(p.id)).slice(0, 5));
+        setSuggestedPartners(ranked.slice(0, 5));
       } catch {
         // suggestions are optional — silent fail
       } finally {
