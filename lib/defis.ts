@@ -47,6 +47,7 @@ export async function fetchOpenDefis(playerId: string): Promise<DefiGame[]> {
     .eq('status', 'open')
     .eq('is_targeted', false)
     .neq('creator_id', playerId)
+    .gte('match_date', new Date().toISOString())   // pas de défis dont le créneau est déjà passé
     .order('match_date', { ascending: true });
   if (error) { console.warn('[defis] fetchOpenDefis', error); return []; }
   const rows = (data ?? []) as unknown as DefiGame[];

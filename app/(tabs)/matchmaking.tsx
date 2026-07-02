@@ -59,18 +59,37 @@ function bandLabel(g: DefiGame): string {
   return `Moy. ${lo} → ${hi}`;
 }
 
-function GhostAvatar({ size = 38 }: { size?: number }) {
+// Un slot de la grille du défi (même esprit que le lobby) : avatar plein pour le
+// binôme créateur (couleur unie), slot pointillé désactivé pour l'adversaire.
+function DefiSlot({ name, lvl, pos, disabled }: { name?: string; lvl?: string | null; pos: 'G' | 'D'; disabled?: boolean }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderStyle: 'dashed',
-      borderColor: Colors.border, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: size * 0.42, color: Colors.textMuted, fontWeight: '700' }}>?</Text>
+    <View style={{ alignItems: 'center', gap: 3, width: 58 }}>
+      {disabled ? (
+        <View style={{ width: 42, height: 42, borderRadius: 21, borderWidth: 1.5, borderStyle: 'dashed', borderColor: Colors.border, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 17, color: Colors.textMuted, fontWeight: '300' }}>?</Text>
+        </View>
+      ) : (
+        <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 16 }}>{(name || '?').charAt(0).toUpperCase()}</Text>
+        </View>
+      )}
+      <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: '900', maxWidth: 58, color: disabled ? Colors.textMuted : Colors.textPrimary }}>
+        {disabled ? '—' : (name?.split(' ')[0] ?? '?')}
+      </Text>
+      {!disabled && lvl ? (
+        <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.brandDeep }}>Niv {lvl}</Text>
+      ) : (
+        <Text style={{ fontSize: 10.5, color: 'transparent' }}>·</Text>
+      )}
+      <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textMuted, letterSpacing: 0.3 }}>{pos}</Text>
     </View>
   );
 }
 
 function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGame; myElo: number; onRelever: () => void; compatScore?: number; }) {
-  const teamA = (game.participants ?? []).filter(p => (p.team_side ?? '').startsWith('A') || p.player_id === game.creator_id);
-  const partnerName = teamA.find(p => p.player_id !== game.creator_id)?.player?.name ?? '—';
+  const partnerP = (game.participants ?? []).find(p => (p.team_side ?? '').startsWith('A') && p.player_id !== game.creator_id);
+  const creatorLvl = game.creator?.elo_score != null ? eloToLevel(game.creator.elo_score).toFixed(1) : null;
+  const partnerLvl = partnerP?.player?.elo_score != null ? eloToLevel(partnerP.player.elo_score).toFixed(1) : null;
   const avgLvl = game.min_elo != null ? eloToLevel(game.min_elo).toFixed(1) : '?';
   const hot = compatScore !== undefined && compatScore >= 60;
   const when = game.match_date
@@ -78,31 +97,24 @@ function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGa
     : null;
   return (
     <View style={[sty.card, { overflow: 'hidden' }]}>
-      {/* bandeau accent */}
       <View style={{ height: 3, backgroundColor: hot ? Colors.brand : Colors.primary }} />
       <View style={{ padding: 14, gap: 12 }}>
-        {/* Ligne VERSUS : paire créatrice vs binôme à trouver */}
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flexDirection: 'row' }}>
-            <PlayerAvatar name={game.creator?.name ?? '?'} size={38} />
-            <View style={{ marginLeft: -13 }}><PlayerAvatar name={partnerName} size={38} /></View>
+        {/* Grille de slots : binôme créateur (plein) VS adversaire (désactivé) */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 14 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <DefiSlot name={game.creator?.name} lvl={creatorLvl} pos="G" />
+            <DefiSlot name={partnerP?.player?.name} lvl={partnerLvl} pos="D" />
           </View>
-          <View style={{ flex: 1, marginLeft: 11 }}>
-            <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
-              {game.creator?.name ?? '?'} & {partnerName}
-            </Text>
-            <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>moy. niv. {avgLvl}</Text>
-          </View>
-          <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, marginHorizontal: 8 }}>VS</Text>
-          <View style={{ flexDirection: 'row' }}>
-            <GhostAvatar />
-            <View style={{ marginLeft: -13 }}><GhostAvatar /></View>
+          <Text style={{ fontSize: 22, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, marginTop: 9 }}>VS</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <DefiSlot pos="G" disabled />
+            <DefiSlot pos="D" disabled />
           </View>
         </View>
 
-        {/* Bande de pills : mise, niveau, lieu, date, compat */}
-        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <View style={{ backgroundColor: Colors.primary, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center' }}>
+        {/* Pills : mise, niveau, lieu, date, compat */}
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ backgroundColor: Colors.primary, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
             <Text style={{ color: Colors.brand, fontSize: 11.5, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Text>
           </View>
           <Pill variant="brand">Niv. {avgLvl}+</Pill>
@@ -111,7 +123,7 @@ function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGa
           {hot ? <Pill variant="warning">🔥 Compatible</Pill> : null}
         </View>
 
-        {/* Bouton */}
+        {/* Bouton — donne la suite (sélection du binôme) */}
         <TouchableOpacity onPress={onRelever} activeOpacity={0.85}
           style={{ backgroundColor: Colors.primary, borderRadius: 13, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
             shadowColor: Colors.primary, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
@@ -647,29 +659,30 @@ export default function MatchmakingScreen() {
             )}
           </View>
         </View>
-        <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
+        {/* Onglets soulignés (même esprit que la page profil) */}
+        <View style={{ flexDirection: 'row', marginTop: 6 }}>
           {([
             { id: 'relever'      as Tab, label: 'À relever',  badge: 0 },
             { id: 'mes'          as Tab, label: 'Mes défis',  badge: 0 },
-            { id: 'candidatures' as Tab, label: 'Candidat.',  badge: candidatures.filter(c => c.status === 'pending').length },
+            { id: 'candidatures' as Tab, label: 'Candid.',    badge: candidatures.filter(c => c.status === 'pending').length },
             { id: 'invitations'  as Tab, label: 'Binôme',     badge: binomeInvites.length },
-            { id: 'vitrine'      as Tab, label: 'Ouverts',    badge: 0 },
+            { id: 'vitrine'      as Tab, label: 'Vitrine',    badge: 0 },
           ]).map(t => {
             const active = tab === t.id;
             return (
               <TouchableOpacity key={t.id} onPress={() => setTab(t.id)} activeOpacity={0.7}
-                style={{
-                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  backgroundColor: active ? '#fff' : 'transparent', borderRadius: 14, paddingVertical: 9,
-                }}>
-                <Text style={{ color: active ? Colors.textPrimary : 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                  {t.label}
-                </Text>
-                {t.badge > 0 && (
-                  <View style={{ backgroundColor: active ? Colors.brand : 'rgba(255,255,255,0.2)', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1 }}>
-                    <Text style={{ color: active ? Colors.brandDeep : Colors.textOnDark, fontSize: 9, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>{t.badge}</Text>
-                  </View>
-                )}
+                style={{ flex: 1, paddingTop: 10, paddingBottom: 12, alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ fontSize: 11, fontWeight: active ? '900' : '600', fontFamily: active ? Fonts.uiBlack : Fonts.uiSemi, color: active ? Colors.brand : 'rgba(255,255,255,0.5)' }}>
+                    {t.label}
+                  </Text>
+                  {t.badge > 0 && (
+                    <View style={{ backgroundColor: Colors.brand, borderRadius: 999, minWidth: 15, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: Colors.brandDeep, fontSize: 9, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>{t.badge}</Text>
+                    </View>
+                  )}
+                </View>
+                {active && <View style={{ position: 'absolute', bottom: 0, height: 3, left: '18%', right: '18%', borderRadius: 3, backgroundColor: Colors.brand }} />}
               </TouchableOpacity>
             );
           })}
@@ -682,13 +695,6 @@ export default function MatchmakingScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}>
           <View style={{ padding: 14, paddingBottom: 100 }}>
-            {/* CTA : lancer un défi (ouvre le wizard en mode Défi) */}
-            <TouchableOpacity onPress={launchDefi} activeOpacity={0.85}
-              style={{ backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginBottom: 14,
-                shadowColor: Colors.brand, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
-              <Icon name="swords" size={17} color={Colors.textOnBrand} stroke={2.4} />
-              <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14.5, letterSpacing: 0.2 }}>Lancer un défi</Text>
-            </TouchableOpacity>
             {tab === 'relever' && (
               openDefis.length === 0
                 ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />
@@ -701,11 +707,17 @@ export default function MatchmakingScreen() {
                   </View>
             )}
             {tab === 'mes' && (
-              myDefis.length === 0
-                ? <EmptyCard icon="swords" title="Aucun défi créé" sub="Lance un défi depuis le bouton Créer." />
-                : <View style={{ gap: 10 }}>
-                    {myDefis.map(g => <MyDefiCard key={g.id} game={g} onCancel={() => handleCancelDefi(g)} />)}
-                  </View>
+              <View style={{ gap: 12 }}>
+                <TouchableOpacity onPress={launchDefi} activeOpacity={0.85}
+                  style={{ backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+                    shadowColor: Colors.brand, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+                  <Icon name="swords" size={17} color={Colors.textOnBrand} stroke={2.4} />
+                  <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14.5, letterSpacing: 0.2 }}>Lancer un défi</Text>
+                </TouchableOpacity>
+                {myDefis.length === 0
+                  ? <EmptyCard icon="swords" title="Aucun défi créé" sub="Lance ton premier défi avec le bouton ci-dessus." />
+                  : myDefis.map(g => <MyDefiCard key={g.id} game={g} onCancel={() => handleCancelDefi(g)} />)}
+              </View>
             )}
             {tab === 'candidatures' && (
               candidatures.length === 0
