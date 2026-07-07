@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, StyleSheet, Image, Alert, Modal, TextInput,
@@ -21,6 +21,7 @@ import { notifyPartnerInvitedToRelever, notifyDefiConfirmed } from '../../lib/de
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
 import { getHiddenPlayerIds } from '../../lib/moderation';
+import { GameCard } from './lobby';
 
 // ── Types ─────────────────────────────────────────────────────
 type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations' | 'vitrine';
@@ -60,121 +61,25 @@ function bandLabel(g: DefiGame): string {
   return `Moy. ${lo} → ${hi}`;
 }
 
-// Un slot de la grille du défi (même esprit que le lobby) : avatar plein pour le
-// binôme créateur (couleur unie), slot pointillé désactivé pour l'adversaire.
-function DefiSlot({ name, lvl, pos, disabled }: { name?: string; lvl?: string | null; pos: 'G' | 'D'; disabled?: boolean }) {
+// Carte de défi = la carte du lobby (GameCard) en LECTURE SEULE (aucun handler de
+// join/change → grille non interactive) + un pied d'action propre au défi.
+function DefiActionButton({ label, onPress, danger }: { label: string; onPress: () => void; danger?: boolean }) {
   return (
-    <View style={{ alignItems: 'center', gap: 3, width: 58 }}>
-      {disabled ? (
-        <View style={{ width: 42, height: 42, borderRadius: 21, borderWidth: 1.5, borderStyle: 'dashed', borderColor: Colors.border, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 17, color: Colors.textMuted, fontWeight: '300' }}>?</Text>
-        </View>
-      ) : (
-        <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 16 }}>{(name || '?').charAt(0).toUpperCase()}</Text>
-        </View>
-      )}
-      <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: '900', maxWidth: 58, color: disabled ? Colors.textMuted : Colors.textPrimary }}>
-        {disabled ? '—' : (name?.split(' ')[0] ?? '?')}
-      </Text>
-      {!disabled && lvl ? (
-        <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.brandDeep }}>Niv {lvl}</Text>
-      ) : (
-        <Text style={{ fontSize: 10.5, color: 'transparent' }}>·</Text>
-      )}
-      <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textMuted, letterSpacing: 0.3 }}>{pos}</Text>
-    </View>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}
+      style={{ backgroundColor: danger ? Colors.bgCardAlt : Colors.primary, borderRadius: 12, paddingVertical: 11,
+        alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
+        borderWidth: danger ? 1 : 0, borderColor: Colors.border }}>
+      {!danger && <Icon name="swords" size={15} color={Colors.brand} stroke={2.2} />}
+      <Text style={{ color: danger ? Colors.danger : Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
-function DefiReleverCard({ game, myElo, onRelever, compatScore }: { game: DefiGame; myElo: number; onRelever: () => void; compatScore?: number; }) {
-  const partnerP = (game.participants ?? []).find(p => (p.team_side ?? '').startsWith('A') && p.player_id !== game.creator_id);
-  const creatorLvl = game.creator?.elo_score != null ? eloToLevel(game.creator.elo_score).toFixed(1) : null;
-  const partnerLvl = partnerP?.player?.elo_score != null ? eloToLevel(partnerP.player.elo_score).toFixed(1) : null;
-  const avgLvl = game.min_elo != null ? eloToLevel(game.min_elo).toFixed(1) : '?';
-  const hot = compatScore !== undefined && compatScore >= 60;
-  const when = game.match_date
-    ? new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : null;
+function DefiGameCard({ game, myId, myElo, onPress, children }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode }) {
   return (
-    <View style={[sty.card, { overflow: 'hidden' }]}>
-      <View style={{ height: 3, backgroundColor: hot ? Colors.brand : Colors.primary }} />
-      <View style={{ padding: 14, gap: 12 }}>
-        {/* Grille de slots : binôme créateur (plein) VS adversaire (désactivé) */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 14 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <DefiSlot name={game.creator?.name} lvl={creatorLvl} pos="G" />
-            <DefiSlot name={partnerP?.player?.name} lvl={partnerLvl} pos="D" />
-          </View>
-          <Text style={{ fontSize: 22, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, marginTop: 9 }}>VS</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <DefiSlot pos="G" disabled />
-            <DefiSlot pos="D" disabled />
-          </View>
-        </View>
-
-        {/* Pills : mise, niveau, lieu, date, compat */}
-        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ backgroundColor: Colors.primary, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-            <Text style={{ color: Colors.brand, fontSize: 11.5, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Text>
-          </View>
-          <Pill variant="brand">Niv. {avgLvl}+</Pill>
-          {game.location ? <Pill variant="info">{game.location}</Pill> : null}
-          {when ? <Pill variant="neutral">{when}</Pill> : null}
-          {hot ? <Pill variant="warning">🔥 Compatible</Pill> : null}
-        </View>
-
-        {/* Bouton — donne la suite (sélection du binôme) */}
-        <TouchableOpacity onPress={onRelever} activeOpacity={0.85}
-          style={{ backgroundColor: Colors.primary, borderRadius: 13, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
-            shadowColor: Colors.primary, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
-          <Icon name="swords" size={15} color={Colors.brand} stroke={2.2} />
-          <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13.5, letterSpacing: 0.2 }}>Relever le défi</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-function MyDefiCard({ game, onCancel }: { game: DefiGame; onCancel?: () => void }) {
-  const label = game.status === 'draft' ? '⏳ Brouillon (partenaire pas encore OK)'
-    : game.status === 'open' ? '🟢 Ouvert — en attente d\'un binôme'
-    : '✅ Confirmé';
-  return (
-    <View style={sty.card}>
-      <View style={{ padding: 14, gap: 6 }}>
-        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{bandLabel(game)} · ⚡ ×{(game.stake_multiplier ?? 1).toFixed(1)}</Text>
-        <Text style={{ fontSize: 11.5, color: Colors.textSecondary }}>{label}</Text>
-        {game.location || game.match_date ? (
-          <Text style={{ fontSize: 11, color: Colors.textMuted }}>
-            {game.location ?? ''}{game.match_date ? ` · ${new Date(game.match_date).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
-          </Text>
-        ) : null}
-        {onCancel && game.status !== 'confirmed' && (
-          <TouchableOpacity onPress={onCancel}
-            style={{ marginTop: 10, alignSelf: 'flex-start', paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCardAlt }}>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.danger }}>Annuler le défi</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function CandidatureCard({ app }: { app: DefiApplication }) {
-  const locked = app.status === 'locked';
-  return (
-    <View style={sty.card}>
-      <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <PlayerAvatar name={app.initiator?.name ?? '?'} size={32} />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>
-            {app.initiator?.name ?? '?'} & {app.partner?.name ?? '?'}
-          </Text>
-          <Text style={{ fontSize: 10.5, color: Colors.textMuted }}>{locked ? '🏁 Binôme retenu' : '⏳ En attente du partenaire'}</Text>
-        </View>
-        <Pill variant={locked ? 'success' : 'neutral'}>{locked ? 'Retenu' : 'Pending'}</Pill>
-      </View>
+    <View style={{ gap: 8 }}>
+      <GameCard game={game as any} variant="upcoming" myElo={myElo} playerId={myId} onPress={onPress ?? (() => {})} />
+      {children}
     </View>
   );
 }
@@ -765,11 +670,11 @@ export default function MatchmakingScreen() {
             {tab === 'relever' && (
               openDefis.length === 0
                 ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />
-                : <View style={{ gap: 10 }}>
+                : <View style={{ gap: 12 }}>
                     {sortedOpenDefis.map(g => (
-                      <DefiReleverCard key={g.id} game={g} myElo={player.elo_score}
-                        onRelever={() => handleRelever(g)}
-                        compatScore={defiCompatScores.get(g.id)} />
+                      <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => handleRelever(g)}>
+                        <DefiActionButton label="Relever le défi" onPress={() => handleRelever(g)} />
+                      </DefiGameCard>
                     ))}
                   </View>
             )}
@@ -783,14 +688,29 @@ export default function MatchmakingScreen() {
                 </TouchableOpacity>
                 {myDefis.length === 0
                   ? <EmptyCard icon="swords" title="Aucun défi créé" sub="Lance ton premier défi avec le bouton ci-dessus." />
-                  : myDefis.map(g => <MyDefiCard key={g.id} game={g} onCancel={() => handleCancelDefi(g)} />)}
+                  : myDefis.map(g => (
+                      <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score}>
+                        {g.status !== 'confirmed'
+                          ? <DefiActionButton label="Annuler le défi" danger onPress={() => handleCancelDefi(g)} />
+                          : null}
+                      </DefiGameCard>
+                    ))}
               </View>
             )}
             {tab === 'candidatures' && (
               candidatures.length === 0
                 ? <EmptyCard icon="users" title="Aucune candidature" sub="Les binômes qui relèvent tes défis apparaîtront ici." />
-                : <View style={{ gap: 10 }}>
-                    {candidatures.map(c => <CandidatureCard key={c.id} app={c} />)}
+                : <View style={{ gap: 12 }}>
+                    {candidatures.map(c => c.game ? (
+                      <DefiGameCard key={c.id} game={c.game} myId={player.id} myElo={player.elo_score}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                          <Text style={{ flex: 1, fontSize: 12, color: Colors.textSecondary }}>
+                            Candidature : <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{c.initiator?.name ?? '?'} & {c.partner?.name ?? '?'}</Text>
+                          </Text>
+                          <Pill variant={c.status === 'locked' ? 'success' : 'neutral'}>{c.status === 'locked' ? '🏁 Retenu' : '⏳ En attente'}</Pill>
+                        </View>
+                      </DefiGameCard>
+                    ) : null)}
                   </View>
             )}
             {tab === 'invitations' && (

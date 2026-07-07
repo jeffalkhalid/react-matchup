@@ -5,14 +5,17 @@
 import { supabase } from './supabase';
 import { getHiddenPlayerIds } from './moderation';
 
-export interface DefiPlayer { id: string; name: string; elo_score: number; }
+export interface DefiPlayer { id: string; name: string; elo_score: number; win_count?: number; loss_count?: number; }
 export interface DefiParticipant {
   id: string; player_id: string; status: string; team_side: string | null;
+  approvals?: string[] | null; created_at?: string | null; invite_expires_at?: string | null;
   player?: DefiPlayer | null;
 }
 export interface DefiGame {
-  id: string; creator_id: string; status: string;
-  is_challenge: boolean; stake_multiplier: number | null;
+  id: string; creator_id: string; creator_side?: string | null; status: string;
+  is_challenge: boolean; is_targeted?: boolean; stake_multiplier: number | null;
+  game_format?: string | null; gender_pref?: string | null;
+  spots_available?: number | null; has_reservation?: boolean | null;
   min_elo: number | null; max_elo: number | null;
   match_date: string | null; location: string | null;
   creator?: DefiPlayer | null;
@@ -26,9 +29,10 @@ export interface DefiApplication {
 }
 
 const GAME_COLS =
-  'id, creator_id, status, is_challenge, stake_multiplier, min_elo, max_elo, match_date, location, ' +
-  'creator:creator_id(id, name, elo_score), ' +
-  'participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
+  'id, creator_id, creator_side, status, is_challenge, is_targeted, game_format, gender_pref, ' +
+  'spots_available, has_reservation, stake_multiplier, min_elo, max_elo, match_date, location, ' +
+  'creator:creator_id(id, name, elo_score, win_count, loss_count), ' +
+  'participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
 
 // ── Helpers d'éligibilité (moyenne du binôme dans la bande du défi) ──
 export function binomeAvg(eloA: number, eloB: number): number {
