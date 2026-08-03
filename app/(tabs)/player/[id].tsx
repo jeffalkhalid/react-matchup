@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput,
   Modal, KeyboardAvoidingView, Platform, Pressable, Alert,
@@ -21,7 +21,7 @@ import { PM } from '../../../components/profile/theme';
 import {
   ProfileHeader, AchievementFeedCard, MatchActionButton, type TabName, type MatchView, type TimelinePoint, type PlayerLite,
 } from '../../../components/profile/components';
-import { StatsTab, MatchsTab, PalmaresTab, BadgesTab } from '../../../components/profile/tabs';
+import { StatsTab, MatchsTab, PalmaresTab, BadgesTab, BinomesTab } from '../../../components/profile/tabs';
 import { ProfileMenuSheet } from '../../../components/profile/ProfileMenuSheet';
 import { CommentsPolicyModal, DeleteAccountModal } from '../../../components/profile/AccountModals';
 import StoryMatchPicker from '../../../components/StoryMatchPicker';
@@ -35,7 +35,11 @@ import DirectMessageComposer from '../../../components/DirectMessageComposer';
 import ReportReasonSheet from '../../../components/ReportReasonSheet';
 import { Icon } from '../../../components/community/icons';
 import ShowcaseManager from '../../../components/profile/ShowcaseManager';
-import { openShowcase } from '../../../lib/showcase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  openShowcase, fetchActiveBinomes, fetchMyShowcases, fetchShowcaseInvites,
+  confirmShowcase, closeShowcase,
+} from '../../../lib/showcase';
 import { notifyShowcaseNominated } from '../../../lib/defiNotify';
 
 // ── Local types ──────────────────────────────────────────────────────
@@ -575,11 +579,34 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [msgSheetOpen,   setMsgSheetOpen]   = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [showcaseOpen,   setShowcaseOpen]   = useState(false);
+  type BinomeRow = { binomeId: string; id: string; name: string; level: string };
+  const [binomeActive,   setBinomeActive]   = useState<BinomeRow[]>([]);
+  const [binomeIncoming, setBinomeIncoming] = useState<BinomeRow[]>([]);
+  const [binomeOutgoing, setBinomeOutgoing] = useState<BinomeRow[]>([]);
+  // Point « nouveau » sur l'onglet Binômes quand une de MES propositions vient
+  // d'être acceptée (active où je suis le nominateur), tant que je ne l'ai pas vue.
+  const [binomeNewAccepted, setBinomeNewAccepted] = useState(false);
+  const acceptedProposalIdsRef = useRef<string[]>([]);
+  const binomeSeenKey = `binomeSeen:${id}`;
 
   // Ouverture directe du gestionnaire de vitrine depuis une notif (?showcase=1).
   useEffect(() => {
     if (showcase === '1' && isSelf) setShowcaseOpen(true);
   }, [showcase, isSelf]);
+
+  // En ouvrant l'onglet Binômes, on « acquitte » les propositions acceptées
+  // (le point « nouveau » disparaît et ne revient pas).
+  useEffect(() => {
+    if (tab !== 'Binômes' || !isSelf) return;
+    setBinomeNewAccepted(false);
+    (async () => {
+      try {
+        const seen = new Set<string>(JSON.parse((await AsyncStorage.getItem(binomeSeenKey)) ?? '[]'));
+        acceptedProposalIdsRef.current.forEach(x => seen.add(x));
+        await AsyncStorage.setItem(binomeSeenKey, JSON.stringify([...seen]));
+      } catch { /* best-effort */ }
+    })();
+  }, [tab, isSelf, binomeSeenKey]);
 
   const reactToActivity = async (eventId: string) => {
     const myId = self?.id ?? '';
@@ -613,6 +640,43 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       },
       { text: 'Annuler', style: 'cancel' },
     ]);
+  };
+
+  // Onglet « Binômes ». Vue publique = paires ACTIVES (l'autre joueur). Sur MON
+  // profil, on ajoute mes demandes reçues (à confirmer) et envoyées (en attente).
+  const mkRow = (bid: string, p?: { id: string; name: string; elo_score: number } | null): BinomeRow[] =>
+    p ? [{ binomeId: bid, id: p.id, name: p.name, level: formatPadelLevel(p.elo_score) }] : [];
+
+  const loadBinomes = async () => {
+    if (isSelf) {
+      const [mine, invites] = await Promise.all([fetchMyShowcases(id), fetchShowcaseInvites(id)]);
+      setBinomeActive(mine.filter(bn => bn.status === 'active')
+        .flatMap(bn => mkRow(bn.id, bn.player_a === id ? bn.b : bn.a)));
+      setBinomeOutgoing(mine.filter(bn => bn.player_a === id && bn.status === 'pending')
+        .flatMap(bn => mkRow(bn.id, bn.b)));
+      setBinomeIncoming(invites.flatMap(bn => mkRow(bn.id, bn.a)));  // nominateur = player_a
+      // « Accepté » = mes propositions (player_a === moi) devenues actives. Point
+      // « nouveau » tant que je ne les ai pas ouvertes (set persisté « déjà vu »).
+      const acceptedIds = mine.filter(bn => bn.status === 'active' && bn.player_a === id).map(bn => bn.id);
+      acceptedProposalIdsRef.current = acceptedIds;
+      try {
+        const seen = new Set<string>(JSON.parse((await AsyncStorage.getItem(binomeSeenKey)) ?? '[]'));
+        setBinomeNewAccepted(acceptedIds.some(x => !seen.has(x)));
+      } catch { setBinomeNewAccepted(false); }
+    } else {
+      const rows = await fetchActiveBinomes(id);
+      setBinomeActive(rows.flatMap(bn => mkRow(bn.id, bn.player_a === id ? bn.b : bn.a)));
+      setBinomeIncoming([]); setBinomeOutgoing([]);
+    }
+  };
+
+  const confirmBinome = async (bid: string) => {
+    try { await confirmShowcase(bid); } catch (e: any) { Alert.alert('Erreur', e?.message ?? 'Action impossible.'); }
+    await loadBinomes();
+  };
+  const closeBinome = async (bid: string) => {
+    try { await closeShowcase(bid); } catch (e: any) { Alert.alert('Erreur', e?.message ?? 'Action impossible.'); }
+    await loadBinomes();
   };
 
   const fetchData = async () => {
@@ -650,6 +714,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     setRankPos((rankRes.count ?? 0) + 1);
     getPlayerActivity(id).then(setActivity);
     getPlayerAchievements(id).then(setAchievements);
+    loadBinomes();
 
     // Graphe social (follows) — compteurs + état de suivi pour l'en-tête.
     supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id)
@@ -999,7 +1064,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
               Alert.alert('Proposé !', `${profile.name} doit confirmer depuis son profil — votre binôme apparaîtra alors dans « À défier ».`);
             } catch (e: any) {
               const msg = e?.message?.includes('already exists')
-                ? 'Tu as déjà une vitrine avec ce joueur.'
+                ? 'Tu as déjà un binôme (ou une demande en cours) avec ce joueur.'
                 : (e?.message ?? 'Action impossible.');
               Alert.alert('Impossible', msg);
             }
@@ -1213,6 +1278,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         tab={tab}
         setTab={setTab}
         topInset={insets.top}
+        tabBadges={isSelf ? { 'Binômes': { count: binomeIncoming.length, dot: binomeNewAccepted } } : undefined}
       />
       <View style={{ backgroundColor: PM.page, borderTopLeftRadius: 20, borderTopRightRadius: 20, marginTop: -2, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 40, minHeight: 420 }}>
         {tab === 'Stats' && (
@@ -1226,6 +1292,18 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         {tab === 'Matchs' && <MatchsTab matches={matchViews} renderFooter={renderMatchFooter} onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }} />}
         {tab === 'Palmarès' && <PalmaresTab achievements={achievements} />}
         {tab === 'Badges' && <BadgesTab badges={repBadges} />}
+        {tab === 'Binômes' && (
+          <BinomesTab
+            active={binomeActive}
+            incoming={binomeIncoming}
+            outgoing={binomeOutgoing}
+            isSelf={isSelf}
+            onConfirm={confirmBinome}
+            onClose={closeBinome}
+            onAdd={() => setShowcaseOpen(true)}
+            onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }}
+          />
+        )}
         {tab === 'Activité' && (() => {
           // Activité = badges reçus + palmarès débloqués (pas les matchs).
           const feedEvents = activity.filter(e => e.type !== 'match_win' && e.type !== 'match_loss');
@@ -1535,7 +1613,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         />
         <ShowcaseManager
           visible={showcaseOpen}
-          onClose={() => setShowcaseOpen(false)}
+          onClose={() => { setShowcaseOpen(false); loadBinomes(); }}
           player={{ id: profile.id, name: profile.name }}
         />
       </>

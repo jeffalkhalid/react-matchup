@@ -10,8 +10,42 @@ export function notifyPartnerInvitedToRelever(partnerId: string, inviterName: st
   if (!partnerId) return;
   notifyPlayers({
     playerIds: [partnerId],
-    title: '🎾 Invitation binôme',
-    body: `${inviterName} veut relever un défi avec toi — accepte pour verrouiller le binôme.`,
+    title: 'Invitation à un défi',
+    body: `${inviterName} t'invite à relever un défi avec lui.`,
+    data: { type: 'challenge', tab: 'mes' },
+  });
+}
+
+// Suite à defi_accept = 'queued' : le binôme est complet mais la place est prise
+// → prévenir l'initiateur qu'on est EN FILE (promu si une place se libère).
+export function notifyBinomeQueued(initiatorId: string, partnerName: string): void {
+  if (!initiatorId) return;
+  notifyPlayers({
+    playerIds: [initiatorId],
+    title: 'En file d\'attente',
+    body: `${partnerName} a accepté — le défi est déjà pris, mais vous êtes en file (promus si une place se libère).`,
+    data: { type: 'challenge', tab: 'mes' },
+  });
+}
+
+// Suite à un REFUS d'invitation à relever (defi_decline) : prévenir l'initiateur.
+export function notifyReleverDeclined(initiatorId: string, byName: string): void {
+  if (!initiatorId) return;
+  notifyPlayers({
+    playerIds: [initiatorId],
+    title: 'Défi décliné',
+    body: `${byName} a refusé de relever le défi avec toi.`,
+    data: { type: 'challenge', tab: 'relever' },
+  });
+}
+
+// Suite à un REFUS de proposition de binôme (vitrine) : prévenir le nominateur.
+export function notifyShowcaseDeclined(nominatorId: string, byName: string): void {
+  if (!nominatorId) return;
+  notifyPlayers({
+    playerIds: [nominatorId],
+    title: 'Proposition déclinée',
+    body: `${byName} a décliné ta proposition de binôme.`,
     data: { type: 'challenge' },
   });
 }
@@ -22,8 +56,8 @@ export function notifyShowcaseNominated(partnerId: string, byName: string): void
   if (!partnerId) return;
   notifyPlayers({
     playerIds: [partnerId],
-    title: '🤝 Binôme ouvert',
-    body: `${byName} veut être ton binôme ouvert aux défis — confirme depuis ton profil.`,
+    title: 'Binôme ouvert',
+    body: `${byName} veut être ton binôme de défis — confirme depuis ton profil.`,
     // 'showcase' + pid (= le destinataire) → le tap ouvre SON profil sur « À confirmer ».
     data: { type: 'showcase', pid: partnerId },
   });

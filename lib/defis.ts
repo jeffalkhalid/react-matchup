@@ -75,26 +75,69 @@ export async function fetchMyDefis(playerId: string): Promise<DefiGame[]> {
   return (data ?? []) as unknown as DefiGame[];
 }
 
+// ── Mes défis (affichage onglet) : ceux que J'AI créés OU où je joue (participant
+// accepté). fetchMyDefis reste créateur-only (utilisé par les candidatures). ──
+export async function fetchDefisInvolved(playerId: string): Promise<DefiGame[]> {
+  // 1) défis où je suis participant ACCEPTÉ (binôme du créateur ou binôme adverse).
+  const { data: parts } = await supabase
+    .from('game_participants')
+    .select('game_id')
+    .eq('player_id', playerId)
+    .eq('status', 'accepted');
+  const partIds = Array.from(new Set((parts ?? []).map((p: any) => p.game_id).filter(Boolean)));
+  // 2) mes défis créés + ceux où je joue, en une requête.
+  const orFilter = partIds.length > 0
+    ? `creator_id.eq.${playerId},id.in.(${partIds.join(',')})`
+    : `creator_id.eq.${playerId}`;
+  const { data, error } = await supabase
+    .from('open_games')
+    .select(GAME_COLS)
+    .eq('is_challenge', true)
+    .in('status', ['draft', 'open', 'confirmed'])
+    .gte('match_date', new Date().toISOString())
+    .or(orFilter)
+    .order('match_date', { ascending: true });
+  if (error) { console.warn('[defis] fetchDefisInvolved', error); return []; }
+  return (data ?? []) as unknown as DefiGame[];
+}
+
 const APP_COLS =
   'id, game_id, initiator_id, partner_id, status, created_at, ' +
   'initiator:initiator_id(id, name, elo_score), ' +
   'partner:partner_id(id, name, elo_score), ' +
   `game:game_id(${GAME_COLS})`;
 
-// ── Candidatures sur MES défis (binômes qui postulent) ──
+// ── Candidatures sur les défis où je suis IMPLIQUÉ (créés OU où je joue) :
+// binômes qui postulent pour relever. Visible au créateur ET à son binôme
+// (Team A), pour savoir si le match se remplit. RLS élargie aux participants
+// acceptés (defi_apps_select_participants.sql). ──
 export async function fetchCandidaturesOnMyDefis(playerId: string): Promise<DefiApplication[]> {
   // 1) mes défis (ids) ; 2) candidatures liées. Deux étapes pour éviter un embed
   // filtré complexe côté PostgREST.
-  const mine = await fetchMyDefis(playerId);
+  const mine = await fetchDefisInvolved(playerId);
   const ids = mine.map(g => g.id);
   if (ids.length === 0) return [];
   const { data, error } = await supabase
     .from('defi_applications')
     .select(APP_COLS)
     .in('game_id', ids)
-    .in('status', ['pending', 'locked'])
+    .in('status', ['pending', 'queued', 'locked'])
     .order('created_at', { ascending: true });
   if (error) { console.warn('[defis] fetchCandidaturesOnMyDefis', error); return []; }
+  return (data ?? []) as unknown as DefiApplication[];
+}
+
+// ── Mes candidatures SORTANTES : défis où J'AI postulé (initiateur), en attente
+// que MON partenaire accepte. Sert à montrer « déjà postulé » dans « À relever ». ──
+export async function fetchMyApplications(playerId: string): Promise<DefiApplication[]> {
+  const { data, error } = await supabase
+    .from('defi_applications')
+    .select(APP_COLS)
+    // Initiateur : candidature en cours OU en file. Partenaire : seulement en file
+    // (le 'pending' où je suis partenaire = une invitation, gérée ailleurs).
+    .or(`and(initiator_id.eq.${playerId},status.in.(pending,queued)),and(partner_id.eq.${playerId},status.eq.queued)`)
+    .order('created_at', { ascending: false });
+  if (error) { console.warn('[defis] fetchMyApplications', error); return []; }
   return (data ?? []) as unknown as DefiApplication[];
 }
 
@@ -120,6 +163,11 @@ export async function acceptBinomeInvitation(appId: string): Promise<string> {
   const { data, error } = await supabase.rpc('defi_accept', { p_app_id: appId });
   if (error) throw error;
   return data as string; // 'locked' | 'too_late'
+}
+export async function declineBinomeInvitation(appId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('defi_decline', { p_app_id: appId });
+  if (error) throw error;
+  return data as string; // initiator_id (destinataire du push)
 }
 export async function cancelDefi(gameId: string): Promise<void> {
   const { error } = await supabase.rpc('cancel_defi', { p_game_id: gameId });

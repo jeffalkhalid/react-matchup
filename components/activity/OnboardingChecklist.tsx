@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 import { Colors, Fonts } from '../../lib/theme';
+import { Icon } from '../community/icons';
 
 export type OnboardingStep = { label: string; hint?: string; done: boolean; onPress: () => void };
 
@@ -37,7 +38,7 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.textSecondary }}>{s.hint}</Text>
             </View>
           ) : !s.done ? (
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 16, color: Colors.textMuted }}>›</Text>
+            <Icon name="chevronRight" size={16} color={Colors.textMuted} stroke={2.2} />
           ) : null}
         </TouchableOpacity>
       ))}

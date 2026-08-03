@@ -102,8 +102,10 @@ function buildSlots(game: any, myId?: string): (SlotPlayer | null)[] {
       if (idx !== undefined && !slots[idx]) {
         slots[idx] = sp;
       } else {
-        const free = slots.findIndex(s => s === null);
-        if (free !== -1) slots[free] = sp;
+        // Rester dans la MÊME équipe (A→0/1, B→2/3), jamais traverser.
+        const teamStart = String(p.team_side ?? '').startsWith('B') ? 2 : 0;
+        const free = [teamStart, teamStart + 1].find(i => !slots[i]);
+        if (free !== undefined) slots[free] = sp;
       }
     });
   return slots;
@@ -214,6 +216,8 @@ interface Props {
   onWithdrawInvitation?: (gameId: string, playerId: string) => Promise<void> | void;
   onLeave: (gameId: string, participantId: string, wasAccepted: boolean) => void;
   onCancelGame: (gameId: string) => void;
+  onRelever?: (gameId: string) => void;   // défi : relève à deux (flux binôme)
+  hasAppliedDefi?: boolean;                // défi : j'ai déjà une candidature en attente
 }
 
 // ─── Calendar + Share helpers ─────────────────────────────────
@@ -271,7 +275,7 @@ async function shareGame(game: EnrichedGame) {
 
 // ─── Main component ───────────────────────────────────────────
 export default function GameDetailsSheet({
-  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame,
+  game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, hasAppliedDefi,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -306,7 +310,9 @@ export default function GameDetailsSheet({
   );
   const isAccepted   = myStatus === 'accepted';
   const isInvited    = myStatus === 'invited' && myInviteActive;
-  const canParticipate = !isCreator && !alreadyIn;
+  // Un défi ne se rejoint JAMAIS en solo depuis ici (slots non tappables) : on le
+  // relève à deux via le CTA dédié.
+  const canParticipate = !isCreator && !alreadyIn && !game.is_challenge;
 
   const pendingPlayers = (game.participants ?? []).filter((p: any) => p.status === 'pending');
   const invitedPlayers = (game.participants ?? []).filter((p: any) => p.status === 'invited' && isInviteActive(p));
@@ -441,6 +447,20 @@ export default function GameDetailsSheet({
         </View>
       );
     }
+    // Défi (je n'y suis pas) : pas de join solo → CTA « Relever à deux » (flux binôme).
+    // Si j'ai déjà candidaté, on affiche « Déjà postulé » (toucher = changer de binôme).
+    if (game.is_challenge && onRelever) {
+      return (
+        <TouchableOpacity onPress={() => onRelever(game.id)}
+          style={[sty.ctaBtn, hasAppliedDefi
+            ? { backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }
+            : { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: hasAppliedDefi ? Colors.textSecondary : Colors.textOnBrand }}>
+            {hasAppliedDefi ? '⏳ Déjà postulé — changer de binôme' : 'Relever le défi (à deux)'}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
     if (isFull) return isWaitlisted
       ? (
         <View style={[sty.ctaBtn, { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' }]}>
@@ -546,6 +566,13 @@ export default function GameDetailsSheet({
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success }} />
                 <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '600' }}>Niv. {minLvl} – {maxLvl}</Text>
               </View>
+              {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
+                <View style={{ backgroundColor: 'rgba(255,193,26,0.16)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
+                  <Text style={{ color: '#FFC11A', fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
+                    ⚡ ×{(+(game as any).stake_multiplier).toFixed(1)}
+                  </Text>
+                </View>
+              )}
               <View style={{
                 marginLeft: 'auto',
                 backgroundColor: isFull ? Colors.danger : (3 - heldCount) <= 1 ? Colors.warning : Colors.success,
@@ -608,7 +635,8 @@ export default function GameDetailsSheet({
                       {(['A_GAU', 'A_DRO'] as const).map(side => {
                         const isEmpty = !slots[SIDE_TO_IDX[side]];
                         const joinMode = isEmpty && canParticipate && !isFull;
-                        const changeMode = isEmpty && !isFull && (isCreator || isAccepted);
+                        // Défi : équipes fixes (binôme A vs B) → pas de changement d'équipe.
+                        const changeMode = !game.is_challenge && isEmpty && !isFull && (isCreator || isAccepted);
                         return (
                           <CourtSlot
                             key={side}
@@ -642,7 +670,8 @@ export default function GameDetailsSheet({
                       {(['B_DRO', 'B_GAU'] as const).map(side => {
                         const isEmpty = !slots[SIDE_TO_IDX[side]];
                         const joinMode = isEmpty && canParticipate && !isFull;
-                        const changeMode = isEmpty && !isFull && (isCreator || isAccepted);
+                        // Défi : équipes fixes (binôme A vs B) → pas de changement d'équipe.
+                        const changeMode = !game.is_challenge && isEmpty && !isFull && (isCreator || isAccepted);
                         return (
                           <CourtSlot
                             key={side}

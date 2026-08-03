@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, StyleSheet, Image, Alert, Modal, TextInput,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
@@ -12,19 +12,20 @@ import { Pill } from '../../components/Pill';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
 import {
-  fetchOpenDefis, fetchMyDefis, fetchCandidaturesOnMyDefis, fetchBinomeInvitations,
-  acceptBinomeInvitation, applyToDefi, cancelDefi,
+  fetchOpenDefis, fetchMyDefis, fetchDefisInvolved, fetchCandidaturesOnMyDefis,
+  fetchMyApplications, fetchBinomeInvitations,
+  acceptBinomeInvitation, declineBinomeInvitation, applyToDefi, cancelDefi,
   type DefiGame, type DefiApplication,
 } from '../../lib/defis';
-import { fetchVitrine, type ShowcaseBinome } from '../../lib/showcase';
-import { notifyPartnerInvitedToRelever, notifyDefiConfirmed } from '../../lib/defiNotify';
+import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
+import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued } from '../../lib/defiNotify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
 import { getHiddenPlayerIds } from '../../lib/moderation';
 import { GameCard } from './lobby';
 
 // ── Types ─────────────────────────────────────────────────────
-type Tab = 'relever' | 'mes' | 'candidatures' | 'invitations' | 'vitrine';
+type Tab = 'relever' | 'mes' | 'invitations' | 'vitrine';
 
 // ── Avatar ────────────────────────────────────────────────────
 const AV_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899', '#8b5cf6'];
@@ -76,25 +77,41 @@ function DefiActionButton({ label, onPress, danger }: { label: string; onPress: 
 }
 
 function DefiGameCard({ game, myId, myElo, onPress, children }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode }) {
+  // is_creator / my_status absents d'un DefiGame → sinon GameCard masque
+  // calendrier + chat (gated sur `is_creator || my_status==='accepted'`).
+  // On les dérive pour que le CRÉATEUR ET les participants ACCEPTÉS aient le pied complet.
+  const mine = (game.participants ?? []).find(p => p.player_id === myId);
+  const isCreator = game.creator_id === myId;
   return (
-    <View style={{ gap: 8 }}>
-      <GameCard game={game as any} variant="upcoming" myElo={myElo} playerId={myId} onPress={onPress ?? (() => {})} />
-      {children}
-    </View>
+    <GameCard
+      game={{ ...game, is_creator: isCreator, my_status: mine?.status } as any}
+      variant="upcoming" myElo={myElo} playerId={myId}
+      onPress={onPress ?? (() => {})}
+      footerSlot={children}
+    />
   );
 }
 
-function BinomeInviteCard({ app, onAccept }: { app: DefiApplication; onAccept: () => void; }) {
+function BinomeInviteCard({ app, onAccept, onDecline, busy }: { app: DefiApplication; onAccept: () => void; onDecline?: () => void; busy?: boolean; }) {
   return (
     <View style={sty.card}>
-      <View style={{ padding: 14, gap: 8 }}>
+      <View style={{ padding: 14, gap: 10 }}>
         <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>
           {app.initiator?.name ?? '?'} t'invite comme binôme pour relever un défi
         </Text>
         {app.game ? <Text style={{ fontSize: 11, color: Colors.textMuted }}>{bandLabel(app.game)} · ⚡ ×{(app.game.stake_multiplier ?? 1).toFixed(1)}</Text> : null}
-        <TouchableOpacity onPress={onAccept} style={[sty.actionBtn, { backgroundColor: Colors.brand }]}>
-          <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter & verrouiller le binôme</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8, opacity: busy ? 0.5 : 1 }}>
+          {onDecline && (
+            <TouchableOpacity onPress={onDecline} disabled={busy} style={[sty.actionBtn, { flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }]}>
+              <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onAccept} disabled={busy} style={[sty.actionBtn, { flex: 1.6, backgroundColor: Colors.brand }]}>
+            {busy
+              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+              : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -148,10 +165,19 @@ export default function MatchmakingScreen() {
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<Tab>('relever');
+  // Ouverture directe sur un onglet depuis une notif (ex. ?tab=invitations).
+  const params = useLocalSearchParams<{ tab?: string; relever?: string }>();
+  useEffect(() => {
+    const t = params.tab;
+    if (t === 'relever' || t === 'mes' || t === 'invitations' || t === 'vitrine') setTab(t);
+  }, [params.tab]);
   const [vitrine, setVitrine] = useState<ShowcaseBinome[]>([]);
+  const [myBinomes, setMyBinomes] = useState<{ id: string; name: string; elo_score: number }[]>([]);
+  const [binomeBusy, setBinomeBusy] = useState<Set<string>>(new Set());   // anti double-submit accepter/refuser
   const [openDefis, setOpenDefis] = useState<DefiGame[]>([]);
   const [myDefis, setMyDefis] = useState<DefiGame[]>([]);
   const [candidatures, setCandidatures] = useState<DefiApplication[]>([]);
+  const [myApplications, setMyApplications] = useState<DefiApplication[]>([]);
   const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -176,23 +202,34 @@ export default function MatchmakingScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
     setLoading(true);
-    const [open, mine, cands, invites, vit] = await Promise.all([
+    const [open, mine, cands, myApps, invites, vit, actives] = await Promise.all([
       fetchOpenDefis(player.id),
-      fetchMyDefis(player.id),
+      fetchDefisInvolved(player.id),   // « Mes défis » = créés + où je joue
       fetchCandidaturesOnMyDefis(player.id),
+      fetchMyApplications(player.id),  // mes candidatures sortantes (pour « déjà postulé »)
       fetchBinomeInvitations(player.id),
       fetchVitrine(player.id),
+      fetchActiveBinomes(player.id),   // « Mes binômes » (paires actives)
     ]);
     setOpenDefis(open);
     setMyDefis(mine);
     setCandidatures(cands);
+    setMyApplications(myApps);
     setBinomeInvites(invites);
     setVitrine(vit);
+    setMyBinomes(actives.flatMap(bn => {
+      const other = bn.player_a === player.id ? bn.b : bn.a;   // l'AUTRE joueur de la paire
+      return other ? [{ id: other.id, name: other.name, elo_score: other.elo_score }] : [];
+    }));
     setLoading(false);
   }, [player]);
 
   const router = useRouter();
   const launchDefi = () => router.push('/(tabs)/lobby?create=1&challenge=1' as any);
+  // Taper une carte défi → détail complet (réutilise le GameDetailsSheet du lobby).
+  // On passe l'onglet d'origine : à la fermeture du détail, le lobby REVIENT au hub
+  // (sinon l'utilisateur resterait bloqué dans le lobby).
+  const openDefiDetails = (id: string) => router.push(('/(tabs)/lobby?gameId=' + id + '&backToDefi=' + tab) as any);
 
   const handleDefierBinome = (sb: ShowcaseBinome) => {
     const a = sb.a, b = sb.b;
@@ -379,6 +416,16 @@ export default function MatchmakingScreen() {
     setSuggestedPartners([]);
   };
 
+  // Arrivée depuis l'explorer du lobby (?relever=<id>) → ouvre directement le
+  // sélecteur de binôme pour ce défi une fois la liste chargée.
+  useEffect(() => {
+    const rid = params.relever;
+    if (!rid || openDefis.length === 0) return;
+    const g = openDefis.find(d => d.id === rid);
+    if (g) { setTab('relever'); handleRelever(g); }
+    router.setParams({ relever: undefined });
+  }, [params.relever, openDefis]);
+
   // ── Submit candidature ───────────────────────────────────────
   const submitRelever = async (partner: { id: string; name: string }) => {
     if (!releverGame || applying) return;
@@ -408,14 +455,41 @@ export default function MatchmakingScreen() {
   };
 
   const handleAcceptBinome = async (app: DefiApplication) => {
+    if (binomeBusy.has(app.id)) return;   // ignore les taps répétés (sinon le 2e appel renvoie « too_late »)
+    setBinomeBusy(s => new Set(s).add(app.id));
     try {
       const res = await acceptBinomeInvitation(app.id);
-      if (res === 'locked') notifyDefiConfirmed(app, player?.id ?? '');
-      showToast(res === 'locked' ? '✅ Binôme verrouillé — défi confirmé !' : '⏳ Trop tard : un autre binôme a pris la place');
+      if (res === 'locked') {
+        notifyDefiConfirmed(app, player?.id ?? '');
+        showToast('✅ Binôme verrouillé — défi confirmé !');
+      } else if (res === 'queued') {
+        if (app.initiator_id && player) notifyBinomeQueued(app.initiator_id, player.name);
+        showToast('⏳ En file d\'attente — promus si une place se libère');
+      } else {
+        showToast('⏳ Trop tard : un autre binôme a pris la place');
+      }
       await fetchData();
       reloadNotifs();
     } catch (e: any) {
       Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
+    }
+  };
+
+  const handleDeclineBinome = async (app: DefiApplication) => {
+    if (binomeBusy.has(app.id)) return;
+    setBinomeBusy(s => new Set(s).add(app.id));
+    try {
+      await declineBinomeInvitation(app.id);
+      if (app.initiator_id && player) notifyReleverDeclined(app.initiator_id, player.name);
+      showToast('Invitation déclinée');
+      await fetchData();
+      reloadNotifs();
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
     }
   };
 
@@ -635,9 +709,8 @@ export default function MatchmakingScreen() {
         <View style={{ flexDirection: 'row', marginTop: 6 }}>
           {([
             { id: 'relever'      as Tab, label: 'À relever',  badge: 0 },
-            { id: 'mes'          as Tab, label: 'Mes défis',  badge: 0 },
-            { id: 'candidatures' as Tab, label: 'Candid.',    badge: candidatures.filter(c => c.status === 'pending').length },
-            { id: 'invitations'  as Tab, label: 'Binôme',     badge: binomeInvites.length },
+            { id: 'mes'          as Tab, label: 'Mes défis',  badge: binomeInvites.length },
+            { id: 'invitations'  as Tab, label: 'Binôme',     badge: 0 },
             { id: 'vitrine'      as Tab, label: 'À défier',   badge: 0 },
           ]).map(t => {
             const active = tab === t.id;
@@ -671,11 +744,23 @@ export default function MatchmakingScreen() {
               openDefis.length === 0
                 ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />
                 : <View style={{ gap: 12 }}>
-                    {sortedOpenDefis.map(g => (
-                      <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => handleRelever(g)}>
-                        <DefiActionButton label="Relever le défi" onPress={() => handleRelever(g)} />
-                      </DefiGameCard>
-                    ))}
+                    {sortedOpenDefis.map(g => {
+                      const myApp = myApplications.find(a => a.game_id === g.id);
+                      return (
+                        <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                          {myApp ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                              <Pill variant="warning">⏳ Postulé</Pill>
+                              <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
+                                avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{myApp.partner?.name ?? '?'}</Text> — touche pour changer
+                              </Text>
+                            </View>
+                          ) : (
+                            <DefiActionButton label="Relever le défi" onPress={() => handleRelever(g)} />
+                          )}
+                        </DefiGameCard>
+                      );
+                    })}
                   </View>
             )}
             {tab === 'mes' && (
@@ -686,38 +771,108 @@ export default function MatchmakingScreen() {
                   <Icon name="swords" size={17} color={Colors.textOnBrand} stroke={2.4} />
                   <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14.5, letterSpacing: 0.2 }}>Lancer un défi</Text>
                 </TouchableOpacity>
-                {myDefis.length === 0
-                  ? <EmptyCard icon="swords" title="Aucun défi créé" sub="Lance ton premier défi avec le bouton ci-dessus." />
-                  : myDefis.map(g => (
-                      <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score}>
-                        {g.status !== 'confirmed'
-                          ? <DefiActionButton label="Annuler le défi" danger onPress={() => handleCancelDefi(g)} />
-                          : null}
-                      </DefiGameCard>
-                    ))}
+                {/* Invitations à relever : je suis invité comme binôme → carte
+                    COMPLÈTE du défi (adversaires / lieu / date) + accepter / refuser. */}
+                {binomeInvites.map(c => c.game ? (
+                  <DefiGameCard key={'inv-' + c.id} game={c.game} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(c.game!.id)}>
+                    <View style={{ gap: 8 }}>
+                      <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                        <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{c.initiator?.name ?? '?'}</Text> t'invite à relever ce défi avec lui.
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8, opacity: binomeBusy.has(c.id) ? 0.5 : 1 }}>
+                        <TouchableOpacity onPress={() => handleDeclineBinome(c)} disabled={binomeBusy.has(c.id)}
+                          style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                          <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleAcceptBinome(c)} disabled={binomeBusy.has(c.id)}
+                          style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                          {binomeBusy.has(c.id)
+                            ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+                            : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </DefiGameCard>
+                ) : null)}
+
+                {/* Mes candidatures : en cours (attente de mon binôme) OU en file d'attente. */}
+                {myApplications.map(a => {
+                  if (!a.game) return null;
+                  const mate = a.initiator_id === player.id ? a.partner : a.initiator;   // mon coéquipier
+                  return (
+                    <DefiGameCard key={'app-' + a.id} game={a.game} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(a.game!.id)}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                        <Pill variant="warning">{a.status === 'queued' ? '⏳ En file d\'attente' : '⏳ Candidature en cours'}</Pill>
+                        <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
+                          avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{mate?.name ?? '?'}</Text>
+                          {a.status === 'queued' ? ' — promus si une place se libère' : ''}
+                        </Text>
+                      </View>
+                    </DefiGameCard>
+                  );
+                })}
+
+                {myDefis.length === 0 && binomeInvites.length === 0 && myApplications.length === 0
+                  ? <EmptyCard icon="swords" title="Aucun défi en cours" sub="Lance ton premier défi avec le bouton ci-dessus, ou relève-en un." />
+                  : myDefis.map(g => {
+                      const isMine = g.creator_id === player.id;
+                      // Sur un défi OUVERT : binômes en train de relever (pending).
+                      // Sur un défi CONFIRMÉ : file d'attente FIFO (queued) — promus si un binôme se retire.
+                      const racing = g.status === 'open'
+                        ? candidatures.filter(c => c.game_id === g.id && c.status === 'pending')
+                        : [];
+                      const queued = g.status === 'confirmed'
+                        ? candidatures.filter(c => c.game_id === g.id && c.status === 'queued')
+                        : [];
+                      const rowsOf = (list: typeof candidatures) => list.map(c => (
+                        <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                          <Text style={{ flex: 1, fontSize: 12, color: Colors.textSecondary }} numberOfLines={1}>
+                            <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{c.initiator?.name ?? '?'} & {c.partner?.name ?? '?'}</Text>
+                          </Text>
+                          <Pill variant="warning">{c.status === 'queued' ? '⏳ en file' : '⏳ à finaliser'}</Pill>
+                        </View>
+                      ));
+                      return (
+                        <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                          {racing.length > 0 && (
+                            <View style={{ gap: 6 }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.brandDeep, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                                {racing.length} binôme{racing.length > 1 ? 's' : ''} en train de relever
+                              </Text>
+                              {rowsOf(racing)}
+                            </View>
+                          )}
+                          {queued.length > 0 && (
+                            <View style={{ gap: 6 }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.textMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                                File d'attente · {queued.length} binôme{queued.length > 1 ? 's' : ''}
+                              </Text>
+                              {rowsOf(queued)}
+                            </View>
+                          )}
+                          {isMine && g.status !== 'confirmed'
+                            ? <DefiActionButton label="Annuler le défi" danger onPress={() => handleCancelDefi(g)} />
+                            : null}
+                        </DefiGameCard>
+                      );
+                    })}
               </View>
             )}
-            {tab === 'candidatures' && (
-              candidatures.length === 0
-                ? <EmptyCard icon="users" title="Aucune candidature" sub="Les binômes qui relèvent tes défis apparaîtront ici." />
-                : <View style={{ gap: 12 }}>
-                    {candidatures.map(c => c.game ? (
-                      <DefiGameCard key={c.id} game={c.game} myId={player.id} myElo={player.elo_score}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
-                          <Text style={{ flex: 1, fontSize: 12, color: Colors.textSecondary }}>
-                            Candidature : <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{c.initiator?.name ?? '?'} & {c.partner?.name ?? '?'}</Text>
-                          </Text>
-                          <Pill variant={c.status === 'locked' ? 'success' : 'neutral'}>{c.status === 'locked' ? '🏁 Retenu' : '⏳ En attente'}</Pill>
-                        </View>
-                      </DefiGameCard>
-                    ) : null)}
-                  </View>
-            )}
             {tab === 'invitations' && (
-              binomeInvites.length === 0
-                ? <EmptyCard icon="users" title="Aucune invitation" sub="Quand un joueur t'invite comme binôme pour relever un défi, c'est ici." />
-                : <View style={{ gap: 10 }}>
-                    {binomeInvites.map(c => <BinomeInviteCard key={c.id} app={c} onAccept={() => handleAcceptBinome(c)} />)}
+              // « Avec qui je suis en binôme » (paires actives). Les demandes/invitations
+              // à relever sont désormais dans « Mes défis » (avec la carte).
+              myBinomes.length === 0
+                ? <EmptyCard icon="users" title="Aucun binôme" sub="Tes binômes actifs apparaîtront ici. Déclare-en un depuis ton profil (« M'ouvrir aux défis »)." />
+                : <View style={{ gap: 8 }}>
+                    <Text style={sty.sectionLabel}>Mes binômes</Text>
+                    {myBinomes.map(p => (
+                      <TouchableOpacity key={p.id} onPress={() => router.push(`/(tabs)/player/${p.id}` as any)} activeOpacity={0.7}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+                        <PlayerAvatar name={p.name} size={34} />
+                        <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                        <Pill variant="neutral">Niv. {eloToLevel(p.elo_score).toFixed(1)}</Pill>
+                      </TouchableOpacity>
+                    ))}
                   </View>
             )}
             {tab === 'vitrine' && (
@@ -756,5 +911,9 @@ const sty = StyleSheet.create({
   },
   actionBtn: {
     borderRadius: 13, padding: 12, alignItems: 'center',
+  },
+  sectionLabel: {
+    fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900',
+    letterSpacing: 0.8, textTransform: 'uppercase', color: Colors.textMuted,
   },
 });

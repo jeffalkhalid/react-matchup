@@ -135,7 +135,7 @@ export function usePushNotifications() {
 
       switch (data.type) {
         case 'challenge':
-          router.push('/(tabs)/matchmaking');
+          router.push((data.tab ? `/(tabs)/matchmaking?tab=${data.tab}` : '/(tabs)/matchmaking') as any);
           break;
         case 'match':
           router.push('/(tabs)');

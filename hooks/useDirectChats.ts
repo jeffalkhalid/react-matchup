@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { usePlayer } from './usePlayer';
 import {
-  DirectConversation, fetchConversations, unreadFor, isRequestFor, otherId,
+  DirectConversation, fetchConversations, fetchUnreadCounts, unreadFor, isRequestFor, otherId,
 } from '../lib/directChats';
 import { getBlockedByMe } from '../lib/moderation';
 
@@ -10,6 +10,7 @@ export function useDirectChats() {
   const { player } = usePlayer();
   const [all, setAll] = useState<DirectConversation[]>([]);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  const [unreadByConv, setUnreadByConv] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const loadedRef = useRef(false);
 
@@ -23,6 +24,8 @@ export function useDirectChats() {
       ]);
       setAll(rows);
       setBlockedIds(new Set(blocked));
+      // Vrai compteur de non-lus PAR conversation (source unique partagée).
+      setUnreadByConv(await fetchUnreadCounts(player.id, rows));
     } catch (e) {
       console.log('[useDirectChats] load failed', String(e));
     } finally {
@@ -52,10 +55,12 @@ export function useDirectChats() {
 
   // Une conversation est "bloquée" (de mon point de vue) si j'ai bloqué l'autre.
   const isConversationBlocked = (conv: DirectConversation) => blockedIds.has(otherId(conv, myId));
+  // Vrai nombre de messages non lus de cette conversation.
+  const unreadCount = (conv: DirectConversation) => unreadByConv.get(conv.id) ?? 0;
 
   return {
     conversations, requests, loading,
     totalUnread, requestsCount: requests.length, load,
-    isConversationBlocked,
+    isConversationBlocked, unreadCount,
   };
 }

@@ -84,8 +84,8 @@ export default function CommunityHubScreen() {
         <SocialCard
           kicker="Mes amis"
           icon={<Icon name="users" size={22} color={Colors.brandDeep} />}
-          title="Activité, recherche & suggestions"
-          sub="Suis tes amis, vois leurs résultats et trouve de nouveaux joueurs."
+          title="Recherche & suggestions"
+          sub="Trouve de nouveaux joueurs et suis-les. Leur activité s'affiche dans l'onglet Activité."
         >
           <GhostBtn label="Mes amis" onPress={() => router.push('/community/friends')} />
         </SocialCard>

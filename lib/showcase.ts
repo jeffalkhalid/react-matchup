@@ -28,15 +28,32 @@ export async function fetchVitrine(playerId: string): Promise<ShowcaseBinome[]> 
     .filter(sb => !hidden.has(sb.player_a) && !hidden.has(sb.player_b));
 }
 
-// Mes vitrines (actives + en attente de confirmation de mon partenaire).
+// Mes vitrines = binômes que J'AI initiés (player_a, pending ou active) + binômes
+// déjà CONFIRMÉS où je suis le partenaire (player_b, active). On EXCLUT les
+// nominations pending qui me sont adressées (player_b + pending) : celles-là
+// relèvent de « À confirmer » (fetchShowcaseInvites) avec les boutons
+// Confirmer/Refuser — sinon elles atterrissent ici en « EN ATTENTE + Fermer »
+// et on ne peut jamais les confirmer.
 export async function fetchMyShowcases(playerId: string): Promise<ShowcaseBinome[]> {
   const { data, error } = await supabase
     .from('showcase_binomes')
     .select(COLS)
-    .or(`player_a.eq.${playerId},player_b.eq.${playerId}`)
-    .in('status', ['pending', 'active'])
+    .or(`and(player_a.eq.${playerId},status.in.(pending,active)),and(player_b.eq.${playerId},status.eq.active)`)
     .order('created_at', { ascending: false });
   if (error) { console.warn('[showcase] fetchMyShowcases', error); return []; }
+  return (data ?? []) as unknown as ShowcaseBinome[];
+}
+
+// Binômes ACTIFS d'un joueur (onglet profil « Binômes »). Public : la RLS
+// autorise la lecture des lignes status='active' pour tout le monde.
+export async function fetchActiveBinomes(playerId: string): Promise<ShowcaseBinome[]> {
+  const { data, error } = await supabase
+    .from('showcase_binomes')
+    .select(COLS)
+    .eq('status', 'active')
+    .or(`player_a.eq.${playerId},player_b.eq.${playerId}`)
+    .order('created_at', { ascending: false });
+  if (error) { console.warn('[showcase] fetchActiveBinomes', error); return []; }
   return (data ?? []) as unknown as ShowcaseBinome[];
 }
 

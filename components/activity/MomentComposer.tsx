@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
+import { Icon } from '../community/icons';
 import type { StoryMatchData } from '../story/storyTheme';
 
 const MAX = 140;
@@ -27,7 +28,7 @@ export function MomentComposer({ visible, match, busy, onClose, onPublish }: {
           style={{ maxHeight: '88%' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, color: Colors.textPrimary }}>Partager ce match</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10}><Text style={{ fontFamily: Fonts.uiBlack, fontSize: 18, color: Colors.textSecondary }}>✕</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} hitSlop={10}><Icon name="x" size={18} color={Colors.textSecondary} stroke={2.2} /></TouchableOpacity>
           </View>
 
           {/* Aperçu bloc-score (façon best moment) */}

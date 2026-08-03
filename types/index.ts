@@ -206,6 +206,7 @@ export interface ActivityEvent {
     eloDelta?: number | null;
     levelDelta?: number | null;
     topPartner?: string | null;
+    recap?: unknown;           // snapshot complet du bilan (MonthlyRecap) pour l'affichage plein écran
   };
   caption?: string | null;     // légende libre (Moment partagé)
   is_highlight?: boolean;      // mis en avant dans le rail Moments

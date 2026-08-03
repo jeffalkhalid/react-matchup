@@ -31,6 +31,11 @@ BEGIN
   UPDATE defi_applications
     SET status = 'cancelled', resolved_at = now()
     WHERE game_id = p_game_id AND status = 'pending';
+
+  -- Chat éphémère du match : on l'efface aussi quand le créateur annule
+  -- (cohérent avec le départ atomique defi_leave_atomic.sql).
+  DELETE FROM game_chat_reads WHERE game_id = p_game_id;
+  DELETE FROM messages       WHERE game_id = p_game_id;
 END;
 $$;
 

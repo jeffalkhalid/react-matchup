@@ -4,7 +4,10 @@ import { Colors, Fonts } from '../../lib/theme';
 import { Avatar } from '../community/Avatar';
 import { MatchCard as MatchScoreCard } from '../profile/components';
 import { BadgePill } from '../profile/BadgePill';
+import { Icon } from '../community/icons';
 import { matchToView } from '../../lib/matchView';
+import { BilanRecapFull } from './BilanRecapFull';
+import type { MonthlyRecap } from '../../lib/bilan';
 import type { ActivityEvent } from '../../types';
 
 const fmtDate = (iso: string) => { try { return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); } catch { return iso; } };
@@ -47,7 +50,7 @@ export function MomentOverlay({ event, myId, onReact, onComment, onClose, onPres
             </View>
           </TouchableOpacity>
           <TouchableOpacity onPress={onClose} hitSlop={12} style={{ width: 36, height: 36, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 18, color: '#FFFFFF' }}>✕</Text>
+            <Icon name="x" size={18} color="#FFFFFF" stroke={2.2} />
           </TouchableOpacity>
         </View>
 
@@ -57,20 +60,26 @@ export function MomentOverlay({ event, myId, onReact, onComment, onClose, onPres
             <MatchScoreCard m={matchToView(event.match!, event.player_id, false)} showActions={false} showDelta={false} />
           ) : event.type === 'promotion' ? (
             <View style={{ borderRadius: 20, padding: 28, alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)' }}>
-              <Text style={{ fontSize: 64 }}>🏆</Text>
+              <Icon name="trophy" size={58} color={Colors.brand} stroke={2} />
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 1.5, textTransform: 'uppercase' }}>Montée en ligue</Text>
               <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', textAlign: 'center' }}>{event.payload.promo_label ?? 'Promotion'}</Text>
             </View>
           ) : event.type === 'bilan' ? (
-            <View style={{ borderRadius: 20, padding: 24, gap: 16, backgroundColor: 'rgba(255,255,255,0.04)' }}>
-              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.brand, letterSpacing: 1.5, textTransform: 'uppercase' }}>Bilan {event.payload.label ?? ''}</Text>
-              <View style={{ flexDirection: 'row', gap: 22 }}>
-                <BilanStat n={event.payload.matches ?? 0} l="matchs" color="#FFFFFF" />
-                <BilanStat n={`${event.payload.winRate ?? 0}%`} l="winrate" color={Colors.brand} />
-                <BilanStat n={`${(event.payload.levelDelta ?? 0) >= 0 ? '+' : ''}${(event.payload.levelDelta ?? 0).toFixed(2)}`} l="niveau" color={Colors.brand} />
+            event.payload.recap ? (
+              // Bilan complet (snapshot) — toutes les sections.
+              <BilanRecapFull recap={event.payload.recap as MonthlyRecap} />
+            ) : (
+              // Repli (anciens posts sans snapshot) : résumé 3 chiffres.
+              <View style={{ borderRadius: 20, padding: 24, gap: 16, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.brand, letterSpacing: 1.5, textTransform: 'uppercase' }}>Bilan {event.payload.label ?? ''}</Text>
+                <View style={{ flexDirection: 'row', gap: 22 }}>
+                  <BilanStat n={event.payload.matches ?? 0} l="matchs" color="#FFFFFF" />
+                  <BilanStat n={`${event.payload.winRate ?? 0}%`} l="winrate" color={Colors.brand} />
+                  <BilanStat n={`${(event.payload.levelDelta ?? 0) >= 0 ? '+' : ''}${(event.payload.levelDelta ?? 0).toFixed(2)}`} l="niveau" color={Colors.brand} />
+                </View>
+                {event.payload.topPartner ? <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Meilleur duo : {event.payload.topPartner}</Text> : null}
               </View>
-              {event.payload.topPartner ? <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Meilleur duo : {event.payload.topPartner}</Text> : null}
-            </View>
+            )
           ) : (
             <View style={{ borderRadius: 20, padding: 28, alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)' }}>
               <BadgePill badge={event.payload.badge_label ?? ''} size={84} />
@@ -93,7 +102,7 @@ export function MomentOverlay({ event, myId, onReact, onComment, onClose, onPres
           </TouchableOpacity>
           <TouchableOpacity onPress={onComment} activeOpacity={0.8}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}>
-            <Text style={{ fontSize: 16 }}>💬</Text>
+            <Icon name="message" size={16} color="#FFFFFF" stroke={2} />
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: '#FFFFFF' }}>{event.comment_count || ''}</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }} />

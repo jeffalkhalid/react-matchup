@@ -205,8 +205,8 @@ const cardStyles = StyleSheet.create({
   },
 });
 
-function ActionCard({ icon, iconBg, title, sub, badge, onPress }: {
-  icon: React.ReactNode; iconBg: string; title: string; sub?: string;
+function ActionCard({ icon, title, sub, badge, onPress }: {
+  icon: React.ReactNode; title: string; sub?: string;
   badge?: number; onPress: () => void;
 }) {
   return (
@@ -217,7 +217,7 @@ function ActionCard({ icon, iconBg, title, sub, badge, onPress }: {
         style={cardStyles.card}
       >
         {/* Icon + badge */}
-        <View style={[cardStyles.iconBox, { backgroundColor: iconBg }]}>
+        <View style={cardStyles.iconBox}>
           {icon}
           {badge != null && badge > 0 && (
             <View style={cardStyles.badge}>
@@ -243,28 +243,24 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
         <ActionCard
-          icon={<Icon name="radar" size={24} color="#4f46e5" />}
-          iconBg="#e0e7ff"
+          icon={<Icon name="radar" size={24} color="#4f46e5" />}
           title="Matchmaking"
           onPress={() => onNavigate('/(tabs)/lobby')}
         />
         <ActionCard
-          icon={<Icon name="pencil" size={24} color="#059669" />}
-          iconBg="#d1fae5"
+          icon={<Icon name="pencil" size={24} color="#059669" />}
           title="Saisir un score"
           onPress={() => onNavigate('/score-entry')}
         />
       </View>
       <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
         <ActionCard
-          icon={<Icon name="trophy" size={24} color="#f59e0b" />}
-          iconBg="#fef3c7"
+          icon={<Icon name="trophy" size={24} color="#f59e0b" />}
           title="Classement"
           onPress={() => onNavigate('/(tabs)/ranking')}
         />
         <ActionCard
-          icon={<Icon name="calendar" size={24} color="#8b5cf6" />}
-          iconBg="#ede9fe"
+          icon={<Icon name="calendar" size={24} color="#8b5cf6" />}
           title="À Venir"
           badge={upcomingGames.length}
           sub={nextGame?.match_date && nextGame?.location
@@ -302,7 +298,8 @@ export default function HomeScreen() {
     if (!player) return;
     const now = new Date().toISOString();
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    // Fenêtre d'invite « Distribue des badges » : 48 h après la saisie du score.
+    const badgeWindowAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const playerOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
 
     const [
@@ -310,6 +307,7 @@ export default function HomeScreen() {
       { data: participations },
       { data: recentMatches },
       { data: alreadyVoted },
+      { data: badgeSkips },
     ] = await Promise.all([
       supabase
         .from('reputation_votes')
@@ -325,18 +323,24 @@ export default function HomeScreen() {
         .select('id, score_text, created_at, winner_id, winner_id_2, loser_id, loser_id_2, game:game_id(location, match_date), winner:winner_id(id, name), winner_2:winner_id_2(id, name), loser:loser_id(id, name), loser_2:loser_id_2(id, name)')
         .or(playerOr)
         .in('status', ['pending', 'validated'])
-        .gte('created_at', sevenDaysAgo)
+        .gte('created_at', badgeWindowAgo)
         .order('created_at', { ascending: false }),
       supabase
         .from('reputation_votes')
         .select('match_id')
         .eq('giver_id', player.id),
+      supabase
+        .from('badge_prompt_skips')
+        .select('match_id')
+        .eq('player_id', player.id),
     ]);
 
     setBadgeCount(badges ?? 0);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
-    const pendingBadge = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id));
+    const skippedIds = new Set((badgeSkips ?? []).map((s: any) => s.match_id));
+    const pendingBadge = (recentMatches ?? [])
+      .filter((m: any) => !votedIds.has(m.id) && !skippedIds.has(m.id));
     setBadgeMatches(pendingBadge);
 
     const ids = (participations ?? []).map((p: any) => p.game_id);
@@ -388,6 +392,14 @@ export default function HomeScreen() {
     });
   };
 
+  // Passer un match : trace persistante pour que la notif ne revienne pas.
+  const skipBadgeMatch = async (matchId: string) => {
+    if (!player) return;
+    await supabase
+      .from('badge_prompt_skips')
+      .upsert({ player_id: player.id, match_id: matchId }, { onConflict: 'player_id,match_id' });
+  };
+
   const handleSubmitBadges = async () => {
     if (!player || !badgeModalMatch) return;
     setSubmittingBadges(true);
@@ -395,6 +407,7 @@ export default function HomeScreen() {
       labels.map(label => ({ match_id: badgeModalMatch.id, giver_id: player.id, receiver_id: rid, badge_type: label }))
     );
     if (inserts.length > 0) await supabase.from('reputation_votes').insert(inserts);
+    else await skipBadgeMatch(badgeModalMatch.id);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     const rest = badgeMatches.filter(m => m.id !== badgeModalMatch.id);
     setBadgeMatches(rest);
@@ -419,6 +432,20 @@ export default function HomeScreen() {
         paddingBottom: 8,
       }}>
         <HeaderActions top={insets.top + 6} right={14} tint="dark" />
+        {/* Loupe recherche — miroir gauche du cluster droit ; ouvre l'écran de recherche joueurs */}
+        <TouchableOpacity
+          onPress={() => router.push('/community/friends' as any)}
+          activeOpacity={0.75}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{
+            position: 'absolute', top: insets.top + 6, left: 14, zIndex: 20,
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: Colors.heroBg,
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Icon name="search" size={20} color={Colors.brand} stroke={2} />
+        </TouchableOpacity>
         {/* Header — logo PAG MATCH (identique au splash de chargement) */}
         <View style={{ alignItems: 'center', marginBottom: 12 }}>
           <View style={{
@@ -490,10 +517,23 @@ export default function HomeScreen() {
                       .filter((p: any) => p && p.id !== player.id)
                       .map((p: any) => {
                         const myVotes = badgeVotes[p.id] ?? [];
+                        // Binôme = même camp que moi ; sinon adversaire (dérivé du match, pas de requête).
+                        const myTeamIsWinner =
+                          badgeModalMatch.winner?.id === player.id || badgeModalMatch.winner_2?.id === player.id;
+                        const pIsWinner =
+                          badgeModalMatch.winner?.id === p.id || badgeModalMatch.winner_2?.id === p.id;
+                        const isPartner = pIsWinner === myTeamIsWinner;
                         return (
                           <View key={p.id} style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 14, marginBottom: 12 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Pour {p.name}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+                                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Pour {p.name}</Text>
+                                <View style={{ backgroundColor: isPartner ? '#DCFCE7' : '#F1F5F9', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 10, fontFamily: Fonts.uiBold, fontWeight: '900', color: isPartner ? '#166534' : '#475569' }}>
+                                    {isPartner ? 'Binôme' : 'Adversaire'}
+                                  </Text>
+                                </View>
+                              </View>
                               {myVotes.length > 0 && (
                                 <View style={{ backgroundColor: '#EDE9FE', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
                                   <Text style={{ fontSize: 10, fontWeight: '900', color: '#5B21B6' }}>
@@ -530,8 +570,10 @@ export default function HomeScreen() {
                       : <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>Envoyer les badges</Text>}
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => {
-                      const rest = badgeMatches.filter(m => m.id !== badgeModalMatch?.id);
+                      const skippedId = badgeModalMatch?.id;
+                      const rest = badgeMatches.filter(m => m.id !== skippedId);
                       setBadgeMatches(rest);
+                      if (skippedId) skipBadgeMatch(skippedId);
                       if (rest.length > 0) openBadgeModal(rest[0]);
                       else { setBadgeModalMatch(null); setBadgeVotes({}); }
                     }}

@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, Pressable, ScrollView } from 'react-nativ
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
+import { Icon, type IconName } from '../community/icons';
 
 function Group({ title }: { title: string }) {
   return (
@@ -11,12 +12,12 @@ function Group({ title }: { title: string }) {
   );
 }
 
-function Row({ emoji, label, onPress, danger }: { emoji: string; label: string; onPress: () => void; danger?: boolean }) {
+function Row({ icon, label, onPress, danger }: { icon: IconName; label: string; onPress: () => void; danger?: boolean }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 18 }}>
       <View style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: danger ? '#fef2f2' : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 15 }}>{emoji}</Text>
+        <Icon name={icon} size={16} color={danger ? '#ef4444' : Colors.textSecondary} stroke={2} />
       </View>
       <Text style={{ flex: 1, fontSize: 13.5, fontWeight: '700', color: danger ? '#ef4444' : Colors.textPrimary, fontFamily: Fonts.uiBold }}>{label}</Text>
     </TouchableOpacity>
@@ -47,28 +48,28 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
 
         <ScrollView contentContainerStyle={{ paddingBottom: 8 }}>
           <Group title="Compte" />
-          <Row emoji="✏️" label="Modifier le profil" onPress={() => act(onEdit)} />
-          <Row emoji="💬" label="Qui peut commenter" onPress={() => act(onComments)} />
-          <Row emoji="💌" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
+          <Row icon="pencil" label="Modifier le profil" onPress={() => act(onEdit)} />
+          <Row icon="message" label="Qui peut commenter" onPress={() => act(onComments)} />
+          <Row icon="mail" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
 
           <Group title="Raccourcis" />
-          <Row emoji="🏆" label="Classement" onPress={() => nav('/(tabs)/ranking')} />
-          <Row emoji="🔔" label="Notifications" onPress={() => nav('/notifications')} />
+          <Row icon="trophy" label="Classement" onPress={() => nav('/(tabs)/ranking')} />
+          <Row icon="bell" label="Notifications" onPress={() => nav('/notifications')} />
 
           {isAdmin && (
             <>
               <Group title="Admin" />
-              <Row emoji="🛡️" label="Panel Arbitre" onPress={() => nav('/admin')} />
+              <Row icon="shield" label="Panel Arbitre" onPress={() => nav('/admin')} />
             </>
           )}
 
           <Group title="Légal" />
-          <Row emoji="🔒" label="Politique de confidentialité" onPress={() => nav('/legal/confidentialite')} />
-          <Row emoji="📄" label="Conditions d'utilisation" onPress={() => nav('/legal/cgu')} />
+          <Row icon="lock" label="Politique de confidentialité" onPress={() => nav('/legal/confidentialite')} />
+          <Row icon="fileText" label="Conditions d'utilisation" onPress={() => nav('/legal/cgu')} />
 
           <View style={{ height: 1, backgroundColor: Colors.bgCardAlt, marginVertical: 10, marginHorizontal: 18 }} />
-          <Row emoji="🚪" label="Se déconnecter" danger onPress={() => act(onLogout)} />
-          <Row emoji="🗑️" label="Supprimer mon compte" danger onPress={() => act(onDelete)} />
+          <Row icon="logOut" label="Se déconnecter" danger onPress={() => act(onLogout)} />
+          <Row icon="trash" label="Supprimer mon compte" danger onPress={() => act(onDelete)} />
         </ScrollView>
       </View>
     </View>

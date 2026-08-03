@@ -4,6 +4,7 @@ import { Colors, Fonts } from '../../lib/theme';
 import { matchToView } from '../../lib/matchView';
 import { track } from '../../lib/analytics';
 import { BadgePill } from '../profile/BadgePill';
+import { Icon } from '../community/icons';
 import type { ActivityEvent } from '../../types';
 
 const initials = (n?: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -52,10 +53,13 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
       <TouchableOpacity onPress={onPress} activeOpacity={0.9}
         style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: Colors.brand, overflow: 'hidden' }}>
         <TileHeader name={name} />
-        <Text style={{ position: 'absolute', top: '38%', alignSelf: 'center', fontSize: 42 }}>🏆</Text>
+        <View style={{ position: 'absolute', top: '34%', alignSelf: 'center' }}>
+          <Icon name="trophy" size={44} color="#0A0A0A" stroke={2} />
+        </View>
         <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10 }}>
-          <View style={{ alignSelf: 'flex-start', backgroundColor: '#0A0A0A', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: Colors.brand, letterSpacing: 0.5 }}>⬆ {(e.payload.promo_label ?? 'PROMOTION').toUpperCase()}</Text>
+          <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#0A0A0A', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3 }}>
+            <Icon name="trendingUp" size={9} color={Colors.brand} stroke={2.4} />
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: Colors.brand, letterSpacing: 0.5 }}>{(e.payload.promo_label ?? 'PROMOTION').toUpperCase()}</Text>
           </View>
         </View>
       </TouchableOpacity>

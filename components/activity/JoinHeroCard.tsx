@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
+import { Icon } from '../community/icons';
 import { track } from '../../lib/analytics';
 import type { SuggestedGame } from '../../lib/activityFeed';
 
@@ -24,7 +25,10 @@ export function JoinHeroCard({ game, onOpen }: { game: SuggestedGame; onOpen: (g
         <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: '#FFFFFF', letterSpacing: 0.5 }}>{whenLabel(game.matchDate)}</Text>
         </View>
-        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.brand, letterSpacing: 0.5 }}>★ POUR TOI</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Icon name="star" size={11} color={Colors.brand} stroke={2} />
+          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.brand, letterSpacing: 0.5 }}>POUR TOI</Text>
+        </View>
       </View>
 
       <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: Colors.textOnDark, lineHeight: 26 }}>

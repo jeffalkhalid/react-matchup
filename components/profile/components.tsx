@@ -7,6 +7,7 @@ import Svg, {
 } from 'react-native-svg';
 import { PM, accentOf, ACCENT, initials, PFonts } from './theme';
 import { Glyph } from './glyphs';
+import { Icon } from '../community/icons';
 import { CreatorCrownBadge } from '../CreatorCrownBadge';
 
 const A = accentOf(ACCENT);
@@ -380,7 +381,7 @@ export function AchievementMedal({ ach }: { ach: AchievementView }) {
             position: 'absolute', left: 28, bottom: -3, width: 20, height: 20, borderRadius: 10,
             backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#0A0A0A',
           }}>
-            <Text style={{ fontSize: 11, fontWeight: '900', color: '#0A0A0A' }}>✓</Text>
+            <Icon name="check" size={11} color="#0A0A0A" stroke={2.6} />
           </View>
         )}
       </View>
@@ -428,7 +429,7 @@ export function AchievementFeedCard({ ach }: { ach: AchievementView }) {
 }
 
 // ── En-tête sombre + onglets ──────────────────────────────────────────
-export const TABS = ['Stats', 'Matchs', 'Palmarès', 'Badges', 'Activité'] as const;
+export const TABS = ['Stats', 'Matchs', 'Palmarès', 'Badges', 'Binômes', 'Activité'] as const;
 export type TabName = typeof TABS[number];
 
 // Onglets masqués temporairement (code conservé, juste retiré de la barre).
@@ -447,6 +448,7 @@ export function ProfileHeader(props: {
   onMessage?: () => void; onShowcase?: () => void; onMyShowcase?: () => void;
   hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
+  tabBadges?: Partial<Record<TabName, { count?: number; dot?: boolean }>>;
 }) {
   const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing } = props;
   const iconBtn = { width: 36, height: 36, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' as const, justifyContent: 'center' as const };
@@ -493,7 +495,7 @@ export function ProfileHeader(props: {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: ACCENT }}>{level.toFixed(2)}</Text>
-              <Text style={{ fontSize: 11 }}>⭐</Text>
+              <Icon name="star" size={11} color={ACCENT} stroke={2} />
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: leagueColor, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2, backgroundColor: leagueColor + '22' }}>
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: leagueColor }} />
@@ -503,7 +505,7 @@ export function ProfileHeader(props: {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.28)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
                 <Text style={{ fontSize: 10, fontWeight: '900', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.3 }}>FRMT</Text>
                 <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>{props.frmt.text}</Text>
-                {props.frmt.verified && <Text style={{ fontSize: 10, color: ACCENT }}>✓</Text>}
+                {props.frmt.verified && <Icon name="check" size={11} color={ACCENT} stroke={2.6} />}
               </View>
             )}
           </View>
@@ -564,7 +566,7 @@ export function ProfileHeader(props: {
           marginTop: 8, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
           paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>🤝 Proposer comme binôme</Text>
+          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Proposer comme binôme</Text>
         </TouchableOpacity>
       )}
 
@@ -572,9 +574,20 @@ export function ProfileHeader(props: {
       <View style={{ flexDirection: 'row', marginTop: 16 }}>
         {VISIBLE_TABS.map(t => {
           const on = t === props.tab;
+          const badge = props.tabBadges?.[t];
+          const showCount = (badge?.count ?? 0) > 0;
+          const showDot = !showCount && !!badge?.dot;
           return (
             <TouchableOpacity key={t} onPress={() => props.setTab(t)} style={{ flex: 1, paddingTop: 11, paddingBottom: 12, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? ACCENT : 'rgba(255,255,255,0.5)' }}>{t}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? ACCENT : 'rgba(255,255,255,0.5)' }}>{t}</Text>
+                {showCount && (
+                  <View style={{ backgroundColor: ACCENT, borderRadius: 999, minWidth: 15, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: PM.ink, fontSize: 9, fontWeight: '900' }}>{badge!.count}</Text>
+                  </View>
+                )}
+                {showDot && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: ACCENT }} />}
+              </View>
               {on && <View style={{ position: 'absolute', bottom: 0, height: 3, left: '20%', right: '20%', borderRadius: 3, backgroundColor: ACCENT }} />}
             </TouchableOpacity>
           );

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  TextInput, ActivityIndicator, Alert, Platform, Keyboard, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
@@ -12,7 +12,7 @@ import {
   fetchMyShowcases, fetchShowcaseInvites, openShowcase, confirmShowcase, closeShowcase,
   type ShowcaseBinome,
 } from '../../lib/showcase';
-import { notifyShowcaseNominated } from '../../lib/defiNotify';
+import { notifyShowcaseNominated, notifyShowcaseDeclined } from '../../lib/defiNotify';
 
 // ── Types ────────────────────────────────────────────────────────────
 interface PlayerLite { id: string; name: string; elo_score: number; }
@@ -61,6 +61,20 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
   const [searchResults, setSearchResults] = useState<PlayerLite[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+
+  // Hauteur du clavier : sur Android, une <Modal> crée sa propre fenêtre qui NE
+  // se redimensionne PAS au clavier (KeyboardAvoidingView y est inopérant). On
+  // écoute donc les événements et on remonte manuellement la feuille (marginBottom)
+  // pour qu'elle reste au-dessus du clavier.
+  const { height: winHeight } = useWindowDimensions();
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, (e) => setKbHeight(e.endCoordinates?.height ?? 0));
+    const h = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { s.remove(); h.remove(); };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,13 +141,13 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
       await openShowcase(partner.id);
       notifyShowcaseNominated(partner.id, player.name);
       await load();
-      Alert.alert('Vitrine créée', `Tu as proposé à ${partner.name} d'être ton binôme ouvert aux défis. Il/Elle doit confirmer.`);
+      Alert.alert('Proposition envoyée', `Tu as proposé à ${partner.name} d'être ton binôme ouvert aux défis. Il/Elle doit confirmer.`);
     } catch (e: any) {
       const msg: string = e?.message ?? '';
       if (msg.includes('showcase already exists') || msg.includes('duplicate') || msg.includes('unique')) {
-        Alert.alert('Déjà existante', 'Tu as déjà une vitrine avec ce joueur.');
+        Alert.alert('Déjà en binôme', 'Tu as déjà un binôme (ou une demande en cours) avec ce joueur.');
       } else {
-        Alert.alert('Erreur', msg || 'Impossible de créer la vitrine.');
+        Alert.alert('Erreur', msg || "Impossible d'envoyer la proposition.");
       }
     } finally {
       setActionIds(s => { const n = new Set(s); n.delete(key); return n; });
@@ -208,7 +222,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 12, color: Colors.textMuted }}>
               <Text style={{ fontWeight: '800', color: Colors.textPrimary }}>{nominator.name}</Text>
-              {' '}veut être ton binôme ouvert aux défis
+              {' '}veut être ton binôme de défis
             </Text>
           </View>
         </View>
@@ -219,7 +233,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
               const key = `decline-${b.id}`;
               setActionIds(s => new Set(s).add(key));
               closeShowcase(b.id)
-                .then(() => load())
+                .then(() => { notifyShowcaseDeclined(b.player_a, player.name); return load(); })
                 .catch((e: any) => Alert.alert('Erreur', e?.message ?? 'Action impossible.'))
                 .finally(() => setActionIds(s => { const n = new Set(s); n.delete(key); return n; }));
             }}
@@ -269,8 +283,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
         onPress={onClose}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable onPress={() => {}}>
+        <Pressable onPress={() => {}} style={{ marginBottom: kbHeight }}>
             <View style={{
               backgroundColor: Colors.bgCard,
               borderTopLeftRadius: 28, borderTopRightRadius: 28,
@@ -296,7 +309,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
               </View>
 
               <ScrollView
-                style={{ maxHeight: 560 }}
+                style={{ maxHeight: Math.min(560, winHeight - kbHeight - insets.top - 150) }}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: insets.bottom + 28, gap: 24 }}
                 keyboardShouldPersistTaps="handled"
               >
@@ -304,36 +317,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
                   <ActivityIndicator color={Colors.primary} style={{ marginVertical: 32 }} />
                 ) : (
                   <>
-                    {/* ── Nominations à confirmer ── */}
-                    {invites.length > 0 && (
-                      <View style={{ gap: 10 }}>
-                        <Text style={{
-                          fontSize: 11, fontWeight: '700', letterSpacing: 1.4,
-                          color: Colors.textMuted, textTransform: 'uppercase',
-                        }}>
-                          À confirmer
-                        </Text>
-                        {invites.map(renderInviteRow)}
-                      </View>
-                    )}
-
-                    {/* ── Mes binômes ouverts ── */}
-                    <View style={{ gap: 4 }}>
-                      <Text style={{
-                        fontSize: 11, fontWeight: '700', letterSpacing: 1.4,
-                        color: Colors.textMuted, textTransform: 'uppercase', marginBottom: 4,
-                      }}>
-                        Mes binômes ouverts
-                      </Text>
-                      {myShowcases.length === 0 && (
-                        <Text style={{ fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', paddingVertical: 8 }}>
-                          Aucun binôme pour l'instant.
-                        </Text>
-                      )}
-                      {myShowcases.map(renderBinomeRow)}
-                    </View>
-
-                    {/* ── Ajouter un binôme ── */}
+                    {/* ── Ajouter un binôme (EN HAUT : le champ reste au-dessus du clavier) ── */}
                     <View style={{ gap: 10 }}>
                       {!showSearch ? (
                         <TouchableOpacity
@@ -422,12 +406,40 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
                         </View>
                       )}
                     </View>
+
+                    {/* ── Nominations à confirmer ── */}
+                    {invites.length > 0 && (
+                      <View style={{ gap: 10 }}>
+                        <Text style={{
+                          fontSize: 11, fontWeight: '700', letterSpacing: 1.4,
+                          color: Colors.textMuted, textTransform: 'uppercase',
+                        }}>
+                          À confirmer
+                        </Text>
+                        {invites.map(renderInviteRow)}
+                      </View>
+                    )}
+
+                    {/* ── Mes binômes ouverts ── */}
+                    <View style={{ gap: 4 }}>
+                      <Text style={{
+                        fontSize: 11, fontWeight: '700', letterSpacing: 1.4,
+                        color: Colors.textMuted, textTransform: 'uppercase', marginBottom: 4,
+                      }}>
+                        Mes binômes ouverts
+                      </Text>
+                      {myShowcases.length === 0 && (
+                        <Text style={{ fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', paddingVertical: 8 }}>
+                          Aucun binôme pour l'instant.
+                        </Text>
+                      )}
+                      {myShowcases.map(renderBinomeRow)}
+                    </View>
                   </>
                 )}
               </ScrollView>
             </View>
-          </Pressable>
-        </KeyboardAvoidingView>
+        </Pressable>
       </Pressable>
     </Modal>
   );

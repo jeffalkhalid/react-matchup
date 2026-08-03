@@ -8,7 +8,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { isMatchPast } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
-import { fetchConversations, unreadFor, isRequestFor } from '../../lib/directChats';
+import { fetchUnreadCounts } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
 import HelpCenter from '../../components/HelpCenter';
 import OnboardingCarousel from '../../components/OnboardingCarousel';
@@ -181,14 +181,15 @@ export default function TabLayout() {
       await recomputeDirect();
     };
 
-    // Non-lus directs = demandes reçues NON ENCORE OUVERTES + messages non lus des
-    // conversations acceptées. Basé sur le non-lu → l'ouverture (mark_direct_read)
-    // efface le badge. Try/catch : un échec ne casse jamais le badge des parties.
+    // Non-lus directs = TOTAL des messages non lus (style WhatsApp), demandes
+    // reçues incluses (leur message d'intro compte pour 1 tant que non ouvert).
+    // Basé sur le non-lu → l'ouverture (mark_direct_read) décrémente le badge.
+    // Try/catch : un échec ne casse jamais le badge des parties.
     const recomputeDirect = async () => {
       try {
-        const convs = await fetchConversations();
-        const dUnread = convs.reduce((s, c) =>
-          s + ((isRequestFor(c, player.id) || c.status === 'accepted') ? unreadFor(c, player.id) : 0), 0);
+        const counts = await fetchUnreadCounts(player.id);
+        let dUnread = 0;
+        counts.forEach(n => { dUnread += n; });
         if (!cancelled) setDirectUnread(dUnread);
       } catch {}
     };

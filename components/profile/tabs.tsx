@@ -1,12 +1,13 @@
 // ── PagMatch profile (refonte) — vues d'onglets (présentationnel) ─────
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { PM, accentOf, ACCENT, PFonts } from './theme';
 import {
   Section, WinRing, StatTile, FilterPills, MatchCard, LevelChart, AchievementMedal,
   type MatchView, type TimelinePoint, type RepBadge, type AchievementView,
 } from './components';
 import { BadgePill } from './BadgePill';
+import { Icon } from '../community/icons';
 
 const A = accentOf(ACCENT);
 
@@ -166,7 +167,7 @@ export function MatchsTab({ matches, renderFooter, onPlayerPress }: { matches: M
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: PM.card, borderRadius: 12, borderWidth: 1, borderColor: PM.border, paddingHorizontal: 12, height: 42 }}>
-        <Text style={{ fontSize: 14, color: PM.muted }}>🔍</Text>
+        <Icon name="search" size={14} color={PM.muted} stroke={2.2} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -213,7 +214,7 @@ export function PalmaresTab({ achievements }: { achievements: AchievementView[] 
               <Text style={{ fontFamily: PFonts.anton, fontSize: 18, color: 'rgba(255,255,255,0.45)' }}>/ {total}</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 30 }}>🏆</Text>
+          <Icon name="trophy" size={30} color={ACCENT} stroke={2} />
         </View>
         <View style={{ height: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
           <View style={{ height: '100%', width: `${pct}%`, backgroundColor: ACCENT, borderRadius: 999 }} />
@@ -230,6 +231,141 @@ export function PalmaresTab({ achievements }: { achievements: AchievementView[] 
           ))}
         </View>
       </Section>
+    </View>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  BINÔMES (ouverts aux défis)
+// ════════════════════════════════════════════════════════════════════
+type BinomeRow = { binomeId: string; id: string; name: string; level: string };
+
+export function BinomesTab({ active, incoming, outgoing, isSelf, onConfirm, onClose, onAdd, onPlayerPress }: {
+  active: BinomeRow[];
+  incoming?: BinomeRow[];
+  outgoing?: BinomeRow[];
+  isSelf?: boolean;
+  onConfirm?: (binomeId: string) => Promise<void> | void;
+  onClose?: (binomeId: string) => Promise<void> | void;
+  onAdd?: () => void;
+  onPlayerPress?: (id: string) => void;
+}) {
+  const inc = incoming ?? [];
+  const out = outgoing ?? [];
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const run = (key: string, fn?: (id: string) => Promise<void> | void, arg?: string) => {
+    if (!fn || arg == null) return;
+    setBusy(s => new Set(s).add(key));
+    Promise.resolve(fn(arg)).catch(() => {}).finally(() =>
+      setBusy(s => { const n = new Set(s); n.delete(key); return n; }));
+  };
+  const nothing = active.length === 0 && inc.length === 0 && out.length === 0;
+
+  const avatar = (name: string) => (
+    <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: A.soft, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 14, fontWeight: '900', color: A.deep }}>{(name[0] ?? '?').toUpperCase()}</Text>
+    </View>
+  );
+  const row = (p: BinomeRow, right: React.ReactNode) => (
+    <View key={p.binomeId} style={{
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      backgroundColor: PM.page, borderWidth: 1, borderColor: PM.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    }}>
+      <TouchableOpacity onPress={() => onPlayerPress?.(p.id)} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+        {avatar(p.name)}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: PM.text }}>{p.name}</Text>
+          <Text style={{ fontSize: 10.5, fontWeight: '700', color: PM.muted, marginTop: 1 }}>Niv. {p.level}</Text>
+        </View>
+      </TouchableOpacity>
+      {right}
+    </View>
+  );
+  const smallBtn = (label: string, onPress: () => void, opts: { danger?: boolean; solid?: boolean; loading?: boolean; disabled?: boolean }) => (
+    <TouchableOpacity onPress={onPress} disabled={opts.disabled || opts.loading} activeOpacity={0.8} style={{
+      paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9,
+      backgroundColor: opts.solid ? '#16A34A' : 'transparent',
+      borderWidth: opts.solid ? 0 : 1, borderColor: opts.danger ? PM.border : PM.border,
+      opacity: (opts.disabled || opts.loading) ? 0.5 : 1, minWidth: 62, alignItems: 'center',
+    }}>
+      {opts.loading
+        ? <ActivityIndicator size="small" color={opts.solid ? '#fff' : PM.muted} />
+        : <Text style={{ fontSize: 11, fontWeight: '800', color: opts.solid ? '#fff' : PM.muted }}>{label}</Text>}
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={{ gap: 14 }}>
+      {/* En-tête */}
+      <View style={{ backgroundColor: PM.ink, borderRadius: 18, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: A.soft, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 26 }}>⚔️</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Ouvert aux défis</Text>
+          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>
+            {active.length === 0 ? 'Aucun binôme' : `${active.length} binôme${active.length > 1 ? 's' : ''}`}
+          </Text>
+        </View>
+        {isSelf && onAdd && (
+          <TouchableOpacity onPress={onAdd} activeOpacity={0.85} style={{
+            paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: ACCENT,
+          }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: PM.ink }}>＋ Proposer</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Demandes reçues */}
+      {inc.length > 0 && (
+        <Section title="À confirmer" action={`${inc.length}`}>
+          <Text style={{ fontSize: 10.5, color: PM.muted, marginBottom: 11, marginTop: -2, lineHeight: 15 }}>
+            On te propose de former un binôme de défis.
+          </Text>
+          <View style={{ gap: 8 }}>
+            {inc.map(p => row(p, (
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {smallBtn('Refuser', () => run('x-' + p.binomeId, onClose, p.binomeId), { loading: busy.has('x-' + p.binomeId), disabled: busy.has('c-' + p.binomeId) })}
+                {smallBtn('Confirmer', () => run('c-' + p.binomeId, onConfirm, p.binomeId), { solid: true, loading: busy.has('c-' + p.binomeId), disabled: busy.has('x-' + p.binomeId) })}
+              </View>
+            )))}
+          </View>
+        </Section>
+      )}
+
+      {/* Demandes envoyées, en attente */}
+      {out.length > 0 && (
+        <Section title="En attente" action={`${out.length}`}>
+          <Text style={{ fontSize: 10.5, color: PM.muted, marginBottom: 11, marginTop: -2, lineHeight: 15 }}>
+            Tes propositions envoyées — en attente de confirmation.
+          </Text>
+          <View style={{ gap: 8 }}>
+            {out.map(p => row(p, smallBtn('Annuler', () => run('x-' + p.binomeId, onClose, p.binomeId), { loading: busy.has('x-' + p.binomeId) })))}
+          </View>
+        </Section>
+      )}
+
+      {/* Binômes actifs */}
+      {active.length > 0 && (
+        <Section title="Binômes de défis" action={`${active.length} actif${active.length > 1 ? 's' : ''}`}>
+          <Text style={{ fontSize: 10.5, color: PM.muted, marginBottom: 11, marginTop: -2, lineHeight: 15 }}>
+            {isSelf ? 'Les paires que tu formes et qui peuvent être défiées.' : 'Les paires ouvertes aux défis avec ce joueur.'}
+          </Text>
+          <View style={{ gap: 8 }}>
+            {active.map(p => row(p, isSelf
+              ? smallBtn('Fermer', () => run('x-' + p.binomeId, onClose, p.binomeId), { loading: busy.has('x-' + p.binomeId) })
+              : null))}
+          </View>
+        </Section>
+      )}
+
+      {nothing && (
+        <Text style={{ fontSize: 12, color: PM.muted, textAlign: 'center', paddingVertical: 24, lineHeight: 18 }}>
+          {isSelf
+            ? "Tu n'es ouvert aux défis avec personne pour l'instant.\nAppuie sur « Proposer » pour former un binôme."
+            : "Ce joueur n'a pas de binôme de défis pour le moment."}
+        </Text>
+      )}
     </View>
   );
 }

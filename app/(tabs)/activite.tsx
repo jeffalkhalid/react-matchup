@@ -19,6 +19,7 @@ import { JoinHeroCard } from '../../components/activity/JoinHeroCard';
 import { WeekendRail } from '../../components/activity/WeekendRail';
 import { MomentsRail } from '../../components/activity/MomentsRail';
 import { MomentOverlay } from '../../components/activity/MomentOverlay';
+import { BilanStory } from '../../components/activity/BilanStory';
 import { EmptyHero } from '../../components/activity/EmptyHero';
 import { OnboardingChecklist } from '../../components/activity/OnboardingChecklist';
 import { DiscoveryRail } from '../../components/activity/DiscoveryRail';
@@ -235,14 +236,26 @@ export default function ActiviteTab() {
         </ScrollView>
       )}
 
-      <MomentOverlay
-        event={liveMoment}
-        myId={myId ?? ''}
-        onReact={() => { if (openMomentId) react(openMomentId); }}
-        onComment={() => { const id = openMomentId; setOpenMomentId(null); if (id) router.push(`/community/comments/${id}` as any); }}
-        onPressActor={(pid) => { setOpenMomentId(null); router.push(`/player/${pid}` as any); }}
-        onClose={() => setOpenMomentId(null)}
-      />
+      {liveMoment?.type === 'bilan' && liveMoment.payload.recap ? (
+        <BilanStory
+          recap={liveMoment.payload.recap as MonthlyRecap}
+          authorName={liveMoment.actor?.name}
+          myId={myId ?? ''}
+          reactions={liveMoment.reactions}
+          onReact={() => { if (openMomentId) react(openMomentId); }}
+          onComment={() => { const id = openMomentId; setOpenMomentId(null); if (id) router.push(`/community/comments/${id}` as any); }}
+          onClose={() => setOpenMomentId(null)}
+        />
+      ) : (
+        <MomentOverlay
+          event={liveMoment}
+          myId={myId ?? ''}
+          onReact={() => { if (openMomentId) react(openMomentId); }}
+          onComment={() => { const id = openMomentId; setOpenMomentId(null); if (id) router.push(`/community/comments/${id}` as any); }}
+          onPressActor={(pid) => { setOpenMomentId(null); router.push(`/player/${pid}` as any); }}
+          onClose={() => setOpenMomentId(null)}
+        />
+      )}
 
       {/* Partage in-app d'un match : choisir → composer → publier (Moment) */}
       {myId ? (
