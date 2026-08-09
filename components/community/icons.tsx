@@ -9,7 +9,8 @@ export type IconName =
   | 'clock' | 'trophy' | 'zap' | 'swords' | 'radar' | 'bellRing' | 'send' | 'qr'
   | 'sliders' | 'trendingUp' | 'share' | 'lifeBuoy' | 'settings'
   | 'calendar' | 'pencil' | 'heart' | 'eye' | 'flame' | 'map' | 'bookOpen' | 'repeat'
-  | 'medal' | 'mail' | 'megaphone' | 'crown' | 'hourglass' | 'star' | 'checkSquare';
+  | 'medal' | 'mail' | 'megaphone' | 'crown' | 'hourglass' | 'star' | 'checkSquare'
+  | 'shield' | 'lock' | 'fileText' | 'logOut' | 'trash';
 
 export interface IconProps {
   name: IconName;
@@ -257,6 +258,34 @@ export function Icon({ name, size = 24, color = '#0A0A0A', stroke = 2, fill = 'n
         return <G>
           <Path {...common} d="M9 11l3 3L22 4" />
           <Path {...common} d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </G>;
+      case 'shield':
+        return <Path {...common} d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />;
+      case 'lock':
+        return <G>
+          <Rect {...common} x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <Path {...common} d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </G>;
+      case 'fileText':
+        return <G>
+          <Path {...common} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <Polyline {...common} points="14 2 14 8 20 8" />
+          <Line {...common} x1="16" y1="13" x2="8" y2="13" />
+          <Line {...common} x1="16" y1="17" x2="8" y2="17" />
+          <Line {...common} x1="10" y1="9" x2="8" y2="9" />
+        </G>;
+      case 'logOut':
+        return <G>
+          <Path {...common} d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <Polyline {...common} points="16 17 21 12 16 7" />
+          <Line {...common} x1="21" y1="12" x2="9" y2="12" />
+        </G>;
+      case 'trash':
+        return <G>
+          <Polyline {...common} points="3 6 5 6 21 6" />
+          <Path {...common} d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          <Line {...common} x1="10" y1="11" x2="10" y2="17" />
+          <Line {...common} x1="14" y1="11" x2="14" y2="17" />
         </G>;
       default:
         return null;

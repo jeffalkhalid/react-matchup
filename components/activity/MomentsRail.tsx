@@ -4,6 +4,7 @@ import { Colors, Fonts } from '../../lib/theme';
 import { matchToView } from '../../lib/matchView';
 import { track } from '../../lib/analytics';
 import { BadgePill } from '../profile/BadgePill';
+import { Icon } from '../community/icons';
 import type { ActivityEvent } from '../../types';
 
 const initials = (n?: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -35,7 +36,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
         {/* « terrain » avec le score écrit dedans */}
         <View style={{ position: 'absolute', top: '28%', bottom: '30%', left: '12%', right: '12%', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 6, backgroundColor: 'rgba(255,193,26,0.08)', alignItems: 'center', justifyContent: 'center' }}>
           <Svg width="100%" height="100%" style={{ position: 'absolute' }}><Line x1="0" y1="50%" x2="100%" y2="50%" stroke="rgba(255,255,255,0.22)" strokeWidth={1} /></Svg>
-          <Text style={{ fontFamily: Fonts.display, fontSize: 22, color: '#FFFFFF', letterSpacing: -0.5, textAlign: 'center' }}>{score || '—'}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 29, color: '#FFFFFF', letterSpacing: -0.5, textAlign: 'center' }}>{score || '—'}</Text>
         </View>
         <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10 }}>
           <View style={{ alignSelf: 'flex-start', backgroundColor: win ? Colors.brand : Colors.danger, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
@@ -52,10 +53,13 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
       <TouchableOpacity onPress={onPress} activeOpacity={0.9}
         style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: Colors.brand, overflow: 'hidden' }}>
         <TileHeader name={name} />
-        <Text style={{ position: 'absolute', top: '38%', alignSelf: 'center', fontSize: 42 }}>🏆</Text>
+        <View style={{ position: 'absolute', top: '34%', alignSelf: 'center' }}>
+          <Icon name="trophy" size={44} color="#0A0A0A" stroke={2} />
+        </View>
         <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10 }}>
-          <View style={{ alignSelf: 'flex-start', backgroundColor: '#0A0A0A', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: Colors.brand, letterSpacing: 0.5 }}>⬆ {(e.payload.promo_label ?? 'PROMOTION').toUpperCase()}</Text>
+          <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#0A0A0A', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3 }}>
+            <Icon name="trendingUp" size={9} color={Colors.brand} stroke={2.4} />
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: Colors.brand, letterSpacing: 0.5 }}>{(e.payload.promo_label ?? 'PROMOTION').toUpperCase()}</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -69,14 +73,14 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
         style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: Colors.brand, overflow: 'hidden' }}>
         <TileHeader name={name} />
         <View style={{ position: 'absolute', top: '34%', left: 10, right: 10, alignItems: 'center' }}>
-          <Text style={{ fontFamily: Fonts.display, fontSize: 30, color: '#0A0A0A', lineHeight: 30 }}>{e.payload.matches ?? 0}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: 30, color: '#0A0A0A', lineHeight: 39 }}>{e.payload.matches ?? 0}</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9, color: 'rgba(10,10,10,0.7)', letterSpacing: 0.5, textTransform: 'uppercase' }}>matchs · {e.payload.winRate ?? 0}%</Text>
         </View>
         <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10 }}>
           <View style={{ alignSelf: 'flex-start', backgroundColor: '#0A0A0A', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: Colors.brand, letterSpacing: 0.5 }}>BILAN</Text>
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#0A0A0A', lineHeight: 20, marginTop: 4 }}>{e.payload.label ?? 'Bilan'}</Text>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#0A0A0A', lineHeight: 23, marginTop: 4 }}>{e.payload.label ?? 'Bilan'}</Text>
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 9, color: 'rgba(10,10,10,0.7)', marginTop: 1 }}>{lvl >= 0 ? '+' : ''}{lvl.toFixed(2)} de niveau</Text>
         </View>
       </TouchableOpacity>
@@ -94,7 +98,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
         <View style={{ alignSelf: 'flex-start', backgroundColor: Colors.brand, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: '#0A0A0A', letterSpacing: 0.5 }}>+ BADGE</Text>
         </View>
-        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#FFFFFF', lineHeight: 20, marginTop: 4 }}>{e.payload.badge_label ?? 'Badge'}</Text>
+        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#FFFFFF', lineHeight: 23, marginTop: 4 }}>{e.payload.badge_label ?? 'Badge'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -107,7 +111,7 @@ export function MomentsRail({ moments, onShareMatch, onOpen }: {
 }) {
   return (
     <View style={{ marginTop: 18 }}>
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 17, color: Colors.textPrimary, marginBottom: 10 }}>Moments de la semaine</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 17, lineHeight: 22, color: Colors.textPrimary, marginBottom: 10 }}>Moments de la semaine</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
         {moments.map(e => (
           <MomentTile key={e.id} e={e} onPress={() => { track('activity_moment_opened', { friend_id: e.player_id, moment_type: e.type }); onOpen(e); }} />

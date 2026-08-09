@@ -11,7 +11,7 @@ export function SlideLowActivity({ recap, onPrevMonth, onPing, onClose }: {
 }) {
   return (
     <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28, gap: 16 }}>
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 26, color: '#FFFFFF' }}>Mois en sommeil 🌱</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 26, lineHeight: 34, color: '#FFFFFF' }}>Mois en sommeil 🌱</Text>
       <View style={{ flexDirection: 'row', gap: 22, marginTop: 6 }}>
         <Stat n={recap.matches} l="matchs" />
         <Stat n={`${recap.winRate}%`} l="victoires" />
@@ -43,7 +43,7 @@ export function SlideLowActivity({ recap, onPrevMonth, onPing, onClose }: {
 function Stat({ n, l, dim }: { n: number | string; l: string; dim?: boolean }) {
   return (
     <View>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 30, color: dim ? 'rgba(255,255,255,0.55)' : '#FFFFFF' }}>{n}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 30, lineHeight: 39, color: dim ? 'rgba(255,255,255,0.55)' : '#FFFFFF' }}>{n}</Text>
       <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{l}</Text>
     </View>
   );

@@ -119,7 +119,7 @@ export default function InviteScreen() {
             ) : (
               <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 44, height: 44 }} resizeMode="contain" />
             )}
-            <Text style={{ fontFamily: Fonts.welcome, fontSize: 26, color: titleColor, textTransform: 'uppercase', marginTop: cream ? 14 : 8, textAlign: 'center', lineHeight: 28 }}>
+            <Text style={{ fontFamily: Fonts.welcome, fontSize: 26, color: titleColor, textTransform: 'uppercase', marginTop: cream ? 14 : 8, textAlign: 'center', lineHeight: 34 }}>
               Rejoins-moi sur <Text style={{ color: Colors.brandDeep }}>PagMatch</Text>
             </Text>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 13, color: subColor, marginTop: 6, textAlign: 'center' }}>
@@ -156,7 +156,7 @@ export default function InviteScreen() {
 
         {/* Incitation parrainage */}
         <View style={{ marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,193,26,0.10)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.4)', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}>
-          <Text style={{ fontSize: 24 }}>🏆</Text>
+          <Icon name="trophy" size={24} color={Colors.brandDeep} stroke={2} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: Colors.textPrimary }}>Badge Parrain</Text>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 12, color: Colors.textSecondary }}>

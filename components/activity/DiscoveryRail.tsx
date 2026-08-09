@@ -16,7 +16,7 @@ export function DiscoveryRail({ players, title = 'Joueurs autour de toi', onPres
   if (players.length === 0) return null;
   return (
     <View style={{ marginTop: 18 }}>
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, color: Colors.textPrimary, marginBottom: 10 }}>{title}</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, marginBottom: 10 }}>{title}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 16 }}>
         {players.map(p => {
           const isFollowed = followed.has(p.id);

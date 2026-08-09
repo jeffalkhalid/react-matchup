@@ -24,13 +24,21 @@ interface SetScore { t1: number | null; t2: number | null }
 interface Participant { id: string; name: string; elo_score: number; team_side?: string }
 interface Game {
   id: string; location: string; match_date: string;
-  is_challenge?: boolean; game_format?: string;
+  is_challenge?: boolean; game_format?: string; stake_multiplier?: number;
   creator_id?: string; creator_side?: string;
   participants: Participant[];
 }
 
 // Côté → équipe (A_GAU/A_DRO → A, B_GAU/B_DRO → B)
 const teamOf = (side?: string | null) => (side ? side.charAt(0) : null);
+
+// Pastilles joueurs par équipe (identité PagMatch : A = jaune brand, B = noir) ;
+// joueur sans team_side connu → pastille neutre, rangé en dernier.
+const TEAM_PILL: Record<string, { bg: string; border: string; txt: string }> = {
+  A: { bg: Colors.brand, border: Colors.brandDeep, txt: Colors.textOnBrand },
+  B: { bg: Colors.primary, border: Colors.primary, txt: Colors.textOnDark },
+};
+const teamRank = (p: Participant) => { const t = teamOf(p.team_side); return t === 'A' ? 0 : t === 'B' ? 1 : 2; };
 
 // Coéquipier « par défaut » = le joueur de MON équipe au moment de la création.
 // On le déduit du team_side (et creator_side pour le créateur). En l'absence
@@ -228,7 +236,7 @@ export default function ScoreEntryScreen() {
     if (!player) return;
     setLoading(true);
     const now = new Date().toISOString();
-    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, creator_id, creator_side, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
+    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, stake_multiplier, creator_id, creator_side, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
 
     // Games where I'm a participant (accepted)
     const { data: partEntries } = await supabase
@@ -253,8 +261,9 @@ export default function ScoreEntryScreen() {
       .neq('status', 'closed')
       .lt('match_date', now)
       .gte('match_date', twoDaysAgo)
-      .order('match_date', { ascending: false })
-      .limit(20);
+      // Pas de limit : la fenêtre 48 h borne déjà le volume, et une partie
+      // tronquée ici serait impossible à scorer.
+      .order('match_date', { ascending: false });
 
     const { data } = await (partIds.length > 0
       ? baseQuery.or(`creator_id.eq.${player.id},id.in.(${partIds.join(',')})`)
@@ -285,6 +294,7 @@ export default function ScoreEntryScreen() {
           match_date: g.match_date,
           is_challenge: g.is_challenge ?? false,
           game_format: g.game_format ?? 'competitive',
+          stake_multiplier: g.stake_multiplier ?? 1.0,
           creator_id: g.creator_id,
           creator_side: g.creator_side ?? undefined,
           participants: allParticipants,
@@ -329,6 +339,7 @@ export default function ScoreEntryScreen() {
         match_date,
         is_challenge: (match as any).is_challenge ?? false,
         game_format: (match as any).game_format ?? 'competitive',
+        stake_multiplier: (match as any).stake_multiplier ?? 1.0,
         participants,
       }]);
       autoOpened.current = false;
@@ -482,6 +493,7 @@ export default function ScoreEntryScreen() {
       game_id: game.id,
       game_format: game.game_format ?? 'competitive',
       is_challenge: game.is_challenge ?? false,
+      stake_multiplier: game.stake_multiplier ?? 1.0,
     };
     try {
       const { data: newMatch, error } = await supabase.from('matches').insert([matchPayload]).select().single();
@@ -559,7 +571,7 @@ export default function ScoreEntryScreen() {
             <Path d="M15 18l-6-6 6-6" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 30, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>
+        <Text style={{ fontSize: 30, lineHeight: 39, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>
           {contestMatchId ? (<>Contester le <Text style={{ color: Colors.brand }}>score</Text></>) : (<>Le <Text style={{ color: Colors.brand }}>score</Text></>)}
         </Text>
         <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
@@ -652,11 +664,14 @@ export default function ScoreEntryScreen() {
                       📅 {formatMatchDate(game.match_date)}
                     </Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                      {game.participants.map(p => (
-                        <View key={p.id} style={sty.playerPill}>
-                          <Text style={sty.playerPillTxt}>👤 {p.name}</Text>
-                        </View>
-                      ))}
+                      {[...game.participants].sort((a, b) => teamRank(a) - teamRank(b)).map(p => {
+                        const tc = TEAM_PILL[teamOf(p.team_side) ?? ''];
+                        return (
+                          <View key={p.id} style={[sty.playerPill, tc && { backgroundColor: tc.bg, borderColor: tc.border }]}>
+                            <Text style={[sty.playerPillTxt, tc && { color: tc.txt }]}>👤 {p.name}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   </View>
                   {!isScoring && (

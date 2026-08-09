@@ -189,6 +189,7 @@ export async function getActivityFeed(myId: string, limit = 50, includeSelf = fa
     matchIds.length
       ? supabase.from('matches').select(`
           id, winner_id, loser_id, winner_id_2, loser_id_2, score_text, created_at,
+          game_format, is_challenge, stake_multiplier,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
           game:game_id(location, match_date, creator_id)`).in('id', matchIds)

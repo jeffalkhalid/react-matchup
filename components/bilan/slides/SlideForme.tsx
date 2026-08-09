@@ -13,14 +13,14 @@ export function SlideForme({ recap }: { recap: MonthlyRecap }) {
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#FFC11A', letterSpacing: 2, textTransform: 'uppercase' }}>Ta forme</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', lineHeight: 30, marginTop: 8 }}>Tu as gagné…</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', lineHeight: 39, marginTop: 8 }}>Tu as gagné…</Text>
 
       {/* Big number */}
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 12, marginTop: 24 }}>
-        <Text style={{ fontFamily: Fonts.display, fontSize: 130, color: '#10B981', lineHeight: 117, letterSpacing: -3 }}>{recap.winRate}</Text>
-        <Text style={{ fontFamily: Fonts.display, fontSize: 54, color: '#10B981', lineHeight: 54 }}>%</Text>
+        <Text style={{ fontFamily: Fonts.display, fontSize: 130, color: '#10B981', lineHeight: 169, letterSpacing: -3 }}>{recap.winRate}</Text>
+        <Text style={{ fontFamily: Fonts.display, fontSize: 54, color: '#10B981', lineHeight: 70 }}>%</Text>
       </View>
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, color: '#FFFFFF', lineHeight: 24, marginTop: -6 }}>de tes matchs</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, color: '#FFFFFF', lineHeight: 31, marginTop: -6 }}>de tes matchs</Text>
 
       {/* V/D summary line */}
       <Text style={{ fontFamily: Fonts.uiBold, fontSize: 14, color: 'rgba(255,255,255,0.85)', marginTop: 18 }}>

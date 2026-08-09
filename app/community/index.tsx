@@ -54,7 +54,7 @@ export default function CommunityHubScreen() {
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.85} style={iconBtn}>
           <Icon name="chevronLeft" size={20} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 29, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
           Communauté
         </Text>
         <TouchableOpacity onPress={() => router.push('/community/friends')} activeOpacity={0.85} style={iconBtn}>
@@ -84,8 +84,8 @@ export default function CommunityHubScreen() {
         <SocialCard
           kicker="Mes amis"
           icon={<Icon name="users" size={22} color={Colors.brandDeep} />}
-          title="Activité, recherche & suggestions"
-          sub="Suis tes amis, vois leurs résultats et trouve de nouveaux joueurs."
+          title="Recherche & suggestions"
+          sub="Trouve de nouveaux joueurs et suis-les. Leur activité s'affiche dans l'onglet Activité."
         >
           <GhostBtn label="Mes amis" onPress={() => router.push('/community/friends')} />
         </SocialCard>

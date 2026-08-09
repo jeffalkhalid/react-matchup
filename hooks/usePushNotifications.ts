@@ -135,7 +135,7 @@ export function usePushNotifications() {
 
       switch (data.type) {
         case 'challenge':
-          router.push('/(tabs)/matchmaking');
+          router.push((data.tab ? `/(tabs)/matchmaking?tab=${data.tab}` : '/(tabs)/matchmaking') as any);
           break;
         case 'match':
           router.push('/(tabs)');
@@ -151,6 +151,12 @@ export function usePushNotifications() {
         case 'bilan':
           track('notif_bilan_tapped', { month: data.month });
           router.push((data.month ? `/bilan/${data.month}` : '/bilan/last') as any);
+          break;
+        case 'showcase':
+          // Nomination de binôme ouvert → ouvrir MON profil (id dans le payload)
+          // sur le gestionnaire de vitrine (section « À confirmer »).
+          if (data.pid) router.push(`/player/${data.pid}?showcase=1` as any);
+          else router.push('/(tabs)/matchmaking');
           break;
       }
     });

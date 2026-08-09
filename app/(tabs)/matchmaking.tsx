@@ -1,141 +1,33 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, StyleSheet, Image, Alert,
+  ActivityIndicator, StyleSheet, Image, Alert, Modal, TextInput,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
-import { supabase } from '../../lib/supabase';
-import { notifyPlayers } from '../../lib/notify';
-import { getHiddenPlayerIds } from '../../lib/moderation';
 import { Colors, eloToLevel, Fonts } from '../../lib/theme';
-import { isCreatorConflict } from '../../lib/games';
-import { isReceivedChallengeVisible } from '../../lib/challenges';
-import type { Player, Challenge } from '../../types';
-import { Pill, type PillVariant, pillAccent } from '../../components/Pill';
+import { Pill } from '../../components/Pill';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
+import {
+  fetchOpenDefis, fetchMyDefis, fetchDefisInvolved, fetchCandidaturesOnMyDefis,
+  fetchMyApplications, fetchBinomeInvitations, fetchMyDefiInvites, defiGameWithMyBinome, defiOtherBinomeCount,
+  acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, applyToDefi, cancelDefi,
+  type DefiGame, type DefiApplication, type DefiInvite,
+} from '../../lib/defis';
+import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
+import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
+import { isCreatorConflict } from '../../lib/games';
+import { notifyPlayers } from '../../lib/notify';
+import { supabase } from '../../lib/supabase';
+import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
+import { getHiddenPlayerIds } from '../../lib/moderation';
 import { GameCard } from './lobby';
 
 // ── Types ─────────────────────────────────────────────────────
-type Tab = 'suggestions' | 'defis';
-type SortMode = 'compat' | 'elo';
-
-interface CompatDetail {
-  score: number;
-  eloScore: number; eloGap: number;
-  clubScore: number; sharedClubs: string[];
-  dayScore: number; sharedDays: string[];
-  sideScore: number; sideMatch: string;
-}
-
-// ── Helpers ───────────────────────────────────────────────────
-function compatTier(score: number): { label: string; color: string; bg: string; border: string; variant: PillVariant } {
-  if (score >= 80) return { label: 'Match parfait',   color: '#047857',           bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)', variant: 'success' };
-  if (score >= 60) return { label: 'Très compatible', color: Colors.brandDeep,    bg: 'rgba(255,193,26,0.14)', border: 'rgba(255,193,26,0.55)', variant: 'brand'   };
-  if (score >= 40) return { label: 'Compatible',      color: '#B45309',           bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)', variant: 'warning' };
-  return             { label: 'Passable',           color: Colors.textSecondary, bg: Colors.bgCardAlt,        border: Colors.border,            variant: 'neutral' };
-}
-
-function leagueColors(elo: number) {
-  // Couleurs de ligues conservées (palette officielle) : diamond/gold/silver/bronze/discovery.
-  if (elo >= 1800) return { label: 'Diamant',    color: '#67E8F9', bg: 'rgba(103,232,249,0.12)', border: 'rgba(103,232,249,0.45)' };
-  if (elo >= 1500) return { label: 'Or',         color: '#FBBF24', bg: 'rgba(251,191,36,0.12)',  border: 'rgba(251,191,36,0.45)'  };
-  if (elo >= 1200) return { label: 'Argent',     color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)', border: 'rgba(156,163,175,0.45)' };
-  if (elo >= 1000) return { label: 'Bronze',     color: '#F97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.45)'  };
-  return             { label: 'Découverte',    color: '#34D399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.45)'  };
-}
-
-// League pill (couleurs ligues officielles, gardées intactes — pas via le composant Pill partagé).
-function LeaguePill({ elo }: { elo: number }) {
-  const l = leagueColors(elo);
-  return (
-    <View style={{ backgroundColor: l.bg, borderWidth: 1, borderColor: l.border, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 }}>
-      <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: l.color, letterSpacing: 0.4, textTransform: 'uppercase' }}>{l.label}</Text>
-    </View>
-  );
-}
-
-// Exact port of web compatibility.ts
-const DAYS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-
-function scoreElo(eloA: number, eloB: number): number {
-  const gap = Math.abs(eloA - eloB);
-  if (gap <= 75)  return 40;
-  if (gap <= 150) return 32;
-  if (gap <= 250) return 20;
-  if (gap <= 400) return 10;
-  return 0;
-}
-
-async function getPlayerGameData(playerId: string): Promise<{ clubs: Map<string, number>; days: Set<number> }> {
-  const { data: parts } = await supabase
-    .from('game_participants')
-    .select('game_id')
-    .eq('player_id', playerId);
-  const gameIds = (parts ?? []).map((p: any) => p.game_id as string).filter(Boolean);
-  if (gameIds.length === 0) return { clubs: new Map(), days: new Set() };
-
-  const { data: games } = await supabase
-    .from('open_games')
-    .select('location, match_date')
-    .in('id', gameIds)
-    .neq('status', 'cancelled');
-
-  const clubs = new Map<string, number>();
-  const days = new Set<number>();
-  for (const row of games ?? []) {
-    if (row.location) clubs.set(row.location, (clubs.get(row.location) ?? 0) + 1);
-    if (row.match_date) days.add(new Date(row.match_date).getDay());
-  }
-  return { clubs, days };
-}
-
-function scoreClubs(a: Map<string, number>, b: Map<string, number>): { score: number; shared: string[] } {
-  const shared: string[] = [];
-  for (const club of a.keys()) { if (b.has(club)) shared.push(club); }
-  if (shared.length === 0) return { score: 0, shared: [] };
-  return { score: shared.length >= 2 ? 30 : 20, shared };
-}
-
-function scoreDays(a: Set<number>, b: Set<number>): { score: number; shared: string[] } {
-  const nums = [...a].filter(d => b.has(d));
-  const shared = nums.map(d => DAYS_FR[d]);
-  if (shared.length === 0) return { score: 0, shared: [] };
-  return { score: shared.length >= 2 ? 20 : 12, shared };
-}
-
-function scoreSide(sideA: string | null | undefined, sideB: string | null | undefined): { score: number; sideMatch: string } {
-  // Handle both 'left'/'right'/'both' (RN) and 'Gauche'/'Droit'/'Mixte' (web) values
-  const norm = (s: string | null | undefined) => {
-    if (!s) return 'mixte';
-    if (s === 'left'  || s === 'Gauche') return 'gauche';
-    if (s === 'right' || s === 'Droit')  return 'droit';
-    return 'mixte';
-  };
-  const a = norm(sideA), b = norm(sideB);
-  if (a === 'mixte' || b === 'mixte') return { score: 5,  sideMatch: 'flexible' };
-  if ((a === 'gauche' && b === 'droit') || (a === 'droit' && b === 'gauche'))
-    return { score: 10, sideMatch: 'complémentaires' };
-  return { score: 2, sideMatch: 'même côté' };
-}
-
-async function computeCompatDetail(
-  meId: string, myElo: number, mySide: string | null | undefined,
-  myData: { clubs: Map<string, number>; days: Set<number> },
-  otherId: string, otherElo: number, otherSide: string | null | undefined,
-): Promise<CompatDetail> {
-  const otherData = await getPlayerGameData(otherId);
-  const eloGap   = Math.abs(myElo - otherElo);
-  const eloScore = scoreElo(myElo, otherElo);
-  const { score: clubScore, shared: sharedClubs } = scoreClubs(myData.clubs, otherData.clubs);
-  const { score: dayScore,  shared: sharedDays  } = scoreDays(myData.days, otherData.days);
-  const { score: sideScore, sideMatch            } = scoreSide(mySide, otherSide);
-  return { score: eloScore + clubScore + dayScore + sideScore, eloScore, eloGap, clubScore, sharedClubs, dayScore, sharedDays, sideScore, sideMatch };
-}
+type Tab = 'relever' | 'mes' | 'invitations' | 'vitrine';
 
 // ── Avatar ────────────────────────────────────────────────────
 const AV_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899', '#8b5cf6'];
@@ -148,89 +40,6 @@ function PlayerAvatar({ name, size = 36 }: { name: string; size?: number }) {
       <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.38), fontWeight: '900' }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
-    </View>
-  );
-}
-
-// ── Compat ring (SVG arc) ─────────────────────────────────────
-function CompatRing({ score, size = 54, strokeWidth = 5 }: { score: number; size?: number; strokeWidth?: number }) {
-  const tier = compatTier(score);
-  const r = (size - strokeWidth * 2) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - score / 100);
-  const cx = size / 2, cy = size / 2;
-  return (
-    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <Circle cx={cx} cy={cy} r={r} fill="none" stroke={Colors.border} strokeWidth={strokeWidth} />
-      <Circle cx={cx} cy={cy} r={r} fill="none" stroke={tier.color} strokeWidth={strokeWidth}
-        strokeDasharray={`${circ}`} strokeDashoffset={offset}
-        strokeLinecap="round" transform={`rotate(-90, ${cx}, ${cy})`} />
-      <SvgText x={cx} y={cy + Math.round(size * 0.12)} textAnchor="middle"
-        fontSize={Math.round(size * 0.22)} fontWeight="900" fill={tier.color}>
-        {score}
-      </SvgText>
-    </Svg>
-  );
-}
-
-// ── Compat breakdown bars ─────────────────────────────────────
-function CompatBreakdown({ detail }: { detail: CompatDetail }) {
-  const tier = compatTier(detail.score);
-  const bars = [
-    { label: 'Niveau ELO', value: detail.eloScore, max: 40, info: `±${detail.eloGap} pts` },
-    { label: 'Clubs',      value: detail.clubScore, max: 30, info: detail.sharedClubs.length ? detail.sharedClubs.slice(0, 2).join(', ') : 'Aucun commun' },
-    { label: 'Jours',      value: detail.dayScore,  max: 20, info: detail.sharedDays.length  ? detail.sharedDays.join(', ')               : 'Aucun commun' },
-    { label: 'Côté',       value: detail.sideScore, max: 10, info: detail.sideMatch },
-  ];
-  return (
-    <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt, gap: 8 }}>
-      {bars.map(b => (
-        <View key={b.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-              <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>{b.label}</Text>
-              <Text style={{ fontSize: 9, color: Colors.textMuted, fontWeight: '600' }} numberOfLines={1}>{b.info}</Text>
-            </View>
-            <View style={{ height: 4, backgroundColor: Colors.bgCardAlt, borderRadius: 2, overflow: 'hidden', flexDirection: 'row' }}>
-              <View style={{ flex: b.value, height: 4, backgroundColor: tier.color }} />
-              <View style={{ flex: Math.max(0, b.max - b.value) }} />
-            </View>
-          </View>
-          <Text style={{ fontSize: 10, fontWeight: '900', color: tier.color, width: 24, textAlign: 'right' }}>{b.value}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-// ── Sort toggle ───────────────────────────────────────────────
-function SortToggle({ mode, onChange, computing }: { mode: SortMode; onChange: (m: SortMode) => void; computing: boolean }) {
-  return (
-    <View style={{ flexDirection: 'row', backgroundColor: Colors.bgCardAlt, borderRadius: 12, padding: 3, gap: 2, marginBottom: 14 }}>
-      {([
-        { val: 'compat' as SortMode, label: 'Compatibilité', icon: 'zap' as IconName },
-        { val: 'elo'    as SortMode, label: 'Niveau',        icon: 'trendingUp' as IconName },
-      ]).map(t => {
-        const active = mode === t.val;
-        const disabled = t.val === 'compat' && computing;
-        const tint = active ? Colors.brandDeep : Colors.textMuted;
-        return (
-          <TouchableOpacity key={t.val} onPress={() => onChange(t.val)} disabled={disabled} activeOpacity={0.75}
-            style={{
-              flex: 1, paddingVertical: 7, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-              backgroundColor: active ? Colors.bgCard : 'transparent',
-              borderWidth: active ? 1 : 0, borderColor: active ? Colors.brand : 'transparent',
-              opacity: disabled ? 0.6 : 1,
-              shadowColor: Colors.textPrimary, shadowOpacity: active ? 0.1 : 0,
-              shadowRadius: active ? 4 : 0, shadowOffset: { width: 0, height: 2 }, elevation: active ? 2 : 0,
-            }}>
-            <Icon name={t.icon} size={13} color={tint} stroke={2.2} />
-            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: tint }}>
-              {disabled ? '…' : t.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
     </View>
   );
 }
@@ -248,179 +57,105 @@ function EmptyCard({ icon, title, sub }: { icon: IconName; title: string; sub: s
   );
 }
 
-// ── Suggestion card ───────────────────────────────────────────
-function SuggestionCard({ player, detail, alreadyChallenged, onChallenge }: {
-  player: Player; detail?: CompatDetail; alreadyChallenged: boolean;
-  onChallenge: (p: Player) => void;
-}) {
-  const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
-  const score = detail?.score ?? 0;
-  const tier = compatTier(score);
-  const total = player.win_count + player.loss_count;
-  const winRate = total > 0 ? Math.round(player.win_count / total * 100) : null;
-  const isPerfect = score >= 80;
-  const isGreat = score >= 60;
-  const btnBg = isPerfect ? Colors.success : isGreat ? Colors.primary : Colors.primary;
+// ── 2v2 Défi card helpers ─────────────────────────────────────
+function bandLabel(g: DefiGame): string {
+  const lo = g.min_elo != null ? eloToLevel(g.min_elo).toFixed(1) : '?';
+  const hi = g.max_elo != null ? eloToLevel(g.max_elo).toFixed(1) : '?';
+  return `Moy. ${lo} → ${hi}`;
+}
 
+// Carte de défi = la carte du lobby (GameCard) en LECTURE SEULE (aucun handler de
+// join/change → grille non interactive) + un pied d'action propre au défi.
+function DefiActionButton({ label, onPress, danger }: { label: string; onPress: () => void; danger?: boolean }) {
   return (
-    <View style={[sty.card, { borderColor: expanded ? tier.border : '#e2e8f0' },
-      isPerfect && { shadowColor: tier.color, shadowOpacity: 0.2, shadowRadius: 14, elevation: 6 }]}>
-      <View style={{ height: 3, backgroundColor: tier.color }} />
-      <View style={{ padding: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ alignItems: 'center', gap: 3 }}>
-            <CompatRing score={score} size={54} strokeWidth={5} />
-            <Text style={{ fontSize: 7.5, fontWeight: '900', color: tier.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-              {tier.label}
-            </Text>
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-              <TouchableOpacity onPress={() => router.push(`/player/${player.id}` as any)} activeOpacity={0.7}>
-                <PlayerAvatar name={player.name} size={36} />
-              </TouchableOpacity>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{player.name}</Text>
-                <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>Niv. {eloToLevel(player.elo_score).toFixed(1)}</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-              <LeaguePill elo={player.elo_score} />
-              {winRate !== null && <Pill variant="neutral">{winRate}% W</Pill>}
-              {detail?.sideMatch === 'complémentaires' && <Pill variant="success">↔ Comp.</Pill>}
-            </View>
-          </View>
-          <View>
-            {alreadyChallenged ? (
-              <Pill variant="warning" icon={<Icon name="clock" size={11} color={pillAccent('warning')} stroke={2} />}>En attente</Pill>
-            ) : (
-              <TouchableOpacity onPress={() => onChallenge(player)}
-                style={{ backgroundColor: btnBg, borderRadius: 11, paddingHorizontal: 13, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
-                activeOpacity={0.8}>
-                <Icon name="zap" size={12} color={Colors.textOnDark} stroke={2.2} />
-                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark, letterSpacing: 0.3 }}>Défier</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}
+      style={{ backgroundColor: danger ? Colors.bgCardAlt : Colors.primary, borderRadius: 12, paddingVertical: 11,
+        alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
+        borderWidth: danger ? 1 : 0, borderColor: Colors.border }}>
+      {!danger && <Icon name="swords" size={15} color={Colors.brand} stroke={2.2} />}
+      <Text style={{ color: danger ? Colors.danger : Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
 
-        {((detail?.sharedClubs.length ?? 0) > 0 || (detail?.sharedDays.length ?? 0) > 0) && (
-          <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt }}>
-            {detail?.sharedClubs.slice(0, 2).map(c => <Pill key={c} variant="neutral" icon={<Icon name="mapPin" size={11} color={pillAccent('neutral')} stroke={2} />}>{c}</Pill>)}
-            {detail?.sharedDays.slice(0, 2).map(d => <Pill key={d} variant="neutral" icon={<Icon name="calendar" size={11} color={pillAccent('neutral')} stroke={2} />}>{d}</Pill>)}
-          </View>
-        )}
+function DefiGameCard({ game, myId, myElo, onPress, children }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode }) {
+  // is_creator / my_status absents d'un DefiGame → sinon GameCard masque
+  // calendrier + chat (gated sur `is_creator || my_status==='accepted'`).
+  // On les dérive pour que le CRÉATEUR ET les participants ACCEPTÉS aient le pied complet.
+  const mine = (game.participants ?? []).find(p => p.player_id === myId);
+  const isCreator = game.creator_id === myId;
+  return (
+    <GameCard
+      game={{ ...game, is_creator: isCreator, my_status: mine?.status } as any}
+      variant="upcoming" myElo={myElo} playerId={myId}
+      onPress={onPress ?? (() => {})}
+      footerSlot={children}
+    />
+  );
+}
 
-        {detail && (
-          <TouchableOpacity onPress={() => setExpanded(e => !e)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }} activeOpacity={0.7}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: expanded ? tier.color : '#94a3b8' }}>
-              {expanded ? '▲ Masquer la compatibilité' : '▾ Voir la compatibilité détaillée'}
-            </Text>
+function BinomeInviteCard({ app, onAccept, onDecline, busy }: { app: DefiApplication; onAccept: () => void; onDecline?: () => void; busy?: boolean; }) {
+  return (
+    <View style={sty.card}>
+      <View style={{ padding: 14, gap: 10 }}>
+        <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>
+          {app.initiator?.name ?? '?'} t'invite comme binôme pour relever un défi
+        </Text>
+        {app.game ? <Text style={{ fontSize: 11, color: Colors.textMuted }}>{bandLabel(app.game)} · ⚡ ×{(app.game.stake_multiplier ?? 1).toFixed(1)}</Text> : null}
+        <View style={{ flexDirection: 'row', gap: 8, opacity: busy ? 0.5 : 1 }}>
+          {onDecline && (
+            <TouchableOpacity onPress={onDecline} disabled={busy} style={[sty.actionBtn, { flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }]}>
+              <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onAccept} disabled={busy} style={[sty.actionBtn, { flex: 1.6, backgroundColor: Colors.brand }]}>
+            {busy
+              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+              : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
           </TouchableOpacity>
-        )}
+        </View>
       </View>
-      {detail && expanded && <CompatBreakdown detail={detail} />}
     </View>
   );
 }
 
-// ── Incoming challenge card ────────────────────────────────────
-function IncomingCard({ challenge, detail, onAction, playerId, myElo }: {
-  challenge: Challenge; detail?: CompatDetail;
-  onAction: (id: string, action: 'accepted' | 'declined') => Promise<void>;
-  playerId: string; myElo: number;
-}) {
-  const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
-  const challenger = challenge.challenger as Player | undefined;
-  const isPending = challenge.status === 'pending';
-  const score = detail?.score ?? challenge.compat_score ?? 0;
-  const tier = compatTier(score);
-
-  const diff = challenge.expires_at ? new Date(challenge.expires_at).getTime() - Date.now() : 0;
-  const days = Math.floor(diff / 86400000);
-  const hours = Math.floor((diff % 86400000) / 3600000);
-  const timeLeft = diff <= 0 ? 'Expiré' : days > 0 ? `${days}j restants` : `${hours}h restants`;
-
-  const statusInfo: Record<string, { label: string; variant: PillVariant }> = {
-    pending:  { label: 'En attente', variant: 'warning' },
-    accepted: { label: 'Accepté',    variant: 'success' },
-    declined: { label: 'Refusé',     variant: 'danger'  },
-    expired:  { label: 'Expiré',     variant: 'neutral' },
-    played:   { label: 'Joué',       variant: 'ink'     },
-  };
-  const st = statusInfo[challenge.status] ?? statusInfo.pending;
-
-  // Partie liée au défi, présentée avec la MÊME carte que l'onglet « À venir »
-  // (slots des 4 joueurs, niveaux, boutons Relever/Refuser intégrés).
-  const game = (challenge as any).game;
-  const gameForCard = game
-    ? { ...game, my_status: game.my_status ?? 'invited', is_creator: false }
-    : null;
-
+// ── Vitrine card ──────────────────────────────────────────────
+function VitrineCard({ sb, onDefier }: { sb: ShowcaseBinome; onDefier: () => void }) {
+  const a = sb.a;
+  const b = sb.b;
+  const avgElo = (a && b) ? (a.elo_score + b.elo_score) / 2 : null;
+  const avgLevel = avgElo != null ? eloToLevel(avgElo).toFixed(1) : '?';
   return (
-    <View style={[sty.card, { borderColor: isPending ? tier.border : '#e2e8f0' },
-      isPending && { shadowColor: tier.color, shadowOpacity: 0.15, shadowRadius: 10, elevation: 4 }]}>
-      <View style={{ height: 3, backgroundColor: isPending ? tier.color : '#e2e8f0' }} />
-      <View style={{ padding: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-          <View style={{ alignItems: 'center', gap: 3 }}>
-            <CompatRing score={score} size={54} strokeWidth={5} />
-            <Text style={{ fontSize: 7.5, fontWeight: '900', color: tier.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-              {tier.label}
-            </Text>
+    <View style={[sty.card, { overflow: 'hidden' }]}>
+      <View style={{ height: 3, backgroundColor: Colors.brand }} />
+      <View style={{ padding: 14, gap: 12 }}>
+        {/* Paire */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row' }}>
+            <PlayerAvatar name={a?.name ?? '?'} size={38} />
+            <View style={{ marginLeft: -13 }}><PlayerAvatar name={b?.name ?? '?'} size={38} /></View>
           </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <TouchableOpacity onPress={() => challenger?.id && router.push(`/player/${challenger.id}` as any)} activeOpacity={0.7} disabled={!challenger?.id}>
-                <PlayerAvatar name={challenger?.name ?? '?'} size={36} />
-              </TouchableOpacity>
-              <View>
-                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{challenger?.name ?? '?'}</Text>
-                <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>Niv. {eloToLevel(challenger?.elo_score ?? 0).toFixed(1)}</Text>
-              </View>
-            </View>
-            {challenge.message ? (
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 10, padding: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: tier.color }}>
-                <Text style={{ fontSize: 11.5, color: Colors.textSecondary, fontStyle: 'italic' }}>"{challenge.message}"</Text>
-              </View>
-            ) : null}
-            {((challenge.shared_clubs?.length ?? 0) > 0 || (challenge.shared_days?.length ?? 0) > 0) && (
-              <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-                {challenge.shared_clubs?.slice(0, 2).map(c => <Pill key={c} variant="info" icon={<Icon name="mapPin" size={11} color={pillAccent('info')} stroke={2} />}>{c}</Pill>)}
-                {challenge.shared_days?.slice(0, 2).map(d => <Pill key={d} variant="brand" icon={<Icon name="calendar" size={11} color={pillAccent('brand')} stroke={2} />}>{d}</Pill>)}
-              </View>
-            )}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Pill variant={st.variant}>{st.label}</Pill>
-              {isPending && <Text style={{ fontSize: 9, color: Colors.textMuted, fontWeight: '600' }}>⏰ {timeLeft}</Text>}
-            </View>
+          <View style={{ flex: 1, marginLeft: 11 }}>
+            <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+              {a?.name ?? '?'} & {b?.name ?? '?'}
+            </Text>
+            <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontWeight: '600', marginTop: 1 }}>moy. niv. {avgLevel}</Text>
           </View>
         </View>
-        {detail && (
-          <TouchableOpacity onPress={() => setExpanded(e => !e)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }} activeOpacity={0.7}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: expanded ? tier.color : '#94a3b8' }}>
-              {expanded ? '▲ Masquer le détail' : '▾ Voir le détail de compatibilité'}
-            </Text>
-          </TouchableOpacity>
-        )}
+        {/* Pills */}
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Pill variant="brand">Niv. {avgLevel}</Pill>
+          {a && <Pill variant="neutral">{a.name.split(' ')[0]} Niv.{eloToLevel(a.elo_score).toFixed(1)}</Pill>}
+          {b && <Pill variant="neutral">{b.name.split(' ')[0]} Niv.{eloToLevel(b.elo_score).toFixed(1)}</Pill>}
+        </View>
+        {/* Bouton */}
+        <TouchableOpacity onPress={onDefier} activeOpacity={0.85}
+          style={{ backgroundColor: Colors.primary, borderRadius: 13, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7,
+            shadowColor: Colors.primary, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
+          <Icon name="swords" size={15} color={Colors.brand} stroke={2.2} />
+          <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13.5, letterSpacing: 0.2 }}>Défier ce binôme</Text>
+        </TouchableOpacity>
       </View>
-      {detail && expanded && <CompatBreakdown detail={detail} />}
-      {gameForCard && (
-        <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
-          <GameCard
-            game={gameForCard as any}
-            variant="upcoming"
-            myElo={myElo}
-            playerId={playerId}
-            hideActions
-            onPress={() => {}}
-            onAcceptInvitation={() => onAction(challenge.id, 'accepted')}
-            onDeclineInvitation={() => onAction(challenge.id, 'declined')}
-          />
-        </View>
-      )}
     </View>
   );
 }
@@ -430,168 +165,615 @@ export default function MatchmakingScreen() {
   const { player } = usePlayer();
   const { reload: reloadNotifs } = useNotificationCount();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
 
-  const [tab, setTab] = useState<Tab>('suggestions');
-  const [sortMode, setSortMode] = useState<SortMode>('compat');
-  const [suggestions, setSuggestions] = useState<Player[]>([]);
-  const [incoming, setIncoming] = useState<Challenge[]>([]);
-  const [challengedIds, setChallengedIds] = useState<Set<string>>(new Set());
-  const [compatMap, setCompatMap] = useState<Map<string, CompatDetail>>(new Map());
-  const [incomingCompatMap, setIncomingCompatMap] = useState<Map<string, CompatDetail>>(new Map());
+  const [tab, setTab] = useState<Tab>('relever');
+  // Ouverture directe sur un onglet depuis une notif (ex. ?tab=invitations).
+  const params = useLocalSearchParams<{ tab?: string; relever?: string }>();
+  useEffect(() => {
+    const t = params.tab;
+    if (t === 'relever' || t === 'mes' || t === 'invitations' || t === 'vitrine') setTab(t);
+  }, [params.tab]);
+  const [vitrine, setVitrine] = useState<ShowcaseBinome[]>([]);
+  const [myBinomes, setMyBinomes] = useState<{ id: string; name: string; elo_score: number }[]>([]);
+  const [binomeBusy, setBinomeBusy] = useState<Set<string>>(new Set());   // anti double-submit accepter/refuser
+  const [otherBinomeCounts, setOtherBinomeCounts] = useState<Record<string, number>>({});   // « X autres binômes » par défi candidaté
+  const [partnerInvites, setPartnerInvites] = useState<DefiInvite[]>([]);   // invitations défi (binôme du créateur / défi ciblé)
+  const [openDefis, setOpenDefis] = useState<DefiGame[]>([]);
+  const [myDefis, setMyDefis] = useState<DefiGame[]>([]);
+  const [candidatures, setCandidatures] = useState<DefiApplication[]>([]);
+  const [myApplications, setMyApplications] = useState<DefiApplication[]>([]);
+  const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [computing, setComputing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  // ── Partner picker state ─────────────────────────────────────
+  const [releverGame, setReleverGame] = useState<DefiGame | null>(null);
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [partnerResults, setPartnerResults] = useState<{ id: string; name: string; elo_score: number; court_side?: string }[]>([]);
+  const [partnerBusy, setPartnerBusy] = useState<Set<string>>(new Set()); // résultats occupés au créneau du défi
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());     // joueurs bloqués (modération, 2 sens)
+  const [applying, setApplying] = useState(false);
+  const [suggestedPartners, setSuggestedPartners] = useState<{ id: string; name: string; elo_score: number; court_side?: string; compatScore?: number }[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  // ── Per-défi compat scores (for "À relever" sort) ────────────
+  const myGameDataRef = useRef<{ clubs: Map<string, number>; days: Set<number> } | null>(null);
+  const [defiCompatScores, setDefiCompatScores] = useState<Map<string, number>>(new Map());
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const fetchData = useCallback(async () => {
     if (!player) return;
     setLoading(true);
-
-    const nowIso = new Date().toISOString();
-    const [playersRes, incomingRes, sentRes] = await Promise.all([
-      supabase.from('players')
-        .select('*')
-        .is('deleted_at', null)
-        .neq('id', player.id)
-        .order('elo_score', { ascending: false })
-        .limit(50),
-      // Défis reçus : uniquement en attente et non expirés
-      supabase.from('challenges')
-        .select('*, challenger:challenger_id(*), game:game_id(*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count)))')
-        .eq('challenged_id', player.id)
-        .eq('status', 'pending')
-        .gt('expires_at', nowIso)
-        .order('compat_score', { ascending: false }),
-      // Défis envoyés (pour griser "déjà défié") : en attente et non expirés
-      supabase.from('challenges')
-        .select('challenged_id, status')
-        .eq('challenger_id', player.id)
-        .eq('status', 'pending')
-        .gt('expires_at', nowIso),
+    const [open, mine, cands, myApps, invites, vit, actives, pInvites] = await Promise.all([
+      fetchOpenDefis(player.id),
+      fetchDefisInvolved(player.id),   // « Mes défis » = créés + où je joue
+      fetchCandidaturesOnMyDefis(player.id),
+      fetchMyApplications(player.id),  // mes candidatures sortantes (pour « déjà postulé »)
+      fetchBinomeInvitations(player.id),
+      fetchVitrine(player.id),
+      fetchActiveBinomes(player.id),   // « Mes binômes » (paires actives)
+      fetchMyDefiInvites(player.id),   // invitations défi (binôme du créateur / ciblé)
     ]);
-
-    // Modération : ne pas suggérer / afficher les utilisateurs bloqués (2 sens).
-    const hidden = await getHiddenPlayerIds(player.id);
-
-    const allPlayers = ((playersRes.data ?? []) as Player[]).filter(p => !hidden.has(p.id));
-    const sorted = [...allPlayers]
-      .sort((a, b) => Math.abs(a.elo_score - player.elo_score) - Math.abs(b.elo_score - player.elo_score))
-      .slice(0, 20);
-
-    setSuggestions(sorted);
-
-    // Visibilité d'un défi reçu : point de vérité unique partagé avec le badge
-    // (useNotificationCount) et la liste de notifications (lib/challenges).
-    const challenges = ((incomingRes.data ?? []) as Challenge[])
-      .filter(c => isReceivedChallengeVisible(c, player.id, hidden));
-    setIncoming(challenges);
-    setChallengedIds(new Set(((sentRes.data ?? []) as any[]).map((c: any) => c.challenged_id)));
+    setOpenDefis(open);
+    setMyDefis(mine);
+    setCandidatures(cands);
+    setMyApplications(myApps);
+    setBinomeInvites(invites);
+    setPartnerInvites(pInvites);
+    setVitrine(vit);
+    setMyBinomes(actives.flatMap(bn => {
+      const other = bn.player_a === player.id ? bn.b : bn.a;   // l'AUTRE joueur de la paire
+      return other ? [{ id: other.id, name: other.name, elo_score: other.elo_score }] : [];
+    }));
     setLoading(false);
 
-    setComputing(true);
-    // Fetch my game data once, reuse for all computations
-    const myData = await getPlayerGameData(player.id);
-
-    const [detailMap, incDetailMap] = await Promise.all([
-      Promise.all(sorted.map(async s => {
-        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, s.id, s.elo_score, s.court_side);
-        return [s.id, detail] as const;
-      })).then(entries => new Map(entries)),
-
-      Promise.all(challenges.map(async c => {
-        const ch = c.challenger as Player | undefined;
-        if (!ch) return null;
-        const detail = await computeCompatDetail(player.id, player.elo_score, player.court_side, myData, ch.id, ch.elo_score, ch.court_side);
-        return [c.id, detail] as const;
-      })).then(entries => new Map(entries.filter(Boolean) as [string, CompatDetail][])),
-    ]);
-
-    setCompatMap(detailMap);
-    setIncomingCompatMap(incDetailMap);
-    setComputing(false);
+    // « X autres binômes » : compte les autres candidatures sur chaque défi où j'ai postulé.
+    const counts: Record<string, number> = {};
+    await Promise.all(myApps.map(async a => {
+      if (a.game_id) counts[a.game_id] = await defiOtherBinomeCount(a.game_id);
+    }));
+    setOtherBinomeCounts(counts);
   }, [player]);
+
+  const router = useRouter();
+  const launchDefi = () => router.push('/(tabs)/lobby?create=1&challenge=1' as any);
+  // Taper une carte défi → détail complet (réutilise le GameDetailsSheet du lobby).
+  // On passe l'onglet d'origine : à la fermeture du détail, le lobby REVIENT au hub
+  // (sinon l'utilisateur resterait bloqué dans le lobby).
+  const openDefiDetails = (id: string) => router.push(('/(tabs)/lobby?gameId=' + id + '&backToDefi=' + tab) as any);
+
+  const handleDefierBinome = (sb: ShowcaseBinome) => {
+    const a = sb.a, b = sb.b;
+    if (!a || !b) return;
+    router.push(('/(tabs)/lobby?create=1&challenge=1&targeted=1'
+      + `&b0=${a.id}&b0n=${encodeURIComponent(a.name)}&b0e=${a.elo_score}`
+      + `&b1=${b.id}&b1n=${encodeURIComponent(b.name)}&b1e=${b.elo_score}`) as any);
+  };
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
   const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
-  const handleAction = async (id: string, action: 'accepted' | 'declined') => {
-    const c = incoming.find(x => x.id === id);
+  // Joueurs à EXCLURE du sélecteur de partenaire : moi + tous ceux déjà dans le
+  // défi que je relève (créateur + son partenaire Team A). On ne peut pas prendre
+  // comme binôme quelqu'un qui est déjà côté défieur (defi_apply le rejette aussi).
+  const excludedPartnerIds = useMemo(() => {
+    const s = new Set<string>(hiddenIds);   // joueurs bloqués exclus du sélecteur
+    if (player) s.add(player.id);
+    if (releverGame) {
+      if (releverGame.creator_id) s.add(releverGame.creator_id);
+      (releverGame.participants ?? []).forEach(p => p.player_id && s.add(p.player_id));
+    }
+    return s;
+  }, [releverGame, player, hiddenIds]);
 
-    // 1) Répercuter d'abord sur la partie liée — même effet et même ordre que le
-    //    Lobby (handleAcceptInvitation, Option B2) : on écrit la partie AVANT le
-    //    défi, pour ne pas marquer le défi 'accepted' si le join est rejeté
-    //    (ex. conflit ±2h levé par le trigger eject_overlapping_candidatures).
-    if (c?.game_id && player) {
-      if (action === 'accepted') {
-        const { error } = await supabase
-          .from('game_participants')
-          .update({ status: 'accepted' })
-          .eq('game_id', c.game_id)
-          .eq('player_id', player.id);
-        if (error) {
-          if (isCreatorConflict(error)) {
-            Alert.alert(
-              '⚠️ Conflit de créneau',
-              'Tu es déjà sur une autre partie au même créneau (±2h). Annule-la ou quitte-la avant de rejoindre celle-ci.',
-            );
+  // Charger les joueurs bloqués à l'ouverture du sélecteur (modération, 2 sens).
+  useEffect(() => {
+    if (!releverGame || !player) return;
+    getHiddenPlayerIds(player.id).then(setHiddenIds);
+  }, [releverGame, player]);
+
+  // ── Debounced player search ──────────────────────────────────
+  useEffect(() => {
+    if (partnerSearch.length < 2) { setPartnerResults([]); setPartnerBusy(new Set()); return; }
+    const t = setTimeout(() => {
+      supabase.from('players').select('id,name,elo_score,court_side')
+        .is('deleted_at', null)
+        .ilike('name', `%${partnerSearch}%`)
+        .neq('id', player?.id ?? '')
+        .limit(12)
+        .then(async ({ data }) => {
+          const results = ((data as any[]) || []).filter(p => !excludedPartnerIds.has(p.id)).slice(0, 8);
+          setPartnerResults(results);
+          // Dispo au créneau du défi : marquer ceux déjà pris ±2h (pastille « Occupé »).
+          const slotTs = releverGame?.match_date ? new Date(releverGame.match_date).getTime() : null;
+          if (slotTs != null && results.length > 0) {
+            const { data: busyRows } = await supabase
+              .from('game_participants')
+              .select('player_id, game:game_id(match_date, status)')
+              .in('player_id', results.map(p => p.id))
+              .eq('status', 'accepted');
+            const busy = new Set<string>();
+            (busyRows ?? []).forEach((r: any) => {
+              const g = r.game;
+              if (!g || g.status === 'cancelled' || g.status === 'closed' || !g.match_date) return;
+              if (Math.abs(new Date(g.match_date).getTime() - slotTs) < 2 * 60 * 60 * 1000) busy.add(r.player_id);
+            });
+            setPartnerBusy(busy);
           } else {
-            console.warn('[matchmaking] join refusé:', error);
-            Alert.alert('Impossible de rejoindre', 'Une erreur est survenue, réessaie dans un instant.');
+            setPartnerBusy(new Set());
           }
-          return;
-        }
-      } else {
-        await supabase
-          .from('game_participants')
-          .update({ status: 'declined' })
-          .eq('game_id', c.game_id)
-          .eq('player_id', player.id);
-        // Libérer la place tenue par l'invitation
-        const { data: g } = await supabase
-          .from('open_games').select('spots_available').eq('id', c.game_id).single();
-        if (g) {
-          await supabase.from('open_games')
-            .update({ spots_available: Math.min(3, (g.spots_available ?? 0) + 1) })
-            .eq('id', c.game_id);
-        }
+        });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [partnerSearch, player, excludedPartnerIds, releverGame]);
+
+  // ── Compute per-défi compat scores (drives "À relever" sort) ─
+  useEffect(() => {
+    if (!player || openDefis.length === 0) return;
+    const myElo = player.elo_score;
+    const myId = player.id;
+    (async () => {
+      // Load myGameData once; reuse the cached ref on subsequent openDefis changes
+      if (!myGameDataRef.current) {
+        myGameDataRef.current = await getPlayerGameData(myId);
       }
-    }
+      const { clubs: myClubs, days: myDays } = myGameDataRef.current;
+      const scores = new Map<string, number>();
+      for (const g of openDefis) {
+        const bandMid = ((g.min_elo ?? myElo) + (g.max_elo ?? myElo)) / 2;
+        const elo = scoreElo(myElo, bandMid);
+        const { score: club } = scoreClubs(myClubs, new Map(g.location ? [[g.location, 1]] : []));
+        const { score: day } = scoreDays(myDays, new Set(g.match_date ? [new Date(g.match_date).getDay()] : []));
+        scores.set(g.id, elo + club + day);
+      }
+      setDefiCompatScores(scores);
+    })();
+  }, [openDefis, player]);
 
-    // 2) Statut du défi — après le succès du join (pour 'accepted'), sinon le défi
-    //    pourrait passer 'accepted' alors que la partie a refusé l'inscription.
-    await supabase.from('challenges').update({ status: action }).eq('id', id);
+  // ── Sorted "À relever" list (DESC by compat, then ASC by date) ─
+  const sortedOpenDefis = useMemo(() => {
+    if (defiCompatScores.size === 0) return openDefis;
+    return [...openDefis].sort((a, b) => {
+      const sa = defiCompatScores.get(a.id) ?? 0;
+      const sb = defiCompatScores.get(b.id) ?? 0;
+      if (sb !== sa) return sb - sa;
+      // Fallback: earlier date first
+      const da = a.match_date ? new Date(a.match_date).getTime() : Infinity;
+      const db = b.match_date ? new Date(b.match_date).getTime() : Infinity;
+      return da - db;
+    });
+  }, [openDefis, defiCompatScores]);
 
-    // 3) Notifier le challengeur de la réponse
-    if (c?.challenger_id && player) {
-      notifyPlayers({
-        playerIds: [c.challenger_id],
-        title: action === 'accepted' ? '✅ Défi accepté !' : '❌ Défi décliné',
-        body: action === 'accepted'
-          ? `${player.name} a accepté ton défi — rendez-vous sur le terrain !`
-          : `${player.name} a décliné ton défi`,
-        data: c.game_id ? { type: 'lobby', gameId: c.game_id } : { type: 'challenge' },
-      });
-    }
+  // ── Load compat suggestions when modal opens ─────────────────
+  useEffect(() => {
+    if (!releverGame || !player) return;
+    setLoadingSuggestions(true);
+    const myId = player.id;
+    (async () => {
+      try {
+        // 1) Frequent partners from matches
+        const { data: recentMatches } = await supabase.from('matches')
+          .select('winner_id,winner_id_2,loser_id,loser_id_2')
+          .or(`winner_id.eq.${myId},winner_id_2.eq.${myId},loser_id.eq.${myId},loser_id_2.eq.${myId}`)
+          .eq('status', 'validated').order('created_at', { ascending: false }).limit(30);
+        if (!recentMatches?.length) { setLoadingSuggestions(false); return; }
+        const freq: Record<string, number> = {};
+        recentMatches.forEach((m: any) => {
+          [m.winner_id, m.winner_id_2, m.loser_id, m.loser_id_2].forEach((id: string | null) => {
+            if (id && id !== myId) freq[id] = (freq[id] || 0) + 1;
+          });
+        });
+        const topIds = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => id);
+        if (!topIds.length) { setLoadingSuggestions(false); return; }
+        const { data: freqPlayers } = await supabase.from('players')
+          .select('id,name,elo_score,court_side').in('id', topIds).is('deleted_at', null);
+        if (!freqPlayers?.length) { setLoadingSuggestions(false); return; }
+        // 2) Filtrer les candidats : éligibilité (moyenne du binôme {moi, p} dans la
+        //    bande du défi) + disponibilité au créneau (pas de partie acceptée à ±2h).
+        const myElo = player.elo_score;
+        const minE = releverGame.min_elo ?? 0;
+        const maxE = releverGame.max_elo ?? 999999;
+        const OVERLAP_MS = 2 * 60 * 60 * 1000; // même fenêtre ±2h que l'anti-chevauchement
+        const slotTs = releverGame.match_date ? new Date(releverGame.match_date).getTime() : null;
 
-    setIncoming(prev => prev.map(x => x.id === id
-      ? { ...x, status: action, game: (x as any).game ? { ...(x as any).game, my_status: action === 'accepted' ? 'accepted' : 'declined' } : (x as any).game }
-      : x));
-    showToast(action === 'accepted' ? '✅ Défi accepté ! Tu es inscrit à la partie.' : 'Défi décliné');
-    // Rafraîchit l'état notif PARTAGÉ → le badge Défi (navbar) et le badge avatar
-    // Profil se vident immédiatement, sans devoir rouvrir la cloche ou redémarrer.
-    reloadNotifs();
+        let cands = (freqPlayers as any[]).filter(p => {
+          if (excludedPartnerIds.has(p.id)) return false;
+          const avg = (myElo + p.elo_score) / 2;
+          return avg >= minE && avg <= maxE;
+        });
+
+        if (slotTs != null && cands.length > 0) {
+          const { data: busyRows } = await supabase
+            .from('game_participants')
+            .select('player_id, game:game_id(match_date, status)')
+            .in('player_id', cands.map(p => p.id))
+            .eq('status', 'accepted');
+          const busy = new Set<string>();
+          (busyRows ?? []).forEach((r: any) => {
+            const g = r.game;
+            if (!g || g.status === 'cancelled' || g.status === 'closed' || !g.match_date) return;
+            if (Math.abs(new Date(g.match_date).getTime() - slotTs) < OVERLAP_MS) busy.add(r.player_id);
+          });
+          cands = cands.filter(p => !busy.has(p.id));
+        }
+
+        if (!cands.length) { setSuggestedPartners([]); setLoadingSuggestions(false); return; }
+
+        // 3) Classer les candidats retenus par compatibilité
+        const myData = await getPlayerGameData(myId);
+        const ranked = await Promise.all(
+          cands.map(async (p) => {
+            const compat = await computeCompatDetail(
+              myId, player.elo_score, player.court_side,
+              myData, p.id, p.elo_score, p.court_side,
+            );
+            return { ...p, compatScore: compat.score };
+          }),
+        );
+        ranked.sort((a, b) => b.compatScore - a.compatScore);
+        setSuggestedPartners(ranked.slice(0, 5));
+      } catch {
+        // suggestions are optional — silent fail
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    })();
+  }, [releverGame, player, excludedPartnerIds]);
+
+  const handleRelever = (game: DefiGame) => {
+    setReleverGame(game);
+    setPartnerSearch('');
+    setPartnerResults([]);
+    setSuggestedPartners([]);
   };
 
-  const sortedSuggestions = sortMode === 'compat' && compatMap.size > 0
-    ? [...suggestions].sort((a, b) => (compatMap.get(b.id)?.score ?? 0) - (compatMap.get(a.id)?.score ?? 0))
-    : [...suggestions].sort((a, b) => Math.abs(a.elo_score - (player?.elo_score ?? 1000)) - Math.abs(b.elo_score - (player?.elo_score ?? 1000)));
+  // Arrivée depuis l'explorer du lobby (?relever=<id>) → ouvre directement le
+  // sélecteur de binôme pour ce défi une fois la liste chargée.
+  useEffect(() => {
+    const rid = params.relever;
+    if (!rid || openDefis.length === 0) return;
+    const g = openDefis.find(d => d.id === rid);
+    if (g) { setTab('relever'); handleRelever(g); }
+    router.setParams({ relever: undefined });
+  }, [params.relever, openDefis]);
 
-  const pendingCount = incoming.filter(c => c.status === 'pending').length;
+  // ── Submit candidature ───────────────────────────────────────
+  const submitRelever = async (partner: { id: string; name: string }) => {
+    if (!releverGame || applying) return;
+    setApplying(true);
+    try {
+      await applyToDefi(releverGame.id, partner.id);
+      notifyPartnerInvitedToRelever(partner.id, player?.name ?? '');
+      setReleverGame(null);
+      showToast(`Candidature envoyée — ${partner.name} doit accepter pour verrouiller le binôme.`);
+      fetchData();
+    } catch (e: any) {
+      if (e?.message?.includes('out of level band')) {
+        const lo = releverGame.min_elo != null ? eloToLevel(releverGame.min_elo).toFixed(1) : '?';
+        const hi = releverGame.max_elo != null ? eloToLevel(releverGame.max_elo).toFixed(1) : '?';
+        Alert.alert(
+          'Niveau de la paire',
+          `Pour relever ce défi, la paire doit avoir un niveau moyen entre ${lo} et ${hi}.\n\nLa moyenne de ${player?.name ?? 'toi'} + ${partner.name} est en dehors. Choisis un partenaire pour rapprocher la moyenne de cette fourchette.`,
+        );
+      } else if (e?.message?.includes('already in game')) {
+        Alert.alert('Déjà engagés', 'Toi ou ton partenaire êtes déjà engagés sur ce défi.');
+      } else {
+        Alert.alert('Impossible', e?.message ?? 'Candidature impossible.');
+      }
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleAcceptBinome = async (app: DefiApplication) => {
+    if (binomeBusy.has(app.id)) return;   // ignore les taps répétés (sinon le 2e appel renvoie « too_late »)
+    setBinomeBusy(s => new Set(s).add(app.id));
+    try {
+      const res = await acceptBinomeInvitation(app.id);
+      if (res === 'locked') {
+        notifyDefiConfirmed(app, player?.id ?? '');
+        showToast('✅ Binôme verrouillé — défi confirmé !');
+      } else if (res === 'queued') {
+        if (app.initiator_id && player) notifyBinomeQueued(app.initiator_id, player.name);
+        showToast('⏳ En file d\'attente — promus si une place se libère');
+      } else {
+        showToast('⏳ Trop tard : un autre binôme a pris la place');
+      }
+      await fetchData();
+      reloadNotifs();
+    } catch (e: any) {
+      if (isCreatorConflict(e)) {
+        Alert.alert('⚠️ Conflit de créneau', 'Toi ou ton binôme êtes déjà engagés sur une autre partie au même créneau (±2h).');
+      } else {
+        Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+      }
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
+    }
+  };
+
+  // Retirer ma candidature (pending) ou sortir de la file (queued) — toute la paire sort.
+  const handleWithdrawApp = (app: DefiApplication) => {
+    Alert.alert(
+      app.status === 'queued' ? 'Quitter la file ?' : 'Retirer la candidature ?',
+      app.status === 'queued'
+        ? 'Votre binôme perdra sa place dans la file d\'attente.'
+        : 'Ta proposition à ton binôme sera annulée.',
+      [
+        { text: 'Garder', style: 'cancel' },
+        {
+          text: 'Retirer', style: 'destructive',
+          onPress: async () => {
+            if (binomeBusy.has(app.id)) return;
+            setBinomeBusy(s => new Set(s).add(app.id));
+            try {
+              const otherId = await withdrawApplication(app.id);
+              // Ne prévenir le partenaire que s'il était ENGAGÉ (file) — une simple
+              // invitation pending retirée disparaît silencieusement de son côté.
+              if (app.status === 'queued' && otherId && player) notifyBinomeWithdrawn(otherId, player.name);
+              showToast('Candidature retirée');
+              await fetchData();
+              reloadNotifs();
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+            } finally {
+              setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Invitation défi via game_participants (binôme du créateur / défi ciblé) —
+  // mêmes effets que les handlers du lobby, accessibles depuis le hub.
+  const handleAcceptPartnerInvite = async (inv: DefiInvite) => {
+    const key = 'pinv-' + inv.participantId;
+    if (binomeBusy.has(key)) return;
+    setBinomeBusy(s => new Set(s).add(key));
+    try {
+      const { error } = await supabase.from('game_participants')
+        .update({ status: 'accepted' }).eq('id', inv.participantId);
+      if (error) {
+        if (isCreatorConflict(error)) Alert.alert('⚠️ Conflit de créneau', 'Tu es déjà sur une autre partie au même créneau (±2h).');
+        else Alert.alert('Erreur', error.message);
+        return;
+      }
+      const g = inv.game;
+      const otherIds = [g.creator_id, ...(g.participants ?? []).filter(p => p.status === 'accepted').map(p => p.player_id)]
+        .filter((id): id is string => !!id && id !== player?.id);
+      if (otherIds.length > 0) {
+        notifyPlayers({
+          playerIds: [...new Set(otherIds)],
+          title: '✅ Nouveau joueur confirmé !',
+          body: `${player?.name ?? '?'} a rejoint le défi.`,
+          data: { type: 'lobby', gameId: g.id },
+        });
+      }
+      showToast('✅ Défi rejoint !');
+      await fetchData();
+      reloadNotifs();
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(key); return n; });
+    }
+  };
+
+  const handleDeclinePartnerInvite = async (inv: DefiInvite) => {
+    const key = 'pinv-' + inv.participantId;
+    if (binomeBusy.has(key)) return;
+    setBinomeBusy(s => new Set(s).add(key));
+    try {
+      const { error } = await supabase.from('game_participants')
+        .update({ status: 'declined' }).eq('id', inv.participantId);
+      if (error) { Alert.alert('Erreur', error.message); return; }
+      if (inv.game.creator_id && inv.game.creator_id !== player?.id) {
+        notifyPlayers({
+          playerIds: [inv.game.creator_id],
+          title: '❌ Invitation refusée',
+          body: `${player?.name ?? '?'} a refusé de jouer le défi avec toi`,
+          data: { type: 'lobby', gameId: inv.game.id },
+        });
+      }
+      showToast('Invitation refusée');
+      await fetchData();
+      reloadNotifs();
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(key); return n; });
+    }
+  };
+
+  const handleDeclineBinome = async (app: DefiApplication) => {
+    if (binomeBusy.has(app.id)) return;
+    setBinomeBusy(s => new Set(s).add(app.id));
+    try {
+      await declineBinomeInvitation(app.id);
+      if (app.initiator_id && player) notifyReleverDeclined(app.initiator_id, player.name);
+      showToast('Invitation déclinée');
+      await fetchData();
+      reloadNotifs();
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
+    }
+  };
+
+  const handleCancelDefi = (game: DefiGame) => {
+    Alert.alert(
+      'Annuler ce défi ?',
+      game.status === 'draft'
+        ? 'Ton brouillon sera supprimé.'
+        : game.status === 'confirmed'
+          ? 'Les joueurs et les binômes en file seront notifiés. Cette action est irréversible.'
+          : 'Le défi sera retiré et les candidatures en cours annulées.',
+      [
+        { text: 'Retour', style: 'cancel' },
+        {
+          text: 'Annuler le défi', style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelDefi(game.id);
+              showToast('Défi annulé.');
+              fetchData();
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.message ?? 'Annulation impossible.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const pendingCount = binomeInvites.length + candidatures.filter(c => c.status === 'pending').length;
 
   if (!player) return null;
+
+  // ── Partner Picker Modal ─────────────────────────────────────
+  const partnerPickerModal = (
+    <Modal
+      visible={releverGame !== null}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setReleverGame(null)}
+    >
+      <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+        {/* Header */}
+        <View style={{
+          backgroundColor: Colors.heroBg,
+          paddingTop: 20, paddingHorizontal: 16, paddingBottom: 20,
+          borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+        }}>
+          <TouchableOpacity onPress={() => setReleverGame(null)} style={{ padding: 4 }}>
+            <Icon name="chevronLeft" size={22} color={Colors.textOnDark} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
+              Choisis ton binôme pour relever
+            </Text>
+            {releverGame && (
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+                {bandLabel(releverGame)} · ⚡ ×{(releverGame.stake_multiplier ?? 1).toFixed(1)}
+              </Text>
+            )}
+          </View>
+          {applying && <ActivityIndicator color={Colors.brand} size="small" />}
+        </View>
+
+        <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={{ padding: 14, gap: 12 }}>
+            {/* Search input */}
+            <TextInput
+              style={{
+                backgroundColor: Colors.bgCard,
+                borderWidth: 1.5, borderColor: Colors.border,
+                borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+                fontSize: 14, color: Colors.textPrimary,
+                fontFamily: Fonts.uiSemi,
+              }}
+              placeholder="Rechercher un joueur…"
+              placeholderTextColor={Colors.textMuted}
+              value={partnerSearch}
+              onChangeText={setPartnerSearch}
+              autoFocus
+              returnKeyType="search"
+            />
+
+            {/* Search results */}
+            {partnerSearch.length >= 2 && partnerResults.length > 0 && (
+              <View>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                  Résultats
+                </Text>
+                <View style={{ gap: 8 }}>
+                  {partnerResults.map(p => {
+                    const avg = ((player?.elo_score ?? 0) + p.elo_score) / 2;
+                    const eligible = !releverGame || (avg >= (releverGame.min_elo ?? 0) && avg <= (releverGame.max_elo ?? 999999));
+                    const busy = partnerBusy.has(p.id);
+                    const selectable = eligible && !busy && !applying;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => submitRelever(p)}
+                        disabled={!selectable}
+                        style={[sty.card, { opacity: selectable ? 1 : 0.55 }]}
+                        activeOpacity={0.75}
+                      >
+                        <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <PlayerAvatar name={p.name} size={38} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                          </View>
+                          {!eligible ? <Pill variant="danger">Non éligible</Pill>
+                            : busy ? <Pill variant="warning">Occupé</Pill>
+                            : <Icon name="chevronRight" size={16} color={Colors.textMuted} />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {partnerSearch.length >= 2 && partnerResults.length === 0 && (
+              <Text style={{ textAlign: 'center', color: Colors.textMuted, fontSize: 13, paddingVertical: 16 }}>
+                Aucun joueur trouvé
+              </Text>
+            )}
+
+            {/* Suggestions (shown when search is empty) */}
+            {partnerSearch.length < 2 && (
+              <View>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                  Suggérés pour toi
+                </Text>
+                {loadingSuggestions && (
+                  <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+                )}
+                {!loadingSuggestions && suggestedPartners.length === 0 && (
+                  <Text style={{ textAlign: 'center', color: Colors.textMuted, fontSize: 12, paddingVertical: 12 }}>
+                    Joue des parties pour voir des suggestions ici
+                  </Text>
+                )}
+                {!loadingSuggestions && suggestedPartners.length > 0 && (
+                  <View style={{ gap: 8 }}>
+                    {suggestedPartners.map(p => (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => submitRelever(p)}
+                        disabled={applying}
+                        style={[sty.card, { opacity: applying ? 0.6 : 1 }]}
+                        activeOpacity={0.75}
+                      >
+                        <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <PlayerAvatar name={p.name} size={38} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                          </View>
+                          {p.compatScore !== undefined && (
+                            <View style={{ backgroundColor: Colors.brand + '22', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand }}>
+                                ★ {p.compatScore}
+                              </Text>
+                            </View>
+                          )}
+                          <Icon name="chevronRight" size={16} color={Colors.textMuted} />
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -619,10 +801,10 @@ export default function MatchmakingScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
           <View style={{ flex: 1 }} />
           <View style={{ flexShrink: 1 }}>
-            <Text style={{ fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
+            <Text style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
               Les <Text style={{ color: Colors.brand }}>Défis</Text>
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis & joueurs compatibles</Text>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis 2v2 & candidatures</Text>
           </View>
           <View style={{ flex: 1, alignItems: 'flex-end' }}>
             {pendingCount > 0 && (
@@ -632,26 +814,29 @@ export default function MatchmakingScreen() {
             )}
           </View>
         </View>
-        <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
+        {/* Onglets soulignés (même esprit que la page profil) */}
+        <View style={{ flexDirection: 'row', marginTop: 6 }}>
           {([
-            { id: 'suggestions' as Tab, label: 'Suggestions', badge: 0 },
-            { id: 'defis'       as Tab, label: 'Défis reçus', badge: pendingCount },
+            { id: 'relever'      as Tab, label: 'À relever',  badge: 0 },
+            { id: 'mes'          as Tab, label: 'Mes défis',  badge: binomeInvites.length + partnerInvites.length },
+            { id: 'invitations'  as Tab, label: 'Binôme',     badge: 0 },
+            { id: 'vitrine'      as Tab, label: 'À défier',   badge: 0 },
           ]).map(t => {
             const active = tab === t.id;
             return (
               <TouchableOpacity key={t.id} onPress={() => setTab(t.id)} activeOpacity={0.7}
-                style={{
-                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  backgroundColor: active ? '#fff' : 'transparent', borderRadius: 14, paddingVertical: 9,
-                }}>
-                <Text style={{ color: active ? Colors.textPrimary : 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                  {t.label}
-                </Text>
-                {t.badge > 0 && (
-                  <View style={{ backgroundColor: active ? Colors.brand : 'rgba(255,255,255,0.2)', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1 }}>
-                    <Text style={{ color: active ? Colors.brandDeep : Colors.textOnDark, fontSize: 9, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>{t.badge}</Text>
-                  </View>
-                )}
+                style={{ flex: 1, paddingTop: 10, paddingBottom: 12, alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ fontSize: 11, fontWeight: active ? '900' : '600', fontFamily: active ? Fonts.uiBlack : Fonts.uiSemi, color: active ? Colors.brand : 'rgba(255,255,255,0.5)' }}>
+                    {t.label}
+                  </Text>
+                  {t.badge > 0 && (
+                    <View style={{ backgroundColor: Colors.brand, borderRadius: 999, minWidth: 15, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: Colors.brandDeep, fontSize: 9, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>{t.badge}</Text>
+                    </View>
+                  )}
+                </View>
+                {active && <View style={{ position: 'absolute', bottom: 0, height: 3, left: '18%', right: '18%', borderRadius: 3, backgroundColor: Colors.brand }} />}
               </TouchableOpacity>
             );
           })}
@@ -664,32 +849,186 @@ export default function MatchmakingScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}>
           <View style={{ padding: 14, paddingBottom: 100 }}>
-            {tab === 'suggestions' && (
-              <>
-                <SortToggle mode={sortMode} onChange={setSortMode} computing={computing} />
-                {sortedSuggestions.length === 0
-                  ? <EmptyCard icon="search" title="Aucune suggestion" sub="Reviens quand plus de joueurs ont rejoint l'app." />
-                  : <View style={{ gap: 10 }}>
-                      {sortedSuggestions.map(p => (
-                        <SuggestionCard key={p.id} player={p} detail={compatMap.get(p.id)}
-                          alreadyChallenged={challengedIds.has(p.id)}
-                          onChallenge={(target) => router.push((`/(tabs)/lobby?create=1&challenge=1&with=${target.id}&pname=${encodeURIComponent(target.name)}&pelo=${target.elo_score}`) as any)} />
-                      ))}
-                    </View>
-                }
-              </>
+            {tab === 'relever' && (
+              openDefis.length === 0
+                ? <EmptyCard icon="swords" title="Aucun défi à relever" sub="Reviens plus tard, ou lance le tien." />
+                : <View style={{ gap: 12 }}>
+                    {sortedOpenDefis.map(g => {
+                      const myApp = myApplications.find(a => a.game_id === g.id);
+                      return (
+                        <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                          {myApp ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                              <Pill variant="warning">⏳ Postulé</Pill>
+                              <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
+                                avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{myApp.partner?.name ?? '?'}</Text> — touche pour changer
+                              </Text>
+                            </View>
+                          ) : (
+                            <DefiActionButton
+                              label={g.status === 'confirmed' ? 'Rejoindre la file d\'attente' : 'Relever le défi'}
+                              onPress={() => handleRelever(g)}
+                            />
+                          )}
+                        </DefiGameCard>
+                      );
+                    })}
+                  </View>
             )}
-            {tab === 'defis' && (
-              <>
-                {incoming.length === 0
-                  ? <EmptyCard icon="swords" title="Aucun défi reçu" sub="Les joueurs peuvent te défier depuis les Suggestions." />
-                  : <View style={{ gap: 10 }}>
-                      {incoming.map(c => (
-                        <IncomingCard key={c.id} challenge={c} detail={incomingCompatMap.get(c.id)} onAction={handleAction} playerId={player.id} myElo={player.elo_score} />
-                      ))}
+            {tab === 'mes' && (
+              <View style={{ gap: 12 }}>
+                <TouchableOpacity onPress={launchDefi} activeOpacity={0.85}
+                  style={{ backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+                    shadowColor: Colors.brand, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+                  <Icon name="swords" size={17} color={Colors.textOnBrand} stroke={2.4} />
+                  <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14.5, letterSpacing: 0.2 }}>Lancer un défi</Text>
+                </TouchableOpacity>
+                {/* Invitations défi via game_participants : binôme du créateur (A)
+                    ou adversaire d'un défi ciblé (B) → carte + accepter / refuser. */}
+                {partnerInvites.map(inv => {
+                  const key = 'pinv-' + inv.participantId;
+                  const isTeamA = String(inv.team_side ?? '').startsWith('A');
+                  return (
+                    <DefiGameCard key={key} game={inv.game} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(inv.game.id)}>
+                      <View style={{ gap: 8 }}>
+                        <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                          <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{inv.game.creator?.name ?? '?'}</Text>
+                          {isTeamA ? " t'invite comme binôme pour ce défi." : ' te défie avec son binôme.'}
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8, opacity: binomeBusy.has(key) ? 0.5 : 1 }}>
+                          <TouchableOpacity onPress={() => handleDeclinePartnerInvite(inv)} disabled={binomeBusy.has(key)}
+                            style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                            <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleAcceptPartnerInvite(inv)} disabled={binomeBusy.has(key)}
+                            style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                            {binomeBusy.has(key)
+                              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+                              : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>{isTeamA ? 'Rejoindre le binôme' : 'Relever le défi'}</Text>}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </DefiGameCard>
+                  );
+                })}
+
+                {/* Invitations à relever : je suis invité comme binôme → carte
+                    COMPLÈTE du défi (adversaires / lieu / date) + accepter / refuser. */}
+                {binomeInvites.map(c => c.game ? (
+                  <DefiGameCard key={'inv-' + c.id} game={c.game} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(c.game!.id)}>
+                    <View style={{ gap: 8 }}>
+                      <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                        <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{c.initiator?.name ?? '?'}</Text> t'invite à relever ce défi avec lui.
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8, opacity: binomeBusy.has(c.id) ? 0.5 : 1 }}>
+                        <TouchableOpacity onPress={() => handleDeclineBinome(c)} disabled={binomeBusy.has(c.id)}
+                          style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                          <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleAcceptBinome(c)} disabled={binomeBusy.has(c.id)}
+                          style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                          {binomeBusy.has(c.id)
+                            ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+                            : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                }
-              </>
+                  </DefiGameCard>
+                ) : null)}
+
+                {/* Mes candidatures : en cours (attente de mon binôme) OU en file d'attente. */}
+                {myApplications.map(a => {
+                  const g = defiGameWithMyBinome(a);   // injecte MON binôme (transparent) sur Team B si pending/open
+                  if (!g) return null;
+                  const mate = a.initiator_id === player.id ? a.partner : a.initiator;   // mon coéquipier
+                  const others = (a.game_id && otherBinomeCounts[a.game_id]) || 0;
+                  return (
+                    <DefiGameCard key={'app-' + a.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(a.game!.id)}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                        <Pill variant="warning">{a.status === 'queued' ? '⏳ En file d\'attente' : '⏳ Candidature en cours'}</Pill>
+                        {others > 0 && <Pill variant="neutral">+{others} binôme{others > 1 ? 's' : ''}</Pill>}
+                        <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
+                          avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{mate?.name ?? '?'}</Text>
+                          {a.status === 'queued' ? ' — promus si libre' : ''}
+                        </Text>
+                        <TouchableOpacity onPress={() => handleWithdrawApp(a)} disabled={binomeBusy.has(a.id)}
+                          style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, borderColor: Colors.border, opacity: binomeBusy.has(a.id) ? 0.5 : 1 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.danger }}>Retirer</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </DefiGameCard>
+                  );
+                })}
+
+                {myDefis.length === 0 && binomeInvites.length === 0 && myApplications.length === 0 && partnerInvites.length === 0
+                  ? <EmptyCard icon="swords" title="Aucun défi en cours" sub="Lance ton premier défi avec le bouton ci-dessus, ou relève-en un." />
+                  : myDefis.map(g => {
+                      const isMine = g.creator_id === player.id;
+                      // Sur un défi OUVERT : binômes en train de relever (pending).
+                      // Sur un défi CONFIRMÉ : file d'attente FIFO (queued) — promus si un binôme se retire.
+                      const racing = g.status === 'open'
+                        ? candidatures.filter(c => c.game_id === g.id && c.status === 'pending')
+                        : [];
+                      const queued = g.status === 'confirmed'
+                        ? candidatures.filter(c => c.game_id === g.id && c.status === 'queued')
+                        : [];
+                      const rowsOf = (list: typeof candidatures) => list.map(c => (
+                        <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                          <Text style={{ flex: 1, fontSize: 12, color: Colors.textSecondary }} numberOfLines={1}>
+                            <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{c.initiator?.name ?? '?'} & {c.partner?.name ?? '?'}</Text>
+                          </Text>
+                          <Pill variant="warning">{c.status === 'queued' ? '⏳ en file' : '⏳ à finaliser'}</Pill>
+                        </View>
+                      ));
+                      return (
+                        <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                          {racing.length > 0 && (
+                            <View style={{ gap: 6 }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.brandDeep, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                                {racing.length} binôme{racing.length > 1 ? 's' : ''} en train de relever
+                              </Text>
+                              {rowsOf(racing)}
+                            </View>
+                          )}
+                          {queued.length > 0 && (
+                            <View style={{ gap: 6 }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.textMuted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                                File d'attente · {queued.length} binôme{queued.length > 1 ? 's' : ''}
+                              </Text>
+                              {rowsOf(queued)}
+                            </View>
+                          )}
+                          {isMine
+                            ? <DefiActionButton label="Annuler le défi" danger onPress={() => handleCancelDefi(g)} />
+                            : null}
+                        </DefiGameCard>
+                      );
+                    })}
+              </View>
+            )}
+            {tab === 'invitations' && (
+              // « Avec qui je suis en binôme » (paires actives). Les demandes/invitations
+              // à relever sont désormais dans « Mes défis » (avec la carte).
+              myBinomes.length === 0
+                ? <EmptyCard icon="users" title="Aucun binôme" sub="Tes binômes actifs apparaîtront ici. Déclare-en un depuis ton profil (« M'ouvrir aux défis »)." />
+                : <View style={{ gap: 8 }}>
+                    <Text style={sty.sectionLabel}>Mes binômes</Text>
+                    {myBinomes.map(p => (
+                      <TouchableOpacity key={p.id} onPress={() => router.push(`/player/${p.id}` as any)} activeOpacity={0.7}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+                        <PlayerAvatar name={p.name} size={34} />
+                        <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
+                        <Pill variant="neutral">Niv. {eloToLevel(p.elo_score).toFixed(1)}</Pill>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+            )}
+            {tab === 'vitrine' && (
+              vitrine.length === 0
+                ? <EmptyCard icon="users" title="Aucun binôme ouvert" sub="Déclare le tien depuis ton profil, ou reviens plus tard." />
+                : <View style={{ gap: 10 }}>
+                    {vitrine.map(sb => <VitrineCard key={sb.id} sb={sb} onDefier={() => handleDefierBinome(sb)} />)}
+                  </View>
             )}
           </View>
         </ScrollView>
@@ -704,6 +1043,8 @@ export default function MatchmakingScreen() {
           <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textOnDark }}>{toast}</Text>
         </View>
       )}
+
+      {partnerPickerModal}
     </View>
   );
 }
@@ -718,5 +1059,9 @@ const sty = StyleSheet.create({
   },
   actionBtn: {
     borderRadius: 13, padding: 12, alignItems: 'center',
+  },
+  sectionLabel: {
+    fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900',
+    letterSpacing: 0.8, textTransform: 'uppercase', color: Colors.textMuted,
   },
 });

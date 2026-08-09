@@ -43,7 +43,7 @@ export function IllustLigues() {
           <Text style={{ flex: 1, marginLeft: 10, fontFamily: r.cur ? Fonts.uiExtraBold : Fonts.uiBold,
             fontSize: 12.5, color: r.cur ? '#0A0A0A' : '#52525B' }}>{r.n}</Text>
           {r.cur && <View style={{ marginRight: 8 }}><Pill variant="brand" fontSize={8}>Tu es ici</Pill></View>}
-          <Text style={{ fontFamily: Fonts.display, fontSize: 14, color: r.cur ? '#0A0A0A' : '#C0BBB2' }}>{r.lvl}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: 14, lineHeight: 18, color: r.cur ? '#0A0A0A' : '#C0BBB2' }}>{r.lvl}</Text>
         </View>
       ))}
     </View>

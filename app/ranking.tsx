@@ -5,14 +5,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePlayer } from '../../hooks/usePlayer';
-import { supabase } from '../../lib/supabase';
-import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../../lib/theme';
-import { formatFrmtRanking } from '../../lib/frmt-match';
-import { getFollowingIds, setFollow } from '../../lib/community';
-import { ProfileAvatarButton } from '../../components/ProfileAvatarButton';
-import { Icon } from '../../components/community/icons';
-import type { Player } from '../../types';
+import { usePlayer } from '../hooks/usePlayer';
+import { supabase } from '../lib/supabase';
+import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../lib/theme';
+import { formatFrmtRanking } from '../lib/frmt-match';
+import { getFollowingIds, setFollow } from '../lib/community';
+import { ProfileAvatarButton } from '../components/ProfileAvatarButton';
+import { Icon } from '../components/community/icons';
+import type { Player } from '../types';
 
 // ── Constants ────────────────────────────────────────────────────────
 const AVATAR_PALETTE = ['#f59e0b','#ec4899','#3b82f6','#f43f5e','#10b981','#8b5cf6','#14b8a6','#f97316'];
@@ -119,6 +119,14 @@ export default function RankingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
 
+      {/* Retour (écran poussé sur la pile racine) — coin haut-gauche. */}
+      <TouchableOpacity
+        onPress={() => router.back()}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={{ position: 'absolute', top: insets.top + 6, left: 14, zIndex: 20, width: 34, height: 34, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: Colors.textOnDark, fontSize: 24, marginTop: -3 }}>‹</Text>
+      </TouchableOpacity>
+
       {/* Pastille Profil (cohérente avec les autres écrans : coin haut-droit). */}
       <ProfileAvatarButton style={{ position: 'absolute', top: insets.top + 6, right: 14, zIndex: 20 }} />
 
@@ -127,12 +135,12 @@ export default function RankingScreen() {
         {/* Brand lockup — raquette + wordmark PAGMATCH */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
           <Image
-            source={require('../../assets/auth/splash-racket.png')}
+            source={require('../assets/auth/splash-racket.png')}
             style={{ width: 22, height: 22 }}
             resizeMode="contain"
           />
           <Image
-            source={require('../../assets/auth/splash-wordmark.png')}
+            source={require('../assets/auth/splash-wordmark.png')}
             style={{ width: 100, height: 22, marginLeft: -7 }}
             resizeMode="contain"
           />
@@ -143,7 +151,7 @@ export default function RankingScreen() {
             <Text
               numberOfLines={1}
               adjustsFontSizeToFit
-              style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 30, fontFamily: Fonts.welcome }}>
+              style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 36, fontFamily: Fonts.welcome }}>
               Le <Text style={{ color: Colors.brand, fontFamily: Fonts.welcome }}>classement</Text>
             </Text>
             <Text style={{ color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 4 }}>

@@ -26,7 +26,7 @@ export function Avatar({ name, size = 46, radius = 14, league = 'gold', mono }: 
     const fg = mono === 'black' ? Colors.brand : Colors.primary;
     return (
       <View style={{ width: size, height: size, borderRadius: r, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.42, color: fg, letterSpacing: -0.5, includeFontPadding: false }}>
+        <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.42, lineHeight: size * 0.42 * 1.3, color: fg, letterSpacing: -0.5, includeFontPadding: false }}>
           {initials(name)}
         </Text>
       </View>
@@ -47,7 +47,7 @@ export function Avatar({ name, size = 46, radius = 14, league = 'gold', mono }: 
       </Svg>
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{
-          fontFamily: Fonts.display, fontSize: size * 0.42, color: Colors.primary,
+          fontFamily: Fonts.display, fontSize: size * 0.42, lineHeight: size * 0.42 * 1.3, color: Colors.primary,
           letterSpacing: -0.5, includeFontPadding: false,
         }}>
           {initials(name)}

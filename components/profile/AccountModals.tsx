@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, Modal, TextInput, ActivityIndicator } fro
 import { Alert } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { Colors, Fonts } from '../../lib/theme';
+import { Icon } from '../community/icons';
 
 // ─── Delete account modal ─────────────────────────────────────
 export function DeleteAccountModal({ visible, onClose, playerName, onConfirm }: {
@@ -91,7 +92,7 @@ export function CommentsPolicyModal({ visible, onClose, player, onSaved }: {
                     <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: Colors.textPrimary }}>{o.label}</Text>
                     <Text style={{ fontFamily: Fonts.ui, fontSize: 12, color: Colors.textSecondary, marginTop: 2 }}>{o.sub}</Text>
                   </View>
-                  {on && <Text style={{ fontSize: 16, color: Colors.primary }}>✓</Text>}
+                  {on && <Icon name="check" size={16} color={Colors.primary} stroke={2.6} />}
                 </TouchableOpacity>
               );
             })}

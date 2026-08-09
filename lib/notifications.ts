@@ -1,7 +1,6 @@
 import { supabase } from './supabase';
 import { isInvitationVisible, isGameReadyToScore } from './games';
 import { matchNeedsMyAction } from './matches';
-import { isReceivedChallengeVisible, CHALLENGE_PARTICIPANTS_SELECT } from './challenges';
 import { getHiddenPlayerIds } from './moderation';
 import { getLeague, getLeagueLabel, eloToLevel } from './theme';
 
@@ -30,6 +29,8 @@ export const isDismissibleNotif = (t: NotifItem['type']) => DISMISSIBLE_NOTIF.ha
 
 export async function buildNotificationItems(playerId: string): Promise<NotifItem[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // Fenêtre d'invite « Distribue des badges » : 48 h après la saisie du score.
+  const badgeWindowAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const playerOr = [
     `winner_id.eq.${playerId}`,
     `loser_id.eq.${playerId}`,
@@ -52,7 +53,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
   ].join(',');
 
   const [
-    { data: challenges },
+    { data: binomeInvites },
     { data: pending },
     { data: recentMatches },
     { data: alreadyVoted },
@@ -62,16 +63,19 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: myGames },
     { data: dismissedRows },
     { data: dmRequests },
+    { data: showcaseNoms },
+    { data: badgeSkips },
+    { data: queuedApps },
+    { data: lockedApps },
   ] = await Promise.all([
     supabase
-      .from('challenges')
-      .select(`id, game_id, challenger_id, challenger:players!challenger_id(name), ${CHALLENGE_PARTICIPANTS_SELECT}`)
-      .eq('challenged_id', playerId)
-      .eq('status', 'pending')
-      .gt('expires_at', nowIso),
+      .from('defi_applications')
+      .select('id, initiator:initiator_id(name)')
+      .eq('partner_id', playerId)
+      .eq('status', 'pending'),
     supabase
       .from('matches')
-      .select('id, status, winner:winner_id(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
+      .select('id, status, winner:winner_id(name), submitter:created_by(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
       .or(playerOr)
       .in('status', ['pending', 'counter_proposed']),
     supabase
@@ -79,7 +83,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .select('id')
       .or(playerOr)
       .in('status', ['pending', 'validated'])
-      .gte('created_at', sevenDaysAgo),
+      .gte('created_at', badgeWindowAgo),
     supabase
       .from('reputation_votes')
       .select('match_id')
@@ -101,7 +105,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .or(orParts),
     supabase
       .from('game_participants')
-      .select('id, invite_expires_at, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
+      .select('id, invite_expires_at, team_side, game:game_id(id, location, is_challenge, match_date, status, creator:creator_id(name))')
       .eq('player_id', playerId)
       .eq('status', 'invited'),
     // Mes parties (créateur ou participant validé) — pour les demandes à valider.
@@ -121,6 +125,30 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .select('id, requester_id, requester:players!requester_id(name)')
       .eq('addressee_id', playerId)
       .eq('status', 'pending'),
+    // Nominations de binôme en vitrine à confirmer (on me propose comme binôme ouvert).
+    supabase
+      .from('showcase_binomes')
+      .select('id, a:player_a(name)')
+      .eq('player_b', playerId)
+      .eq('status', 'pending'),
+    supabase
+      .from('badge_prompt_skips')
+      .select('match_id')
+      .eq('player_id', playerId),
+    // Défi : mon binôme en FILE D'ATTENTE (carte persistante tant qu'on attend).
+    supabase
+      .from('defi_applications')
+      .select('id, game:game_id(location, match_date, status)')
+      .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
+      .eq('status', 'queued'),
+    // Défi : mon binôme RETENU récemment (verrouillage direct ou promotion) —
+    // carte info supprimable (type 'joined').
+    supabase
+      .from('defi_applications')
+      .select('id, game_id, resolved_at, game:game_id(location, match_date, status)')
+      .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
+      .eq('status', 'locked')
+      .gte('resolved_at', sevenDaysAgo),
   ]);
 
   const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
@@ -129,7 +157,9 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
   const hidden = await getHiddenPlayerIds(playerId);
 
   const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
-  const unvotedCount = (recentMatches ?? []).filter((m: any) => !votedIds.has(m.id)).length;
+  const skippedIds = new Set((badgeSkips ?? []).map((s: any) => s.match_id));
+  const unvotedCount = (recentMatches ?? [])
+    .filter((m: any) => !votedIds.has(m.id) && !skippedIds.has(m.id)).length;
 
   // "Partie à scorer" — point de vérité unique lib/games.isGameReadyToScore
   // (partagé avec badge / lobby / score-entry). Occupation dérivée des
@@ -158,10 +188,10 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     return leagueChanged || levelIncreased;
   });
 
-  // Anti-doublon : un défi crée à la fois une ligne `challenges` ET un
-  // game_participants 'invited' sur la même partie. On exclut l'invitation
-  // si un défi existe déjà pour cette partie (la ligne `challenges` la couvre).
-  const challengeGameIds = new Set((challenges ?? []).map((c: any) => c.game_id).filter(Boolean));
+  // Anti-doublon défi 1v1 supprimé : les invitations binôme (defi_applications)
+  // n'ont pas de game_id associé à ce stade — aucun doublon possible avec
+  // game_participants 'invited'. On passe un Set vide à isInvitationVisible.
+  const challengeGameIds = new Set<string>();
 
   // Invitations actives — point de vérité unique partagé avec le badge
   // (lib/games.isInvitationVisible) : TTL, anti-doublon défi, partie
@@ -243,25 +273,59 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       const isChall = !!inv.game?.is_challenge;
       const who = inv.game?.creator?.name ?? '?';
       const where = inv.game?.location ? ` à ${inv.game.location}` : '';
+      // Sur un défi 2v2, une invitation = binôme du créateur (Team A) OU adversaire
+      // ciblé (Team B). Seul le camp B est réellement « défié en duel » ; le camp A
+      // est invité à FORMER le binôme du créateur.
+      const isPartner = isChall && String(inv.team_side ?? '').startsWith('A');
       return {
         id: `invitation-${inv.id}`,
         type: (isChall ? 'challenge' : 'invitation') as 'challenge' | 'invitation',
-        title: isChall ? '⚡ Défi reçu' : '✉️ Invitation reçue',
-        subtitle: isChall ? `${who} te défie en duel${where}` : `${who} t'invite à jouer${where}`,
+        title: isPartner ? 'Invitation binôme' : isChall ? '⚡ Défi reçu' : '✉️ Invitation reçue',
+        subtitle: isPartner
+          ? `${who} t'invite comme binôme pour un défi${where}`
+          : isChall ? `${who} te défie en duel${where}` : `${who} t'invite à jouer${where}`,
         route: `/(tabs)/lobby?gameId=${inv.game.id}`,
       };
     }),
-    // Même filtre de visibilité que l'onglet « Défis reçus » et le badge
-    // (lib/challenges) — sinon une notif fantôme pointe vers un onglet vide
-    // (défi auto-décliné par chevauchement, lanceur bloqué, invitation expirée).
-    ...(challenges ?? [])
-      .filter((c: any) => isReceivedChallengeVisible(c, playerId, hidden))
-      .map((c: any) => ({
-        id: `challenge-${c.id}`,
+    // Invitations binôme : requête déjà filtrée partner_id + status='pending',
+    // RLS garantit la visibilité — pas de filtre supplémentaire nécessaire.
+    ...(binomeInvites ?? []).map((a: any) => ({
+      id: `binome-${a.id}`,
+      type: 'challenge' as const,
+      title: 'Invitation à un défi',
+      subtitle: `${a.initiator?.name ?? '?'} t'invite à relever un défi avec lui`,
+      route: '/(tabs)/matchmaking?tab=mes',
+    })),
+    // Nominations de binôme en vitrine à confirmer → route vers MON profil
+    // (section « À confirmer » du gestionnaire de vitrine).
+    ...(showcaseNoms ?? []).map((s: any) => ({
+      id: `showcase-${s.id}`,
+      type: 'challenge' as const,
+      title: 'Proposition de binôme',
+      subtitle: `${s.a?.name ?? '?'} veut être ton binôme de défis — confirme depuis ton profil.`,
+      route: `/player/${playerId}?showcase=1`,
+    })),
+    // Défi — mon binôme en file d'attente (persistant tant que la file dure).
+    ...(queuedApps ?? [])
+      .filter((q: any) => q.game?.status === 'confirmed'
+        && (!q.game?.match_date || new Date(q.game.match_date).getTime() > Date.now()))
+      .map((q: any) => ({
+        id: `defi-queued-${q.id}`,
         type: 'challenge' as const,
-        title: 'Nouveau défi reçu',
-        subtitle: `${c.challenger?.name ?? '?'} t'a lancé un défi`,
-        route: '/(tabs)/matchmaking',
+        title: 'En file d\'attente',
+        subtitle: `Votre binôme est en file pour le défi${q.game?.location ? ` à ${q.game.location}` : ''} — promus si une place se libère`,
+        route: '/(tabs)/matchmaking?tab=mes',
+      })),
+    // Défi — binôme retenu (verrouillage direct ou promotion) : info supprimable.
+    ...(lockedApps ?? [])
+      .filter((l: any) => l.game?.status === 'confirmed'
+        && (!l.game?.match_date || new Date(l.game.match_date).getTime() > Date.now()))
+      .map((l: any) => ({
+        id: `joined-defi-${l.id}`,
+        type: 'joined' as const,
+        title: '⚔️ Défi confirmé',
+        subtitle: `Votre binôme relève le défi${l.game?.location ? ` à ${l.game.location}` : ''} — rendez-vous sur le terrain !`,
+        route: `/(tabs)/lobby?gameId=${l.game_id}`,
       })),
     ...visiblePending.map(({ m, action }: any) => action === 'resolve' ? {
       id: `match-${m.id}`,
@@ -273,7 +337,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       id: `match-${m.id}`,
       type: 'match' as const,
       title: 'Score à valider',
-      subtitle: `Soumis par ${m.winner?.name ?? '?'}`,
+      subtitle: `Soumis par ${m.submitter?.name ?? m.winner?.name ?? '?'}`,
       route: '/(tabs)/lobby?tab=history&openValidation=1',
     }),
     ...((toScoreCount ?? 0) > 0 ? [{

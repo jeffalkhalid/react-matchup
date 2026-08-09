@@ -69,6 +69,32 @@ export async function fetchConversations(): Promise<DirectConversation[]> {
   return (data ?? []) as DirectConversation[];
 }
 
+// Vrai nombre de messages non lus PAR conversation (messages de l'autre postés
+// après mon dernier "lu"). Source unique partagée par le hook (liste) et le badge
+// d'onglet (total style WhatsApp). Tous les messages en UNE requête, comptés client.
+export async function fetchUnreadCounts(
+  myId: string, convs?: DirectConversation[],
+): Promise<Map<string, number>> {
+  const rows = convs ?? await fetchConversations();
+  const ids = rows.map(c => c.id);
+  const counts = new Map<string, number>();
+  if (!ids.length) return counts;
+  const lastReadByConv = new Map(rows.map(c =>
+    [c.id, c.requester_id === myId ? c.requester_last_read : c.addressee_last_read]));
+  const { data: msgs } = await supabase
+    .from('direct_messages')
+    .select('conversation_id, sender_id, created_at')
+    .in('conversation_id', ids);
+  (msgs ?? []).forEach((m: any) => {
+    if (m.sender_id === myId) return;
+    const lr = lastReadByConv.get(m.conversation_id);
+    if (!lr || new Date(m.created_at).getTime() > new Date(lr).getTime()) {
+      counts.set(m.conversation_id, (counts.get(m.conversation_id) ?? 0) + 1);
+    }
+  });
+  return counts;
+}
+
 export async function fetchMessages(conversationId: string): Promise<DirectMessage[]> {
   const { data, error } = await supabase
     .from('direct_messages')

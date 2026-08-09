@@ -49,9 +49,9 @@ export function BigSets({ sets, accent, mine = '#fff', theirs = 'rgba(255,255,25
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', flexWrap: 'wrap' }}>
       {sets.map(([a, b], i) => (
         <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: s(15) }}>
-          <Text style={{ fontFamily: Fonts.display, fontSize: size, color: mine, letterSpacing: -size * 0.02 }}>{a}</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.5, color: accent, marginHorizontal: s(6) }}>–</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: size, color: theirs }}>{b}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: size, lineHeight: size * 1.3, color: mine, letterSpacing: -size * 0.02 }}>{a}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.5, lineHeight: size * 0.5 * 1.3, color: accent, marginHorizontal: s(6) }}>–</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: size, lineHeight: size * 1.3, color: theirs }}>{b}</Text>
         </View>
       ))}
     </View>
@@ -76,7 +76,7 @@ export function Invite({ invite, s, light = true, accent = Colors.brand, qr = 13
       {invite.showQR !== false ? <Qr value={invite.qrValue} size={qr} /> : null}
       <View style={{ alignItems: 'flex-start' }}>
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(24), letterSpacing: s(2), color: sub }}>{(invite.cta || '').toUpperCase()}</Text>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(56), color: main, textTransform: 'uppercase' }}>PagMatch</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(56), lineHeight: s(56) * 1.3, color: main, textTransform: 'uppercase' }}>PagMatch</Text>
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), color: accent }}>{invite.link}</Text>
         {invite.showApp !== false && invite.appUrl ? (
           <View style={{ marginTop: s(8), paddingVertical: s(8), paddingHorizontal: s(16), borderRadius: 999, borderWidth: 1.5, borderColor: light ? 'rgba(255,255,255,0.3)' : 'rgba(10,10,10,0.18)' }}>

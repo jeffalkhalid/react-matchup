@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, Fonts } from '../lib/theme';
 import { buildStoryMatch, type StoryMatchData } from './story/storyTheme';
 import { displayName, type JoinedPlayer } from '../lib/players';
+import { Icon } from './community/icons';
 
 interface MatchRow {
   id: string;
@@ -77,7 +78,7 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick, r
           backgroundColor: Colors.bgCard, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt,
         }}>
           <TouchableOpacity onPress={onClose} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 18, color: Colors.textSecondary }}>✕</Text>
+            <Icon name="x" size={18} color={Colors.textSecondary} stroke={2.2} />
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
             <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Choisir un match</Text>
@@ -153,7 +154,7 @@ function Row({ match, playerId, onPick }: { match: MatchRow; playerId: string; o
           {match.score_text}
         </Text>
       ) : null}
-      <Text style={{ fontSize: 14, color: Colors.textMuted }}>›</Text>
+      <Icon name="chevronRight" size={16} color={Colors.textMuted} stroke={2.2} />
     </TouchableOpacity>
   );
 }

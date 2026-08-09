@@ -19,6 +19,7 @@ import { JoinHeroCard } from '../../components/activity/JoinHeroCard';
 import { WeekendRail } from '../../components/activity/WeekendRail';
 import { MomentsRail } from '../../components/activity/MomentsRail';
 import { MomentOverlay } from '../../components/activity/MomentOverlay';
+import { BilanStory } from '../../components/activity/BilanStory';
 import { EmptyHero } from '../../components/activity/EmptyHero';
 import { OnboardingChecklist } from '../../components/activity/OnboardingChecklist';
 import { DiscoveryRail } from '../../components/activity/DiscoveryRail';
@@ -156,7 +157,7 @@ export default function ActiviteTab() {
           <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 100, height: 22, marginLeft: -7 }} resizeMode="contain" />
         </View>
         <View style={{ alignItems: 'center' }}>
-          <Text style={{ fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
+          <Text style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
             L'<Text style={{ color: Colors.brand }}>Activité</Text>
           </Text>
           <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Partage tes matchs, anime ta communauté</Text>
@@ -173,7 +174,7 @@ export default function ActiviteTab() {
             <>
               {/* Accueil */}
               <View style={{ marginTop: 14 }}>
-                <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, color: Colors.textPrimary }}>Bienvenue {player.name.split(' ')[0]} 👋</Text>
+                <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary }}>Bienvenue {player.name.split(' ')[0]} 👋</Text>
                 <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: Colors.textSecondary, marginTop: 4 }}>
                   L'Activité, c'est ton fil padel : tes matchs, ceux de tes amis, et les parties à rejoindre. Commence ici 👇
                 </Text>
@@ -235,14 +236,26 @@ export default function ActiviteTab() {
         </ScrollView>
       )}
 
-      <MomentOverlay
-        event={liveMoment}
-        myId={myId ?? ''}
-        onReact={() => { if (openMomentId) react(openMomentId); }}
-        onComment={() => { const id = openMomentId; setOpenMomentId(null); if (id) router.push(`/community/comments/${id}` as any); }}
-        onPressActor={(pid) => { setOpenMomentId(null); router.push(`/player/${pid}` as any); }}
-        onClose={() => setOpenMomentId(null)}
-      />
+      {liveMoment?.type === 'bilan' && liveMoment.payload.recap ? (
+        <BilanStory
+          recap={liveMoment.payload.recap as MonthlyRecap}
+          authorName={liveMoment.actor?.name}
+          myId={myId ?? ''}
+          reactions={liveMoment.reactions}
+          onReact={() => { if (openMomentId) react(openMomentId); }}
+          onComment={() => { const id = openMomentId; setOpenMomentId(null); if (id) router.push(`/community/comments/${id}` as any); }}
+          onClose={() => setOpenMomentId(null)}
+        />
+      ) : (
+        <MomentOverlay
+          event={liveMoment}
+          myId={myId ?? ''}
+          onReact={() => { if (openMomentId) react(openMomentId); }}
+          onComment={() => { const id = openMomentId; setOpenMomentId(null); if (id) router.push(`/community/comments/${id}` as any); }}
+          onPressActor={(pid) => { setOpenMomentId(null); router.push(`/player/${pid}` as any); }}
+          onClose={() => setOpenMomentId(null)}
+        />
+      )}
 
       {/* Partage in-app d'un match : choisir → composer → publier (Moment) */}
       {myId ? (

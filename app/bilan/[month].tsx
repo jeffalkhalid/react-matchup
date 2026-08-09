@@ -101,6 +101,7 @@ export default function BilanScreen() {
     const err = await postBilan(recap.month, {
       label: recap.label, matches: recap.matches, winRate: recap.winRate,
       levelDelta: recap.levelDelta, topPartner: recap.topPartner?.name ?? null,
+      recap, // snapshot complet → affichage plein écran du bilan chez les amis
     });
     setBusy(false);
     if (!err) { setPosted(true); track('bilan_shared', { channel: 'in_app', month: recap.month }); Alert.alert('Publié', 'Ton bilan est partagé dans le fil de tes amis.'); }

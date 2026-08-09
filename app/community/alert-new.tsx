@@ -84,7 +84,7 @@ export default function AlertNewScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       <NavBar title="Nouvelle alerte" onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 18, paddingBottom: 130 }}>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, color: Colors.textPrimary, textTransform: 'uppercase', marginBottom: 4 }}>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary, textTransform: 'uppercase', marginBottom: 4 }}>
           Sois notifié des bonnes parties
         </Text>
         <Text style={{ fontFamily: Fonts.ui, fontSize: 13.5, color: Colors.textSecondary, marginBottom: 22 }}>

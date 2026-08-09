@@ -47,7 +47,7 @@ export function WeekStatsCard({ stats, levelDelta }: { stats: WeekStats; levelDe
         {/* Matchs */}
         <View style={{ flex: 1, backgroundColor: TILE, borderWidth: 1, borderColor: TILE_BD, borderRadius: 12, padding: 10 }}>
           <Label>Matchs</Label>
-          <Text style={{ fontFamily: Fonts.display, fontSize: 28, color: Colors.textPrimary, lineHeight: 28, marginTop: 6 }}>{stats.matches}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: 28, color: Colors.textPrimary, lineHeight: 36, marginTop: 6 }}>{stats.matches}</Text>
           <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, color: Colors.textSecondary, marginTop: 3 }}>joués</Text>
         </View>
 
@@ -71,7 +71,7 @@ export function WeekStatsCard({ stats, levelDelta }: { stats: WeekStats; levelDe
         {/* Niveau */}
         <View style={{ flex: 1, backgroundColor: TILE, borderWidth: 1, borderColor: TILE_BD, borderRadius: 12, padding: 10 }}>
           <Label>Niveau</Label>
-          <Text style={{ fontFamily: Fonts.display, fontSize: 26, color: deltaColor, lineHeight: 26, marginTop: 6 }}>{deltaStr}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: 26, color: deltaColor, lineHeight: 34, marginTop: 6 }}>{deltaStr}</Text>
           <Svg width="100%" height={14} viewBox="0 0 80 14" style={{ marginTop: 2 }}>
             <Polyline points={pts} fill="none" stroke={deltaColor} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>

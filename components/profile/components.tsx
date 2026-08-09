@@ -7,6 +7,7 @@ import Svg, {
 } from 'react-native-svg';
 import { PM, accentOf, ACCENT, initials, PFonts } from './theme';
 import { Glyph } from './glyphs';
+import { Icon } from '../community/icons';
 import { CreatorCrownBadge } from '../CreatorCrownBadge';
 
 const A = accentOf(ACCENT);
@@ -20,6 +21,8 @@ export interface MatchView {
   teams: [PlayerLite[], PlayerLite[]];
   sets: [number, number][]; winnerRow: 0 | 1;
   creatorId?: string;
+  // Nature du match (pastille) : défi (avec mise), compétitif, ou amical.
+  kind?: 'defi' | 'competitif' | 'amical'; stake?: number;
 }
 export interface TimelinePoint { lvl: number; result: 'Victoire' | 'Défaite'; match: MatchView }
 export interface RepBadge { label: string; n: number }
@@ -67,7 +70,7 @@ export function ScoreGrid({ sets, winnerRow }: { sets: [number, number][]; winne
             borderBottomWidth: rowIdx === 0 ? 1 : 0, borderBottomColor: PM.divider,
             backgroundColor: win ? A.soft : 'transparent',
           }}>
-            <Text style={{ fontFamily: PFonts.anton, fontSize: 19, lineHeight: 20, color: win ? ACCENT : PM.muted }}>
+            <Text style={{ fontFamily: PFonts.anton, fontSize: 19, lineHeight: 25, color: win ? ACCENT : PM.muted }}>
               {s[rowIdx]}
             </Text>
           </View>
@@ -102,6 +105,24 @@ function MatchPlayer({ p, team, onPress }: { p: PlayerLite; team: 0 | 1; onPress
   );
 }
 
+// ── Pastille nature du match (défi + mise / classé / amical) ──────────
+const NATURE_STYLE = {
+  defi:       { bg: 'rgba(255,193,26,0.18)', fg: '#A16207' },
+  competitif: { bg: 'rgba(10,10,10,0.06)',   fg: PM.sub },
+  amical:     { bg: 'rgba(16,185,129,0.10)', fg: PM.successDk },
+} as const;
+
+function NaturePill({ kind, stake }: { kind: 'defi' | 'competitif' | 'amical'; stake?: number }) {
+  const s = NATURE_STYLE[kind];
+  const stakeStr = stake && stake > 1 ? ` ×${stake % 1 === 0 ? stake : stake.toFixed(1)}` : '';
+  const label = kind === 'defi' ? `⚡ DÉFI${stakeStr}` : kind === 'amical' ? 'AMICAL' : 'COMPÉTITIF';
+  return (
+    <View style={{ borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, backgroundColor: s.bg }}>
+      <Text style={{ fontSize: 8.5, fontWeight: '900', letterSpacing: 0.4, color: s.fg }}>{label}</Text>
+    </View>
+  );
+}
+
 // ── Carte d'un match ──────────────────────────────────────────────────
 export function MatchCard({ m, onShare, compact = false, onPress, footer, showActions = true, showDelta = true, onPlayerPress }: {
   m: MatchView; onShare?: () => void; compact?: boolean;
@@ -126,7 +147,10 @@ export function MatchCard({ m, onShare, compact = false, onPress, footer, showAc
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: '800', color: PM.text, textTransform: 'uppercase', letterSpacing: 0.2 }}>{m.club}</Text>
-          <Text style={{ fontSize: 10.5, color: PM.muted, marginTop: 1 }}>{m.date} · {m.time}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 10.5, color: PM.muted }}>{m.date} · {m.time}</Text>
+            {m.kind ? <NaturePill kind={m.kind} stake={m.stake} /> : null}
+          </View>
         </View>
         <View style={{ alignItems: 'flex-end', gap: 3 }}>
           {showDelta && (
@@ -198,7 +222,7 @@ export function WinRing({ rate, label = 'VICTOIRES' }: { rate: number; label?: s
           strokeDasharray={`${c * rate / 100} ${c}`} strokeLinecap="round" />
       </Svg>
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: PFonts.anton, fontSize: 22, lineHeight: 24, color: PM.text }}>{rate}%</Text>
+        <Text style={{ fontFamily: PFonts.anton, fontSize: 22, lineHeight: 29, color: PM.text }}>{rate}%</Text>
         <Text style={{ fontSize: 7, fontWeight: '800', color: PM.muted, letterSpacing: 0.7, marginTop: 1 }}>{label}</Text>
       </View>
     </View>
@@ -208,7 +232,7 @@ export function WinRing({ rate, label = 'VICTOIRES' }: { rate: number; label?: s
 export function StatTile({ value, label, sub, accentVal }: { value: string | number; label: string; sub?: string; accentVal?: string }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 4, paddingVertical: 2 }}>
-      <Text style={{ fontFamily: PFonts.anton, fontSize: 24, lineHeight: 26, color: accentVal || PM.text }}>{value}</Text>
+      <Text style={{ fontFamily: PFonts.anton, fontSize: 24, lineHeight: 31, color: accentVal || PM.text }}>{value}</Text>
       <Text style={{ fontSize: 8.5, fontWeight: '800', color: PM.muted, letterSpacing: 0.7, textTransform: 'uppercase', marginTop: 5, textAlign: 'center' }}>{label}</Text>
       {sub ? <Text style={{ fontSize: 9, color: PM.faint, marginTop: 2 }}>{sub}</Text> : null}
     </View>
@@ -315,7 +339,7 @@ export function LevelChart({ data, selected, onSelect }: { data: TimelinePoint[]
             position: 'absolute', left: sel.x * scale - 22, top: Math.max(0, sel.y * scale - 30),
             backgroundColor: PM.ink, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, minWidth: 44, alignItems: 'center',
           }}>
-            <Text style={{ fontFamily: PFonts.anton, color: ACCENT, fontSize: 12 }}>{sel.d.lvl.toFixed(2)}</Text>
+            <Text style={{ fontFamily: PFonts.anton, color: ACCENT, fontSize: 12, lineHeight: 16 }}>{sel.d.lvl.toFixed(2)}</Text>
           </View>
         </>
       )}
@@ -380,24 +404,24 @@ export function AchievementMedal({ ach }: { ach: AchievementView }) {
             position: 'absolute', left: 28, bottom: -3, width: 20, height: 20, borderRadius: 10,
             backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#0A0A0A',
           }}>
-            <Text style={{ fontSize: 11, fontWeight: '900', color: '#0A0A0A' }}>✓</Text>
+            <Icon name="check" size={11} color="#0A0A0A" stroke={2.6} />
           </View>
         )}
       </View>
 
       <Text numberOfLines={2} style={{
-        fontFamily: PFonts.barlow, fontSize: 13, letterSpacing: 0.3, textTransform: 'uppercase',
+        fontFamily: PFonts.barlow, fontSize: 13, lineHeight: 17, letterSpacing: 0.3, textTransform: 'uppercase',
         color: done ? '#fff' : PM.text, textAlign: 'center', marginTop: 4, paddingHorizontal: 4,
       }}>{ach.name}</Text>
 
       <Text numberOfLines={2} style={{ fontSize: 8.5, color: done ? 'rgba(255,255,255,0.72)' : PM.muted, textAlign: 'center', minHeight: 21, paddingHorizontal: 6 }}>{ach.desc}</Text>
 
       {done ? (
-        <Text style={{ fontFamily: PFonts.anton, fontSize: 9, letterSpacing: 0.7, textTransform: 'uppercase', color: ACCENT }}>Débloqué</Text>
+        <Text style={{ fontFamily: PFonts.anton, fontSize: 9, lineHeight: 12, letterSpacing: 0.7, textTransform: 'uppercase', color: ACCENT }}>Débloqué</Text>
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
-          <Text style={{ fontFamily: PFonts.anton, fontSize: 14, color: PM.text }}>{fmt(ach.progress)}</Text>
-          <Text style={{ fontFamily: PFonts.anton, fontSize: 10, color: PM.muted }}>/{fmt(ach.target)}</Text>
+          <Text style={{ fontFamily: PFonts.anton, fontSize: 14, lineHeight: 18, color: PM.text }}>{fmt(ach.progress)}</Text>
+          <Text style={{ fontFamily: PFonts.anton, fontSize: 10, lineHeight: 13, color: PM.muted }}>/{fmt(ach.target)}</Text>
           <Text style={{ fontSize: 8.5, fontWeight: '800', color: A.deep, marginLeft: 4 }}>{fillPct}%</Text>
         </View>
       )}
@@ -420,7 +444,7 @@ export function AchievementFeedCard({ ach }: { ach: AchievementView }) {
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 9.5, fontWeight: '800', color: ACCENT, letterSpacing: 0.6, textTransform: 'uppercase' }}>🏆 Palmarès débloqué</Text>
-        <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 18, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>{ach.name}</Text>
+        <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 18, lineHeight: 23, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>{ach.name}</Text>
         <Text numberOfLines={1} style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>{ach.desc}</Text>
       </View>
     </View>
@@ -428,7 +452,7 @@ export function AchievementFeedCard({ ach }: { ach: AchievementView }) {
 }
 
 // ── En-tête sombre + onglets ──────────────────────────────────────────
-export const TABS = ['Stats', 'Matchs', 'Palmarès', 'Badges', 'Activité'] as const;
+export const TABS = ['Stats', 'Matchs', 'Palmarès', 'Badges', 'Binômes', 'Activité'] as const;
 export type TabName = typeof TABS[number];
 
 // Onglets masqués temporairement (code conservé, juste retiré de la barre).
@@ -444,9 +468,10 @@ export function ProfileHeader(props: {
   isSelf: boolean; isFollowing: boolean;
   onToggleFollow: () => void; onBack: () => void; onMenu: () => void; onEdit: () => void;
   onShareProfile: () => void; onDefier: () => void;
-  onMessage?: () => void;
+  onMessage?: () => void; onShowcase?: () => void; onMyShowcase?: () => void;
   hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
+  tabBadges?: Partial<Record<TabName, { count?: number; dot?: boolean }>>;
 }) {
   const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing } = props;
   const iconBtn = { width: 36, height: 36, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' as const, justifyContent: 'center' as const };
@@ -486,14 +511,14 @@ export function ProfileHeader(props: {
       {/* Identité */}
       <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center' }}>
         <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: PM.inkSoft }}>
-          <Text style={{ fontFamily: PFonts.anton, fontSize: 30, color: PM.ink }}>{initials(name)}</Text>
+          <Text style={{ fontFamily: PFonts.anton, fontSize: 30, lineHeight: 39, color: PM.ink }}>{initials(name)}</Text>
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 27, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3 }}>{name}</Text>
+          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3 }}>{name}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: ACCENT }}>{level.toFixed(2)}</Text>
-              <Text style={{ fontSize: 11 }}>⭐</Text>
+              <Icon name="star" size={11} color={ACCENT} stroke={2} />
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: leagueColor, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2, backgroundColor: leagueColor + '22' }}>
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: leagueColor }} />
@@ -503,7 +528,7 @@ export function ProfileHeader(props: {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.28)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
                 <Text style={{ fontSize: 10, fontWeight: '900', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.3 }}>FRMT</Text>
                 <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>{props.frmt.text}</Text>
-                {props.frmt.verified && <Text style={{ fontSize: 10, color: ACCENT }}>✓</Text>}
+                {props.frmt.verified && <Icon name="check" size={11} color={ACCENT} stroke={2.6} />}
               </View>
             )}
           </View>
@@ -515,12 +540,22 @@ export function ProfileHeader(props: {
 
       {/* Actions : Modifier (soi) | Suivre + Défier (autre) */}
       {isSelf ? (
-        <TouchableOpacity onPress={props.onEdit} activeOpacity={0.85} style={{
-          marginTop: 14, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
-          paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Modifier le profil</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity onPress={props.onEdit} activeOpacity={0.85} style={{
+            marginTop: 14, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+            paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Modifier le profil</Text>
+          </TouchableOpacity>
+          {props.onMyShowcase && (
+            <TouchableOpacity onPress={props.onMyShowcase} activeOpacity={0.85} style={{
+              marginTop: 8, borderRadius: 999, borderWidth: 1.5, borderColor: ACCENT,
+              paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 13.5, fontWeight: '800', color: ACCENT }}>⚔️ M'ouvrir aux défis</Text>
+            </TouchableOpacity>
+          )}
+        </>
       ) : (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
           <TouchableOpacity onPress={props.onToggleFollow} activeOpacity={0.85} style={{
@@ -548,14 +583,34 @@ export function ProfileHeader(props: {
           </TouchableOpacity>
         </View>
       )}
+      {/* Proposer ce joueur comme binôme ouvert (autre profil uniquement) */}
+      {!isSelf && props.onShowcase && (
+        <TouchableOpacity onPress={props.onShowcase} activeOpacity={0.85} style={{
+          marginTop: 8, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+          paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Proposer comme binôme</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Onglets */}
       <View style={{ flexDirection: 'row', marginTop: 16 }}>
         {VISIBLE_TABS.map(t => {
           const on = t === props.tab;
+          const badge = props.tabBadges?.[t];
+          const showCount = (badge?.count ?? 0) > 0;
+          const showDot = !showCount && !!badge?.dot;
           return (
             <TouchableOpacity key={t} onPress={() => props.setTab(t)} style={{ flex: 1, paddingTop: 11, paddingBottom: 12, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? ACCENT : 'rgba(255,255,255,0.5)' }}>{t}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? ACCENT : 'rgba(255,255,255,0.5)' }}>{t}</Text>
+                {showCount && (
+                  <View style={{ backgroundColor: ACCENT, borderRadius: 999, minWidth: 15, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: PM.ink, fontSize: 9, fontWeight: '900' }}>{badge!.count}</Text>
+                  </View>
+                )}
+                {showDot && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: ACCENT }} />}
+              </View>
               {on && <View style={{ position: 'absolute', bottom: 0, height: 3, left: '20%', right: '20%', borderRadius: 3, backgroundColor: ACCENT }} />}
             </TouchableOpacity>
           );

@@ -111,7 +111,7 @@ export default function CommentsScreen() {
             style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="chevronLeft" size={20} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 26, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
             Commentaires
           </Text>
         </View>

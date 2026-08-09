@@ -18,7 +18,7 @@ import { BADGE_ICONS, BADGE_ICON_VIEWBOX, FALLBACK_ICON_KEY } from '../../compon
 import { SvgXml } from 'react-native-svg';
 import { loadBadgeDefs } from '../../lib/badges';
 
-type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges';
+type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -983,7 +983,7 @@ export default function AdminScreen() {
             <Text style={{ color: Colors.textMuted, fontSize: 18 }}>‹</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 26, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
+            <Text style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
             <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>🛡️ Administration</Text>
           </View>
           {disputes.length > 0 && (
@@ -1008,6 +1008,7 @@ export default function AdminScreen() {
             ] },
             { title: 'Config', items: [
               { key: 'badges' as AdminTab, label: '🏅 Badges', badge: 0 },
+              { key: 'settings' as AdminTab, label: '⚙️ Réglages', badge: 0 },
             ] },
           ]).map(group => (
             <View key={group.title} style={{ gap: 6 }}>
@@ -1098,6 +1099,7 @@ export default function AdminScreen() {
           />
         )}
         {tab === 'badges' && <BadgesTab />}
+        {tab === 'settings' && <SettingsTab />}
       </ScrollView>
     </View>
   );
@@ -1122,6 +1124,55 @@ function BadgeIconPreview({ iconKey, color, size = 56 }: { iconKey: string; colo
     <View style={{ width: size, height: size, borderRadius: 999, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
       <SvgXml xml={xml} width={iconSize} height={iconSize} />
     </View>
+  );
+}
+
+// ── Réglages applicatifs (app_config) ──────────────────────────────
+function SettingsTab() {
+  const [win, setWin] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from('app_config').select('value').eq('key', 'defi_promotion_window_minutes').maybeSingle();
+    setWin((data?.value ?? '30').replace(/[^0-9]/g, '') || '30');
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    const n = parseInt(win, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 1440) { Alert.alert('Valeur invalide', 'Entre un nombre de minutes entre 0 et 1440.'); return; }
+    setSaving(true);
+    const { error } = await supabase.from('app_config')
+      .upsert({ key: 'defi_promotion_window_minutes', value: String(n), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    setSaving(false);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    Alert.alert('Enregistré', `Fenêtre de promotion réglée à ${n} min.`);
+  };
+
+  if (loading) return <ActivityIndicator color={Colors.primary} style={{ marginTop: 32 }} />;
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+      <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, gap: 10 }}>
+        <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Défis — file d'attente</Text>
+        <Text style={{ fontSize: 12, color: Colors.textMuted, lineHeight: 17 }}>
+          Fenêtre de promotion (minutes avant le match) en-deçà de laquelle on ne promeut plus un binôme de la file. Un binôme qui se retire trop tard n'est donc pas remplacé.
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+          <TextInput
+            value={win} onChangeText={(t) => setWin(t.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad" placeholder="30" placeholderTextColor={Colors.textMuted}
+            style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}
+          />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textSecondary }}>min</Text>
+          <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11, opacity: saving ? 0.6 : 1 }}>
+            {saving ? <ActivityIndicator size="small" color={Colors.textOnBrand} /> : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Enregistrer</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 

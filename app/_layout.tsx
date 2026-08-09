@@ -42,6 +42,16 @@ function RootNavigator() {
       <Stack.Screen name="legal/cgu" options={{ presentation: 'card' }} />
       <Stack.Protected guard={!!player}>
         <Stack.Screen name="(tabs)" />
+        {/* Profil joueur : écran POUSSÉ sur la pile racine (au-dessus des onglets)
+            → vrai historique de navigation (profil A → profil B → retour) +
+            geste de retour iOS natif. Était un onglet caché (singleton, sans
+            historique) avant 2026-08-08. */}
+        <Stack.Screen name="player/[id]" options={{ presentation: 'card' }} />
+        {/* Classement & Notifications : écrans POUSSÉS sur la pile racine (au-dessus
+            des onglets) → historique de navigation + geste retour iOS natif.
+            Étaient des onglets cachés (singletons, sans historique) avant 2026-08-08. */}
+        <Stack.Screen name="ranking" options={{ presentation: 'card' }} />
+        <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
         <Stack.Screen name="community" />
         <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="dm/[conversationId]" options={{ presentation: 'card' }} />

@@ -10,7 +10,7 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
   if (!p) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 }}>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, color: '#FFFFFF', textAlign: 'center' }}>Pas encore de duo ce mois-ci.</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: '#FFFFFF', textAlign: 'center' }}>Pas encore de duo ce mois-ci.</Text>
       </View>
     );
   }
@@ -22,7 +22,7 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#FFC11A', letterSpacing: 2, textTransform: 'uppercase' }}>Ton meilleur duo</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 28, marginTop: 8 }}>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8 }}>
         Avec qui tu as <Text style={{ color: '#FFC11A' }}>le plus gagné</Text>
       </Text>
 
@@ -30,10 +30,10 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
       <View style={{ alignItems: 'center', marginTop: 36 }}>
         <View style={{ width: 164, height: 164, borderRadius: 999, borderWidth: 2, borderColor: 'rgba(255,193,26,0.4)', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}>
           <View style={{ width: 140, height: 140, borderRadius: 999, backgroundColor: '#FFC11A', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 54, color: '#0A0A0A', letterSpacing: -1 }}>{initials(p.name)}</Text>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 54, lineHeight: 70, color: '#0A0A0A', letterSpacing: -1 }}>{initials(p.name)}</Text>
           </View>
         </View>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 36, color: '#FFFFFF', lineHeight: 36, marginTop: 18 }}>{p.name}</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 36, color: '#FFFFFF', lineHeight: 47, marginTop: 18 }}>{p.name}</Text>
         <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>@{first.toLowerCase()}</Text>
       </View>
 
@@ -57,7 +57,7 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
 function Tile({ n, l, c, bg, bd, lc }: { n: number | string; l: string; c: string; bg: string; bd: string; lc: string }) {
   return (
     <View style={{ flex: 1, backgroundColor: bg, borderWidth: 1, borderColor: bd, borderRadius: 14, padding: 14, alignItems: 'center' }}>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 34, color: c, lineHeight: 34 }}>{n}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 34, color: c, lineHeight: 44 }}>{n}</Text>
       <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, color: lc, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 4 }}>{l}</Text>
     </View>
   );

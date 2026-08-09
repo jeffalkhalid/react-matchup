@@ -19,7 +19,7 @@ export default function ChatsScreen() {
   const { player } = usePlayer();
   const router = useRouter();
   const { games, loading, loadGames } = useGameChats();
-  const { conversations: dms, requests, requestsCount, load: loadDms, isConversationBlocked } = useDirectChats();
+  const { conversations: dms, requests, requestsCount, load: loadDms, isConversationBlocked, unreadCount } = useDirectChats();
   const [section, setSection] = useState<'parties' | 'directs'>('parties');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -112,7 +112,7 @@ export default function ChatsScreen() {
           />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 28, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center' }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
+          <Text style={{ color: Colors.textOnDark, fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center' }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
         </View>
         <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.md }}>
           {active.length} match{active.length !== 1 ? 's' : ''} actif{active.length !== 1 ? 's' : ''}
@@ -266,6 +266,7 @@ export default function ChatsScreen() {
             const name = otherName(conv, player?.id ?? '');
             const photo = otherPhoto(conv, player?.id ?? '');
             const blocked = isConversationBlocked(conv);
+            const unread = blocked ? 0 : unreadCount(conv);
             return (
               <TouchableOpacity
                 onPress={() => router.push(`/dm/${conv.id}` as any)}
@@ -273,7 +274,7 @@ export default function ChatsScreen() {
                   flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
                   paddingHorizontal: Spacing.lg, paddingVertical: 13,
                   borderBottomWidth: 1, borderBottomColor: Colors.border,
-                  backgroundColor: Colors.bg,
+                  backgroundColor: unread > 0 ? `${Colors.primary}08` : Colors.bg,
                   opacity: blocked ? 0.55 : 1,
                 }}>
                 <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
@@ -284,7 +285,7 @@ export default function ChatsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: '800', fontFamily: Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>
+                    <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: unread > 0 ? '900' : '800', fontFamily: unread > 0 ? Fonts.uiBlack : Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>
                     {blocked && (
                       <View style={{ backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
                         <Text style={{ color: Colors.danger, fontSize: 10, fontWeight: '900' }}>🚫 Bloqué</Text>
@@ -292,12 +293,18 @@ export default function ChatsScreen() {
                     )}
                   </View>
                   {conv.last_message_at && (
-                    <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, marginTop: 2 }}>
+                    <Text style={{ color: unread > 0 ? Colors.textPrimary : Colors.textMuted, fontSize: FontSize.xs, marginTop: 2, fontWeight: unread > 0 ? '700' : '400' }}>
                       {new Date(conv.last_message_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                     </Text>
                   )}
                 </View>
-                <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
+                {unread > 0 ? (
+                  <View style={{ minWidth: 22, height: 22, borderRadius: 11, backgroundColor: Colors.primary, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900' }}>{unread > 99 ? '99+' : unread}</Text>
+                  </View>
+                ) : (
+                  <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
+                )}
               </TouchableOpacity>
             );
           }}

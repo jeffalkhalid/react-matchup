@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput,
   Modal, KeyboardAvoidingView, Platform, Pressable, Alert,
@@ -6,34 +6,42 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Polygon, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
-import { getBadge } from '../../../lib/badges';
-import { Glyph } from '../../../components/profile/glyphs';
-import { usePlayer } from '../../../hooks/usePlayer';
-import { supabase } from '../../../lib/supabase';
-import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../../lib/theme';
-import { formatFrmtRanking } from '../../../lib/frmt-match';
-import { blockUser, unblockUser, isBlocked, reportContent } from '../../../lib/moderation';
-import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../../lib/community';
-import { ActivityCard } from '../../../components/community/ActivityCard';
-import type { Player, EloHistory, ActivityEvent, Achievement } from '../../../types';
-import { getPlayerAchievements } from '../../../lib/achievements';
-import { PM } from '../../../components/profile/theme';
+import { getBadge } from '../../lib/badges';
+import { Glyph } from '../../components/profile/glyphs';
+import { usePlayer } from '../../hooks/usePlayer';
+import { supabase } from '../../lib/supabase';
+import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
+import { formatFrmtRanking } from '../../lib/frmt-match';
+import { blockUser, unblockUser, isBlocked, reportContent } from '../../lib/moderation';
+import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../lib/community';
+import { ActivityCard } from '../../components/community/ActivityCard';
+import type { Player, EloHistory, ActivityEvent, Achievement } from '../../types';
+import { getPlayerAchievements } from '../../lib/achievements';
+import { PM } from '../../components/profile/theme';
 import {
   ProfileHeader, AchievementFeedCard, MatchActionButton, type TabName, type MatchView, type TimelinePoint, type PlayerLite,
-} from '../../../components/profile/components';
-import { StatsTab, MatchsTab, PalmaresTab, BadgesTab } from '../../../components/profile/tabs';
-import { ProfileMenuSheet } from '../../../components/profile/ProfileMenuSheet';
-import { CommentsPolicyModal, DeleteAccountModal } from '../../../components/profile/AccountModals';
-import StoryMatchPicker from '../../../components/StoryMatchPicker';
-import StoryComposerV2 from '../../../components/StoryComposerV2';
-import type { StoryMode } from '../../../components/story/StoryStyles';
-import type { StoryPlayer, StoryMatchData, InviteData } from '../../../components/story/storyTheme';
-import { buildStoryMatch } from '../../../components/story/storyTheme';
-import { isDeleted, displayName, type JoinedPlayer } from '../../../lib/players';
-import { startDirectConversation } from '../../../lib/directChats';
-import DirectMessageComposer from '../../../components/DirectMessageComposer';
-import ReportReasonSheet from '../../../components/ReportReasonSheet';
-import { Icon } from '../../../components/community/icons';
+} from '../../components/profile/components';
+import { StatsTab, MatchsTab, PalmaresTab, BadgesTab, BinomesTab } from '../../components/profile/tabs';
+import { ProfileMenuSheet } from '../../components/profile/ProfileMenuSheet';
+import { CommentsPolicyModal, DeleteAccountModal } from '../../components/profile/AccountModals';
+import StoryMatchPicker from '../../components/StoryMatchPicker';
+import StoryComposerV2 from '../../components/StoryComposerV2';
+import type { StoryMode } from '../../components/story/StoryStyles';
+import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
+import { buildStoryMatch } from '../../components/story/storyTheme';
+import { isDeleted, displayName, type JoinedPlayer } from '../../lib/players';
+import { startDirectConversation } from '../../lib/directChats';
+import DirectMessageComposer from '../../components/DirectMessageComposer';
+import ReportReasonSheet from '../../components/ReportReasonSheet';
+import { Icon } from '../../components/community/icons';
+import ShowcaseManager from '../../components/profile/ShowcaseManager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  openShowcase, fetchActiveBinomes, fetchMyShowcases, fetchShowcaseInvites,
+  confirmShowcase, closeShowcase,
+} from '../../lib/showcase';
+import { notifyShowcaseNominated } from '../../lib/defiNotify';
+import { matchNature } from '../../lib/matchView';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -43,6 +51,7 @@ interface MatchRow {
   game_format?: string | null;
   match_type?: string | null;
   is_challenge?: boolean | null;
+  stake_multiplier?: number | null;
   status: string;
   game_id?: string | null;
   winner_id: string | null;
@@ -265,7 +274,7 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             {match.game?.location ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 11 }}>📍</Text>
+                <Icon name="mapPin" size={12} color={Colors.textSecondary} stroke={2} />
                 <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }} numberOfLines={1}>
                   {match.game.location}
                 </Text>
@@ -273,7 +282,7 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
             ) : null}
             {match.game?.match_date ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 11 }}>🕒</Text>
+                <Icon name="clock" size={12} color={Colors.textSecondary} stroke={2} />
                 <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary }}>
                   {new Date(match.game.match_date).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </Text>
@@ -390,7 +399,7 @@ function MatchCard({ match, playerId, eloDelta, onPlayerPress, onRematch }: {
               backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border,
             }}
           >
-            <Text style={{ fontSize: 13 }}>🔄</Text>
+            <Icon name="repeat" size={14} color={Colors.textPrimary} stroke={2} />
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>
               Rejouer avec la même équipe
             </Text>
@@ -446,7 +455,7 @@ function ReliabilityRing({ pct, color, size = 76, stroke = 8 }: {
           transform={`rotate(-90 ${mid} ${mid})`}
         />
       </Svg>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 24, color, letterSpacing: -0.5 }}>{Math.round(clamped)}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 29, color, letterSpacing: -0.5 }}>{Math.round(clamped)}</Text>
       <Text style={{ fontSize: 9, fontWeight: '800', color: LIGHT.muted, marginTop: -1 }}>%</Text>
     </View>
   );
@@ -467,7 +476,7 @@ function GradientAvatar({ name, color, size = 76 }: { name: string; color: strin
         <Rect width={size} height={size} fill={`url(#${gid})`} />
       </Svg>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: Fonts.display, fontSize: Math.round(size * 0.45), color: '#0A0A0A' }}>{getInitials(name)}</Text>
+        <Text style={{ fontFamily: Fonts.display, fontSize: Math.round(size * 0.45), lineHeight: Math.round(size * 0.45) * 1.3, color: '#0A0A0A' }}>{getInitials(name)}</Text>
       </View>
     </View>
   );
@@ -513,7 +522,7 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
       ) : null}
       {isSelf && onRematch && (
         <TouchableOpacity onPress={onRematch} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={{ paddingLeft: 2 }}>
-          <Text style={{ fontSize: 15 }}>🔄</Text>
+          <Icon name="repeat" size={16} color={Colors.textPrimary} stroke={2} />
         </TouchableOpacity>
       )}
       {isSelf && <Icon name="camera" size={15} color={LIGHT.muted} />}
@@ -523,11 +532,11 @@ function HistoryRow({ match, playerId, isSelf, divider, onShare, onRematch }: {
 
 // ── Main screen ──────────────────────────────────────────────────────
 export default function PlayerProfileScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  return <PlayerProfile id={id} />;
+  const { id, showcase } = useLocalSearchParams<{ id: string; showcase?: string }>();
+  return <PlayerProfile id={id} showcase={showcase} />;
 }
 
-export function PlayerProfile({ id }: { id: string }) {
+export function PlayerProfile({ id, showcase }: { id: string; showcase?: string }) {
   const { player: self, signOut } = usePlayer();
   const router           = useRouter();
   const insets           = useSafeAreaInsets();
@@ -571,6 +580,35 @@ export function PlayerProfile({ id }: { id: string }) {
   const [deleteOpen,     setDeleteOpen]     = useState(false);
   const [msgSheetOpen,   setMsgSheetOpen]   = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [showcaseOpen,   setShowcaseOpen]   = useState(false);
+  type BinomeRow = { binomeId: string; id: string; name: string; level: string };
+  const [binomeActive,   setBinomeActive]   = useState<BinomeRow[]>([]);
+  const [binomeIncoming, setBinomeIncoming] = useState<BinomeRow[]>([]);
+  const [binomeOutgoing, setBinomeOutgoing] = useState<BinomeRow[]>([]);
+  // Point « nouveau » sur l'onglet Binômes quand une de MES propositions vient
+  // d'être acceptée (active où je suis le nominateur), tant que je ne l'ai pas vue.
+  const [binomeNewAccepted, setBinomeNewAccepted] = useState(false);
+  const acceptedProposalIdsRef = useRef<string[]>([]);
+  const binomeSeenKey = `binomeSeen:${id}`;
+
+  // Ouverture directe du gestionnaire de vitrine depuis une notif (?showcase=1).
+  useEffect(() => {
+    if (showcase === '1' && isSelf) setShowcaseOpen(true);
+  }, [showcase, isSelf]);
+
+  // En ouvrant l'onglet Binômes, on « acquitte » les propositions acceptées
+  // (le point « nouveau » disparaît et ne revient pas).
+  useEffect(() => {
+    if (tab !== 'Binômes' || !isSelf) return;
+    setBinomeNewAccepted(false);
+    (async () => {
+      try {
+        const seen = new Set<string>(JSON.parse((await AsyncStorage.getItem(binomeSeenKey)) ?? '[]'));
+        acceptedProposalIdsRef.current.forEach(x => seen.add(x));
+        await AsyncStorage.setItem(binomeSeenKey, JSON.stringify([...seen]));
+      } catch { /* best-effort */ }
+    })();
+  }, [tab, isSelf, binomeSeenKey]);
 
   const reactToActivity = async (eventId: string) => {
     const myId = self?.id ?? '';
@@ -606,6 +644,43 @@ export function PlayerProfile({ id }: { id: string }) {
     ]);
   };
 
+  // Onglet « Binômes ». Vue publique = paires ACTIVES (l'autre joueur). Sur MON
+  // profil, on ajoute mes demandes reçues (à confirmer) et envoyées (en attente).
+  const mkRow = (bid: string, p?: { id: string; name: string; elo_score: number } | null): BinomeRow[] =>
+    p ? [{ binomeId: bid, id: p.id, name: p.name, level: formatPadelLevel(p.elo_score) }] : [];
+
+  const loadBinomes = async () => {
+    if (isSelf) {
+      const [mine, invites] = await Promise.all([fetchMyShowcases(id), fetchShowcaseInvites(id)]);
+      setBinomeActive(mine.filter(bn => bn.status === 'active')
+        .flatMap(bn => mkRow(bn.id, bn.player_a === id ? bn.b : bn.a)));
+      setBinomeOutgoing(mine.filter(bn => bn.player_a === id && bn.status === 'pending')
+        .flatMap(bn => mkRow(bn.id, bn.b)));
+      setBinomeIncoming(invites.flatMap(bn => mkRow(bn.id, bn.a)));  // nominateur = player_a
+      // « Accepté » = mes propositions (player_a === moi) devenues actives. Point
+      // « nouveau » tant que je ne les ai pas ouvertes (set persisté « déjà vu »).
+      const acceptedIds = mine.filter(bn => bn.status === 'active' && bn.player_a === id).map(bn => bn.id);
+      acceptedProposalIdsRef.current = acceptedIds;
+      try {
+        const seen = new Set<string>(JSON.parse((await AsyncStorage.getItem(binomeSeenKey)) ?? '[]'));
+        setBinomeNewAccepted(acceptedIds.some(x => !seen.has(x)));
+      } catch { setBinomeNewAccepted(false); }
+    } else {
+      const rows = await fetchActiveBinomes(id);
+      setBinomeActive(rows.flatMap(bn => mkRow(bn.id, bn.player_a === id ? bn.b : bn.a)));
+      setBinomeIncoming([]); setBinomeOutgoing([]);
+    }
+  };
+
+  const confirmBinome = async (bid: string) => {
+    try { await confirmShowcase(bid); } catch (e: any) { Alert.alert('Erreur', e?.message ?? 'Action impossible.'); }
+    await loadBinomes();
+  };
+  const closeBinome = async (bid: string) => {
+    try { await closeShowcase(bid); } catch (e: any) { Alert.alert('Erreur', e?.message ?? 'Action impossible.'); }
+    await loadBinomes();
+  };
+
   const fetchData = async () => {
     // Phase 1 — profile
     const { data: profileData } = await supabase.from('players').select('*').eq('id', id).single();
@@ -615,7 +690,7 @@ export function PlayerProfile({ id }: { id: string }) {
     const [matchesRes, historyRes, repRes, favRes, rankRes] = await Promise.all([
       supabase
         .from('matches')
-        .select(`id, score_text, created_at, game_format, match_type, is_challenge, status, game_id,
+        .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
@@ -641,6 +716,7 @@ export function PlayerProfile({ id }: { id: string }) {
     setRankPos((rankRes.count ?? 0) + 1);
     getPlayerActivity(id).then(setActivity);
     getPlayerAchievements(id).then(setAchievements);
+    loadBinomes();
 
     // Graphe social (follows) — compteurs + état de suivi pour l'en-tête.
     supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id)
@@ -820,7 +896,9 @@ export function PlayerProfile({ id }: { id: string }) {
   if (isDeleted(profile)) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-        <Text style={{ fontSize: 40, marginBottom: 10 }}>👤</Text>
+        <View style={{ marginBottom: 10 }}>
+          <Icon name="users" size={40} color={Colors.textMuted} stroke={1.8} />
+        </View>
         <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center' }}>
           Ce compte a été supprimé
         </Text>
@@ -971,6 +1049,33 @@ export function PlayerProfile({ id }: { id: string }) {
     router.push((`/(tabs)/lobby?create=1&challenge=1&with=${profile.id}&pname=${encodeURIComponent(profile.name)}&pelo=${profile.elo_score}${sideParam}`) as any);
   };
 
+  // Proposer CE joueur comme mon binôme ouvert aux défis (raccourci depuis son profil).
+  const handleProposeBinome = () => {
+    if (!self || isSelf) return;
+    Alert.alert(
+      'Proposer un binôme',
+      `Te déclarer ouvert aux défis avec ${profile.name} ? Il devra confirmer depuis son profil.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Proposer',
+          onPress: async () => {
+            try {
+              await openShowcase(id as string);
+              notifyShowcaseNominated(id as string, self.name);
+              Alert.alert('Proposé !', `${profile.name} doit confirmer depuis son profil — votre binôme apparaîtra alors dans « À défier ».`);
+            } catch (e: any) {
+              const msg = e?.message?.includes('already exists')
+                ? 'Tu as déjà un binôme (ou une demande en cours) avec ce joueur.'
+                : (e?.message ?? 'Action impossible.');
+              Alert.alert('Impossible', msg);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   function mapDmError(msg: string): string {
     if (msg.includes('does not accept')) return "Ce joueur n'accepte pas les messages.";
     if (msg.includes('past partners')) return "Ce joueur n'accepte les messages que de joueurs avec qui il a déjà joué.";
@@ -1092,6 +1197,7 @@ export function PlayerProfile({ id }: { id: string }) {
       teams: [myTeam, oppTeam],
       sets,
       winnerRow: win ? 0 : 1,
+      ...matchNature(m),
     };
   };
   const matchViews: MatchView[] = matches.map(mapMatch);
@@ -1170,9 +1276,12 @@ export function PlayerProfile({ id }: { id: string }) {
         onShareProfile={() => { setComposerMode('profil'); setComposerLocked(false); setComposerOpen(true); }}
         onDefier={handleDefier}
         onMessage={isSelf ? undefined : onMessage}
+        onShowcase={isSelf ? undefined : handleProposeBinome}
+        onMyShowcase={isSelf ? () => setShowcaseOpen(true) : undefined}
         tab={tab}
         setTab={setTab}
         topInset={insets.top}
+        tabBadges={isSelf ? { 'Binômes': { count: binomeIncoming.length, dot: binomeNewAccepted } } : undefined}
       />
       <View style={{ backgroundColor: PM.page, borderTopLeftRadius: 20, borderTopRightRadius: 20, marginTop: -2, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 40, minHeight: 420 }}>
         {tab === 'Stats' && (
@@ -1186,6 +1295,18 @@ export function PlayerProfile({ id }: { id: string }) {
         {tab === 'Matchs' && <MatchsTab matches={matchViews} renderFooter={renderMatchFooter} onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }} />}
         {tab === 'Palmarès' && <PalmaresTab achievements={achievements} />}
         {tab === 'Badges' && <BadgesTab badges={repBadges} />}
+        {tab === 'Binômes' && (
+          <BinomesTab
+            active={binomeActive}
+            incoming={binomeIncoming}
+            outgoing={binomeOutgoing}
+            isSelf={isSelf}
+            onConfirm={confirmBinome}
+            onClose={closeBinome}
+            onAdd={() => setShowcaseOpen(true)}
+            onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }}
+          />
+        )}
         {tab === 'Activité' && (() => {
           // Activité = badges reçus + palmarès débloqués (pas les matchs).
           const feedEvents = activity.filter(e => e.type !== 'match_win' && e.type !== 'match_loss');
@@ -1225,7 +1346,7 @@ export function PlayerProfile({ id }: { id: string }) {
               </View>
 
               <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
-                <Text style={{ fontSize: 22, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>Modifier le <Text style={{ color: Colors.brand }}>profil</Text></Text>
+                <Text style={{ fontSize: 22, lineHeight: 29, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>Modifier le <Text style={{ color: Colors.brand }}>profil</Text></Text>
                 <TouchableOpacity onPress={() => setEditOpen(false)} style={{ padding: 4 }}>
                   <Text style={{ fontSize: 22, color: Colors.textMuted }}>×</Text>
                 </TouchableOpacity>
@@ -1492,6 +1613,11 @@ export function PlayerProfile({ id }: { id: string }) {
             if (error) { Alert.alert('Suppression impossible', error.message); return; }
             signOut();
           }}
+        />
+        <ShowcaseManager
+          visible={showcaseOpen}
+          onClose={() => { setShowcaseOpen(false); loadBinomes(); }}
+          player={{ id: profile.id, name: profile.name }}
         />
       </>
     )}

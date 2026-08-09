@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
+import { Icon } from '../community/icons';
 import type { Player, SocialPlayer } from '../../types';
 
 const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -24,8 +25,8 @@ export function FriendsRanking({ me, friends, monthLabel, onSeeAll }: {
     <View style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 14 }}>🏆</Text>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, color: Colors.textPrimary }}>Top amis{monthLabel ? ` · ${monthLabel.charAt(0) + monthLabel.slice(1).toLowerCase()}` : ''}</Text>
+          <Icon name="trophy" size={15} color={Colors.brandDeep} stroke={2} />
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary }}>Top amis{monthLabel ? ` · ${monthLabel.charAt(0) + monthLabel.slice(1).toLowerCase()}` : ''}</Text>
         </View>
         {onSeeAll ? (
           <TouchableOpacity onPress={onSeeAll} hitSlop={8}><Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: Colors.textSecondary }}>Voir tout →</Text></TouchableOpacity>

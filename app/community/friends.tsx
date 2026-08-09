@@ -4,42 +4,24 @@ import { useRouter } from 'expo-router';
 import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts } from '../../lib/theme';
 import { getSuggestions, searchPlayers, setFollow } from '../../lib/community';
-import { Card, Kicker, NavBar, BrandBtn, Chips, Divider, Cream, CreamBorder } from '../../components/community/ui';
+import { Card, Kicker, NavBar, BrandBtn, Divider, Cream, CreamBorder } from '../../components/community/ui';
 import { Icon } from '../../components/community/icons';
 import { PlayerRow } from '../../components/community/PlayerRow';
-import { ActivityFeed } from '../../components/community/ActivityFeed';
 import type { SocialPlayer } from '../../types';
 
 export default function FriendsScreen() {
   const router = useRouter();
   const { player } = usePlayer();
-  const [tab, setTab] = useState<'activity' | 'search'>('activity');
 
+  // L'onglet « Activité » a été retiré : le fil des amis vit désormais dans
+  // l'onglet Activité principal. Cet écran ne sert plus qu'à la recherche.
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       <NavBar title="Mes amis" onBack={() => router.back()} />
 
-      {/* Segmented control */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
-        <View style={{ flexDirection: 'row', gap: 4, backgroundColor: Chips, borderWidth: 1, borderColor: Colors.border, borderRadius: 999, padding: 4 }}>
-          {([['activity', 'Activité'], ['search', 'Recherche']] as const).map(([key, label]) => {
-            const on = tab === key;
-            return (
-              <TouchableOpacity key={key} onPress={() => setTab(key)} activeOpacity={0.9} style={{
-                flex: 1, height: 38, borderRadius: 999, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: on ? Colors.brand : 'transparent',
-                ...(on ? { shadowColor: Colors.brand, shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 } : {}),
-              }}>
-                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: on ? Colors.primary : Colors.textSecondary }}>{label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {!player ? null : tab === 'activity'
-        ? <ActivityFeed myId={player.id} />
-        : <SearchBody myId={player.id} onInvite={() => router.push('/community/invite')} player={player} />}
+      {!player ? null : (
+        <SearchBody myId={player.id} onInvite={() => router.push('/community/invite')} player={player} />
+      )}
     </View>
   );
 }

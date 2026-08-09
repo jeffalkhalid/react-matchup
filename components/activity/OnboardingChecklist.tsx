@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 import { Colors, Fonts } from '../../lib/theme';
+import { Icon } from '../community/icons';
 
 export type OnboardingStep = { label: string; hint?: string; done: boolean; onPress: () => void };
 
@@ -11,7 +12,7 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
   return (
     <View style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 16, marginTop: 14, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, color: Colors.textPrimary }}>Tes premiers pas</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary }}>Tes premiers pas</Text>
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textSecondary }}>{done}/{steps.length}</Text>
       </View>
       {/* progress bar */}
@@ -37,7 +38,7 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.textSecondary }}>{s.hint}</Text>
             </View>
           ) : !s.done ? (
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 16, color: Colors.textMuted }}>›</Text>
+            <Icon name="chevronRight" size={16} color={Colors.textMuted} stroke={2.2} />
           ) : null}
         </TouchableOpacity>
       ))}

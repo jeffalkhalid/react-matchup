@@ -70,6 +70,8 @@ export interface Match {
   loser?: Player;
   winner_2?: Player;
   loser_2?: Player;
+  // Mise du défi, copiée du open_game à la saisie du score (pastille des cartes)
+  stake_multiplier?: number | null;
   game?: { location: string | null; match_date: string | null; creator_id?: string | null } | null;
 }
 
@@ -206,6 +208,7 @@ export interface ActivityEvent {
     eloDelta?: number | null;
     levelDelta?: number | null;
     topPartner?: string | null;
+    recap?: unknown;           // snapshot complet du bilan (MonthlyRecap) pour l'affichage plein écran
   };
   caption?: string | null;     // légende libre (Moment partagé)
   is_highlight?: boolean;      // mis en avant dans le rail Moments

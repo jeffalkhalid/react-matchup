@@ -4,13 +4,13 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePlayer } from '../../hooks/usePlayer';
-import { useNotificationCount } from '../../hooks/useNotificationCount';
-import { getNotificationsEnabled, enableNotificationsFromApp } from '../../hooks/usePushNotifications';
-import { supabase } from '../../lib/supabase';
-import { buildNotificationItems, isDismissibleNotif, type NotifItem } from '../../lib/notifications';
-import { Colors, Fonts } from '../../lib/theme';
-import { Icon } from '../../components/community/icons';
+import { usePlayer } from '../hooks/usePlayer';
+import { useNotificationCount } from '../hooks/useNotificationCount';
+import { getNotificationsEnabled, enableNotificationsFromApp } from '../hooks/usePushNotifications';
+import { supabase } from '../lib/supabase';
+import { buildNotificationItems, isDismissibleNotif, type NotifItem } from '../lib/notifications';
+import { Colors, Fonts } from '../lib/theme';
+import { Icon } from '../components/community/icons';
 
 // ─── Screen ───────────────────────────────────────────────────
 export default function NotificationsScreen() {
@@ -142,7 +142,7 @@ export default function NotificationsScreen() {
         >
           <Icon name="chevronLeft" size={20} color={Colors.textPrimary} stroke={2.5} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 26, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>
+        <Text style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>
           Tes <Text style={{ color: Colors.brand }}>notifications</Text>
         </Text>
         {items.length > 0 && (

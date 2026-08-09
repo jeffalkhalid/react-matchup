@@ -65,11 +65,12 @@ export function computeEloExchange(
   loserTeamElo: number,
   winnerMatchCount = 30,
   fiabilityPct?: number,
+  stakeMultiplier = 1,
 ): number {
   const expectedWin = 1 / (1 + Math.pow(10, (loserTeamElo - winnerTeamElo) / 400));
   const K = getKFactor(winnerMatchCount, fiabilityPct);
   const antiFarm = getAntiFarmMultiplier(winnerTeamElo, loserTeamElo);
-  return Math.max(1, Math.round(K * (1 - expectedWin) * antiFarm));
+  return Math.max(1, Math.round(K * (1 - expectedWin) * antiFarm * stakeMultiplier));
 }
 
 export function teamElo(p1Elo: number, p2Elo?: number | null): number {
@@ -114,7 +115,7 @@ export interface EloSimResult {
 // K-factor par joueur : chaque joueur bouge selon SA propre fiabilité.
 // Réplique fidèlement le trigger public.fn_distribute_elo_on_validate
 // (elo_per_player_k.sql) : attendu/anti/marge au niveau équipe, K per-joueur.
-export function simulateElo(players: EloPlayerInput[], scoreText?: string | null): EloSimResult {
+export function simulateElo(players: EloPlayerInput[], scoreText?: string | null, stakeMultiplier = 1): EloSimResult {
   const winners = players.filter(p => p.isWinner);
   const losers  = players.filter(p => !p.isWinner);
 
@@ -150,7 +151,7 @@ export function simulateElo(players: EloPlayerInput[], scoreText?: string | null
     const margin       = isPlacement && marginMultiplier === 1.5
       ? PLACEMENT_MARGIN_BLOWOUT
       : marginMultiplier;
-    let delta = Math.round(Math.max(1, Math.round(kFactor * factor)) * margin);
+    let delta = Math.round(Math.max(1, Math.round(kFactor * factor)) * margin * stakeMultiplier);
     if (isPlacement) delta = Math.min(delta, PLACEMENT_DELTA_CAP);
     return { kFactor, delta };
   };

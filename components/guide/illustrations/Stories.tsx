@@ -25,7 +25,7 @@ export function IllustStories() {
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: 13 }}>
           <Pill variant="brand" fontSize={7.5}>🎾 Victoire</Pill>
           <View style={{ flex: 1 }} />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 24, textTransform: 'uppercase', color: '#fff' }}>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, textTransform: 'uppercase', color: '#fff' }}>
             Karim{'\n'}gagne 6-3 6-4
           </Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#FFC11A', marginTop: 6 }}>Niveau 6.02 · +0.18</Text>
