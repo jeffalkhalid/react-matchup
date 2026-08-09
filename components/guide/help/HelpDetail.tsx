@@ -83,7 +83,7 @@ export function HelpDetail({ rkey, T, onBack, onClose, onPrevNext, onRoute }:
                 <View key={k} style={{ flexDirection: 'row', paddingBottom: k === data.steps.length - 1 ? 0 : 14 }}>
                   <View style={{ width: 24, height: 24, borderRadius: 999, backgroundColor: r.soft, borderWidth: 1,
                     borderColor: `${r.accent}45`, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
-                    <Text style={{ fontFamily: Fonts.display, fontSize: 13, color: r.accent }}>{k + 1}</Text>
+                    <Text style={{ fontFamily: Fonts.display, fontSize: 13, lineHeight: 17, color: r.accent }}>{k + 1}</Text>
                   </View>
                   <Text style={{ flex: 1, marginLeft: 12, fontFamily: Fonts.ui, fontSize: 13.5, lineHeight: 19, color: T.text }}>{s}</Text>
                 </View>

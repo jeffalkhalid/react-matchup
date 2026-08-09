@@ -57,7 +57,7 @@ function HeroSlide({ T, active, reduceMotion }: { T: GuideTheme; active: boolean
         </View>
       </Reveal>
       <Reveal active={active} delay={300} reduceMotion={reduceMotion}>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 31, textTransform: 'uppercase',
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 39, textTransform: 'uppercase',
           textAlign: 'center', color: T.text, marginBottom: 16 }}>
           Ton terrain de jeu pour <Text style={{ color: dark ? '#FFC11A' : '#E8A906' }}>devenir le meilleur</Text>
         </Text>

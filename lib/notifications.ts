@@ -65,6 +65,8 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: dmRequests },
     { data: showcaseNoms },
     { data: badgeSkips },
+    { data: queuedApps },
+    { data: lockedApps },
   ] = await Promise.all([
     supabase
       .from('defi_applications')
@@ -133,6 +135,20 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .from('badge_prompt_skips')
       .select('match_id')
       .eq('player_id', playerId),
+    // Défi : mon binôme en FILE D'ATTENTE (carte persistante tant qu'on attend).
+    supabase
+      .from('defi_applications')
+      .select('id, game:game_id(location, match_date, status)')
+      .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
+      .eq('status', 'queued'),
+    // Défi : mon binôme RETENU récemment (verrouillage direct ou promotion) —
+    // carte info supprimable (type 'joined').
+    supabase
+      .from('defi_applications')
+      .select('id, game_id, resolved_at, game:game_id(location, match_date, status)')
+      .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
+      .eq('status', 'locked')
+      .gte('resolved_at', sevenDaysAgo),
   ]);
 
   const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
@@ -287,8 +303,30 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       type: 'challenge' as const,
       title: 'Proposition de binôme',
       subtitle: `${s.a?.name ?? '?'} veut être ton binôme de défis — confirme depuis ton profil.`,
-      route: `/(tabs)/player/${playerId}?showcase=1`,
+      route: `/player/${playerId}?showcase=1`,
     })),
+    // Défi — mon binôme en file d'attente (persistant tant que la file dure).
+    ...(queuedApps ?? [])
+      .filter((q: any) => q.game?.status === 'confirmed'
+        && (!q.game?.match_date || new Date(q.game.match_date).getTime() > Date.now()))
+      .map((q: any) => ({
+        id: `defi-queued-${q.id}`,
+        type: 'challenge' as const,
+        title: 'En file d\'attente',
+        subtitle: `Votre binôme est en file pour le défi${q.game?.location ? ` à ${q.game.location}` : ''} — promus si une place se libère`,
+        route: '/(tabs)/matchmaking?tab=mes',
+      })),
+    // Défi — binôme retenu (verrouillage direct ou promotion) : info supprimable.
+    ...(lockedApps ?? [])
+      .filter((l: any) => l.game?.status === 'confirmed'
+        && (!l.game?.match_date || new Date(l.game.match_date).getTime() > Date.now()))
+      .map((l: any) => ({
+        id: `joined-defi-${l.id}`,
+        type: 'joined' as const,
+        title: '⚔️ Défi confirmé',
+        subtitle: `Votre binôme relève le défi${l.game?.location ? ` à ${l.game.location}` : ''} — rendez-vous sur le terrain !`,
+        route: `/(tabs)/lobby?gameId=${l.game_id}`,
+      })),
     ...visiblePending.map(({ m, action }: any) => action === 'resolve' ? {
       id: `match-${m.id}`,
       type: 'match' as const,

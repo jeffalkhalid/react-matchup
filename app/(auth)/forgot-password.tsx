@@ -208,6 +208,7 @@ export default function ForgotPasswordScreen() {
             textAlign: 'center',
             fontFamily: Fonts.welcome,
             fontSize: 23,
+            lineHeight: 30,
             color: tokens.textPrimary,
             marginBottom: 22,
             includeFontPadding: false,

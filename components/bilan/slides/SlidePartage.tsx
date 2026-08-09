@@ -64,7 +64,7 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#0A0A0A', letterSpacing: 2, textTransform: 'uppercase' }}>Recap {recap.shortLabel}</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 42, color: '#0A0A0A', lineHeight: 40, marginTop: 4 }}>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 42, color: '#0A0A0A', lineHeight: 55, marginTop: 4 }}>
         Tu as fait <Text style={{ color: '#FFFFFF' }}>un mois</Text> de feu 🔥
       </Text>
 
@@ -161,7 +161,7 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
 function Cell({ n, l, c, bg, lc }: { n: number | string; l: string; c: string; bg: string; lc: string }) {
   return (
     <View style={{ width: '47%', flexGrow: 1, backgroundColor: bg, borderRadius: 11, padding: 10 }}>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 28, color: c, lineHeight: 28 }}>{n}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 28, color: c, lineHeight: 36 }}>{n}</Text>
       <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, color: lc, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 3 }}>{l}</Text>
     </View>
   );

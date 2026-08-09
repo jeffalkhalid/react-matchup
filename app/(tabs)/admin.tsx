@@ -983,7 +983,7 @@ export default function AdminScreen() {
             <Text style={{ color: Colors.textMuted, fontSize: 18 }}>‹</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 26, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
+            <Text style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
             <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>🛡️ Administration</Text>
           </View>
           {disputes.length > 0 && (

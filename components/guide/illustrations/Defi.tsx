@@ -21,7 +21,7 @@ export function IllustDefi() {
         {/* Toi */}
         <View style={{ alignItems: 'center' }}>
           <Avatar name="Toi K" size={54} radius={18} league="gold" />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 14, textTransform: 'uppercase', color: '#0A0A0A', marginTop: 6 }}>Toi</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 14, lineHeight: 18, textTransform: 'uppercase', color: '#0A0A0A', marginTop: 6 }}>Toi</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#E8A906' }}>Niv. 6.02</Text>
         </View>
 
@@ -31,13 +31,13 @@ export function IllustDefi() {
             alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="swords" size={19} color="#FFC11A" stroke={2.2} />
           </View>
-          <Text style={{ fontFamily: Fonts.display, fontSize: 13, color: '#A1A1AA', letterSpacing: 0.5, marginTop: 4 }}>VS</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: 13, lineHeight: 17, color: '#A1A1AA', letterSpacing: 0.5, marginTop: 4 }}>VS</Text>
         </View>
 
         {/* Sami */}
         <View style={{ alignItems: 'center' }}>
           <Avatar name="Sami L" size={54} radius={18} league="silver" />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 14, textTransform: 'uppercase', color: '#0A0A0A', marginTop: 6 }}>Sami</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 14, lineHeight: 18, textTransform: 'uppercase', color: '#0A0A0A', marginTop: 6 }}>Sami</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#A1A1AA' }}>Niv. 5.40</Text>
         </View>
       </View>

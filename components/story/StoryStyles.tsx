@@ -26,7 +26,7 @@ function Ring({ rate, size, sw, track, color, labelColor, subColor }:
           strokeDasharray={`${(c * rate) / 100} ${c}`} />
       </Svg>
       <View style={{ alignItems: 'center' }}>
-        <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.3, color: labelColor }}>{rate}<Text style={{ fontSize: size * 0.16 }}>%</Text></Text>
+        <Text style={{ fontFamily: Fonts.display, fontSize: size * 0.3, lineHeight: size * 0.3 * 1.3, color: labelColor }}>{rate}<Text style={{ fontSize: size * 0.16 }}>%</Text></Text>
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: size * 0.08, letterSpacing: size * 0.02, color: subColor, marginTop: size * 0.02 }}>WIN RATE</Text>
       </View>
     </View>
@@ -57,7 +57,7 @@ function CardDark({ width, player: p, invite }: Base & { player: StoryPlayer }) 
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(28), marginBottom: s(30) }}>
             <View style={{ width: s(132), height: s(132), borderRadius: s(32), backgroundColor: gold, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontFamily: Fonts.display, fontSize: s(64), color: '#0A0A0A' }}>{initialsOf(p.name)}</Text>
+              <Text style={{ fontFamily: Fonts.display, fontSize: s(64), lineHeight: s(64) * 1.3, color: '#0A0A0A' }}>{initialsOf(p.name)}</Text>
             </View>
             <View style={{ gap: s(12) }}>
               <View style={{ alignSelf: 'flex-start', borderRadius: 999, paddingVertical: s(8), paddingHorizontal: s(20), backgroundColor: gold + '22', borderWidth: 1.5, borderColor: gold + '66' }}>
@@ -66,16 +66,16 @@ function CardDark({ width, player: p, invite }: Base & { player: StoryPlayer }) 
               {rankLine ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(24), color: 'rgba(255,255,255,0.45)' }}>{rankLine}</Text> : null}
             </View>
           </View>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(150), lineHeight: s(140), color: '#fff', textTransform: 'uppercase' }} numberOfLines={1}>{p.name}</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(150), lineHeight: s(150) * 1.3, color: '#fff', textTransform: 'uppercase' }} numberOfLines={1}>{p.name}</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(24), letterSpacing: s(4), color: 'rgba(255,255,255,0.4)', marginTop: s(28) }}>NIVEAU PADEL</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: s(200), color: gold }}>{p.level.toFixed(2)}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: s(200), lineHeight: s(200) * 1.3, color: gold }}>{p.level.toFixed(2)}</Text>
         </View>
 
         <View>
           <View style={{ flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.12)', paddingVertical: s(34) }}>
             {[['MATCHS', p.wins + p.losses], ['VICTOIRES', p.wins], ['WIN', p.winRate + '%']].map(([l, v], i) => (
               <View key={i} style={{ flex: 1, alignItems: i === 0 ? 'flex-start' : i === 2 ? 'flex-end' : 'center' }}>
-                <Text style={{ fontFamily: Fonts.display, fontSize: s(84), color: '#fff' }}>{v}</Text>
+                <Text style={{ fontFamily: Fonts.display, fontSize: s(84), lineHeight: s(84) * 1.3, color: '#fff' }}>{v}</Text>
                 <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(3), color: 'rgba(255,255,255,0.4)' }}>{l}</Text>
               </View>
             ))}
@@ -135,7 +135,7 @@ function ScoreHero({ width, match: m, invite, opts }: Base & { match: StoryMatch
           {show.type ? <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(4), color: 'rgba(255,255,255,0.35)' }}>{(m.type || '').toUpperCase()}</Text> : null}
         </View>
         <View style={{ alignItems: 'center' }}>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(90), color: acc, textTransform: 'uppercase', marginBottom: s(24) }}>{win ? 'Victoire' : 'Défaite'}</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(90), lineHeight: s(90) * 1.3, color: acc, textTransform: 'uppercase', marginBottom: s(24) }}>{win ? 'Victoire' : 'Défaite'}</Text>
           <BigSets sets={m.sets} accent={brand} size={s(188)} s={s} />
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(28), letterSpacing: s(3), color: 'rgba(255,255,255,0.5)', marginTop: s(24) }}>{setsWon(m.sets)}–{setsLost(m.sets)} SETS{show.elo && m.eloDelta ? ` · ${m.eloDelta} NIV.` : ''}</Text>
           {caption ? <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(30), color: '#fff', textAlign: 'center', marginTop: s(24), maxWidth: s(820) }}>“{caption}”</Text> : null}
@@ -146,7 +146,7 @@ function ScoreHero({ width, match: m, invite, opts }: Base & { match: StoryMatch
             <Avatars names={m.winners} size={s(84)} dark s={s} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(20), letterSpacing: s(3), color: brand }}>VAINQUEURS</Text>
-              <Text style={{ fontFamily: Fonts.welcome, fontSize: s(56), color: '#fff', textTransform: 'uppercase' }} numberOfLines={1}>{m.winners.join(' & ')}</Text>
+              <Text style={{ fontFamily: Fonts.welcome, fontSize: s(56), lineHeight: s(56) * 1.3, color: '#fff', textTransform: 'uppercase' }} numberOfLines={1}>{m.winners.join(' & ')}</Text>
             </View>
           </View>
           <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(22), letterSpacing: s(6), color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginVertical: s(10) }}>VS</Text>
@@ -155,7 +155,7 @@ function ScoreHero({ width, match: m, invite, opts }: Base & { match: StoryMatch
             <Avatars names={m.losers} size={s(70)} dark s={s} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(18), letterSpacing: s(3), color: 'rgba(255,255,255,0.4)' }}>ADVERSAIRES</Text>
-              <Text style={{ fontFamily: Fonts.welcome, fontSize: s(46), color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }} numberOfLines={1}>{m.losers.join(' & ')}</Text>
+              <Text style={{ fontFamily: Fonts.welcome, fontSize: s(46), lineHeight: s(46) * 1.3, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }} numberOfLines={1}>{m.losers.join(' & ')}</Text>
             </View>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: s(30), borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
@@ -182,7 +182,7 @@ function Ticket({ width, match: m, invite, opts }: Base & { match: StoryMatchDat
       <Avatars names={names} size={s(72)} s={s} />
       <View>
         <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(18), letterSpacing: s(3), color: c }}>{label}</Text>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(50), color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{names.join(' & ')}</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(50), lineHeight: s(50) * 1.3, color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{names.join(' & ')}</Text>
       </View>
     </View>
   );
@@ -246,8 +246,8 @@ function MinimalMatch({ width, match: m, invite, opts }: Base & { match: StoryMa
         </View>
         <View>
           <View style={{ width: s(120), height: s(10), backgroundColor: brand, borderRadius: s(5), marginBottom: s(40) }} />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(120), lineHeight: s(118), color: '#fff', textTransform: 'uppercase' }}>{win ? 'Victoire' : 'Défaite'}</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: s(150), color: brand, marginTop: s(10) }}>{m.sets.map(([a, b]) => `${a}-${b}`).join('  ')}</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: s(120), lineHeight: s(120) * 1.3, color: '#fff', textTransform: 'uppercase' }}>{win ? 'Victoire' : 'Défaite'}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: s(150), lineHeight: s(150) * 1.3, color: brand, marginTop: s(10) }}>{m.sets.map(([a, b]) => `${a}-${b}`).join('  ')}</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), letterSpacing: s(3), color: 'rgba(255,255,255,0.55)', marginTop: s(28) }} numberOfLines={2}>
             {m.winners.join(' & ')}  vs  {m.losers.join(' & ')}{show.elo && m.eloDelta ? `   ·   ${m.eloDelta} NIV.` : ''}
           </Text>
@@ -281,7 +281,7 @@ function PhotoMatch({ width, match: m, invite, photoUri }: Base & { match: Story
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(3), color: '#fff', backgroundColor: 'rgba(0,0,0,0.32)', paddingVertical: s(12), paddingHorizontal: s(20), borderRadius: 999, overflow: 'hidden' }}>{(m.date || '').toUpperCase()}</Text>
       </View>
       <View style={{ position: 'absolute', left: s(84), right: s(84), bottom: s(96) }}>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(72), color: Colors.brand, textTransform: 'uppercase', marginBottom: s(12) }}>{win ? 'Victoire' : 'Défaite'}</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(72), lineHeight: s(72) * 1.3, color: Colors.brand, textTransform: 'uppercase', marginBottom: s(12) }}>{win ? 'Victoire' : 'Défaite'}</Text>
         <BigSets sets={m.sets} accent={Colors.brand} size={s(172)} s={s} />
         <View style={{ height: 2, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: s(28) }} />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: s(26) }}>
@@ -290,7 +290,7 @@ function PhotoMatch({ width, match: m, invite, photoUri }: Base & { match: Story
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: s(26), color: 'rgba(255,255,255,0.8)' }} numberOfLines={1}>vs {m.losers.join(' & ')} · 📍 {m.location}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: s(56), color: Colors.brand }}>{m.eloDelta}</Text>
+            <Text style={{ fontFamily: Fonts.display, fontSize: s(56), lineHeight: s(56) * 1.3, color: Colors.brand }}>{m.eloDelta}</Text>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(20), letterSpacing: s(2), color: 'rgba(255,255,255,0.7)' }}>NIVEAU</Text>
           </View>
         </View>
@@ -311,7 +311,7 @@ function TradingCard({ width, player: p, invite }: Base & { player: StoryPlayer 
   const cw = s(940); const ch = (cw * 1740) / 980;
   const Cell = ({ l, v }: { l: string; v: string | number }) => (
     <View style={{ flex: 1, alignItems: 'center' }}>
-      <Text style={{ fontFamily: Fonts.display, fontSize: s(72), color: ink }}>{v}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: s(72), lineHeight: s(72) * 1.3, color: ink }}>{v}</Text>
       <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(22), letterSpacing: s(2), color: inkSoft, marginTop: s(2) }}>{l}</Text>
     </View>
   );
@@ -333,7 +333,7 @@ function TradingCard({ width, player: p, invite }: Base & { player: StoryPlayer 
           {/* top corner */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontFamily: Fonts.display, fontSize: s(150), color: ink, lineHeight: s(140) }}>{p.level.toFixed(1)}</Text>
+              <Text style={{ fontFamily: Fonts.display, fontSize: s(150), color: ink, lineHeight: s(150) * 1.3 }}>{p.level.toFixed(1)}</Text>
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(36), letterSpacing: s(3), color: ink }}>{leagueLabel[p.league]?.toUpperCase()}</Text>
               <View style={{ width: s(90), height: s(4), backgroundColor: ink, opacity: 0.4, marginVertical: s(12), borderRadius: s(4) }} />
               <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(34), letterSpacing: s(4), color: ink }}>PADEL</Text>
@@ -341,7 +341,7 @@ function TradingCard({ width, player: p, invite }: Base & { player: StoryPlayer 
             {p.rank > 0 ? (
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(26), letterSpacing: s(4), color: inkSoft }}>RANG</Text>
-                <Text style={{ fontFamily: Fonts.display, fontSize: s(96), color: ink, lineHeight: s(92) }}>#{p.rank}</Text>
+                <Text style={{ fontFamily: Fonts.display, fontSize: s(96), color: ink, lineHeight: s(96) * 1.3 }}>#{p.rank}</Text>
               </View>
             ) : null}
           </View>
@@ -349,9 +349,9 @@ function TradingCard({ width, player: p, invite }: Base & { player: StoryPlayer 
           {/* avatar + name */}
           <View style={{ alignItems: 'center', gap: s(28) }}>
             <View style={{ width: s(300), height: s(300), borderRadius: s(150), backgroundColor: 'rgba(10,8,0,0.18)', borderWidth: s(8), borderColor: ink, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontFamily: Fonts.display, fontSize: s(150), color: ink }}>{initialsOf(p.name)}</Text>
+              <Text style={{ fontFamily: Fonts.display, fontSize: s(150), lineHeight: s(150) * 1.3, color: ink }}>{initialsOf(p.name)}</Text>
             </View>
-            <Text style={{ fontFamily: Fonts.welcome, fontSize: s(104), color: ink, textTransform: 'uppercase', textAlign: 'center' }} numberOfLines={1}>{p.name}</Text>
+            <Text style={{ fontFamily: Fonts.welcome, fontSize: s(104), lineHeight: s(104) * 1.3, color: ink, textTransform: 'uppercase', textAlign: 'center' }} numberOfLines={1}>{p.name}</Text>
             {p.frmtVerified && p.frmtRank ? <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(28), letterSpacing: s(2), color: inkSoft }}>FRMT {p.frmtRank} ✓</Text> : null}
           </View>
 
@@ -392,15 +392,15 @@ function EditorialLight({ width, player: p, invite }: Base & { player: StoryPlay
       {/* name block */}
       <View style={{ marginTop: s(64) }}>
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), letterSpacing: s(5), color: gold, marginBottom: s(16) }}>● {leagueLabel[p.league]?.toUpperCase()}{p.rank > 0 ? ` · RANG #${p.rank}` : ''}</Text>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(176), lineHeight: s(160), color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{first}</Text>
-        {last ? <Text style={{ fontFamily: Fonts.welcome, fontSize: s(176), lineHeight: s(160), color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{last}</Text> : null}
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: s(176), lineHeight: s(176) * 1.3, color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{first}</Text>
+        {last ? <Text style={{ fontFamily: Fonts.welcome, fontSize: s(176), lineHeight: s(176) * 1.3, color: Colors.textPrimary, textTransform: 'uppercase' }} numberOfLines={1}>{last}</Text> : null}
       </View>
 
       {/* big number + ring */}
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: s(20) }}>
         <View>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(26), letterSpacing: s(4), color: Colors.textMuted }}>NIVEAU PADEL</Text>
-          <Text style={{ fontFamily: Fonts.display, fontSize: s(240), lineHeight: s(210), color: Colors.textPrimary }}>{p.level.toFixed(2)}</Text>
+          <Text style={{ fontFamily: Fonts.display, fontSize: s(240), lineHeight: s(240) * 1.3, color: Colors.textPrimary }}>{p.level.toFixed(2)}</Text>
         </View>
         <Ring rate={p.winRate} size={s(220)} sw={s(16)} track="rgba(10,10,10,0.10)" color={Colors.textPrimary} labelColor={Colors.textPrimary} subColor={Colors.textMuted} />
       </View>
@@ -411,7 +411,7 @@ function EditorialLight({ width, player: p, invite }: Base & { player: StoryPlay
           <React.Fragment key={l}>
             {i > 0 ? <View style={{ width: s(2), height: s(80), backgroundColor: Colors.border }} /> : null}
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontFamily: Fonts.display, fontSize: s(88), color: Colors.textPrimary }}>{v}</Text>
+              <Text style={{ fontFamily: Fonts.display, fontSize: s(88), lineHeight: s(88) * 1.3, color: Colors.textPrimary }}>{v}</Text>
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: s(22), letterSpacing: s(2), color: Colors.textMuted, marginTop: s(4) }}>{l}</Text>
             </View>
           </React.Fragment>

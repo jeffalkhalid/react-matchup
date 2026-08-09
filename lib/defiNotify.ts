@@ -28,6 +28,18 @@ export function notifyBinomeQueued(initiatorId: string, partnerName: string): vo
   });
 }
 
+// Suite à defi_withdraw : prévenir l'AUTRE membre du binôme que la candidature
+// (ou la place en file) a été retirée.
+export function notifyBinomeWithdrawn(otherId: string, byName: string): void {
+  if (!otherId) return;
+  notifyPlayers({
+    playerIds: [otherId],
+    title: 'Candidature retirée',
+    body: `${byName} a retiré votre candidature au défi.`,
+    data: { type: 'challenge', tab: 'relever' },
+  });
+}
+
 // Suite à un REFUS d'invitation à relever (defi_decline) : prévenir l'initiateur.
 export function notifyReleverDeclined(initiatorId: string, byName: string): void {
   if (!initiatorId) return;

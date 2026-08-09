@@ -448,18 +448,30 @@ export default function GameDetailsSheet({
       );
     }
     // Défi (je n'y suis pas) : pas de join solo → CTA « Relever à deux » (flux binôme).
+    // 'open' → relever ; 'confirmed' → rejoindre la FILE D'ATTENTE ; sinon indisponible.
     // Si j'ai déjà candidaté, on affiche « Déjà postulé » (toucher = changer de binôme).
-    if (game.is_challenge && onRelever) {
-      return (
-        <TouchableOpacity onPress={() => onRelever(game.id)}
-          style={[sty.ctaBtn, hasAppliedDefi
-            ? { backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }
-            : { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
-          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: hasAppliedDefi ? Colors.textSecondary : Colors.textOnBrand }}>
-            {hasAppliedDefi ? '⏳ Déjà postulé — changer de binôme' : 'Relever le défi (à deux)'}
-          </Text>
-        </TouchableOpacity>
-      );
+    if (game.is_challenge) {
+      const st = (game as any).status;
+      if (st !== 'open' && st !== 'confirmed') {
+        return (
+          <View style={[sty.ctaBtn, { backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }]}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textMuted }}>Défi indisponible</Text>
+          </View>
+        );
+      }
+      if (onRelever) {
+        return (
+          <TouchableOpacity onPress={() => onRelever(game.id)}
+            style={[sty.ctaBtn, hasAppliedDefi
+              ? { backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }
+              : { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: hasAppliedDefi ? Colors.textSecondary : Colors.textOnBrand }}>
+              {hasAppliedDefi ? '⏳ Déjà postulé — changer de binôme'
+                : st === 'confirmed' ? 'Rejoindre la file d\'attente (à deux)' : 'Relever le défi (à deux)'}
+            </Text>
+          </TouchableOpacity>
+        );
+      }
     }
     if (isFull) return isWaitlisted
       ? (
@@ -536,7 +548,7 @@ export default function GameDetailsSheet({
             </View>
             {/* Date + time */}
             <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 2 }}>{dateStr}</Text>
-            <Text style={{ fontSize: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, marginBottom: 6 }}>{timeStr || '—'}</Text>
+            <Text style={{ fontSize: 36, lineHeight: 47, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, marginBottom: 6 }}>{timeStr || '—'}</Text>
             {/* Location + gender — tappable → Maps */}
             <TouchableOpacity
               activeOpacity={0.7}

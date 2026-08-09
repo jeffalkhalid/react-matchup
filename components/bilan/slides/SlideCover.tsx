@@ -31,7 +31,7 @@ export function SlideCover({ recap, months, onPickMonth }: {
       </Text>
 
       {/* Big month + year */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 62, color: INK, lineHeight: 58, textAlign: 'center', marginTop: 4 }}>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 62, color: INK, lineHeight: 81, textAlign: 'center', marginTop: 4 }}>
         {recap.label}{'\n'}{year}
       </Text>
 
@@ -55,7 +55,7 @@ export function SlideCover({ recap, months, onPickMonth }: {
 function Stat({ n, l, color }: { n: number | string; l: string; color: string }) {
   return (
     <View style={{ alignItems: 'center' }}>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 22, color, lineHeight: 22 }}>{n}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 22, color, lineHeight: 29 }}>{n}</Text>
       <Text style={{ fontFamily: Fonts.uiBold, fontSize: 9.5, color: '#A1A1AA', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 3 }}>{l}</Text>
     </View>
   );

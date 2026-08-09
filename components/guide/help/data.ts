@@ -7,7 +7,7 @@ export interface HelpEntry {
   cta: { label: string; route: string } | null;
 }
 
-// Routes Expo réelles de l'app (la recherche de joueurs vit dans /(tabs)/ranking).
+// Routes Expo réelles de l'app (la recherche de joueurs vit dans /ranking).
 export const HELP: Record<string, HelpEntry> = {
   welcome: {
     illust: 'welcome',
@@ -26,7 +26,7 @@ export const HELP: Record<string, HelpEntry> = {
       'Ouvre un profil pour voir niveau, forme et badges (rang FRMT ✓ vérifié).',
       'Défie le joueur, ou invite-le à rejoindre ta partie.',
     ],
-    cta: { label: 'Chercher un joueur', route: '/(tabs)/ranking' },
+    cta: { label: 'Chercher un joueur', route: '/ranking' },
   },
   lobby: {
     illust: 'lobby',
@@ -56,7 +56,7 @@ export const HELP: Record<string, HelpEntry> = {
       'Tu passes de ligue en ligue : Découverte → Diamant.',
       'Suis ta forme et ta progression sur ton profil.',
     ],
-    cta: { label: 'Voir le classement', route: '/(tabs)/ranking' },
+    cta: { label: 'Voir le classement', route: '/ranking' },
   },
   chats: {
     illust: 'chats',

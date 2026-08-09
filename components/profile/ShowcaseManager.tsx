@@ -300,7 +300,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt,
               }}>
-                <Text style={{ fontSize: 20, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>
+                <Text style={{ fontSize: 20, lineHeight: 26, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>
                   ⚔️ Binômes <Text style={{ color: Colors.brand }}>ouverts</Text>
                 </Text>
                 <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>

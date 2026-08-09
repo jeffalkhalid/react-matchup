@@ -22,7 +22,7 @@ export function BilanBanner({ recap, onPress }: { recap: MonthlyRecap | null; on
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, color: '#0A0A0A', letterSpacing: 1.2, textTransform: 'uppercase' }}>Ton bilan</Text>
       </View>
 
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#0A0A0A', lineHeight: 30, marginTop: 6 }}>{recap.label} {year}</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#0A0A0A', lineHeight: 40, marginTop: 6 }}>{recap.label} {year}</Text>
 
       <View style={{ flexDirection: 'row', marginTop: 14 }}>
         <Stat n={recap.matches} l="matchs" />
@@ -40,7 +40,7 @@ export function BilanBanner({ recap, onPress }: { recap: MonthlyRecap | null; on
 function Stat({ n, l, color = '#0A0A0A' }: { n: number | string; l: string; color?: string }) {
   return (
     <View style={{ flex: 1 }}>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 24, color, lineHeight: 24 }}>{n}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: 24, color, lineHeight: 31 }}>{n}</Text>
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: 'rgba(10,10,10,0.75)', marginTop: 1 }}>{l}</Text>
     </View>
   );

@@ -644,6 +644,7 @@ export default function SignupScreen() {
                 textAlign: 'center',
                 fontFamily: Fonts.welcome,
                 fontSize: 22,
+                lineHeight: 29,
                 color: tokens.textPrimary,
                 marginTop: 0,
                 marginBottom: 10,
@@ -921,7 +922,7 @@ export default function SignupScreen() {
                       Ton niveau de départ
                     </Text>
                     <Text style={{
-                      fontFamily: Fonts.welcome, fontSize: 44,
+                      fontFamily: Fonts.welcome, fontSize: 44, lineHeight: 57,
                       color: AUTH_BRAND, includeFontPadding: false,
                     }}>
                       Niv. {formatPadelLevel(calculateInitialScore())}
@@ -1086,6 +1087,7 @@ export default function SignupScreen() {
                 color: tokens.textPrimary,
                 fontFamily: Fonts.welcome,
                 fontSize: 24,
+                lineHeight: 31,
                 marginBottom: 8, textAlign: 'center', includeFontPadding: false,
               }}>
                 Compte <Text style={{ color: AUTH_BRAND }}>créé</Text> !

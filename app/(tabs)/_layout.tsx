@@ -316,11 +316,8 @@ export default function TabLayout() {
         }}
       />
       {/* Hidden from tab bar */}
-      <Tabs.Screen name="ranking" options={{ href: null }} />
       <Tabs.Screen name="GameDetailsSheet" options={{ href: null }} />
       <Tabs.Screen name="CreateWizard" options={{ href: null }} />
-      <Tabs.Screen name="player/[id]" options={{ href: null }} />
-      <Tabs.Screen name="notifications" options={{ href: null }} />
       <Tabs.Screen name="admin" options={{ href: null }} />
     </Tabs>
     {/* Bouton « ? » + centre d'aide — toujours monté, par-dessus les tabs */}

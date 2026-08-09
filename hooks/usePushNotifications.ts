@@ -155,7 +155,7 @@ export function usePushNotifications() {
         case 'showcase':
           // Nomination de binôme ouvert → ouvrir MON profil (id dans le payload)
           // sur le gestionnaire de vitrine (section « À confirmer »).
-          if (data.pid) router.push(`/(tabs)/player/${data.pid}?showcase=1` as any);
+          if (data.pid) router.push(`/player/${data.pid}?showcase=1` as any);
           else router.push('/(tabs)/matchmaking');
           break;
       }

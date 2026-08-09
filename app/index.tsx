@@ -107,7 +107,7 @@ export default function IndexScreen() {
 
           <Text style={{
             color: Colors.textOnDark, fontSize: 42,
-            textAlign: 'center', lineHeight: 48, marginBottom: Spacing.md,
+            textAlign: 'center', lineHeight: 55, marginBottom: Spacing.md,
             fontFamily: Fonts.welcome, includeFontPadding: false,
           }}>
             Le Padel.{'\n'}

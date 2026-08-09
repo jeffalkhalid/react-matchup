@@ -56,6 +56,26 @@ export function isGameReadyToScore(
   return total >= 4;
 }
 
+// ─── Source de vérité UNIQUE : « suis-je CONFIRMÉ dans cette partie ? » ──────
+// (créateur ou participant accepté — les candidatures pending/waitlist et les
+// invitations reçues n'en font PAS partie). Définit ce que comptent les badges
+// « À venir » de l'accueil ET du lobby, même si le match n'est pas complet.
+// Côté accueil la restriction équivalente est faite dans la requête (creator_id
+// OU participation accepted) — garder les deux alignés sur cette définition.
+export function isConfirmedInGame(
+  game: {
+    creator_id?: string | null;
+    is_creator?: boolean;
+    my_status?: string | null;
+    participants?: { player_id: string; status: string }[] | null;
+  },
+  playerId: string,
+): boolean {
+  if (game.is_creator || game.creator_id === playerId) return true;
+  if (game.my_status === 'accepted') return true;
+  return (game.participants ?? []).some(p => p.player_id === playerId && p.status === 'accepted');
+}
+
 // ─── Source de vérité UNIQUE : « cette invitation à une partie est-elle encore
 // visible/actionnable ? » ────────────────────────────────────────────────────
 // Partagée par la liste de notifications (Source A) et le compteur de badge,

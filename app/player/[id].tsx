@@ -6,41 +6,42 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Polygon, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
-import { getBadge } from '../../../lib/badges';
-import { Glyph } from '../../../components/profile/glyphs';
-import { usePlayer } from '../../../hooks/usePlayer';
-import { supabase } from '../../../lib/supabase';
-import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../../lib/theme';
-import { formatFrmtRanking } from '../../../lib/frmt-match';
-import { blockUser, unblockUser, isBlocked, reportContent } from '../../../lib/moderation';
-import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../../lib/community';
-import { ActivityCard } from '../../../components/community/ActivityCard';
-import type { Player, EloHistory, ActivityEvent, Achievement } from '../../../types';
-import { getPlayerAchievements } from '../../../lib/achievements';
-import { PM } from '../../../components/profile/theme';
+import { getBadge } from '../../lib/badges';
+import { Glyph } from '../../components/profile/glyphs';
+import { usePlayer } from '../../hooks/usePlayer';
+import { supabase } from '../../lib/supabase';
+import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
+import { formatFrmtRanking } from '../../lib/frmt-match';
+import { blockUser, unblockUser, isBlocked, reportContent } from '../../lib/moderation';
+import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../lib/community';
+import { ActivityCard } from '../../components/community/ActivityCard';
+import type { Player, EloHistory, ActivityEvent, Achievement } from '../../types';
+import { getPlayerAchievements } from '../../lib/achievements';
+import { PM } from '../../components/profile/theme';
 import {
   ProfileHeader, AchievementFeedCard, MatchActionButton, type TabName, type MatchView, type TimelinePoint, type PlayerLite,
-} from '../../../components/profile/components';
-import { StatsTab, MatchsTab, PalmaresTab, BadgesTab, BinomesTab } from '../../../components/profile/tabs';
-import { ProfileMenuSheet } from '../../../components/profile/ProfileMenuSheet';
-import { CommentsPolicyModal, DeleteAccountModal } from '../../../components/profile/AccountModals';
-import StoryMatchPicker from '../../../components/StoryMatchPicker';
-import StoryComposerV2 from '../../../components/StoryComposerV2';
-import type { StoryMode } from '../../../components/story/StoryStyles';
-import type { StoryPlayer, StoryMatchData, InviteData } from '../../../components/story/storyTheme';
-import { buildStoryMatch } from '../../../components/story/storyTheme';
-import { isDeleted, displayName, type JoinedPlayer } from '../../../lib/players';
-import { startDirectConversation } from '../../../lib/directChats';
-import DirectMessageComposer from '../../../components/DirectMessageComposer';
-import ReportReasonSheet from '../../../components/ReportReasonSheet';
-import { Icon } from '../../../components/community/icons';
-import ShowcaseManager from '../../../components/profile/ShowcaseManager';
+} from '../../components/profile/components';
+import { StatsTab, MatchsTab, PalmaresTab, BadgesTab, BinomesTab } from '../../components/profile/tabs';
+import { ProfileMenuSheet } from '../../components/profile/ProfileMenuSheet';
+import { CommentsPolicyModal, DeleteAccountModal } from '../../components/profile/AccountModals';
+import StoryMatchPicker from '../../components/StoryMatchPicker';
+import StoryComposerV2 from '../../components/StoryComposerV2';
+import type { StoryMode } from '../../components/story/StoryStyles';
+import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
+import { buildStoryMatch } from '../../components/story/storyTheme';
+import { isDeleted, displayName, type JoinedPlayer } from '../../lib/players';
+import { startDirectConversation } from '../../lib/directChats';
+import DirectMessageComposer from '../../components/DirectMessageComposer';
+import ReportReasonSheet from '../../components/ReportReasonSheet';
+import { Icon } from '../../components/community/icons';
+import ShowcaseManager from '../../components/profile/ShowcaseManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   openShowcase, fetchActiveBinomes, fetchMyShowcases, fetchShowcaseInvites,
   confirmShowcase, closeShowcase,
-} from '../../../lib/showcase';
-import { notifyShowcaseNominated } from '../../../lib/defiNotify';
+} from '../../lib/showcase';
+import { notifyShowcaseNominated } from '../../lib/defiNotify';
+import { matchNature } from '../../lib/matchView';
 
 // ── Local types ──────────────────────────────────────────────────────
 interface MatchRow {
@@ -50,6 +51,7 @@ interface MatchRow {
   game_format?: string | null;
   match_type?: string | null;
   is_challenge?: boolean | null;
+  stake_multiplier?: number | null;
   status: string;
   game_id?: string | null;
   winner_id: string | null;
@@ -453,7 +455,7 @@ function ReliabilityRing({ pct, color, size = 76, stroke = 8 }: {
           transform={`rotate(-90 ${mid} ${mid})`}
         />
       </Svg>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 24, color, letterSpacing: -0.5 }}>{Math.round(clamped)}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 29, color, letterSpacing: -0.5 }}>{Math.round(clamped)}</Text>
       <Text style={{ fontSize: 9, fontWeight: '800', color: LIGHT.muted, marginTop: -1 }}>%</Text>
     </View>
   );
@@ -474,7 +476,7 @@ function GradientAvatar({ name, color, size = 76 }: { name: string; color: strin
         <Rect width={size} height={size} fill={`url(#${gid})`} />
       </Svg>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: Fonts.display, fontSize: Math.round(size * 0.45), color: '#0A0A0A' }}>{getInitials(name)}</Text>
+        <Text style={{ fontFamily: Fonts.display, fontSize: Math.round(size * 0.45), lineHeight: Math.round(size * 0.45) * 1.3, color: '#0A0A0A' }}>{getInitials(name)}</Text>
       </View>
     </View>
   );
@@ -688,7 +690,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     const [matchesRes, historyRes, repRes, favRes, rankRes] = await Promise.all([
       supabase
         .from('matches')
-        .select(`id, score_text, created_at, game_format, match_type, is_challenge, status, game_id,
+        .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
@@ -1195,6 +1197,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       teams: [myTeam, oppTeam],
       sets,
       winnerRow: win ? 0 : 1,
+      ...matchNature(m),
     };
   };
   const matchViews: MatchView[] = matches.map(mapMatch);
@@ -1343,7 +1346,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
               </View>
 
               <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
-                <Text style={{ fontSize: 22, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>Modifier le <Text style={{ color: Colors.brand }}>profil</Text></Text>
+                <Text style={{ fontSize: 22, lineHeight: 29, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>Modifier le <Text style={{ color: Colors.brand }}>profil</Text></Text>
                 <TouchableOpacity onPress={() => setEditOpen(false)} style={{ padding: 4 }}>
                   <Text style={{ fontSize: 22, color: Colors.textMuted }}>×</Text>
                 </TouchableOpacity>

@@ -112,7 +112,7 @@ export default function ChatsScreen() {
           />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 28, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center' }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
+          <Text style={{ color: Colors.textOnDark, fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center' }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
         </View>
         <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.md }}>
           {active.length} match{active.length !== 1 ? 's' : ''} actif{active.length !== 1 ? 's' : ''}

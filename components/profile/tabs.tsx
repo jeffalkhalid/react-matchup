@@ -41,7 +41,7 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
           <View>
             <Text style={{ fontSize: 10, fontWeight: '800', color: PM.muted, letterSpacing: 0.5, textTransform: 'uppercase' }}>Niveau actuel</Text>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 7, marginTop: 2 }}>
-              <Text style={{ fontFamily: PFonts.anton, fontSize: 38, lineHeight: 40, color: PM.text }}>{curLevel.toFixed(2)}</Text>
+              <Text style={{ fontFamily: PFonts.anton, fontSize: 38, lineHeight: 49, color: PM.text }}>{curLevel.toFixed(2)}</Text>
               {delta30 != null && (
                 <Text style={{ fontSize: 12, fontWeight: '800', color: delta30 >= 0 ? PM.successDk : PM.danger }}>
                   {delta30 >= 0 ? '▲ +' : '▼ '}{Math.abs(delta30).toFixed(2)}
@@ -210,8 +210,8 @@ export function PalmaresTab({ achievements }: { achievements: AchievementView[] 
           <View>
             <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Badges débloqués</Text>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 4 }}>
-              <Text style={{ fontFamily: PFonts.anton, fontSize: 34, lineHeight: 36, color: ACCENT }}>{unlocked}</Text>
-              <Text style={{ fontFamily: PFonts.anton, fontSize: 18, color: 'rgba(255,255,255,0.45)' }}>/ {total}</Text>
+              <Text style={{ fontFamily: PFonts.anton, fontSize: 34, lineHeight: 44, color: ACCENT }}>{unlocked}</Text>
+              <Text style={{ fontFamily: PFonts.anton, fontSize: 18, lineHeight: 23, color: 'rgba(255,255,255,0.45)' }}>/ {total}</Text>
             </View>
           </View>
           <Icon name="trophy" size={30} color={ACCENT} stroke={2} />
@@ -303,7 +303,7 @@ export function BinomesTab({ active, incoming, outgoing, isSelf, onConfirm, onCl
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Ouvert aux défis</Text>
-          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>
+          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, lineHeight: 29, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>
             {active.length === 0 ? 'Aucun binôme' : `${active.length} binôme${active.length > 1 ? 's' : ''}`}
           </Text>
         </View>
@@ -393,10 +393,10 @@ export function BadgesTab({ badges }: { badges: RepBadge[] }) {
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Badge signature</Text>
-          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>{top.label}</Text>
+          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, lineHeight: 29, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>{top.label}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ fontFamily: PFonts.anton, fontSize: 28, lineHeight: 30, color: ACCENT }}>{totalVotes}</Text>
+          <Text style={{ fontFamily: PFonts.anton, fontSize: 28, lineHeight: 36, color: ACCENT }}>{totalVotes}</Text>
           <Text style={{ fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>votes reçus</Text>
         </View>
       </View>

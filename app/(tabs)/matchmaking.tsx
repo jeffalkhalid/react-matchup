@@ -13,12 +13,14 @@ import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
 import {
   fetchOpenDefis, fetchMyDefis, fetchDefisInvolved, fetchCandidaturesOnMyDefis,
-  fetchMyApplications, fetchBinomeInvitations,
-  acceptBinomeInvitation, declineBinomeInvitation, applyToDefi, cancelDefi,
-  type DefiGame, type DefiApplication,
+  fetchMyApplications, fetchBinomeInvitations, fetchMyDefiInvites, defiGameWithMyBinome, defiOtherBinomeCount,
+  acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, applyToDefi, cancelDefi,
+  type DefiGame, type DefiApplication, type DefiInvite,
 } from '../../lib/defis';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
-import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued } from '../../lib/defiNotify';
+import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
+import { isCreatorConflict } from '../../lib/games';
+import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
 import { getHiddenPlayerIds } from '../../lib/moderation';
@@ -174,6 +176,8 @@ export default function MatchmakingScreen() {
   const [vitrine, setVitrine] = useState<ShowcaseBinome[]>([]);
   const [myBinomes, setMyBinomes] = useState<{ id: string; name: string; elo_score: number }[]>([]);
   const [binomeBusy, setBinomeBusy] = useState<Set<string>>(new Set());   // anti double-submit accepter/refuser
+  const [otherBinomeCounts, setOtherBinomeCounts] = useState<Record<string, number>>({});   // « X autres binômes » par défi candidaté
+  const [partnerInvites, setPartnerInvites] = useState<DefiInvite[]>([]);   // invitations défi (binôme du créateur / défi ciblé)
   const [openDefis, setOpenDefis] = useState<DefiGame[]>([]);
   const [myDefis, setMyDefis] = useState<DefiGame[]>([]);
   const [candidatures, setCandidatures] = useState<DefiApplication[]>([]);
@@ -202,7 +206,7 @@ export default function MatchmakingScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
     setLoading(true);
-    const [open, mine, cands, myApps, invites, vit, actives] = await Promise.all([
+    const [open, mine, cands, myApps, invites, vit, actives, pInvites] = await Promise.all([
       fetchOpenDefis(player.id),
       fetchDefisInvolved(player.id),   // « Mes défis » = créés + où je joue
       fetchCandidaturesOnMyDefis(player.id),
@@ -210,18 +214,27 @@ export default function MatchmakingScreen() {
       fetchBinomeInvitations(player.id),
       fetchVitrine(player.id),
       fetchActiveBinomes(player.id),   // « Mes binômes » (paires actives)
+      fetchMyDefiInvites(player.id),   // invitations défi (binôme du créateur / ciblé)
     ]);
     setOpenDefis(open);
     setMyDefis(mine);
     setCandidatures(cands);
     setMyApplications(myApps);
     setBinomeInvites(invites);
+    setPartnerInvites(pInvites);
     setVitrine(vit);
     setMyBinomes(actives.flatMap(bn => {
       const other = bn.player_a === player.id ? bn.b : bn.a;   // l'AUTRE joueur de la paire
       return other ? [{ id: other.id, name: other.name, elo_score: other.elo_score }] : [];
     }));
     setLoading(false);
+
+    // « X autres binômes » : compte les autres candidatures sur chaque défi où j'ai postulé.
+    const counts: Record<string, number> = {};
+    await Promise.all(myApps.map(async a => {
+      if (a.game_id) counts[a.game_id] = await defiOtherBinomeCount(a.game_id);
+    }));
+    setOtherBinomeCounts(counts);
   }, [player]);
 
   const router = useRouter();
@@ -471,9 +484,103 @@ export default function MatchmakingScreen() {
       await fetchData();
       reloadNotifs();
     } catch (e: any) {
-      Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+      if (isCreatorConflict(e)) {
+        Alert.alert('⚠️ Conflit de créneau', 'Toi ou ton binôme êtes déjà engagés sur une autre partie au même créneau (±2h).');
+      } else {
+        Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+      }
     } finally {
       setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
+    }
+  };
+
+  // Retirer ma candidature (pending) ou sortir de la file (queued) — toute la paire sort.
+  const handleWithdrawApp = (app: DefiApplication) => {
+    Alert.alert(
+      app.status === 'queued' ? 'Quitter la file ?' : 'Retirer la candidature ?',
+      app.status === 'queued'
+        ? 'Votre binôme perdra sa place dans la file d\'attente.'
+        : 'Ta proposition à ton binôme sera annulée.',
+      [
+        { text: 'Garder', style: 'cancel' },
+        {
+          text: 'Retirer', style: 'destructive',
+          onPress: async () => {
+            if (binomeBusy.has(app.id)) return;
+            setBinomeBusy(s => new Set(s).add(app.id));
+            try {
+              const otherId = await withdrawApplication(app.id);
+              // Ne prévenir le partenaire que s'il était ENGAGÉ (file) — une simple
+              // invitation pending retirée disparaît silencieusement de son côté.
+              if (app.status === 'queued' && otherId && player) notifyBinomeWithdrawn(otherId, player.name);
+              showToast('Candidature retirée');
+              await fetchData();
+              reloadNotifs();
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+            } finally {
+              setBinomeBusy(s => { const n = new Set(s); n.delete(app.id); return n; });
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Invitation défi via game_participants (binôme du créateur / défi ciblé) —
+  // mêmes effets que les handlers du lobby, accessibles depuis le hub.
+  const handleAcceptPartnerInvite = async (inv: DefiInvite) => {
+    const key = 'pinv-' + inv.participantId;
+    if (binomeBusy.has(key)) return;
+    setBinomeBusy(s => new Set(s).add(key));
+    try {
+      const { error } = await supabase.from('game_participants')
+        .update({ status: 'accepted' }).eq('id', inv.participantId);
+      if (error) {
+        if (isCreatorConflict(error)) Alert.alert('⚠️ Conflit de créneau', 'Tu es déjà sur une autre partie au même créneau (±2h).');
+        else Alert.alert('Erreur', error.message);
+        return;
+      }
+      const g = inv.game;
+      const otherIds = [g.creator_id, ...(g.participants ?? []).filter(p => p.status === 'accepted').map(p => p.player_id)]
+        .filter((id): id is string => !!id && id !== player?.id);
+      if (otherIds.length > 0) {
+        notifyPlayers({
+          playerIds: [...new Set(otherIds)],
+          title: '✅ Nouveau joueur confirmé !',
+          body: `${player?.name ?? '?'} a rejoint le défi.`,
+          data: { type: 'lobby', gameId: g.id },
+        });
+      }
+      showToast('✅ Défi rejoint !');
+      await fetchData();
+      reloadNotifs();
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(key); return n; });
+    }
+  };
+
+  const handleDeclinePartnerInvite = async (inv: DefiInvite) => {
+    const key = 'pinv-' + inv.participantId;
+    if (binomeBusy.has(key)) return;
+    setBinomeBusy(s => new Set(s).add(key));
+    try {
+      const { error } = await supabase.from('game_participants')
+        .update({ status: 'declined' }).eq('id', inv.participantId);
+      if (error) { Alert.alert('Erreur', error.message); return; }
+      if (inv.game.creator_id && inv.game.creator_id !== player?.id) {
+        notifyPlayers({
+          playerIds: [inv.game.creator_id],
+          title: '❌ Invitation refusée',
+          body: `${player?.name ?? '?'} a refusé de jouer le défi avec toi`,
+          data: { type: 'lobby', gameId: inv.game.id },
+        });
+      }
+      showToast('Invitation refusée');
+      await fetchData();
+      reloadNotifs();
+    } finally {
+      setBinomeBusy(s => { const n = new Set(s); n.delete(key); return n; });
     }
   };
 
@@ -498,7 +605,9 @@ export default function MatchmakingScreen() {
       'Annuler ce défi ?',
       game.status === 'draft'
         ? 'Ton brouillon sera supprimé.'
-        : 'Le défi sera retiré et les candidatures en cours annulées.',
+        : game.status === 'confirmed'
+          ? 'Les joueurs et les binômes en file seront notifiés. Cette action est irréversible.'
+          : 'Le défi sera retiré et les candidatures en cours annulées.',
       [
         { text: 'Retour', style: 'cancel' },
         {
@@ -692,7 +801,7 @@ export default function MatchmakingScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
           <View style={{ flex: 1 }} />
           <View style={{ flexShrink: 1 }}>
-            <Text style={{ fontSize: 28, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
+            <Text style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
               Les <Text style={{ color: Colors.brand }}>Défis</Text>
             </Text>
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis 2v2 & candidatures</Text>
@@ -709,7 +818,7 @@ export default function MatchmakingScreen() {
         <View style={{ flexDirection: 'row', marginTop: 6 }}>
           {([
             { id: 'relever'      as Tab, label: 'À relever',  badge: 0 },
-            { id: 'mes'          as Tab, label: 'Mes défis',  badge: binomeInvites.length },
+            { id: 'mes'          as Tab, label: 'Mes défis',  badge: binomeInvites.length + partnerInvites.length },
             { id: 'invitations'  as Tab, label: 'Binôme',     badge: 0 },
             { id: 'vitrine'      as Tab, label: 'À défier',   badge: 0 },
           ]).map(t => {
@@ -756,7 +865,10 @@ export default function MatchmakingScreen() {
                               </Text>
                             </View>
                           ) : (
-                            <DefiActionButton label="Relever le défi" onPress={() => handleRelever(g)} />
+                            <DefiActionButton
+                              label={g.status === 'confirmed' ? 'Rejoindre la file d\'attente' : 'Relever le défi'}
+                              onPress={() => handleRelever(g)}
+                            />
                           )}
                         </DefiGameCard>
                       );
@@ -771,6 +883,35 @@ export default function MatchmakingScreen() {
                   <Icon name="swords" size={17} color={Colors.textOnBrand} stroke={2.4} />
                   <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 14.5, letterSpacing: 0.2 }}>Lancer un défi</Text>
                 </TouchableOpacity>
+                {/* Invitations défi via game_participants : binôme du créateur (A)
+                    ou adversaire d'un défi ciblé (B) → carte + accepter / refuser. */}
+                {partnerInvites.map(inv => {
+                  const key = 'pinv-' + inv.participantId;
+                  const isTeamA = String(inv.team_side ?? '').startsWith('A');
+                  return (
+                    <DefiGameCard key={key} game={inv.game} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(inv.game.id)}>
+                      <View style={{ gap: 8 }}>
+                        <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                          <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{inv.game.creator?.name ?? '?'}</Text>
+                          {isTeamA ? " t'invite comme binôme pour ce défi." : ' te défie avec son binôme.'}
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8, opacity: binomeBusy.has(key) ? 0.5 : 1 }}>
+                          <TouchableOpacity onPress={() => handleDeclinePartnerInvite(inv)} disabled={binomeBusy.has(key)}
+                            style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                            <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleAcceptPartnerInvite(inv)} disabled={binomeBusy.has(key)}
+                            style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                            {binomeBusy.has(key)
+                              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+                              : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>{isTeamA ? 'Rejoindre le binôme' : 'Relever le défi'}</Text>}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </DefiGameCard>
+                  );
+                })}
+
                 {/* Invitations à relever : je suis invité comme binôme → carte
                     COMPLÈTE du défi (adversaires / lieu / date) + accepter / refuser. */}
                 {binomeInvites.map(c => c.game ? (
@@ -797,22 +938,29 @@ export default function MatchmakingScreen() {
 
                 {/* Mes candidatures : en cours (attente de mon binôme) OU en file d'attente. */}
                 {myApplications.map(a => {
-                  if (!a.game) return null;
+                  const g = defiGameWithMyBinome(a);   // injecte MON binôme (transparent) sur Team B si pending/open
+                  if (!g) return null;
                   const mate = a.initiator_id === player.id ? a.partner : a.initiator;   // mon coéquipier
+                  const others = (a.game_id && otherBinomeCounts[a.game_id]) || 0;
                   return (
-                    <DefiGameCard key={'app-' + a.id} game={a.game} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(a.game!.id)}>
+                    <DefiGameCard key={'app-' + a.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(a.game!.id)}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
                         <Pill variant="warning">{a.status === 'queued' ? '⏳ En file d\'attente' : '⏳ Candidature en cours'}</Pill>
+                        {others > 0 && <Pill variant="neutral">+{others} binôme{others > 1 ? 's' : ''}</Pill>}
                         <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
                           avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{mate?.name ?? '?'}</Text>
-                          {a.status === 'queued' ? ' — promus si une place se libère' : ''}
+                          {a.status === 'queued' ? ' — promus si libre' : ''}
                         </Text>
+                        <TouchableOpacity onPress={() => handleWithdrawApp(a)} disabled={binomeBusy.has(a.id)}
+                          style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, borderColor: Colors.border, opacity: binomeBusy.has(a.id) ? 0.5 : 1 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.danger }}>Retirer</Text>
+                        </TouchableOpacity>
                       </View>
                     </DefiGameCard>
                   );
                 })}
 
-                {myDefis.length === 0 && binomeInvites.length === 0 && myApplications.length === 0
+                {myDefis.length === 0 && binomeInvites.length === 0 && myApplications.length === 0 && partnerInvites.length === 0
                   ? <EmptyCard icon="swords" title="Aucun défi en cours" sub="Lance ton premier défi avec le bouton ci-dessus, ou relève-en un." />
                   : myDefis.map(g => {
                       const isMine = g.creator_id === player.id;
@@ -850,7 +998,7 @@ export default function MatchmakingScreen() {
                               {rowsOf(queued)}
                             </View>
                           )}
-                          {isMine && g.status !== 'confirmed'
+                          {isMine
                             ? <DefiActionButton label="Annuler le défi" danger onPress={() => handleCancelDefi(g)} />
                             : null}
                         </DefiGameCard>
@@ -866,7 +1014,7 @@ export default function MatchmakingScreen() {
                 : <View style={{ gap: 8 }}>
                     <Text style={sty.sectionLabel}>Mes binômes</Text>
                     {myBinomes.map(p => (
-                      <TouchableOpacity key={p.id} onPress={() => router.push(`/(tabs)/player/${p.id}` as any)} activeOpacity={0.7}
+                      <TouchableOpacity key={p.id} onPress={() => router.push(`/player/${p.id}` as any)} activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
                         <PlayerAvatar name={p.name} size={34} />
                         <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>

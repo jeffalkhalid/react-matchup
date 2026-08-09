@@ -31,7 +31,7 @@ export function JoinHeroCard({ game, onOpen }: { game: SuggestedGame; onOpen: (g
         </View>
       </View>
 
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: Colors.textOnDark, lineHeight: 26 }}>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: Colors.textOnDark, lineHeight: 29 }}>
         Il manque 1 joueur
       </Text>
       <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>

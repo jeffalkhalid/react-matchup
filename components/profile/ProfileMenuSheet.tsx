@@ -53,7 +53,7 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Row icon="mail" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
 
           <Group title="Raccourcis" />
-          <Row icon="trophy" label="Classement" onPress={() => nav('/(tabs)/ranking')} />
+          <Row icon="trophy" label="Classement" onPress={() => nav('/ranking')} />
           <Row icon="bell" label="Notifications" onPress={() => nav('/notifications')} />
 
           {isAdmin && (

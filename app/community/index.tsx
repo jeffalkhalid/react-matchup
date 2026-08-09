@@ -54,7 +54,7 @@ export default function CommunityHubScreen() {
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.85} style={iconBtn}>
           <Icon name="chevronLeft" size={20} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 29, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
           Communauté
         </Text>
         <TouchableOpacity onPress={() => router.push('/community/friends')} activeOpacity={0.85} style={iconBtn}>

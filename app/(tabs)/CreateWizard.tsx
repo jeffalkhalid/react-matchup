@@ -11,6 +11,7 @@ import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '..
 import { lobbyGameLink } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
 import { consumePickedVenue } from '../../lib/venuePicker';
+import { ClubsMapModal } from '../../components/ClubsMapModal';
 import { Pill } from '../../components/Pill';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
 import { Icon } from '../../components/community/icons';
@@ -248,6 +249,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   const [showCal,     setShowCal]     = useState(false);
   const [venueOpen,   setVenueOpen]   = useState(false);
   const [venueSearch, setVenueSearch] = useState('');
+  const [mapOpen,     setMapOpen]     = useState(false);
   const [inviteTarget, setInviteTarget] = useState<string | null>(null);
 
   // Data
@@ -644,7 +646,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </View>
         )}
           </View>
-          <TouchableOpacity onPress={() => router.push('/clubs-map')} activeOpacity={0.85}
+          <TouchableOpacity onPress={() => setMapOpen(true)} activeOpacity={0.85}
             style={{
               flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
               backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10,
@@ -655,6 +657,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             <Icon name="map" size={16} color={Colors.textPrimary} stroke={2} />
             <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Plan</Text>
           </TouchableOpacity>
+          <ClubsMapModal
+            visible={mapOpen}
+            onClose={() => setMapOpen(false)}
+            onPick={(name) => { set('location', name); setMapOpen(false); setVenueOpen(false); setVenueSearch(''); }}
+          />
         </View>
 
         {/* Date */}
@@ -1236,7 +1243,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: Colors.bg, paddingTop: insets.top }}>
           <View style={{ alignItems: 'center', padding: 32, paddingBottom: 16 }}>
-            <Text style={{ fontSize: 26, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6 }}>
+            <Text style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6 }}>
               Partie <Text style={{ color: Colors.brand }}>publiée !</Text>
             </Text>
             <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
@@ -1330,7 +1337,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, fontWeight: '600' }}>‹</Text>
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 22, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
+              <Text style={{ fontSize: 22, lineHeight: 29, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
                 Nouvelle <Text style={{ color: Colors.brand }}>partie</Text>
               </Text>
               <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: Fonts.uiSemi, fontWeight: '600' }}>{STEP_LABELS[step]}</Text>

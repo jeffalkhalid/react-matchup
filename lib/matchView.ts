@@ -12,6 +12,18 @@ import { displayName } from './players';
 import type { Match } from '../types';
 import type { MatchView } from '../components/profile/components';
 
+// Nature d'un match pour la pastille des cartes (défi + mise / classé / amical).
+// Source = colonnes copiées sur `matches` à la saisie du score (is_challenge,
+// stake_multiplier, game_format) — fallback stake>1 pour les vieilles lignes.
+export function matchNature(match: {
+  game_format?: string | null; is_challenge?: boolean | null; stake_multiplier?: number | null;
+}): { kind: 'defi' | 'competitif' | 'amical'; stake: number } {
+  const stake = Number(match.stake_multiplier ?? 1) || 1;
+  if (match.game_format === 'friendly') return { kind: 'amical', stake };
+  if (match.is_challenge || stake > 1) return { kind: 'defi', stake };
+  return { kind: 'competitif', stake };
+}
+
 export function parseSetsLocal(text: string | null | undefined): [number, number][] {
   if (!text) return [];
   return text.trim().split(/[\s,]+/).flatMap(s => {
@@ -52,5 +64,6 @@ export function matchToView(match: Match, playerId: string, markMe = true): Matc
     sets,
     winnerRow: won ? 0 : 1,
     creatorId,
+    ...matchNature(match),
   };
 }

@@ -496,7 +496,7 @@ export default function ChatScreen() {
             </Svg>
           </TouchableOpacity>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 22, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }} numberOfLines={1}>
+            <Text style={{ fontSize: 22, lineHeight: 29, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }} numberOfLines={1}>
               Le <Text style={{ color: Colors.brand }}>Chat</Text>
             </Text>
             <Text style={{ fontSize: 11, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary }} numberOfLines={1}>{dateStr} · 📍 {game?.location ?? '…'}</Text>

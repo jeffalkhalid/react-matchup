@@ -19,7 +19,7 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
       {b ? (
         <>
           {/* Title */}
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 28, marginTop: 8 }}>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8 }}>
             Le <Text style={{ color: '#FFC11A' }}>{fmtDate(b.date)}</Text> tu as fait ça
           </Text>
 
@@ -39,8 +39,8 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 {b.sets.map(([a, c], i) => (
                   <View key={i} style={{ alignItems: 'center' }}>
-                    <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: '#10B981', lineHeight: 38 }}>{a}</Text>
-                    <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: 'rgba(255,255,255,0.35)', lineHeight: 38 }}>{c}</Text>
+                    <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: '#10B981', lineHeight: 52 }}>{a}</Text>
+                    <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: 'rgba(255,255,255,0.35)', lineHeight: 52 }}>{c}</Text>
                   </View>
                 ))}
               </View>
@@ -56,13 +56,13 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
               <Svg width={42} height={42} viewBox="0 0 24 24"><Glyph name={badge.glyph} color="#0A0A0A" /></Svg>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, color: '#0A0A0A', letterSpacing: 1, textTransform: 'uppercase' }}>+ badge débloqué</Text>
-                <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: '#0A0A0A', lineHeight: 22, marginTop: 2 }}>{badge.name}</Text>
+                <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: '#0A0A0A', lineHeight: 29, marginTop: 2 }}>{badge.name}</Text>
               </View>
             </View>
           ) : null}
         </>
       ) : (
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, color: '#FFFFFF', marginTop: 8 }}>Pas de match marquant ce mois-ci.</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: '#FFFFFF', marginTop: 8 }}>Pas de match marquant ce mois-ci.</Text>
       )}
     </View>
   );

@@ -12,8 +12,9 @@
 --     qu'un refus). Gère aussi l'annulation d'un BROUILLON (défi non ciblé)
 --     dont le partenaire créateur refuse/expire. Push au créateur à la
 --     conversion d'un défi ciblé en défi ouvert.
---  2) defi_accept : push aux binômes PERDANTS de la course (candidatures
---     rejetées quand un binôme complet rafle la place).
+-- ⚠️ L'ancienne section « defi_accept + push aux perdants » a été SUPPRIMÉE :
+--    le modèle est passé en FILE D'ATTENTE (defi_waitlist.sql) — plus de
+--    perdants rejetés. NE PAS restaurer l'ancien defi_accept.
 -- ============================================================
 BEGIN;
 
@@ -103,96 +104,5 @@ END;
 $$;
 
 -- (le trigger trg_defi_targeted_decline reste branché sur cette fonction)
-
--- ---------- 2) Push aux binômes perdants de la course ----------
-CREATE OR REPLACE FUNCTION public.defi_accept(p_app_id uuid)
-RETURNS text
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE
-  v_me        uuid := public.current_player_id();
-  v_game_id   uuid;
-  v_initiator uuid;
-  v_partner   uuid;
-  v_app_stat  text;
-  v_min       int;
-  v_max       int;
-  v_avg       numeric;
-  v_b_taken   text[];
-  v_side_i    text;
-  v_side_p    text;
-  v_losers    uuid[];
-  v_url text := 'https://icshhobxeppttgayxmba.supabase.co/functions/v1/send-push';
-  v_key text;
-BEGIN
-  IF v_me IS NULL THEN RAISE EXCEPTION 'not authenticated'; END IF;
-
-  SELECT a.game_id, a.initiator_id, a.partner_id, a.status
-    INTO v_game_id, v_initiator, v_partner, v_app_stat
-    FROM defi_applications a WHERE a.id = p_app_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'application not found'; END IF;
-  IF v_me <> v_partner THEN RAISE EXCEPTION 'not the invited partner'; END IF;
-  IF v_app_stat <> 'pending' THEN RAISE EXCEPTION 'application not pending'; END IF;
-
-  PERFORM 1 FROM open_games WHERE id = v_game_id FOR UPDATE;
-  SELECT min_elo, max_elo INTO v_min, v_max FROM open_games WHERE id = v_game_id;
-
-  IF EXISTS (SELECT 1 FROM defi_applications WHERE game_id = v_game_id AND status = 'locked') THEN
-    UPDATE defi_applications SET status = 'rejected', resolved_at = now() WHERE id = p_app_id;
-    RETURN 'too_late';
-  END IF;
-
-  SELECT avg(elo_score) INTO v_avg FROM players WHERE id IN (v_initiator, v_partner);
-  IF v_avg < coalesce(v_min, 0) OR v_avg > coalesce(v_max, 999999) THEN
-    UPDATE defi_applications SET status = 'rejected', resolved_at = now() WHERE id = p_app_id;
-    RAISE EXCEPTION 'binome out of level band';
-  END IF;
-
-  SELECT array_agg(team_side) INTO v_b_taken
-    FROM game_participants
-    WHERE game_id = v_game_id AND status = 'accepted' AND team_side IN ('B_GAU','B_DRO');
-  v_b_taken := coalesce(v_b_taken, '{}'::text[]);
-  v_side_i := CASE WHEN 'B_GAU' <> ALL(v_b_taken) THEN 'B_GAU' ELSE 'B_DRO' END;
-  v_side_p := CASE WHEN v_side_i = 'B_GAU' THEN 'B_DRO' ELSE 'B_GAU' END;
-
-  UPDATE defi_applications SET status = 'locked', resolved_at = now() WHERE id = p_app_id;
-
-  INSERT INTO game_participants (game_id, player_id, status, team_side)
-    VALUES (v_game_id, v_initiator, 'accepted', v_side_i),
-           (v_game_id, v_partner,   'accepted', v_side_p);
-
-  -- Rejeter les autres candidatures pending + collecter leurs joueurs (perdants).
-  WITH rej AS (
-    UPDATE defi_applications
-      SET status = 'rejected', resolved_at = now()
-      WHERE game_id = v_game_id AND status = 'pending' AND id <> p_app_id
-      RETURNING initiator_id, partner_id
-  )
-  SELECT array_agg(DISTINCT pid) INTO v_losers
-    FROM (SELECT initiator_id AS pid FROM rej UNION ALL SELECT partner_id FROM rej) x;
-
-  UPDATE open_games SET status = 'confirmed', spots_available = 0 WHERE id = v_game_id;
-
-  -- Push aux binômes perdants : un autre binôme a raflé la place.
-  IF v_losers IS NOT NULL AND array_length(v_losers, 1) > 0 THEN
-    SELECT decrypted_secret INTO v_key FROM vault.decrypted_secrets WHERE name = 'service_role_key';
-    IF v_key IS NOT NULL THEN
-      PERFORM net.http_post(
-        url     := v_url,
-        headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer '||v_key),
-        body    := jsonb_build_object(
-                     'playerIds', to_jsonb(v_losers),
-                     'title', '⏳ Défi déjà relevé',
-                     'body',  'Un autre binôme a relevé le défi avant vous.',
-                     'data',  jsonb_build_object('type','challenge'))
-      );
-    END IF;
-  END IF;
-
-  RETURN 'locked';
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.defi_accept(uuid) TO authenticated;
 
 COMMIT;

@@ -100,7 +100,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
             <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontSize: 12, color: Colors.textSecondary }}>
               {[e.payload.partner, e.payload.vs].filter(Boolean).join(' · ')}
             </Text>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 22, letterSpacing: -0.5, color: win ? Colors.success : Colors.danger, marginTop: 1 }}>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 29, letterSpacing: -0.5, color: win ? Colors.success : Colors.danger, marginTop: 1 }}>
               {e.payload.score}
             </Text>
           </View>
@@ -129,7 +129,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
           borderRadius: 14, padding: 14,
         }}>
           <Icon name="trendingUp" size={22} color={Colors.brandDeep} stroke={2.2} />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 18, color: Colors.brandDeep, textTransform: 'uppercase' }}>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 18, lineHeight: 23, color: Colors.brandDeep, textTransform: 'uppercase' }}>
             {e.payload.promo_label}
           </Text>
         </View>
@@ -180,7 +180,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
 function BilanStat({ n, l, color }: { n: number | string; l: string; color: string }) {
   return (
     <View>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 24, color, lineHeight: 24 }}>{n}</Text>
+      <Text style={{ fontFamily: Fonts.display, fontSize: 24, color, lineHeight: 31 }}>{n}</Text>
       <Text style={{ fontFamily: Fonts.uiBold, fontSize: 9.5, color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>{l}</Text>
     </View>
   );

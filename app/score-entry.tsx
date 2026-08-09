@@ -32,6 +32,14 @@ interface Game {
 // Côté → équipe (A_GAU/A_DRO → A, B_GAU/B_DRO → B)
 const teamOf = (side?: string | null) => (side ? side.charAt(0) : null);
 
+// Pastilles joueurs par équipe (identité PagMatch : A = jaune brand, B = noir) ;
+// joueur sans team_side connu → pastille neutre, rangé en dernier.
+const TEAM_PILL: Record<string, { bg: string; border: string; txt: string }> = {
+  A: { bg: Colors.brand, border: Colors.brandDeep, txt: Colors.textOnBrand },
+  B: { bg: Colors.primary, border: Colors.primary, txt: Colors.textOnDark },
+};
+const teamRank = (p: Participant) => { const t = teamOf(p.team_side); return t === 'A' ? 0 : t === 'B' ? 1 : 2; };
+
 // Coéquipier « par défaut » = le joueur de MON équipe au moment de la création.
 // On le déduit du team_side (et creator_side pour le créateur). En l'absence
 // d'info d'équipe fiable, on retombe sur le 1er autre participant (ancien défaut).
@@ -253,8 +261,9 @@ export default function ScoreEntryScreen() {
       .neq('status', 'closed')
       .lt('match_date', now)
       .gte('match_date', twoDaysAgo)
-      .order('match_date', { ascending: false })
-      .limit(20);
+      // Pas de limit : la fenêtre 48 h borne déjà le volume, et une partie
+      // tronquée ici serait impossible à scorer.
+      .order('match_date', { ascending: false });
 
     const { data } = await (partIds.length > 0
       ? baseQuery.or(`creator_id.eq.${player.id},id.in.(${partIds.join(',')})`)
@@ -562,7 +571,7 @@ export default function ScoreEntryScreen() {
             <Path d="M15 18l-6-6 6-6" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 30, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>
+        <Text style={{ fontSize: 30, lineHeight: 39, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>
           {contestMatchId ? (<>Contester le <Text style={{ color: Colors.brand }}>score</Text></>) : (<>Le <Text style={{ color: Colors.brand }}>score</Text></>)}
         </Text>
         <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
@@ -655,11 +664,14 @@ export default function ScoreEntryScreen() {
                       📅 {formatMatchDate(game.match_date)}
                     </Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                      {game.participants.map(p => (
-                        <View key={p.id} style={sty.playerPill}>
-                          <Text style={sty.playerPillTxt}>👤 {p.name}</Text>
-                        </View>
-                      ))}
+                      {[...game.participants].sort((a, b) => teamRank(a) - teamRank(b)).map(p => {
+                        const tc = TEAM_PILL[teamOf(p.team_side) ?? ''];
+                        return (
+                          <View key={p.id} style={[sty.playerPill, tc && { backgroundColor: tc.bg, borderColor: tc.border }]}>
+                            <Text style={[sty.playerPillTxt, tc && { color: tc.txt }]}>👤 {p.name}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   </View>
                   {!isScoring && (

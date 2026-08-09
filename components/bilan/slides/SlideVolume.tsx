@@ -11,12 +11,12 @@ export function SlideVolume({ recap }: { recap: MonthlyRecap }) {
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#6EE7B7', letterSpacing: 2, textTransform: 'uppercase' }}>Ton volume</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', lineHeight: 30, marginTop: 8 }}>Tu as joué…</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', lineHeight: 39, marginTop: 8 }}>Tu as joué…</Text>
 
       {/* Big number */}
       <View style={{ marginTop: 30 }}>
-        <Text style={{ fontFamily: Fonts.display, fontSize: 140, color: '#FFFFFF', lineHeight: 126, letterSpacing: -3 }}>{recap.matches}</Text>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 32, color: '#10B981', lineHeight: 32, marginTop: -4 }}>matchs en {recap.shortLabel}</Text>
+        <Text style={{ fontFamily: Fonts.display, fontSize: 140, color: '#FFFFFF', lineHeight: 182, letterSpacing: -3 }}>{recap.matches}</Text>
+        <Text style={{ fontFamily: Fonts.welcome, fontSize: 32, color: '#10B981', lineHeight: 42, marginTop: -4 }}>matchs en {recap.shortLabel}</Text>
       </View>
 
       {/* Trend line */}

@@ -27,12 +27,12 @@ export function IllustLobby() {
           <View style={{ width: 6 }} />
           <View style={{ width: 30, height: 30, borderRadius: 10, borderWidth: 2, borderStyle: 'dashed',
             borderColor: '#D8D4CE', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 16, color: '#C0BBB2' }}>?</Text>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 16, lineHeight: 21, color: '#C0BBB2' }}>?</Text>
           </View>
           <View style={{ flex: 1 }} />
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ ...miniLabel, fontSize: 8 }}>Niveau</Text>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 17, color: '#0A0A0A' }}>5.5–6</Text>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 17, lineHeight: 22, color: '#0A0A0A' }}>5.5–6</Text>
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 11, borderTopWidth: 1, borderTopColor: '#F1F0EE' }}>

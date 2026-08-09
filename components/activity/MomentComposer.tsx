@@ -27,7 +27,7 @@ export function MomentComposer({ visible, match, busy, onClose, onPublish }: {
           contentContainerStyle={{ backgroundColor: Colors.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 28, gap: 16 }}
           style={{ maxHeight: '88%' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, color: Colors.textPrimary }}>Partager ce match</Text>
+            <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 26, color: Colors.textPrimary }}>Partager ce match</Text>
             <TouchableOpacity onPress={onClose} hitSlop={10}><Icon name="x" size={18} color={Colors.textSecondary} stroke={2.2} /></TouchableOpacity>
           </View>
 
@@ -46,8 +46,8 @@ export function MomentComposer({ visible, match, busy, onClose, onPublish }: {
               <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 8 }}>
                 {match.sets.map(([a, b], i) => (
                   <View key={i} style={{ alignItems: 'center' }}>
-                    <Text style={{ fontFamily: Fonts.display, fontSize: 34, color: Colors.brand, lineHeight: 32 }}>{a}</Text>
-                    <Text style={{ fontFamily: Fonts.display, fontSize: 34, color: 'rgba(255,255,255,0.35)', lineHeight: 32 }}>{b}</Text>
+                    <Text style={{ fontFamily: Fonts.display, fontSize: 34, color: Colors.brand, lineHeight: 44 }}>{a}</Text>
+                    <Text style={{ fontFamily: Fonts.display, fontSize: 34, color: 'rgba(255,255,255,0.35)', lineHeight: 44 }}>{b}</Text>
                   </View>
                 ))}
               </View>

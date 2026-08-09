@@ -119,7 +119,7 @@ export default function InviteScreen() {
             ) : (
               <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 44, height: 44 }} resizeMode="contain" />
             )}
-            <Text style={{ fontFamily: Fonts.welcome, fontSize: 26, color: titleColor, textTransform: 'uppercase', marginTop: cream ? 14 : 8, textAlign: 'center', lineHeight: 28 }}>
+            <Text style={{ fontFamily: Fonts.welcome, fontSize: 26, color: titleColor, textTransform: 'uppercase', marginTop: cream ? 14 : 8, textAlign: 'center', lineHeight: 34 }}>
               Rejoins-moi sur <Text style={{ color: Colors.brandDeep }}>PagMatch</Text>
             </Text>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 13, color: subColor, marginTop: 6, textAlign: 'center' }}>

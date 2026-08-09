@@ -126,7 +126,7 @@ function ProfileBanner({ name, elo, wins, losses, badgeCount, frmt, onProfilePre
               </Text>
             ) : null}
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 23, color: Colors.textOnDark, letterSpacing: 0.3 }}>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 23, lineHeight: 30, color: Colors.textOnDark, letterSpacing: 0.3 }}>
             {name}
           </Text>
           <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 15, color: Colors.brand, marginTop: 4 }}>
@@ -139,7 +139,7 @@ function ProfileBanner({ name, elo, wins, losses, badgeCount, frmt, onProfilePre
       <View style={{ flexDirection: 'row', marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
         {stats.map((s, i) => (
           <View key={s.label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(255,255,255,0.08)' }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 24, letterSpacing: -0.5, color: s.color }}>{s.value}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: 24, lineHeight: 31, letterSpacing: -0.5, color: s.color }}>{s.value}</Text>
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: 8.5, fontWeight: '700', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 5 }}>{s.label}</Text>
           </View>
         ))}
@@ -243,24 +243,24 @@ function ActionsGrid({ upcomingGames, onNavigate }: {
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
         <ActionCard
-          icon={<Icon name="radar" size={24} color="#4f46e5" />}
+          icon={<Icon name="radar" size={24} color="#4f46e5" />}
           title="Matchmaking"
           onPress={() => onNavigate('/(tabs)/lobby')}
         />
         <ActionCard
-          icon={<Icon name="pencil" size={24} color="#059669" />}
+          icon={<Icon name="pencil" size={24} color="#059669" />}
           title="Saisir un score"
           onPress={() => onNavigate('/score-entry')}
         />
       </View>
       <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
         <ActionCard
-          icon={<Icon name="trophy" size={24} color="#f59e0b" />}
+          icon={<Icon name="trophy" size={24} color="#f59e0b" />}
           title="Classement"
-          onPress={() => onNavigate('/(tabs)/ranking')}
+          onPress={() => onNavigate('/ranking')}
         />
         <ActionCard
-          icon={<Icon name="calendar" size={24} color="#8b5cf6" />}
+          icon={<Icon name="calendar" size={24} color="#8b5cf6" />}
           title="À Venir"
           badge={upcomingGames.length}
           sub={nextGame?.match_date && nextGame?.location
@@ -348,14 +348,17 @@ export default function HomeScreen() {
       ? `creator_id.eq.${player.id},id.in.(${ids.join(',')})`
       : `creator_id.eq.${player.id}`;
 
+    // « À Venir » = matchs où je suis CONFIRMÉ (créateur ou participation
+    // 'accepted' via orFilter), même incomplets — même définition que le badge
+    // du lobby (lib/games.isConfirmedInGame). Pas de limit : le compteur doit
+    // refléter le total réel, comme au lobby.
     const { data: upcoming } = await supabase
       .from('open_games')
       .select('id, location, match_date, status, creator_id, spots_available, game_format')
       .gt('match_date', now)
       .neq('status', 'cancelled')
       .or(orFilter)
-      .order('match_date', { ascending: true })
-      .limit(5);
+      .order('match_date', { ascending: true });
 
     setUpcomingGames((upcoming as OpenGame[]) ?? []);
 
