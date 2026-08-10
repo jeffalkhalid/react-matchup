@@ -1243,7 +1243,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: Colors.bg, paddingTop: insets.top }}>
           <View style={{ alignItems: 'center', padding: 32, paddingBottom: 16 }}>
-            <Text style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6 }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+              style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6, paddingRight: 5 }}>
               Partie <Text style={{ color: Colors.brand }}>publiée !</Text>
             </Text>
             <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
@@ -1337,7 +1338,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, fontWeight: '600' }}>‹</Text>
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 22, lineHeight: 29, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2 }}>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+                style={{ fontSize: 22, lineHeight: 29, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, paddingRight: 5 }}>
                 Nouvelle <Text style={{ color: Colors.brand }}>partie</Text>
               </Text>
               <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: Fonts.uiSemi, fontWeight: '600' }}>{STEP_LABELS[step]}</Text>

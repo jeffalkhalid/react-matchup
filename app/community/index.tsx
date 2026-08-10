@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ViewStyle } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ViewStyle, Image } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { Colors, Fonts, LeagueGradients } from '../../lib/theme';
 import { getFriends } from '../../lib/community';
 import { Avatar } from '../../components/community/Avatar';
@@ -41,6 +42,7 @@ export default function CommunityHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { player } = usePlayer();
+  const { total: notifCount } = useNotificationCount();
   const [friends, setFriends] = useState<SocialPlayer[]>([]);
 
   useFocusEffect(useCallback(() => {
@@ -48,21 +50,64 @@ export default function CommunityHubScreen() {
   }, [player]));
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bg, paddingHorizontal: 16, paddingTop: insets.top + 10, paddingBottom: insets.bottom + 14 }}>
-      {/* En-tête */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.85} style={iconBtn}>
-          <Icon name="chevronLeft" size={20} color={Colors.textPrimary} />
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      {/* En-tête — même gabarit que le Lobby : bloc noir arrondi, lockup
+          raquette + wordmark, titre accentué. */}
+      <View style={{
+        backgroundColor: Colors.heroBg,
+        paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16,
+        borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
+      }}>
+        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.85}
+          style={{ position: 'absolute', top: insets.top + 8, left: 16, zIndex: 20, ...darkIconBtn }}>
+          <Icon name="chevronLeft" size={20} color={Colors.textOnDark} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 29, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
-          Communauté
-        </Text>
-        <TouchableOpacity onPress={() => router.push('/community/friends')} activeOpacity={0.85} style={iconBtn}>
-          <Icon name="bell" size={19} color={Colors.textPrimary} />
-          <View style={{ position: 'absolute', top: 7, right: 8, width: 8, height: 8, borderRadius: 999, backgroundColor: Colors.danger, borderWidth: 1.5, borderColor: '#fff' }} />
-        </TouchableOpacity>
+        <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 20, flexDirection: 'row', gap: 8 }}>
+          {/* Loupe → recherche de joueurs (même écran que la loupe de l'accueil) */}
+          <TouchableOpacity onPress={() => router.push('/community/friends')} activeOpacity={0.85} style={darkIconBtn}>
+            <Icon name="search" size={19} color={Colors.textOnDark} />
+          </TouchableOpacity>
+          {/* Cloche → notifications ; pastille uniquement s'il y en a vraiment
+              (compteur PARTAGÉ useNotificationCount — avant : pastille en dur). */}
+          <TouchableOpacity onPress={() => router.push('/notifications' as any)} activeOpacity={0.85} style={darkIconBtn}>
+            <Icon name="bell" size={19} color={Colors.textOnDark} />
+            {notifCount > 0 && (
+              <View style={{ position: 'absolute', top: 7, right: 8, width: 8, height: 8, borderRadius: 999, backgroundColor: Colors.danger, borderWidth: 1.5, borderColor: Colors.heroBg }} />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Brand lockup — raquette + wordmark PAGMATCH */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+          <Image
+            source={require('../../assets/auth/splash-racket.png')}
+            style={{ width: 22, height: 22 }}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('../../assets/auth/splash-wordmark.png')}
+            style={{ width: 100, height: 22, marginLeft: -7 }}
+            resizeMode="contain"
+          />
+        </View>
+        {/* Title row */}
+        <View style={{ alignItems: 'center' }}>
+          {/* numberOfLines+adjustsFontSizeToFit : sur Android (grande police
+              système), le titre passait à la ligne et la fin disparaissait ;
+              paddingRight : le débord de l'italique rognait le dernier glyphe. */}
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
+            La <Text style={{ color: Colors.brand }}>Communauté</Text>
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>
+            {friends.length > 0
+              ? `${friends.length} ami${friends.length > 1 ? 's' : ''} suivi${friends.length > 1 ? 's' : ''}`
+              : 'Trouve et suis des joueurs'}
+          </Text>
+        </View>
       </View>
 
+      <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 14 }}>
       {/* Bandeau d'amis (scroll horizontal uniquement) */}
       {friends.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }} contentContainerStyle={{ gap: 14, paddingVertical: 2, paddingHorizontal: 2 }}>
@@ -112,12 +157,13 @@ export default function CommunityHubScreen() {
           />
         </SocialCard>
       </View>
+      </View>
     </View>
   );
 }
 
-const iconBtn = {
-  width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.bgCard,
-  borderWidth: 1, borderColor: Colors.border,
+// Boutons d'overlay sur l'entête noire (même style que le Lobby/Classement).
+const darkIconBtn = {
+  width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.10)',
   alignItems: 'center' as const, justifyContent: 'center' as const,
 };

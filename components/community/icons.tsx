@@ -1,7 +1,7 @@
 // Jeu d'icônes Lucide (react-native-svg) utilisé par les écrans Communauté.
 // Chemins repris de design_handoff_communaute_sociale/reference/icons.jsx.
 import React from 'react';
-import Svg, { Path, Line, Polyline, Polygon, Circle, G, Rect } from 'react-native-svg';
+import Svg, { Path, Line, Polyline, Polygon, Circle, Ellipse, G, Rect } from 'react-native-svg';
 
 export type IconName =
   | 'chevronLeft' | 'chevronRight' | 'chevronDown' | 'bell' | 'users' | 'search' | 'plus'
@@ -10,7 +10,7 @@ export type IconName =
   | 'sliders' | 'trendingUp' | 'share' | 'lifeBuoy' | 'settings'
   | 'calendar' | 'pencil' | 'heart' | 'eye' | 'flame' | 'map' | 'bookOpen' | 'repeat'
   | 'medal' | 'mail' | 'megaphone' | 'crown' | 'hourglass' | 'star' | 'checkSquare'
-  | 'shield' | 'lock' | 'fileText' | 'logOut' | 'trash';
+  | 'shield' | 'lock' | 'fileText' | 'logOut' | 'trash' | 'racket';
 
 export interface IconProps {
   name: IconName;
@@ -279,6 +279,17 @@ export function Icon({ name, size = 24, color = '#0A0A0A', stroke = 2, fill = 'n
           <Path {...common} d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
           <Polyline {...common} points="16 17 21 12 16 7" />
           <Line {...common} x1="21" y1="12" x2="9" y2="12" />
+        </G>;
+      case 'racket':
+        // Raquette de padel (tamis percé + manche) — même langage outline que le reste.
+        return <G>
+          <Ellipse {...common} cx="12" cy="9.5" rx="6" ry="7.5" />
+          <Path {...common} d="M12 17v5" />
+          <Circle cx="12" cy="9.5" r="0.9" fill={color} stroke="none" />
+          <Circle cx="9.2" cy="7.2" r="0.9" fill={color} stroke="none" />
+          <Circle cx="14.8" cy="7.2" r="0.9" fill={color} stroke="none" />
+          <Circle cx="9.2" cy="11.8" r="0.9" fill={color} stroke="none" />
+          <Circle cx="14.8" cy="11.8" r="0.9" fill={color} stroke="none" />
         </G>;
       case 'trash':
         return <G>

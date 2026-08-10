@@ -2855,7 +2855,8 @@ export default function LobbyScreen() {
         {/* Title row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
           <View style={{ flexShrink: 1 }}>
-            <Text style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center' }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+              style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
               Le <Text style={{ color: Colors.brand }}>Lobby</Text>
             </Text>
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>

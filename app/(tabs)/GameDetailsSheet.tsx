@@ -279,6 +279,14 @@ export default function GameDetailsSheet({
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // La fiche est une Modal NATIVE : une navigation lancée dessous reste
+  // invisible tant qu'elle est ouverte. On ferme donc la fiche AVANT de
+  // pousser le profil du joueur.
+  const openProfile = (id: string) => {
+    onClose();
+    router.push(`/player/${id}` as any);
+  };
   const [mySlot, setMySlot] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isWaitlisted, setIsWaitlisted] = useState(false);
@@ -726,18 +734,25 @@ export default function GameDetailsSheet({
                     return (
                       <View key={p.id} style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 12 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                          <Avatar name={p.player?.name ?? '?'} size={40} />
-                          <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.player?.name}</Text>
-                              <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-                                <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary }}>Niv.{formatPadelLevel(p.player?.elo_score ?? 0)}</Text>
+                          {/* Identité tappable → profil du candidat (les boutons voter restent à droite) */}
+                          <TouchableOpacity
+                            onPress={() => openProfile(p.player_id)}
+                            activeOpacity={0.75}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                          >
+                            <Avatar name={p.player?.name ?? '?'} size={40} />
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.player?.name}</Text>
+                                <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary }}>Niv.{formatPadelLevel(p.player?.elo_score ?? 0)}</Text>
+                                </View>
                               </View>
+                              <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
+                                {approvals.length}/{requiredVotes} approbation{approvals.length > 1 ? 's' : ''}
+                              </Text>
                             </View>
-                            <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
-                              {approvals.length}/{requiredVotes} approbation{approvals.length > 1 ? 's' : ''}
-                            </Text>
-                          </View>
+                          </TouchableOpacity>
                           {isFull ? (
                             <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
                               <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted }}>En attente</Text>
@@ -807,15 +822,21 @@ export default function GameDetailsSheet({
                         }}>
                           <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>{i + 1}</Text>
                         </View>
-                        <Avatar name={p.player?.name ?? '?'} size={30} ring={isMine ? Colors.warning : undefined} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
-                            {isMine ? 'Toi' : p.player?.name}
-                          </Text>
-                          <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
-                            Niv. {formatPadelLevel(p.player?.elo_score ?? 0)} · {i === 0 ? 'Prochain à entrer' : `${i + 1}ᵉ en attente`}
-                          </Text>
-                        </View>
+                        <TouchableOpacity
+                          onPress={() => openProfile(p.player_id)}
+                          activeOpacity={0.75}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                        >
+                          <Avatar name={p.player?.name ?? '?'} size={30} ring={isMine ? Colors.warning : undefined} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
+                              {isMine ? 'Toi' : p.player?.name}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
+                              Niv. {formatPadelLevel(p.player?.elo_score ?? 0)} · {i === 0 ? 'Prochain à entrer' : `${i + 1}ᵉ en attente`}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
                       </View>
                     );
                   })}
@@ -841,15 +862,21 @@ export default function GameDetailsSheet({
                         backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
                         borderRadius: 12, padding: 10,
                       }}>
-                        <Avatar name={p.player?.name ?? '?'} size={30} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
-                            {p.player?.name}
-                          </Text>
-                          <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
-                            Niv. {formatPadelLevel(p.player?.elo_score ?? 0)}{countdown ? ` · ${countdown}` : ''}
-                          </Text>
-                        </View>
+                        <TouchableOpacity
+                          onPress={() => openProfile(p.player_id)}
+                          activeOpacity={0.75}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                        >
+                          <Avatar name={p.player?.name ?? '?'} size={30} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
+                              {p.player?.name}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 1 }}>
+                              Niv. {formatPadelLevel(p.player?.elo_score ?? 0)}{countdown ? ` · ${countdown}` : ''}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => {
                             Alert.alert(
@@ -888,7 +915,7 @@ export default function GameDetailsSheet({
                     return (
                       <TouchableOpacity
                         key={side}
-                        onPress={() => router.push(`/player/${p.id}` as any)}
+                        onPress={() => openProfile(p.id)}
                         activeOpacity={0.8}
                         style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.bgCardAlt, borderRadius: 18, padding: 14 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: total > 0 ? 10 : 0 }}>

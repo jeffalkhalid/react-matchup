@@ -1,12 +1,12 @@
 import { Tabs, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TouchableOpacity, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
-import { isMatchPast } from '../../hooks/useGameChats';
+import { useGameChats } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
 import { fetchUnreadCounts } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
@@ -14,10 +14,10 @@ import HelpCenter from '../../components/HelpCenter';
 import OnboardingCarousel from '../../components/OnboardingCarousel';
 import { GUIDE_KEY } from '../../lib/guideTheme';
 
-// Écran d'ouverture de l'app : le Lobby (exploration des parties), pas Accueil.
+// Écran d'ouverture de l'app : l'Accueil (hero profil + prochain match).
 // API native expo-router (le préfixe `unstable_` est hérité de Next.js, l'option est stable).
 export const unstable_settings = {
-  initialRouteName: 'lobby',
+  initialRouteName: 'index',
 };
 
 const IconHome = ({ color, size = 22 }: { color: string; size?: number }) => (
@@ -98,8 +98,18 @@ export default function TabLayout() {
   // Défis reçus — lus depuis l'état notif PARTAGÉ (NotificationProvider), donc le
   // badge se vide dès qu'un défi est accepté/décliné, sans redémarrage de l'app.
   const { challenges: challengeCount } = useNotificationCount();
-  const [chatBadge, setChatBadge] = useState(0);
   const [directUnread, setDirectUnread] = useState(0);
+
+  // Badge Chats — DÉRIVÉ de la source unique useGameChats (même liste, mêmes
+  // règles d'archivage et de non-lus que l'écran Chats + Archivés, realtime
+  // inclus). Avant : logique « miroir » dupliquée ici, qui divergeait déjà
+  // (elle comptait les chats de parties ANNULÉES, absentes de l'écran Chats).
+  const { games: chatGames, loadGames } = useGameChats();
+  useEffect(() => { loadGames(); }, [loadGames]);
+  const chatBadge = useMemo(
+    () => chatGames.filter(g => !g.archived).reduce((sum, g) => sum + g.unread, 0),
+    [chatGames],
+  );
   // null = lecture du flag en cours · false = afficher l'onboarding · true = vu.
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
 
@@ -115,76 +125,14 @@ export default function TabLayout() {
   // Auth redirect is handled by the root _layout.tsx navigator — don't redirect here
   // as router.replace('/') from within tabs resolves to (tabs)/index, not app/index.tsx
 
-  // Chat badge: sum of per-game unread messages (mirrors chats.tsx logic),
-  // kept live via realtime on `messages` and `game_chat_reads`.
+  // Non-lus directs (DM) = TOTAL des messages non lus (style WhatsApp), demandes
+  // reçues incluses (leur message d'intro compte pour 1 tant que non ouvert).
+  // Basé sur le non-lu → l'ouverture (mark_direct_read) décrémente le badge.
+  // (Le badge des chats de PARTIES, lui, vient de useGameChats ci-dessus.)
   useEffect(() => {
     if (!player) return;
 
     let cancelled = false;
-    let gameIds: string[] = [];
-    const unreadByGame = new Map<string, number>();
-    // Archived games are excluded from the badge (badge = active chats only).
-    const archivedIds = new Set<string>();
-
-    const recomputeTotal = () => {
-      if (cancelled) return;
-      let total = 0;
-      unreadByGame.forEach((v, gid) => { if (!archivedIds.has(gid)) total += v; });
-      setChatBadge(total);
-    };
-
-    const load = async () => {
-      const [{ data: parts }, { data: created }] = await Promise.all([
-        supabase.from('game_participants').select('game:game_id(id, match_date)').eq('player_id', player.id).eq('status', 'accepted'),
-        supabase.from('open_games').select('id, match_date').eq('creator_id', player.id),
-      ]);
-      const matchDateById = new Map<string, string | null>();
-      const ids = new Set<string>();
-      (parts ?? []).forEach((p: any) => {
-        const g = p.game;
-        if (g?.id) { ids.add(g.id); matchDateById.set(g.id, g.match_date ?? null); }
-      });
-      (created ?? []).forEach((g: any) => {
-        if (g.id) { ids.add(g.id); matchDateById.set(g.id, g.match_date ?? null); }
-      });
-      gameIds = [...ids];
-      unreadByGame.clear();
-      archivedIds.clear();
-
-      if (gameIds.length === 0) { recomputeTotal(); return; }
-
-      // Validated score OR match past (+24h grace) → archived, excluded from badge.
-      const { data: validated } = await supabase
-        .from('matches').select('game_id').in('game_id', gameIds).eq('status', 'validated');
-      const validatedIds = new Set((validated ?? []).map((m: any) => m.game_id).filter(Boolean));
-      gameIds.forEach(gid => {
-        if (validatedIds.has(gid) || isMatchPast(matchDateById.get(gid))) archivedIds.add(gid);
-      });
-
-      const { data: reads } = await supabase
-        .from('game_chat_reads')
-        .select('game_id, last_read_at')
-        .eq('player_id', player.id);
-      const readMap = new Map<string, string>((reads ?? []).map((r: any) => [r.game_id, r.last_read_at]));
-
-      await Promise.all(gameIds.map(async (gid) => {
-        const lastRead = readMap.get(gid) ?? '1970-01-01';
-        const { count } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('game_id', gid)
-          .gt('created_at', lastRead)
-          .neq('player_id', player.id);
-        unreadByGame.set(gid, count ?? 0);
-      }));
-      recomputeTotal();
-      await recomputeDirect();
-    };
-
-    // Non-lus directs = TOTAL des messages non lus (style WhatsApp), demandes
-    // reçues incluses (leur message d'intro compte pour 1 tant que non ouvert).
-    // Basé sur le non-lu → l'ouverture (mark_direct_read) décrémente le badge.
-    // Try/catch : un échec ne casse jamais le badge des parties.
     const recomputeDirect = async () => {
       try {
         const counts = await fetchUnreadCounts(player.id);
@@ -194,31 +142,10 @@ export default function TabLayout() {
       } catch {}
     };
 
-    load();
+    recomputeDirect();
 
     // Unique per mount: avoids reusing a still-subscribed channel after Fast Refresh
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    const msgCh = supabase
-      .channel(`tab-chat-badge-msgs:${player.id}:${suffix}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-        const m = payload.new as { game_id: string; player_id: string } | null;
-        if (!m || m.player_id === player.id) return;
-        if (!gameIds.includes(m.game_id)) return;
-        unreadByGame.set(m.game_id, (unreadByGame.get(m.game_id) ?? 0) + 1);
-        recomputeTotal();
-      })
-      .subscribe();
-
-    const readCh = supabase
-      .channel(`tab-chat-badge-reads:${player.id}:${suffix}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_chat_reads', filter: `player_id=eq.${player.id}` }, payload => {
-        const r = payload.new as { game_id: string } | null;
-        if (!r?.game_id) return;
-        unreadByGame.set(r.game_id, 0);
-        recomputeTotal();
-      })
-      .subscribe();
 
     // Nouveau message direct → recalcul du non-lu.
     const dmCh = supabase
@@ -242,8 +169,6 @@ export default function TabLayout() {
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(msgCh);
-      supabase.removeChannel(readCh);
       supabase.removeChannel(dmCh);
       supabase.removeChannel(convCh);
     };

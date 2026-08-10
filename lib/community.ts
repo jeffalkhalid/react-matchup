@@ -67,6 +67,49 @@ export async function getFriends(myId: string): Promise<SocialPlayer[]> {
     toSocial(p, true, { mutual: mutual.get(p.id) ?? 0 }));
 }
 
+// ─── Mes amis + forme récente ────────────────────────────────
+// Forme = résultats des 5 derniers matchs (elo_history, du plus récent au plus
+// ancien) + delta de NIVEAU engendré par le dernier match — même conversion que
+// le lobby et le profil : eloToLevel(après) − eloToLevel(avant).
+export interface FriendWithForm extends SocialPlayer {
+  form: boolean[];               // true = victoire ; du plus récent au plus ancien (≤ 5)
+  lastLevelDelta: number | null; // delta de niveau du dernier match (null si aucun match)
+}
+
+export async function getFriendsWithForm(myId: string): Promise<FriendWithForm[]> {
+  const friends = await getFriends(myId);
+  if (friends.length === 0) return [];
+  const ids = friends.map(f => f.id);
+  // Une seule requête (pas de N+1), groupée en JS — 5 entrées max par ami.
+  // La limite large évite qu'un ami très actif écrase l'historique des autres.
+  const { data } = await supabase
+    .from('elo_history')
+    .select('player_id, elo_score, elo_change, created_at')
+    .in('player_id', ids)
+    .not('match_id', 'is', null)
+    .not('elo_change', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(ids.length * 40);
+  const byPlayer = new Map<string, { elo_score: number; elo_change: number }[]>();
+  ((data ?? []) as any[]).forEach(h => {
+    const arr = byPlayer.get(h.player_id) ?? [];
+    if (arr.length < 5) { arr.push(h); byPlayer.set(h.player_id, arr); }
+  });
+  return friends
+    .map(f => {
+      const hist = byPlayer.get(f.id) ?? [];
+      const last = hist[0];
+      return {
+        ...f,
+        form: hist.map(h => h.elo_change > 0),
+        lastLevelDelta: last
+          ? eloToLevel(last.elo_score) - eloToLevel(last.elo_score - last.elo_change)
+          : null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
+
 // Suggestions : amis d'amis (non suivis) classés par amis en commun,
 // complétés par des joueurs du même club, puis du même niveau.
 export async function getSuggestions(me: Player, limit = 8): Promise<SocialPlayer[]> {

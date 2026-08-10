@@ -142,7 +142,8 @@ export default function NotificationsScreen() {
         >
           <Icon name="chevronLeft" size={20} color={Colors.textPrimary} stroke={2.5} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5 }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+          style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5, paddingRight: 5 }}>
           Tes <Text style={{ color: Colors.brand }}>notifications</Text>
         </Text>
         {items.length > 0 && (

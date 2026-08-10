@@ -1,283 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal,
-  ActivityIndicator, Animated, LayoutAnimation,
-  Platform, UIManager, StyleSheet, Image,
+  ActivityIndicator, LayoutAnimation,
+  Platform, UIManager, Image, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, {
-  Path, Circle, Rect,
-  Defs, LinearGradient as SvgLinearGradient, Stop,
-} from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
-import { Colors, formatPadelLevel, getLeague, getLeagueLabel, Fonts } from '../../lib/theme';
+import { Colors, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { CommunityCard } from '../../components/community/CommunityCard';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon } from '../../components/community/icons';
 import { BadgePill } from '../../components/profile/BadgePill';
+import { HomeProfileCard } from '../../components/home/HomeProfileCard';
+import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
+import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
+import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
 import type { OpenGame } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
-function formatNextGame(matchDate: string, location: string): string {
-  const date = new Date(matchDate);
-  const now  = new Date();
-  const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const nowDay  = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
-  const diffDays = Math.round((dateDay.getTime() - nowDay.getTime()) / (1000 * 60 * 60 * 24));
-  const time = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const dayLabel = diffDays === 0 ? "Aujourd'hui"
-    : diffDays === 1 ? 'Demain'
-    : date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
-  const place = location.length > 14 ? location.slice(0, 13) + '…' : location;
-  return `${dayLabel} · ${time}\n${place}`;
-}
-
-// ─── SVG Icons — définis via le registre centralisé (Icon) ───
-
-// ─── Gradient avatar ─────────────────────────────────────────
-function GradientAvatar({ letter, size = 68 }: { letter: string; size?: number }) {
-  const r = Math.round(size * 0.28);
-  return (
-    <View style={{ width: size, height: size }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <Defs>
-          <SvgLinearGradient id="avGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="#6366f1" />
-            <Stop offset="1" stopColor="#34d399" />
-          </SvgLinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width={size} height={size} rx={r} fill="url(#avGrad)" />
-      </Svg>
-      <View style={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Text style={{ color: Colors.textOnDark, fontSize: size * 0.42, fontWeight: '900' }}>
-          {letter.toUpperCase()}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-
-// ─── Hero compact — identité horizontale + bande de stats (handoff) ───
-function ProfileBanner({ name, elo, wins, losses, badgeCount, frmt, onProfilePress }: {
-  name: string; elo: number; wins: number; losses: number; badgeCount: number;
-  frmt?: { text: string; verified: boolean } | null;
-  onProfilePress: () => void;
-}) {
-  const leagueType = getLeague(elo);
-  const leagueLabel = 'Ligue ' + getLeagueLabel(leagueType);
-  const leagueHex = Colors.league[leagueType];
-  const level = formatPadelLevel(elo);
-  const total = wins + losses;
-  const winPct = total > 0 ? Math.round((wins / total) * 100) : 0;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 0.35, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,    duration: 1000, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  const stats: { label: string; value: number | string; color: string }[] = [
-    { label: 'MATCHS',    value: total,          color: Colors.textOnDark },
-    { label: 'VICTOIRES', value: wins,           color: Colors.textOnDark },
-    { label: 'WIN',       value: `${winPct}%`,   color: Colors.brand },
-    { label: 'BADGES',    value: badgeCount,     color: '#fb923c' },
-  ];
-
-  return (
-    <View style={{
-      flex: 1, minHeight: 150, justifyContent: 'center',
-      backgroundColor: Colors.heroBg, borderRadius: 22, overflow: 'hidden',
-      paddingHorizontal: 18, paddingVertical: 16,
-      shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 }, elevation: 7,
-    }}>
-      {/* Glow orbs */}
-      <View pointerEvents="none" style={{ position: 'absolute', top: -50, right: -30, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.16)' }} />
-      <View pointerEvents="none" style={{ position: 'absolute', bottom: -60, left: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.06)' }} />
-
-      {/* Identity row — paddingRight pour laisser la cloche (absolue) respirer ; tap → profil complet */}
-      <TouchableOpacity activeOpacity={0.8} onPress={onProfilePress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingRight: 44 }}>
-        <GradientAvatar letter={name.charAt(0)} size={56} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-            <Animated.View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: leagueHex, opacity: pulseAnim }} />
-            <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: '900', color: leagueHex, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-              {leagueLabel}
-            </Text>
-            {frmt ? (
-              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 9, fontWeight: '900', color: frmt.verified ? '#34d399' : '#fbbf24', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                {`· FRMT ${frmt.text}${frmt.verified ? ' ✓' : ''}`}
-              </Text>
-            ) : null}
-          </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 23, lineHeight: 30, color: Colors.textOnDark, letterSpacing: 0.3 }}>
-            {name}
-          </Text>
-          <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 15, color: Colors.brand, marginTop: 4 }}>
-            Niveau {level}
-          </Text>
-        </View>
-      </TouchableOpacity>
-
-      {/* Stats strip */}
-      <View style={{ flexDirection: 'row', marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
-        {stats.map((s, i) => (
-          <View key={s.label} style={{ flex: 1, alignItems: 'center', borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(255,255,255,0.08)' }}>
-            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: 24, lineHeight: 31, letterSpacing: -0.5, color: s.color }}>{s.value}</Text>
-            <Text style={{ fontFamily: Fonts.uiBold, fontSize: 8.5, fontWeight: '700', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 5 }}>{s.label}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── Action card — flex-based, fills available space ──────────
-const cardStyles = StyleSheet.create({
-  wrapper: { flex: 1 },
-  card: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderWidth: 1.5,
-    borderColor: '#B8C8D8',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  badge: {
-    position: 'absolute',
-    top: -7,
-    right: -7,
-    minWidth: 20,
-    height: 20,
-    backgroundColor: '#7c3aed',
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    paddingHorizontal: 3,
-  },
-  title: {
-    fontFamily: Fonts.uiBold,
-    fontWeight: '700',
-    color: '#334155',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  sub: {
-    color: Colors.textMuted,
-    fontSize: 10,
-    textAlign: 'center',
-    lineHeight: 13,
-    marginTop: 2,
-  },
-});
-
-function ActionCard({ icon, title, sub, badge, onPress }: {
-  icon: React.ReactNode; title: string; sub?: string;
-  badge?: number; onPress: () => void;
-}) {
-  return (
-    <View style={cardStyles.wrapper}>
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.88}
-        style={cardStyles.card}
-      >
-        {/* Icon + badge */}
-        <View style={cardStyles.iconBox}>
-          {icon}
-          {badge != null && badge > 0 && (
-            <View style={cardStyles.badge}>
-              <Text style={{ color: Colors.textOnDark, fontSize: 10, fontWeight: '900' }}>{badge}</Text>
-            </View>
-          )}
-        </View>
-
-        <Text numberOfLines={1} style={cardStyles.title}>{title}</Text>
-        {sub ? <Text numberOfLines={2} style={cardStyles.sub}>{sub}</Text> : null}
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ─── 2×2 action grid — flex fills remaining screen space ──────
-function ActionsGrid({ upcomingGames, onNavigate }: {
-  upcomingGames: OpenGame[];
-  onNavigate: (path: string) => void;
-}) {
-  const nextGame = upcomingGames[0];
-  return (
-    <View style={{ gap: 12 }}>
-      <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
-        <ActionCard
-          icon={<Icon name="radar" size={24} color="#4f46e5" />}
-          title="Matchmaking"
-          onPress={() => onNavigate('/(tabs)/lobby')}
-        />
-        <ActionCard
-          icon={<Icon name="pencil" size={24} color="#059669" />}
-          title="Saisir un score"
-          onPress={() => onNavigate('/score-entry')}
-        />
-      </View>
-      <View style={{ flexDirection: 'row', gap: 12, height: 132 }}>
-        <ActionCard
-          icon={<Icon name="trophy" size={24} color="#f59e0b" />}
-          title="Classement"
-          onPress={() => onNavigate('/ranking')}
-        />
-        <ActionCard
-          icon={<Icon name="calendar" size={24} color="#8b5cf6" />}
-          title="À Venir"
-          badge={upcomingGames.length}
-          sub={nextGame?.match_date && nextGame?.location
-            ? formatNextGame(nextGame.match_date, nextGame.location)
-            : undefined}
-          onPress={() => onNavigate('/(tabs)/lobby?tab=upcoming')}
-        />
-      </View>
-    </View>
-  );
-}
-
 // ─── Main screen ──────────────────────────────────────────────
+// Les briques UI de l'accueil vivent dans components/home/ ; cet écran garde
+// la donnée (Supabase) et le flux badges.
 export default function HomeScreen() {
   const { player, refresh } = usePlayer();
   const { reload: reloadNotifs } = useNotificationCount();
   const [badgeCount, setBadgeCount] = useState(0);
+  const [myRank, setMyRank] = useState<number | null>(null);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
@@ -287,6 +42,17 @@ export default function HomeScreen() {
   const [submittingBadges, setSubmittingBadges] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: winH, fontScale } = useWindowDimensions();
+
+  // Adaptatif TOUS appareils (aucune valeur par modèle) : hauteur réellement
+  // disponible = fenêtre − inset haut − header logo (~48) − tab bar (64 +
+  // inset bas, cf. (tabs)/_layout) − paddings (~18) − 4 gaps (~48). Les
+  // planchers normaux (~560 px) sont comparés en tenant compte de la taille
+  // de police SYSTÈME (fontScale) qui gonfle tous les textes. Trois étages :
+  // grand écran = proportions pleines · écran/police serrés = mode compact ·
+  // extrême (petit + grande police) = le ScrollView de secours prend le relais.
+  const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48;
+  const compact = availableH < 575 * Math.max(1, fontScale);
 
   useEffect(() => {
     supabase.from('badges').select('*').eq('is_active', true).then(({ data }) => {
@@ -308,6 +74,7 @@ export default function HomeScreen() {
       { data: recentMatches },
       { data: alreadyVoted },
       { data: badgeSkips },
+      { count: playersAbove },
     ] = await Promise.all([
       supabase
         .from('reputation_votes')
@@ -333,9 +100,17 @@ export default function HomeScreen() {
         .from('badge_prompt_skips')
         .select('match_id')
         .eq('player_id', player.id),
+      // Rang réel = position par ELO décroissant, même définition que l'écran
+      // classement (ranking.tsx trie tous les joueurs non supprimés par elo_score).
+      supabase
+        .from('players')
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null)
+        .gt('elo_score', player.elo_score),
     ]);
 
     setBadgeCount(badges ?? 0);
+    setMyRank((playersAbove ?? 0) + 1);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
     const skippedIds = new Set((badgeSkips ?? []).map((s: any) => s.match_id));
@@ -352,15 +127,17 @@ export default function HomeScreen() {
     // 'accepted' via orFilter), même incomplets — même définition que le badge
     // du lobby (lib/games.isConfirmedInGame). Pas de limit : le compteur doit
     // refléter le total réel, comme au lobby.
+    // Créateur + participants embarqués pour la carte « Prochain match »
+    // (noms + niveaux des deux camps ; l'occupation dérive de occupiesSpot).
     const { data: upcoming } = await supabase
       .from('open_games')
-      .select('id, location, match_date, status, creator_id, spots_available, game_format')
+      .select('id, location, match_date, status, creator_id, creator_side, spots_available, game_format, is_challenge, creator:creator_id(id, name, elo_score), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score))')
       .gt('match_date', now)
       .neq('status', 'cancelled')
       .or(orFilter)
       .order('match_date', { ascending: true });
 
-    setUpcomingGames((upcoming as OpenGame[]) ?? []);
+    setUpcomingGames((upcoming as unknown as OpenGame[]) ?? []);
 
     setLoading(false);
   }, [player]);
@@ -427,21 +204,19 @@ export default function HomeScreen() {
   const visibleUpcoming = upcomingGames.filter(g => !g.match_date || new Date(g.match_date) > now);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+    <View style={{ flex: 1, backgroundColor: '#F7F7F7' }}>
       <View style={{
         flex: 1,
-        paddingHorizontal: 14,
         paddingTop: insets.top + 8,
-        paddingBottom: 8,
       }}>
-        <HeaderActions top={insets.top + 6} right={14} tint="dark" />
+        <HeaderActions top={insets.top + 6} right={20} tint="dark" />
         {/* Loupe recherche — miroir gauche du cluster droit ; ouvre l'écran de recherche joueurs */}
         <TouchableOpacity
           onPress={() => router.push('/community/friends' as any)}
           activeOpacity={0.75}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={{
-            position: 'absolute', top: insets.top + 6, left: 14, zIndex: 20,
+            position: 'absolute', top: insets.top + 6, left: 20, zIndex: 20,
             width: 40, height: 40, borderRadius: 20,
             backgroundColor: Colors.heroBg,
             alignItems: 'center', justifyContent: 'center',
@@ -450,7 +225,7 @@ export default function HomeScreen() {
           <Icon name="search" size={20} color={Colors.brand} stroke={2} />
         </TouchableOpacity>
         {/* Header — logo PAG MATCH (identique au splash de chargement) */}
-        <View style={{ alignItems: 'center', marginBottom: 12 }}>
+        <View style={{ alignItems: 'center', marginBottom: 4 }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: Colors.heroBg,
@@ -587,26 +362,91 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            <View style={{ flex: 1, marginTop: 12 }}>
-              <ProfileBanner
-                name={player.name}
-                elo={player.elo_score}
-                wins={player.win_count}
-                losses={player.loss_count}
-                badgeCount={badgeCount}
-                frmt={formatFrmtRanking(player)}
-                onProfilePress={() => router.push(`/player/${player.id}` as any)}
-              />
-            </View>
-            <View style={{ marginTop: 12 }}>
-              <ActionsGrid
-                upcomingGames={visibleUpcoming}
-                onNavigate={(path) => router.push(path as any)}
-              />
-              <View style={{ marginTop: 12 }}>
+            {/* Adaptatif : sur un écran assez haut, tout tient exactement
+                (flexGrow:1 → le contenu remplit le viewport, l'excédent est
+                absorbé par le hero et Prochain match, AUCUN scroll possible).
+                Sur un petit écran (Android compact), le contenu dépasse et le
+                ScrollView prend le relais au lieu de rogner les cartes. */}
+            <ScrollView
+              bounces={false}
+              overScrollMode="never"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ flexGrow: 1 }}
+            >
+            <View style={{
+              flex: 1,
+              paddingHorizontal: 20,
+              paddingTop: compact ? 6 : 10,
+              paddingBottom: 8,
+              gap: compact ? 9 : 12,
+            }}>
+              {/* Hauteurs RELATIVES : chaque section reçoit une part
+                  proportionnelle de l'écran (flex), avec un plancher
+                  minHeight sous lequel le contenu ne s'écrase pas —
+                  en-dessous, c'est le ScrollView qui prend le relais. */}
+
+              {/* B. Hero profil — ~3/7,6 de la hauteur */}
+              <View style={{ flex: 3, minHeight: compact ? 184 : 214 }}>
+                <HomeProfileCard
+                  name={player.name}
+                  elo={player.elo_score}
+                  wins={player.win_count}
+                  losses={player.loss_count}
+                  badgeCount={badgeCount}
+                  frmt={formatFrmtRanking(player)}
+                  onPress={() => router.push(`/player/${player.id}` as any)}
+                  compact={compact}
+                />
+              </View>
+
+              {/* C. Actions principales — ~0,8/7,6 */}
+              <View style={{ flex: 0.8, minHeight: compact ? 54 : 62 }}>
+                <HomePrimaryActions
+                  onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
+                  onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
+                />
+              </View>
+
+              {/* D. Prochain match — ~2,2/7,6 */}
+              <View style={{ flex: 2.2, minHeight: compact ? 148 : 168 }}>
+                <UpcomingMatchCard
+                  game={visibleUpcoming[0] ?? null}
+                  count={visibleUpcoming.length}
+                  onOpenDetails={() => {
+                    const g = visibleUpcoming[0];
+                    if (g) router.push(`/(tabs)/lobby?gameId=${g.id}` as any);
+                  }}
+                  onSeeAll={() => router.push('/(tabs)/lobby?tab=upcoming' as any)}
+                  onFindGame={() => router.push('/(tabs)/lobby' as any)}
+                  compact={compact}
+                />
+              </View>
+
+              {/* E. Raccourcis secondaires — ~0,8/7,6 */}
+              <View style={{ flex: 0.8, minHeight: compact ? 52 : 56, flexDirection: 'row', gap: 10 }}>
+                <HomeShortcutCard
+                  icon="trophy"
+                  iconColor={Colors.brandDeep}
+                  iconBg="rgba(255,193,26,0.16)"
+                  title="Classement"
+                  value={myRank != null ? `#${myRank}` : undefined}
+                  onPress={() => router.push('/ranking' as any)}
+                />
+                <HomeShortcutCard
+                  icon="pencil"
+                  iconColor="#8B5CF6"
+                  iconBg="rgba(139,92,246,0.12)"
+                  title="Score"
+                  onPress={() => router.push('/score-entry' as any)}
+                />
+              </View>
+
+              {/* F. Communauté — ~0,8/7,6 */}
+              <View style={{ flex: 0.8, minHeight: compact ? 58 : 60 }}>
                 <CommunityCard />
               </View>
             </View>
+            </ScrollView>
           </>
         )}
       </View>

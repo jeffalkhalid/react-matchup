@@ -4,6 +4,7 @@
 // défis passe par ici — les écrans ne font pas de requête défi en direct.
 import { supabase } from './supabase';
 import { getHiddenPlayerIds } from './moderation';
+import { isInvitationVisible } from './games';
 
 export interface DefiPlayer { id: string; name: string; elo_score: number; win_count?: number; loss_count?: number; }
 export interface DefiParticipant {
@@ -162,13 +163,13 @@ export async function fetchMyDefiInvites(playerId: string): Promise<DefiInvite[]
     .eq('player_id', playerId)
     .eq('status', 'invited');
   if (error) { console.warn('[defis] fetchMyDefiInvites', error); return []; }
-  const nowMs = Date.now();
+  // Visibilité = prédicat PARTAGÉ lib/games.isInvitationVisible (TTL, partie
+  // close/annulée/passée) — même définition que la cloche et le badge Défi.
+  // Ne pas re-filtrer à la main ici (cf. bug du badge navbar resté à zéro).
   return (data ?? [])
     .map((r: any) => ({ participantId: r.id, team_side: r.team_side ?? null, invite_expires_at: r.invite_expires_at ?? null, game: r.game as DefiGame }))
     .filter(r => r.game && r.game.is_challenge
-      && !['cancelled', 'closed'].includes(r.game.status)
-      && (!r.game.match_date || new Date(r.game.match_date).getTime() > nowMs)
-      && (!r.invite_expires_at || new Date(r.invite_expires_at).getTime() > nowMs));
+      && isInvitationVisible({ invite_expires_at: r.invite_expires_at, game_id: r.game.id, game: r.game }, new Set()));
 }
 
 // ── Mes candidatures SORTANTES : défis où J'AI postulé (initiateur), en attente

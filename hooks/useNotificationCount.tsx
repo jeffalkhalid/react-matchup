@@ -59,12 +59,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     // Liste partagée avec l'écran de notifications : le total de la cloche EST le
     // nombre de cartes affichées (toScore/trophées agrégés en 1 carte, joined &
     // levelup inclus, notifs "info" supprimées déjà retirées). Le badge onglet
-    // Défi (`challenges`) = uniquement les défis venant de la table `challenges`
-    // (cartes `challenge-…`), pour ne pas changer son périmètre historique.
+    // Défi (`challenges`) = cartes de type 'challenge' ACTIONNABLES : défi en
+    // duel reçu + invitation binôme (relever ou camp A) + nomination vitrine.
+    // On exclut `defi-queued-` (carte info persistante « en file d'attente »,
+    // sinon le badge resterait affiché sans action possible). NB : l'ancien
+    // périmètre comptait les ids `challenge-…` (table challenges), morts depuis
+    // la refonte défi 2v2 → le badge restait toujours à zéro.
     const items = await buildNotificationItems(id);
     setCounts({
       total: items.length,
-      challenges: items.filter((it) => it.id.startsWith('challenge-')).length,
+      challenges: items.filter(
+        (it) => it.type === 'challenge' && !it.id.startsWith('defi-queued-'),
+      ).length,
     });
     setLoading(false);
   }, [player]);
