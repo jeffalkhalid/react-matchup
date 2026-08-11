@@ -82,13 +82,8 @@ function getInitials(name: string): string {
   return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : (parts[0]?.[0] ?? '?').toUpperCase();
 }
 
-function parseSets(text: string | null): [number, number][] {
-  if (!text) return [];
-  return text.trim().split(/[\s,]+/).flatMap(s => {
-    const parts = s.split('-').map(Number);
-    return parts.length === 2 && !parts.some(isNaN) ? [[parts[0], parts[1]] as [number, number]] : [];
-  });
-}
+// Parseur PARTAGÉ (normalise vainqueur-premier) — pas de copie locale.
+import { parseSetsLocal as parseSets } from '../../lib/matchView';
 
 function isDoubles(m: MatchRow) {
   return !!(m.winner_id_2 || m.loser_id_2) || m.match_type === '2v2';
@@ -555,7 +550,8 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [editOpen,   setEditOpen]   = useState(false);
   const [editSaving, setEditSaving] = useState(false);
-  const [editForm,   setEditForm]   = useState({ name: '', court_side: '', playing_days: [] as string[], frmt_rank: '', preferred_court: '' });
+  const [editForm,   setEditForm]   = useState({ name: '', court_side: '', playing_days: [] as string[], frmt_full_name: '', preferred_court: '' });
+  const [editFrmtTaken, setEditFrmtTaken] = useState(false);
   const [genderReqOpen, setGenderReqOpen] = useState(false);
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
@@ -1007,20 +1003,46 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       name:            profile.name,
       court_side:      profile.court_side ?? '',
       playing_days:    Array.isArray(profile.playing_days) ? [...profile.playing_days] : [],
-      frmt_rank:       profile.frmt_rank ?? '',
+      frmt_full_name:  profile.frmt_full_name ?? '',
       preferred_court: profile.preferred_court ?? '',
     });
+    setEditFrmtTaken(false);
     setEditOpen(true);
+  };
+
+  // Miroir client de frmt_normalize (SQL) — sert uniquement à détecter qu'une
+  // édition du nom FRMT est purement cosmétique (accent, casse, ordre) pour ne
+  // pas la re-soumettre à la garde anti-doublon (qui matcherait sa propre fiche).
+  const frmtNormalizeLocal = (txt: string) => {
+    const from = 'àâäáãåéèêëíìîïóòôöõúùûüçñ', to = 'aaaaaaeeeeiiiiooooouuuucn';
+    return txt.toLowerCase()
+      .split('').map(c => { const i = from.indexOf(c); return i >= 0 ? to[i] : c; }).join('')
+      .split(/[^a-z0-9]+/).filter(Boolean).sort().join(' ');
   };
 
   const handleEditSave = async () => {
     if (!editForm.name.trim()) return;
     setEditSaving(true);
+    // Nom+prénom FRMT : la liaison serveur (trigger try_link_frmt_for_player)
+    // part de players.frmt_full_name. Même garde anti-doublon qu'au signup,
+    // seulement si le nom normalisé change réellement.
+    const newFrmt = editForm.frmt_full_name.trim();
+    const oldFrmt = profile.frmt_full_name ?? '';
+    const frmtChanged = frmtNormalizeLocal(newFrmt) !== frmtNormalizeLocal(oldFrmt);
+    if (frmtChanged && newFrmt) {
+      try {
+        const { data, error } = await supabase.rpc('frmt_identity_taken', {
+          p_full_name: newFrmt,
+          p_birth_year: profile.birth_year ?? null, // départage les homonymes d'années différentes
+        });
+        if (!error && data === true) { setEditFrmtTaken(true); setEditSaving(false); return; }
+      } catch {} // RPC absente / réseau → fail-open, le serveur refuse le double lien de toute façon
+    }
     await supabase.from('players').update({
       name:            editForm.name.trim(),
       court_side:      editForm.court_side || null,
       playing_days:    editForm.playing_days.length > 0 ? editForm.playing_days : null,
-      frmt_rank:       editForm.frmt_rank.trim() || null,
+      frmt_full_name:  newFrmt || null,
       preferred_court: editForm.preferred_court || null,
     }).eq('id', profile.id);
     setEditSaving(false);
@@ -1346,7 +1368,12 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
               </View>
 
               <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
-                <Text style={{ fontSize: 22, lineHeight: 29, color: Colors.textPrimary, fontFamily: Fonts.welcome }}>Modifier le <Text style={{ color: Colors.brand }}>profil</Text></Text>
+                {/* numberOfLines+adjustsFontSizeToFit+paddingRight : sans eux, en
+                    grande police Android le titre wrappe et « profil » disparaît. */}
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+                  style={{ flexShrink: 1, fontSize: 22, lineHeight: 29, color: Colors.textPrimary, fontFamily: Fonts.welcome, paddingRight: 5 }}>
+                  Modifier le <Text style={{ color: Colors.brand }}>profil</Text>
+                </Text>
                 <TouchableOpacity onPress={() => setEditOpen(false)} style={{ padding: 4 }}>
                   <Text style={{ fontSize: 22, color: Colors.textMuted }}>×</Text>
                 </TouchableOpacity>
@@ -1455,18 +1482,39 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                   </View>
                 </View>
 
-                {/* Classement FRMT */}
+                {/* Vérification FRMT : nom+prénom → liaison auto au classement
+                    scrapé (trigger serveur sur players.frmt_full_name). Permet
+                    de se faire vérifier APRÈS l'inscription (joueur qui commence
+                    les tournois plus tard). Remplace l'ancien champ « numéro »
+                    (frmt_rank, jamais affiché ni vérifié). */}
                 <View>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Classement FRMT (numéro)</Text>
-                  <TextInput
-                    value={editForm.frmt_rank}
-                    onChangeText={v => setEditForm(f => ({ ...f, frmt_rank: v }))}
-                    style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}
-                    placeholder="Ex : 147"
-                    placeholderTextColor={Colors.textMuted}
-                    keyboardType="numeric"
-                  />
-                  <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>La vérification officielle sera disponible prochainement.</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Classement FRMT</Text>
+                  {profile.frmt_verified ? (
+                    <View style={{ backgroundColor: 'rgba(255,193,26,0.10)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>Classement vérifié ✓</Text>
+                      <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 2 }}>Ton compte est lié au classement officiel FRMT.</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <TextInput
+                        value={editForm.frmt_full_name}
+                        onChangeText={v => { setEditForm(f => ({ ...f, frmt_full_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
+                        style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}
+                        placeholder="Nom et prénom (ex : Yassine El Amrani)"
+                        placeholderTextColor={Colors.textMuted}
+                        autoCapitalize="words"
+                      />
+                      {editFrmtTaken ? (
+                        <Text style={{ fontSize: 11, color: Colors.danger, marginTop: 4 }}>
+                          Ce nom et prénom sont déjà associés à un autre compte. Si c'est bien toi, contacte-nous.
+                        </Text>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
+                          Tels qu'ils apparaissent sur le classement FRMT — la vérification est automatique. Jamais affichés publiquement.
+                        </Text>
+                      )}
+                    </>
+                  )}
                 </View>
 
               </ScrollView>

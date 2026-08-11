@@ -24,11 +24,13 @@ export interface Player {
   last_match_at?: string;
   fiability_pct: number;
   gender?: Gender;
-  birth_year?: number;
+  birth_year?: number;  // liaison FRMT uniquement (départage homonymes), jamais affiché
+  birth_month?: number; // idem — la FRMT ne publie que l'année, stocké pour l'avenir
   handedness?: Handedness;
   court_side?: CourtSide;
   level?: number;
   frmt_rank?: string;        // rang auto-déclaré au signup (joueur non lié/non vérifié)
+  frmt_full_name?: string | null; // nom+prénom pour la liaison FRMT auto (jamais affiché)
   frmt_verified?: boolean;
   frmt_position?: number | null; // vraie position au classement FRMT (joueur lié)
   frmt_points?: number | null;   // vrais points FRMT (joueur lié)

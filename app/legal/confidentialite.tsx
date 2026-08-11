@@ -33,6 +33,12 @@ export default function ConfidentialiteScreen() {
           'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
         ]} />
         <P>
+          Si vous demandez la liaison à votre <B>classement officiel FRMT</B>, nous collectons aussi
+          votre nom, prénom et votre mois et année de naissance. Ces données servent{' '}
+          <B>uniquement</B> à vous associer à la bonne entrée du classement (l'année permet de
+          distinguer les homonymes) et ne sont jamais affichées publiquement.
+        </P>
+        <P>
           Les <B>Stories</B> sont générées sur votre appareil et partagées par vos soins : nous ne
           collectons ni ne stockons aucune photo ou vidéo sur nos serveurs.
         </P>

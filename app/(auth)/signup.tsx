@@ -37,14 +37,21 @@ interface FormData {
   gender: string; ageGroup: string; handedness: string; preferredSide: string;
   estimatedLevel: string; frequency: string; tournaments: string;
   hasFrmtRank: '' | 'yes' | 'no'; frmtFirstName: string; frmtLastName: string;
+  frmtBirthMonth: string; frmtBirthYear: string;
   techniques: string[]; name: string; email: string; password: string;
 }
 const INITIAL: FormData = {
   gender: '', ageGroup: '', handedness: '', preferredSide: '',
   estimatedLevel: '', frequency: '', tournaments: '',
   hasFrmtRank: '', frmtFirstName: '', frmtLastName: '',
+  frmtBirthMonth: '', frmtBirthYear: '',
   techniques: [], name: '', email: '', password: '',
 };
+
+// Mois/année de naissance : la FRMT publie l'ANNÉE des classés → sert à
+// départager les homonymes au matching (le mois est stocké pour l'avenir).
+const isValidBirthMonth = (v: string) => { const n = parseInt(v, 10); return !isNaN(n) && n >= 1 && n <= 12; };
+const isValidBirthYear  = (v: string) => { const n = parseInt(v, 10); return !isNaN(n) && n >= 1920 && n <= 2020; };
 const TECHNIQUES = [
   { id: 'Vitre',       label: 'Défense avec la vitre' },
   { id: 'Lob',         label: 'Lob profond millimétré' },
@@ -331,9 +338,17 @@ export default function SignupScreen() {
   const [pwFocused, setPwFocused] = useState(false);
   const [frmtFirstFocused, setFrmtFirstFocused] = useState(false);
   const [frmtLastFocused, setFrmtLastFocused] = useState(false);
+  const [frmtMonthFocused, setFrmtMonthFocused] = useState(false);
+  const [frmtYearFocused, setFrmtYearFocused] = useState(false);
+  const [frmtChecking, setFrmtChecking] = useState(false);
+  const [frmtTaken, setFrmtTaken] = useState(false);
 
   const set = (field: keyof FormData, value: string) =>
     setFormData(prev => ({ ...prev, [field]: value }));
+
+  // « Jamais » de tournoi FRMT → pas de classement possible : l'étape 3 est
+  // sautée (hasFrmtRank forcé à 'no' au passage 2→4).
+  const skipFrmtStep = formData.tournaments === 'Jamais';
 
   const toggleTechnique = (label: string) =>
     setFormData(prev => ({
@@ -384,13 +399,42 @@ export default function SignupScreen() {
     if (s === 1) return !!(formData.gender && formData.ageGroup && formData.handedness && formData.preferredSide);
     if (s === 2) return !!(formData.estimatedLevel && formData.frequency && formData.tournaments);
     if (s === 3) {
-      if (!formData.hasFrmtRank) return false;
-      if (formData.hasFrmtRank === 'yes') {
-        if (COLLECT_FRMT_IDENTITY && (!formData.frmtFirstName.trim() || !formData.frmtLastName.trim())) return false;
+      // frmtTaken ne bloque PAS : un homonyme légitime doit pouvoir s'inscrire
+      // (il continue sans liaison, cf. handleStep3Next / meta).
+      if (COLLECT_FRMT_IDENTITY) {
+        if (!formData.frmtFirstName.trim() || !formData.frmtLastName.trim()) return false;
+        if (!isValidBirthMonth(formData.frmtBirthMonth) || !isValidBirthYear(formData.frmtBirthYear)) return false;
       }
       return true;
     }
     return true;
+  };
+
+  // Étape 3 → 4 : si le joueur se dit classé, on vérifie que ce nom+prénom
+  // n'est pas DÉJÀ lié (entrée frmt_rankings liée, ou revendiqué par un autre
+  // compte) via l'RPC frmt_identity_taken (même normalisation que le matching
+  // serveur). Erreur réseau / RPC absente → on laisse passer : la liaison
+  // serveur (try_link_frmt_for_player) refuse de toute façon un double lien,
+  // le compte serait juste non vérifié.
+  const handleStep3Next = async () => {
+    // Si frmtTaken est déjà affiché, un second « Suivant » laisse passer SANS
+    // liaison (le nom contesté n'est pas envoyé, cf. meta dans handleCreateAccount).
+    if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && !frmtTaken) {
+      const fullName = `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`;
+      setFrmtChecking(true);
+      try {
+        const { data, error } = await supabase.rpc('frmt_identity_taken', {
+          p_full_name: fullName,
+          // L'année départage les homonymes : un « déjà pris » d'une autre
+          // année ne bloque plus à tort.
+          p_birth_year: isValidBirthYear(formData.frmtBirthYear) ? parseInt(formData.frmtBirthYear, 10) : null,
+        });
+        if (!error && data === true) { setFrmtTaken(true); return; }
+      } catch {} finally {
+        setFrmtChecking(false);
+      }
+    }
+    setStep(4);
   };
 
   const handleCaptchaMessage = (event: any) => {
@@ -426,8 +470,12 @@ export default function SignupScreen() {
         court_side: formData.preferredSide || null,
         gender: formData.gender === 'Homme' ? 'male' : formData.gender === 'Femme' ? 'female' : null,
       };
-      if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && formData.frmtFirstName.trim() && formData.frmtLastName.trim()) {
+      if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && !frmtTaken && formData.frmtFirstName.trim() && formData.frmtLastName.trim()) {
         meta.frmt_full_name = `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`;
+        // Mois+année : uniquement pour la liaison FRMT (départage des
+        // homonymes) — envoyés seulement quand une liaison est demandée.
+        if (isValidBirthYear(formData.frmtBirthYear)) meta.birth_year = parseInt(formData.frmtBirthYear, 10);
+        if (isValidBirthMonth(formData.frmtBirthMonth)) meta.birth_month = parseInt(formData.frmtBirthMonth, 10);
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -455,7 +503,15 @@ export default function SignupScreen() {
           ? 'Erreur de connexion. Vérifie ton réseau et réessaie.'
         : lower.includes('captcha')
           ? 'Vérification anti-robot échouée. Recommence la vérification.'
-        : 'Inscription impossible. Réessaie dans un instant.';
+        : lower.includes('password')
+          ? 'Mot de passe refusé : choisis-en un plus long.'
+        : lower.includes('invalid') && lower.includes('email')
+          ? 'Adresse email invalide. Vérifie la saisie.'
+        : lower.includes('database error')
+          ? 'Erreur serveur pendant la création du compte. Réessaie ; si ça persiste, contacte-nous.'
+        // Fallback : on affiche le détail brut — indispensable pour diagnostiquer
+        // sur device les erreurs pas encore cataloguées ci-dessus.
+        : `Inscription impossible. Réessaie dans un instant.\n\nDétail : ${raw}`;
       Alert.alert('Erreur', msg);
       (captchaRef.current as any)?.reset();
       setCaptchaToken(null);
@@ -485,7 +541,10 @@ export default function SignupScreen() {
 
     const backBtn = (
       <TouchableOpacity
-        onPress={() => setStep(s => Math.max(1, s - 1))}
+        onPress={() => setStep(s => {
+          const prev = s - 1 === 3 && skipFrmtStep ? 2 : s - 1;
+          return Math.max(1, prev);
+        })}
         activeOpacity={0.85}
         style={{
           paddingHorizontal: 20, height: 54,
@@ -533,13 +592,25 @@ export default function SignupScreen() {
     if (step === 2) return (
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {backBtn}
-        {nextBtn('Suivant', () => setStep(3), nextDisabled)}
+        {nextBtn('Suivant', () => {
+          if (skipFrmtStep) {
+            setFormData(prev => ({ ...prev, hasFrmtRank: 'no', frmtFirstName: '', frmtLastName: '', frmtBirthMonth: '', frmtBirthYear: '' }));
+            setFrmtTaken(false);
+            setStep(4);
+          } else {
+            // A joué en tournoi → l'étape 3 demande directement l'identité
+            // FRMT (plus de question oui/non) ; le flag reste le marqueur
+            // interne « identité attendue » (meta + badge étape 5).
+            setFormData(prev => ({ ...prev, hasFrmtRank: 'yes' }));
+            setStep(3);
+          }
+        }, nextDisabled)}
       </View>
     );
     if (step === 3) return (
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {backBtn}
-        {nextBtn('Suivant', () => setStep(4), nextDisabled)}
+        {nextBtn('Suivant', handleStep3Next, nextDisabled || frmtChecking, frmtChecking)}
       </View>
     );
     if (step === 4) return (
@@ -640,7 +711,7 @@ export default function SignupScreen() {
           {/* Titre + progress */}
           {!isSuccess && (
             <>
-              <Text style={{
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
                 textAlign: 'center',
                 fontFamily: Fonts.welcome,
                 fontSize: 22,
@@ -649,6 +720,7 @@ export default function SignupScreen() {
                 marginTop: 0,
                 marginBottom: 10,
                 includeFontPadding: false,
+                paddingRight: 5,
               }}>
                 {currentTitle.prefix}
                 <Text style={{ color: AUTH_BRAND }}>{currentTitle.accent}</Text>
@@ -754,18 +826,20 @@ export default function SignupScreen() {
 
                   <View>
                     <Label text="Niveau estimé" tokens={tokens} />
+                    {/* Pas de fourchette chiffrée sur les cartes : afficher les
+                        niveaux incitait à se déclarer une tranche au-dessus. */}
                     <View style={{ gap: 8 }}>
                       <Row>
-                        <SelectCard label="Novice" value="Novice" field="estimatedLevel" formData={formData} onSet={set} description="1.5 – 2.0" tokens={tokens} />
-                        <SelectCard label="Débutant" value="Débutant" field="estimatedLevel" formData={formData} onSet={set} description="2.0 – 2.5" tokens={tokens} />
+                        <SelectCard label="Novice" value="Novice" field="estimatedLevel" formData={formData} onSet={set} tokens={tokens} />
+                        <SelectCard label="Débutant" value="Débutant" field="estimatedLevel" formData={formData} onSet={set} tokens={tokens} />
                       </Row>
                       <Row>
-                        <SelectCard label="Amateur" value="Amateur" field="estimatedLevel" formData={formData} onSet={set} description="2.5 – 3.3" tokens={tokens} />
-                        <SelectCard label="Intermédiaire" value="Intermédiaire" field="estimatedLevel" formData={formData} onSet={set} description="3.3 – 4.1" tokens={tokens} />
+                        <SelectCard label="Amateur" value="Amateur" field="estimatedLevel" formData={formData} onSet={set} tokens={tokens} />
+                        <SelectCard label="Intermédiaire" value="Intermédiaire" field="estimatedLevel" formData={formData} onSet={set} tokens={tokens} />
                       </Row>
                       <Row>
-                        <SelectCard label="Avancé" value="Avancé" field="estimatedLevel" formData={formData} onSet={set} description="4.1 – 4.9" tokens={tokens} />
-                        <SelectCard label="Expert" value="Expert" field="estimatedLevel" formData={formData} onSet={set} description="4.9 – 5.5" tokens={tokens} />
+                        <SelectCard label="Avancé" value="Avancé" field="estimatedLevel" formData={formData} onSet={set} tokens={tokens} />
+                        <SelectCard label="Expert" value="Expert" field="estimatedLevel" formData={formData} onSet={set} tokens={tokens} />
                       </Row>
                     </View>
                   </View>
@@ -797,21 +871,17 @@ export default function SignupScreen() {
               {/* STEP 3 */}
               {step === 3 && (
                 <View style={{ gap: 12 }}>
+                  {/* Pas de question « classé(e) oui/non » : on n'arrive ici que si
+                      le joueur a déclaré des tournois FRMT (« Jamais » saute
+                      l'étape) → on demande directement l'identité pour la liaison. */}
                   <Text style={{
                     color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19,
                   }}>
-                    FRMT — Fédération Royale Marocaine de Tennis.
+                    Tu as joué en tournoi FRMT (Fédération Royale Marocaine de Tennis) :
+                    ton classement officiel peut être lié à ton compte.
                   </Text>
 
-                  <View>
-                    <Label text="As-tu un classement FRMT ?" tokens={tokens} />
-                    <Row>
-                      <SelectCard label="Oui, classé(e)" value="yes" field="hasFrmtRank" formData={formData} onSet={set} tokens={tokens} />
-                      <SelectCard label="Non, loisir" value="no" field="hasFrmtRank" formData={formData} onSet={set} tokens={tokens} />
-                    </Row>
-                  </View>
-
-                  {formData.hasFrmtRank === 'yes' && COLLECT_FRMT_IDENTITY && (
+                  {COLLECT_FRMT_IDENTITY && (
                     <View style={{
                       backgroundColor: 'rgba(255,193,26,0.08)',
                       borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
@@ -824,15 +894,17 @@ export default function SignupScreen() {
                         Vérification du classement
                       </Text>
                       <Text style={{ color: tokens.label, fontSize: 12, lineHeight: 17, fontFamily: Fonts.ui }}>
-                        Ton nom et prénom seront comparés à la base FRMT pour le badge vérifié. Jamais affichés publiquement.
+                        Ton nom, prénom et ta date de naissance servent uniquement à te lier
+                        au classement FRMT (l'année départage les homonymes). Jamais affichés publiquement.
                       </Text>
                       <Row>
                         <View style={{ flex: 1 }}>
                           <FieldInput
                             label="Prénom"
                             value={formData.frmtFirstName}
-                            onChangeText={v => set('frmtFirstName', v)}
+                            onChangeText={v => { set('frmtFirstName', v); if (frmtTaken) setFrmtTaken(false); }}
                             placeholder="Prénom"
+                            error={frmtTaken}
                             focused={frmtFirstFocused}
                             onFocus={() => setFrmtFirstFocused(true)}
                             onBlur={() => setFrmtFirstFocused(false)}
@@ -844,8 +916,9 @@ export default function SignupScreen() {
                           <FieldInput
                             label="Nom"
                             value={formData.frmtLastName}
-                            onChangeText={v => set('frmtLastName', v)}
+                            onChangeText={v => { set('frmtLastName', v); if (frmtTaken) setFrmtTaken(false); }}
                             placeholder="Nom"
+                            error={frmtTaken}
                             focused={frmtLastFocused}
                             onFocus={() => setFrmtLastFocused(true)}
                             onBlur={() => setFrmtLastFocused(false)}
@@ -854,6 +927,44 @@ export default function SignupScreen() {
                           />
                         </View>
                       </Row>
+                      <Row>
+                        <View style={{ flex: 1 }}>
+                          <FieldInput
+                            label="Mois de naissance"
+                            value={formData.frmtBirthMonth}
+                            onChangeText={v => { set('frmtBirthMonth', v.replace(/[^0-9]/g, '').slice(0, 2)); }}
+                            placeholder="MM"
+                            error={!!formData.frmtBirthMonth && !isValidBirthMonth(formData.frmtBirthMonth) && !frmtMonthFocused}
+                            focused={frmtMonthFocused}
+                            onFocus={() => setFrmtMonthFocused(true)}
+                            onBlur={() => setFrmtMonthFocused(false)}
+                            keyboardType="number-pad"
+                            tokens={tokens}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <FieldInput
+                            label="Année de naissance"
+                            value={formData.frmtBirthYear}
+                            onChangeText={v => { set('frmtBirthYear', v.replace(/[^0-9]/g, '').slice(0, 4)); if (frmtTaken) setFrmtTaken(false); }}
+                            placeholder="AAAA"
+                            error={(!!formData.frmtBirthYear && !isValidBirthYear(formData.frmtBirthYear) && !frmtYearFocused) || frmtTaken}
+                            focused={frmtYearFocused}
+                            onFocus={() => setFrmtYearFocused(true)}
+                            onBlur={() => setFrmtYearFocused(false)}
+                            keyboardType="number-pad"
+                            tokens={tokens}
+                          />
+                        </View>
+                      </Row>
+                      {frmtTaken && (
+                        <Text style={{ color: AUTH_ERROR_TEXT, fontSize: 12, lineHeight: 17, fontFamily: Fonts.uiSemi }}>
+                          Ce nom et prénom sont déjà associés à un autre compte PAG MATCH.
+                          Si c'est bien toi, contacte-nous après ton inscription pour
+                          récupérer ton classement. Tu peux continuer : ton compte sera
+                          créé sans la liaison FRMT.
+                        </Text>
+                      )}
                     </View>
                   )}
                 </View>
@@ -921,13 +1032,18 @@ export default function SignupScreen() {
                     }}>
                       Ton niveau de départ
                     </Text>
-                    <Text style={{
+                    {/* numberOfLines+adjustsFontSizeToFit+paddingRight : sans eux,
+                        en grande police système Android le texte wrappe et le
+                        nombre disparaît (« Niv. » seul) — cf. saga titres
+                        italiques. Enfant unique (template string) : les spans
+                        multiples aggravent le phénomène. */}
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
                       fontFamily: Fonts.welcome, fontSize: 44, lineHeight: 57,
-                      color: AUTH_BRAND, includeFontPadding: false,
+                      color: AUTH_BRAND, includeFontPadding: false, paddingRight: 8,
                     }}>
-                      Niv. {formatPadelLevel(calculateInitialScore())}
+                      {`Niv. ${formatPadelLevel(calculateInitialScore())}`}
                     </Text>
-                    {formData.hasFrmtRank === 'yes' && !!formData.frmtFirstName.trim() && !!formData.frmtLastName.trim() && (
+                    {formData.hasFrmtRank === 'yes' && !frmtTaken && !!formData.frmtFirstName.trim() && !!formData.frmtLastName.trim() && (
                       <View style={{
                         marginTop: 8,
                         backgroundColor: 'rgba(255,193,26,0.10)',
@@ -1083,12 +1199,13 @@ export default function SignupScreen() {
               }}>
                 <IconCheck size={32} color={AUTH_BRAND} />
               </View>
-              <Text style={{
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
                 color: tokens.textPrimary,
                 fontFamily: Fonts.welcome,
                 fontSize: 24,
                 lineHeight: 31,
                 marginBottom: 8, textAlign: 'center', includeFontPadding: false,
+                paddingRight: 5,
               }}>
                 Compte <Text style={{ color: AUTH_BRAND }}>créé</Text> !
               </Text>
