@@ -39,7 +39,7 @@ function PrimaryCta({ variant, icon, title, onPress }: {
         {/* 1 seule ligne : sur écran étroit la police se réduit au lieu de
             casser le mot (« MATCHMAKI / NG »). */}
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}
-          style={{ fontFamily: Fonts.welcome, fontSize: 18.5, lineHeight: 22, color: fg, letterSpacing: 0.3 }}>
+          style={{ fontFamily: Fonts.welcome, fontSize: 18.5, lineHeight: 22, color: fg, letterSpacing: 0.3, paddingRight: 5 }}>
           {title}
         </Text>
       </View>

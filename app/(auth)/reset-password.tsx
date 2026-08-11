@@ -232,7 +232,7 @@ export default function ResetPasswordScreen() {
             <Lockup width={lockupW} tokens={tokens} />
           </View>
 
-          <Text style={{ textAlign: 'center', fontFamily: Fonts.welcome, fontSize: 23, lineHeight: 30, color: tokens.textPrimary, marginBottom: 22, includeFontPadding: false }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ textAlign: 'center', fontFamily: Fonts.welcome, fontSize: 23, lineHeight: 30, color: tokens.textPrimary, marginBottom: 22, includeFontPadding: false, paddingRight: 5 }}>
             {title} ?
           </Text>
 

@@ -556,7 +556,7 @@ export default function GameDetailsSheet({
             </View>
             {/* Date + time */}
             <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 2 }}>{dateStr}</Text>
-            <Text style={{ fontSize: 36, lineHeight: 47, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, marginBottom: 6 }}>{timeStr || '—'}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 36, lineHeight: 47, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, marginBottom: 6, paddingRight: 5 }}>{timeStr || '—'}</Text>
             {/* Location + gender — tappable → Maps */}
             <TouchableOpacity
               activeOpacity={0.7}

@@ -151,7 +151,8 @@ export default function RankingScreen() {
             <Text
               numberOfLines={1}
               adjustsFontSizeToFit
-              style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 36, fontFamily: Fonts.welcome }}>
+              minimumFontScale={0.6}
+              style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 36, fontFamily: Fonts.welcome, paddingRight: 5 }}>
               Le <Text style={{ color: Colors.brand, fontFamily: Fonts.welcome }}>classement</Text>
             </Text>
             <Text style={{ color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 4 }}>

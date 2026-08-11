@@ -19,7 +19,7 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
       {b ? (
         <>
           {/* Title */}
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8 }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8, paddingRight: 5 }}>
             Le <Text style={{ color: '#FFC11A' }}>{fmtDate(b.date)}</Text> tu as fait ça
           </Text>
 
@@ -56,7 +56,7 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
               <Svg width={42} height={42} viewBox="0 0 24 24"><Glyph name={badge.glyph} color="#0A0A0A" /></Svg>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, color: '#0A0A0A', letterSpacing: 1, textTransform: 'uppercase' }}>+ badge débloqué</Text>
-                <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, color: '#0A0A0A', lineHeight: 29, marginTop: 2 }}>{badge.name}</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 22, color: '#0A0A0A', lineHeight: 29, marginTop: 2, paddingRight: 5 }}>{badge.name}</Text>
               </View>
             </View>
           ) : null}

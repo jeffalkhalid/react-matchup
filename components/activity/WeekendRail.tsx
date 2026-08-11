@@ -32,7 +32,7 @@ export function WeekendRail({ games, onOpen, title = 'Joue ce week-end' }: { gam
   if (games.length === 0) return null;
   return (
     <View style={{ marginTop: 18 }}>
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, marginBottom: 10 }}>{title}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, marginBottom: 10, paddingRight: 5 }}>{title}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 16 }}>
         {games.map((g, i) => <WeekendCard key={g.id} g={g} dark={i % 2 === 0} onOpen={() => onOpen(g.id)} />)}
       </ScrollView>

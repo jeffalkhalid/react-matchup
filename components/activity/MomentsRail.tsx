@@ -80,7 +80,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
           <View style={{ alignSelf: 'flex-start', backgroundColor: '#0A0A0A', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: Colors.brand, letterSpacing: 0.5 }}>BILAN</Text>
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#0A0A0A', lineHeight: 23, marginTop: 4 }}>{e.payload.label ?? 'Bilan'}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#0A0A0A', lineHeight: 23, marginTop: 4, paddingRight: 5 }}>{e.payload.label ?? 'Bilan'}</Text>
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 9, color: 'rgba(10,10,10,0.7)', marginTop: 1 }}>{lvl >= 0 ? '+' : ''}{lvl.toFixed(2)} de niveau</Text>
         </View>
       </TouchableOpacity>
@@ -98,7 +98,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
         <View style={{ alignSelf: 'flex-start', backgroundColor: Colors.brand, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8, color: '#0A0A0A', letterSpacing: 0.5 }}>+ BADGE</Text>
         </View>
-        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#FFFFFF', lineHeight: 23, marginTop: 4 }}>{e.payload.badge_label ?? 'Badge'}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 18, color: '#FFFFFF', lineHeight: 23, marginTop: 4, paddingRight: 5 }}>{e.payload.badge_label ?? 'Badge'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -111,7 +111,7 @@ export function MomentsRail({ moments, onShareMatch, onOpen }: {
 }) {
   return (
     <View style={{ marginTop: 18 }}>
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 17, lineHeight: 22, color: Colors.textPrimary, marginBottom: 10 }}>Moments de la semaine</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 17, lineHeight: 22, color: Colors.textPrimary, marginBottom: 10, paddingRight: 5 }}>Moments de la semaine</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
         {moments.map(e => (
           <MomentTile key={e.id} e={e} onPress={() => { track('activity_moment_opened', { friend_id: e.player_id, moment_type: e.type }); onOpen(e); }} />

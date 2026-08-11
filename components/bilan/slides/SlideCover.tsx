@@ -31,7 +31,7 @@ export function SlideCover({ recap, months, onPickMonth }: {
       </Text>
 
       {/* Big month + year */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 62, color: INK, lineHeight: 81, textAlign: 'center', marginTop: 4 }}>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 62, color: INK, lineHeight: 81, textAlign: 'center', marginTop: 4, paddingRight: 5 }}>
         {recap.label}{'\n'}{year}
       </Text>
 

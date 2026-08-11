@@ -22,7 +22,7 @@ export function BilanBanner({ recap, onPress }: { recap: MonthlyRecap | null; on
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, color: '#0A0A0A', letterSpacing: 1.2, textTransform: 'uppercase' }}>Ton bilan</Text>
       </View>
 
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#0A0A0A', lineHeight: 40, marginTop: 6 }}>{recap.label} {year}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#0A0A0A', lineHeight: 40, marginTop: 6, paddingRight: 5 }}>{recap.label} {year}</Text>
 
       <View style={{ flexDirection: 'row', marginTop: 14 }}>
         <Stat n={recap.matches} l="matchs" />

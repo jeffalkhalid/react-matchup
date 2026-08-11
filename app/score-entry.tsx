@@ -571,7 +571,7 @@ export default function ScoreEntryScreen() {
             <Path d="M15 18l-6-6 6-6" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 30, lineHeight: 39, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 30, lineHeight: 39, color: Colors.textOnDark, letterSpacing: -0.5, fontFamily: Fonts.welcome, paddingRight: 5 }}>
           {contestMatchId ? (<>Contester le <Text style={{ color: Colors.brand }}>score</Text></>) : (<>Le <Text style={{ color: Colors.brand }}>score</Text></>)}
         </Text>
         <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>

@@ -154,7 +154,7 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: compact ? 8.5 : 9, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                 {date ? dayLabel(date) : 'À planifier'}
               </Text>
-              <Text style={{ fontFamily: Fonts.welcome, fontSize: compact ? 17 : 19, lineHeight: compact ? 20 : 23, color: Colors.textOnDark, marginTop: 1 }}>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: compact ? 17 : 19, lineHeight: compact ? 20 : 23, color: Colors.textOnDark, marginTop: 1, paddingRight: 5 }}>
                 {date ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
               </Text>
             </View>

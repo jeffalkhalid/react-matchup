@@ -175,7 +175,7 @@ export default function ActiviteTab() {
             <>
               {/* Accueil */}
               <View style={{ marginTop: 14 }}>
-                <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary }}>Bienvenue {player.name.split(' ')[0]} 👋</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary, paddingRight: 5 }}>Bienvenue {player.name.split(' ')[0]} 👋</Text>
                 <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: Colors.textSecondary, marginTop: 4 }}>
                   L'Activité, c'est ton fil padel : tes matchs, ceux de tes amis, et les parties à rejoindre. Commence ici 👇
                 </Text>

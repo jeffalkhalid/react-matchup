@@ -129,7 +129,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
           borderRadius: 14, padding: 14,
         }}>
           <Icon name="trendingUp" size={22} color={Colors.brandDeep} stroke={2.2} />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 18, lineHeight: 23, color: Colors.brandDeep, textTransform: 'uppercase' }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 18, lineHeight: 23, color: Colors.brandDeep, textTransform: 'uppercase', paddingRight: 5, flexShrink: 1 }}>
             {e.payload.promo_label}
           </Text>
         </View>

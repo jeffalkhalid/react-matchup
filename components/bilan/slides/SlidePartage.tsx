@@ -64,7 +64,7 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#0A0A0A', letterSpacing: 2, textTransform: 'uppercase' }}>Recap {recap.shortLabel}</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 42, color: '#0A0A0A', lineHeight: 55, marginTop: 4 }}>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 42, color: '#0A0A0A', lineHeight: 55, marginTop: 4, paddingRight: 5 }}>
         Tu as fait <Text style={{ color: '#FFFFFF' }}>un mois</Text> de feu 🔥
       </Text>
 

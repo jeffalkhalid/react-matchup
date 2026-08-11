@@ -62,7 +62,7 @@ export function MomentOverlay({ event, myId, onReact, onComment, onClose, onPres
             <View style={{ borderRadius: 20, padding: 28, alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)' }}>
               <Icon name="trophy" size={58} color={Colors.brand} stroke={2} />
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 1.5, textTransform: 'uppercase' }}>Montée en ligue</Text>
-              <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 39, color: '#FFFFFF', textAlign: 'center' }}>{event.payload.promo_label ?? 'Promotion'}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 39, color: '#FFFFFF', textAlign: 'center', paddingRight: 5 }}>{event.payload.promo_label ?? 'Promotion'}</Text>
             </View>
           ) : event.type === 'bilan' ? (
             event.payload.recap ? (
@@ -84,7 +84,7 @@ export function MomentOverlay({ event, myId, onReact, onComment, onClose, onPres
             <View style={{ borderRadius: 20, padding: 28, alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)' }}>
               <BadgePill badge={event.payload.badge_label ?? ''} size={84} />
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 1.5, textTransform: 'uppercase' }}>Badge débloqué</Text>
-              <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 39, color: '#FFFFFF', textAlign: 'center' }}>{event.payload.badge_label ?? 'Badge'}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 39, color: '#FFFFFF', textAlign: 'center', paddingRight: 5 }}>{event.payload.badge_label ?? 'Badge'}</Text>
             </View>
           )}
 

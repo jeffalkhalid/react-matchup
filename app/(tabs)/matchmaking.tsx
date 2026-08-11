@@ -569,11 +569,17 @@ export default function MatchmakingScreen() {
         .update({ status: 'declined' }).eq('id', inv.participantId);
       if (error) { Alert.alert('Erreur', error.message); return; }
       if (inv.game.creator_id && inv.game.creator_id !== player?.id) {
+        // Team A (son binôme) refuse → le trigger serveur ANNULE le défi
+        // (draft non ciblé : trg_defi_draft_binome_gone ; ciblé :
+        // fn_defi_targeted_decline). Team B (ciblé) → conversion en ouvert.
+        const isTeamA = String(inv.team_side ?? '').startsWith('A');
         notifyPlayers({
           playerIds: [inv.game.creator_id],
           title: '❌ Invitation refusée',
-          body: `${player?.name ?? '?'} a refusé de jouer le défi avec toi`,
-          data: { type: 'lobby', gameId: inv.game.id },
+          body: isTeamA
+            ? `${player?.name ?? '?'} a refusé d'être ton binôme — le défi est annulé`
+            : `${player?.name ?? '?'} a refusé ton défi — il est proposé aux autres binômes`,
+          data: { type: 'challenge', tab: 'mes', gameId: inv.game.id },
         });
       }
       showToast('Invitation refusée');
@@ -801,7 +807,7 @@ export default function MatchmakingScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
           <View style={{ flex: 1 }} />
           <View style={{ flexShrink: 1 }}>
-            <Text style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center' }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center', paddingRight: 5 }}>
               Les <Text style={{ color: Colors.brand }}>Défis</Text>
             </Text>
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis 2v2 & candidatures</Text>

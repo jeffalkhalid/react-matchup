@@ -26,7 +26,7 @@ export function FriendsRanking({ me, friends, monthLabel, onSeeAll }: {
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Icon name="trophy" size={15} color={Colors.brandDeep} stroke={2} />
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary }}>Top amis{monthLabel ? ` · ${monthLabel.charAt(0) + monthLabel.slice(1).toLowerCase()}` : ''}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 5, flexShrink: 1 }}>Top amis{monthLabel ? ` · ${monthLabel.charAt(0) + monthLabel.slice(1).toLowerCase()}` : ''}</Text>
         </View>
         {onSeeAll ? (
           <TouchableOpacity onPress={onSeeAll} hitSlop={8}><Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: Colors.textSecondary }}>Voir tout →</Text></TouchableOpacity>

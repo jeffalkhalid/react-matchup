@@ -27,7 +27,7 @@ export function MomentComposer({ visible, match, busy, onClose, onPublish }: {
           contentContainerStyle={{ backgroundColor: Colors.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 28, gap: 16 }}
           style={{ maxHeight: '88%' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 26, color: Colors.textPrimary }}>Partager ce match</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 26, color: Colors.textPrimary, paddingRight: 5, flexShrink: 1 }}>Partager ce match</Text>
             <TouchableOpacity onPress={onClose} hitSlop={10}><Icon name="x" size={18} color={Colors.textSecondary} stroke={2.2} /></TouchableOpacity>
           </View>
 

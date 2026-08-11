@@ -97,7 +97,7 @@ export function HomeProfileCard({ name, elo, wins, losses, badgeCount, frmt, onP
               </Text>
             ) : null}
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: compact ? 21 : 24, lineHeight: compact ? 25 : 29, color: Colors.textOnDark, letterSpacing: 0.3 }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: compact ? 21 : 24, lineHeight: compact ? 25 : 29, color: Colors.textOnDark, letterSpacing: 0.3, paddingRight: 5 }}>
             {name}
           </Text>
         </View>

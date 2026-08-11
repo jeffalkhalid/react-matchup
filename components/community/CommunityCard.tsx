@@ -54,7 +54,7 @@ export function CommunityCard() {
 
       <View style={{ flex: 1, minWidth: 0 }}>
         <Kicker color={Colors.brand} style={{ fontSize: 9 }}>Communauté</Kicker>
-        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 20, color: '#fff', marginTop: 2, letterSpacing: 0.3 }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 20, color: '#fff', marginTop: 2, letterSpacing: 0.3, paddingRight: 5 }}>
           Tes amis sur PagMatch
         </Text>
       </View>

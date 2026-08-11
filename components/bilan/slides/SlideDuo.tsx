@@ -22,7 +22,7 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#FFC11A', letterSpacing: 2, textTransform: 'uppercase' }}>Ton meilleur duo</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8 }}>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8, paddingRight: 5 }}>
         Avec qui tu as <Text style={{ color: '#FFC11A' }}>le plus gagné</Text>
       </Text>
 
@@ -33,7 +33,7 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
             <Text style={{ fontFamily: Fonts.display, fontSize: 54, lineHeight: 70, color: '#0A0A0A', letterSpacing: -1 }}>{initials(p.name)}</Text>
           </View>
         </View>
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 36, color: '#FFFFFF', lineHeight: 47, marginTop: 18 }}>{p.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 36, color: '#FFFFFF', lineHeight: 47, marginTop: 18, paddingRight: 5 }}>{p.name}</Text>
         <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>@{first.toLowerCase()}</Text>
       </View>
 

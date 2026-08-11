@@ -66,7 +66,7 @@ export function BilanRecapFull({ recap }: { recap: MonthlyRecap }) {
       {p ? (
         <Section>
           <Label>Meilleur duo</Label>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 29, color: '#FFFFFF', marginTop: 4 }}>{p.name}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 29, color: '#FFFFFF', marginTop: 4, paddingRight: 5 }}>{p.name}</Text>
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>{p.matchesTogether} matchs · {p.winsTogether}V ensemble</Text>
         </Section>
       ) : null}
