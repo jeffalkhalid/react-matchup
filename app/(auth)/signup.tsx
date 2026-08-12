@@ -340,6 +340,11 @@ export default function SignupScreen() {
   const [frmtYearFocused, setFrmtYearFocused] = useState(false);
   const [frmtChecking, setFrmtChecking] = useState(false);
   const [frmtTaken, setFrmtTaken] = useState(false);
+  // Aperçu du match FRMT (RPC frmt_preview_link) : position + ELO cible bonus
+  // inclus, pour afficher le VRAI niveau de départ dès l'inscription. Affichage
+  // seulement — le meta envoie toujours l'ELO déclaré, le serveur applique.
+  const [frmtPreview, setFrmtPreview] = useState<{ position: number; points: number | null; target_elo: number } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const set = (field: keyof FormData, value: string) =>
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -434,6 +439,32 @@ export default function SignupScreen() {
     }
     setStep(4);
   };
+
+  // Étape 4 → 5 : si une identité FRMT est déclarée (et non contestée), on
+  // demande un APERÇU du match au serveur pour afficher le niveau bonus
+  // inclus. Fail-open : sans réponse, l'écran garde « vérification en attente ».
+  const handleStep4Next = async () => {
+    let preview: typeof frmtPreview = null;
+    if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && !frmtTaken
+        && formData.frmtFirstName.trim() && formData.frmtLastName.trim()) {
+      setPreviewLoading(true);
+      try {
+        const { data, error } = await supabase.rpc('frmt_preview_link', {
+          p_full_name: `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`,
+          p_birth_year: isValidBirthYear(formData.frmtBirthYear) ? parseInt(formData.frmtBirthYear, 10) : null,
+          p_declared_elo: calculateInitialScore(),
+        });
+        if (!error && data && typeof data.target_elo === 'number') preview = data;
+      } catch {} finally {
+        setPreviewLoading(false);
+      }
+    }
+    setFrmtPreview(preview);
+    setStep(5);
+  };
+
+  // Niveau de départ AFFICHÉ : déclaré, relevé par l'aperçu FRMT s'il matche.
+  const effectiveScore = () => Math.max(calculateInitialScore(), frmtPreview?.target_elo ?? 0);
 
   const handleCaptchaMessage = (event: any) => {
     const data = event?.nativeEvent?.data;
@@ -613,7 +644,7 @@ export default function SignupScreen() {
     if (step === 4) return (
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {backBtn}
-        {nextBtn('Voir mon niveau', () => setStep(5), false)}
+        {nextBtn('Voir mon niveau', handleStep4Next, previewLoading, previewLoading)}
       </View>
     );
     if (step === 5) {
@@ -1020,7 +1051,7 @@ export default function SignupScreen() {
                       fontFamily: Fonts.welcome, fontSize: 44, lineHeight: 57,
                       color: AUTH_BRAND, includeFontPadding: false, paddingRight: 8,
                     }}>
-                      {`Niv. ${formatPadelLevel(calculateInitialScore())}`}
+                      {`Niv. ${formatPadelLevel(effectiveScore())}`}
                     </Text>
                     {formData.hasFrmtRank === 'yes' && !frmtTaken && !!formData.frmtFirstName.trim() && !!formData.frmtLastName.trim() && (
                       <View style={{
@@ -1030,7 +1061,9 @@ export default function SignupScreen() {
                         paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
                       }}>
                         <Text style={{ color: AUTH_BRAND, fontFamily: Fonts.uiExtraBold, fontSize: 12 }}>
-                          Vérification FRMT en attente
+                          {frmtPreview
+                            ? `Classement FRMT détecté · #${frmtPreview.position} ✓`
+                            : 'Vérification FRMT en attente'}
                         </Text>
                       </View>
                     )}
@@ -1200,7 +1233,7 @@ export default function SignupScreen() {
                 fontSize: 13, lineHeight: 20, textAlign: 'center', marginBottom: 18,
               }}>
                 Active ton compte pour rejoindre la piste avec{' '}
-                <Text style={{ color: AUTH_BRAND, fontFamily: Fonts.uiExtraBold }}>Niv. {formatPadelLevel(calculateInitialScore())}</Text>.
+                <Text style={{ color: AUTH_BRAND, fontFamily: Fonts.uiExtraBold }}>Niv. {formatPadelLevel(effectiveScore())}</Text>.
               </Text>
               <TouchableOpacity
                 onPress={() => router.replace('/(auth)/login')}
