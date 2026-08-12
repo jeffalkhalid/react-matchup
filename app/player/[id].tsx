@@ -1236,8 +1236,15 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const matchViews: MatchView[] = matches.map(mapMatch);
   const lastMatchView = matchViews[0] ?? null;
   const timeline: TimelinePoint[] = eloHistory
-    .filter(h => h.match_id && matchById.has(h.match_id))
+    // Points = matchs validés + bonus de liaison FRMT (source 'frmt_bonus',
+    // sans match ; la ligne est supprimée en base si le joueur est délié).
+    .filter(h => h.source === 'frmt_bonus' || (h.match_id && matchById.has(h.match_id)))
     .map(h => {
+      if (h.source === 'frmt_bonus') {
+        const lvlAfter = eloToLevel(h.elo_score);
+        const lvlBefore = eloToLevel(h.elo_score - (h.elo_change ?? 0));
+        return { lvl: lvlAfter, result: 'FRMT' as const, match: null, frmtBonusLvl: Math.max(0, lvlAfter - lvlBefore) };
+      }
       const m = matchById.get(h.match_id as string) as MatchRow;
       const win = m.winner_id === id || m.winner_id_2 === id;
       return { lvl: eloToLevel(h.elo_score), result: (win ? 'Victoire' : 'Défaite') as 'Victoire' | 'Défaite', match: mapMatch(m) };

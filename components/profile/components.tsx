@@ -24,7 +24,9 @@ export interface MatchView {
   // Nature du match (pastille) : défi (avec mise), compétitif, ou amical.
   kind?: 'defi' | 'competitif' | 'amical'; stake?: number;
 }
-export interface TimelinePoint { lvl: number; result: 'Victoire' | 'Défaite'; match: MatchView }
+// Un point = un match validé, OU le bonus de liaison FRMT (result 'FRMT',
+// match null, frmtBonusLvl = gain en niveaux) — supprimé si le joueur est délié.
+export interface TimelinePoint { lvl: number; result: 'Victoire' | 'Défaite' | 'FRMT'; match: MatchView | null; frmtBonusLvl?: number }
 export interface RepBadge { label: string; n: number }
 export interface AchievementView { key: string; name: string; desc: string; glyph: string; progress: number; target: number; unlocked: boolean }
 
@@ -291,7 +293,8 @@ export function LevelChart({ data, selected, onSelect }: { data: TimelinePoint[]
   const area = `${pts[0].x},${H - padBot} ${line} ${pts[pts.length - 1].x},${H - padBot}`;
   const si = Math.min(selected, pts.length - 1);
   const sel = pts[si];
-  const win = sel.d.result === 'Victoire';
+  // Point sélectionné : rouge seulement pour une défaite (FRMT = doré, comme une victoire).
+  const selColor = sel.d.result === 'Défaite' ? PM.danger : ACCENT;
   const scale = w > 0 ? w / W : 0;
 
   const onLayout = (e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width);
@@ -314,9 +317,12 @@ export function LevelChart({ data, selected, onSelect }: { data: TimelinePoint[]
             <Polyline points={line} fill="none" stroke={ACCENT} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
             <Line x1={sel.x} x2={sel.x} y1={sel.y} y2={H - padBot} stroke={ACCENT} strokeWidth={1} strokeDasharray="2 3" opacity={0.55} />
             {pts.map((p, i) => i === si ? null : (
-              <Circle key={i} cx={p.x} cy={p.y} r={3.2} fill={p.d.result === 'Victoire' ? '#fff' : PM.muted} stroke={ACCENT} strokeWidth={1.6} />
+              // Point FRMT : plein doré (bonus de liaison), se distingue des matchs.
+              <Circle key={i} cx={p.x} cy={p.y} r={p.d.result === 'FRMT' ? 4 : 3.2}
+                fill={p.d.result === 'FRMT' ? ACCENT : p.d.result === 'Victoire' ? '#fff' : PM.muted}
+                stroke={p.d.result === 'FRMT' ? '#fff' : ACCENT} strokeWidth={1.6} />
             ))}
-            <Circle cx={sel.x} cy={sel.y} r={5.5} fill={win ? ACCENT : PM.danger} stroke="#fff" strokeWidth={2.5} />
+            <Circle cx={sel.x} cy={sel.y} r={5.5} fill={selColor} stroke="#fff" strokeWidth={2.5} />
           </Svg>
 
           {/* Cible de clic unique : sélectionne le point le plus proche du toucher.

@@ -134,10 +134,11 @@ export interface Message {
 export interface EloHistory {
   id: string;
   player_id: string;
-  match_id?: string;
+  match_id?: string | null;
   elo_score: number;
   elo_change: number;
   created_at: string;
+  source?: 'match' | 'frmt_bonus'; // 'frmt_bonus' = bonus de liaison (pas de match)
 }
 
 export interface Badge {

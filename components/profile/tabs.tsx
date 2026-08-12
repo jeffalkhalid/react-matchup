@@ -80,6 +80,21 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
               👆 Touche un point pour voir le match.
             </Text>
             {selMatch && <MatchCard m={selMatch} footer={renderFooter(selMatch)} showActions={false} onPlayerPress={onPlayerPress} />}
+            {/* Point FRMT (pas de match associé) : encart sobre à la place de la carte. */}
+            {!selMatch && slice[si]?.result === 'FRMT' && (
+              <View style={{
+                backgroundColor: 'rgba(255,193,26,0.08)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)',
+                borderRadius: 14, padding: 14, gap: 4,
+              }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: PM.text }}>Classement FRMT vérifié ✓</Text>
+                <Text style={{ fontSize: 11.5, lineHeight: 16, color: PM.muted, fontWeight: '600' }}>
+                  Bonus de liaison au classement officiel
+                  {slice[si]?.frmtBonusLvl != null && slice[si]!.frmtBonusLvl! > 0
+                    ? ` : +${slice[si]!.frmtBonusLvl!.toFixed(2)} niveau` : ''}
+                  , calibré sur ta position FRMT.
+                </Text>
+              </View>
+            )}
           </>
         ) : (
           <Text style={{ fontSize: 12, color: PM.muted, textAlign: 'center', paddingVertical: 12 }}>
