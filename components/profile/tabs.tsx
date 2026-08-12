@@ -51,8 +51,8 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
                 </Text>
               )}
             </View>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: PM.muted, marginTop: 3 }}>
-              Fiabilité du score : <Text style={{ color: fiabilityColor, fontWeight: '900' }}>{fiability} % · {fiabilityLabel}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: PM.muted, marginTop: 4 }}>
+              Fiabilité du score : <Text style={{ fontSize: 14, color: fiabilityColor, fontWeight: '900' }}>{fiability} % · {fiabilityLabel}</Text>
             </Text>
           </View>
           <Text style={{ fontSize: 11, fontWeight: '800', color: PM.muted, marginTop: 4 }}>30 derniers jours</Text>
