@@ -24,12 +24,24 @@ export function matchNature(match: {
   return { kind: 'competitif', stake };
 }
 
+/* Parse « 6-4 3-6 6-2 » → paires [a, b], puis NORMALISE en vainqueur-premier.
+ * `score_text` est stocké TEL QUE SAISI (perspective du soumetteur, cf.
+ * score-entry) — PAS forcément côté vainqueur : quand un perdant saisit le
+ * score, les colonnes sont inversées (bug historique : grille de score
+ * retournée sur le profil). Un match validé ayant toujours un vainqueur
+ * STRICT en sets, la majorité des sets identifie l'orientation — déterministe,
+ * et corrige aussi toutes les lignes historiques sans migration.
+ * Parseur PARTAGÉ : profil, bilan et stories importent celui-ci — ne pas
+ * recréer de copie locale. */
 export function parseSetsLocal(text: string | null | undefined): [number, number][] {
   if (!text) return [];
-  return text.trim().split(/[\s,]+/).flatMap(s => {
-    const p = s.split('-').map(Number);
+  const pairs = text.trim().split(/[\s,]+/).flatMap(s => {
+    const p = s.split(/[-/]/).map(Number);
     return p.length === 2 && !p.some(isNaN) ? [[p[0], p[1]] as [number, number]] : [];
   });
+  const firstWins  = pairs.filter(([a, b]) => a > b).length;
+  const secondWins = pairs.filter(([a, b]) => b > a).length;
+  return secondWins > firstWins ? pairs.map(([a, b]) => [b, a] as [number, number]) : pairs;
 }
 
 export function matchToView(match: Match, playerId: string, markMe = true): MatchView {

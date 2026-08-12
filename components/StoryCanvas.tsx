@@ -36,13 +36,8 @@ function hashColor(name: string) {
 function initial(name: string | null | undefined) {
   return (name ?? '?').trim().charAt(0).toUpperCase();
 }
-function parseSets(text: string | null): Array<[number, number]> {
-  if (!text) return [];
-  return text.trim().split(/[\s,]+/).flatMap(s => {
-    const parts = s.split('-').map(n => parseInt(n, 10));
-    return parts.length === 2 && !parts.some(isNaN) ? [[parts[0], parts[1]] as [number, number]] : [];
-  });
-}
+// Parseur PARTAGÉ (normalise vainqueur-premier) — pas de copie locale.
+import { parseSets } from './story/storyTheme';
 
 // ─── Avatar pile ──────────────────────────────────────────────
 function AvatarPile({ names, size = 56, ring }: { names: string[]; size?: number; ring?: string }) {

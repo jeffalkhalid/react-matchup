@@ -24,14 +24,10 @@ export const leagueGrad: Record<string, [string, string]> = {
   silver: ['#71717A', '#D4D4D8'], bronze: ['#A16207', '#E8A906'], discovery: ['#52525B', '#A1A1AA'],
 };
 
-/** "6-3 7-5" -> [[6,3],[7,5]] (mon score d'abord). */
-export function parseSets(text: string | null): Array<[number, number]> {
-  if (!text) return [];
-  return text.trim().split(/[\s,]+/).flatMap((seg) => {
-    const p = seg.split('-').map((n) => parseInt(n, 10));
-    return p.length === 2 && !p.some(isNaN) ? [[p[0], p[1]] as [number, number]] : [];
-  });
-}
+/** "6-3 7-5" -> [[6,3],[7,5]] — parseur PARTAGÉ, normalisé vainqueur-premier
+ *  (buildStoryMatch réoriente ensuite côté joueur). */
+import { parseSetsLocal as parseSets } from '../../lib/matchView';
+export { parseSets };
 
 export const setsWon = (sets: Array<[number, number]>) => sets.filter(([a, b]) => a > b).length;
 export const setsLost = (sets: Array<[number, number]>) => sets.filter(([a, b]) => a < b).length;

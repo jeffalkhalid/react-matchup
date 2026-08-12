@@ -45,11 +45,8 @@ type MatchRow = {
   game: { location: string | null; match_date: string | null } | null;
 };
 
-function parseSets(text: string | null): [number, number][] {
-  if (!text) return [];
-  return text.split(/[ ,]+/).map(s => s.split(/[-/]/).map(n => parseInt(n, 10)))
-    .filter(p => p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) as [number, number][];
-}
+// Parseur PARTAGÉ (normalise vainqueur-premier) — pas de copie locale.
+import { parseSetsLocal as parseSets } from './matchView';
 
 // Liste des mois disponibles (clé + label), du plus récent au plus ancien.
 export async function getRecapMonths(uid: string): Promise<{ key: string; label: string }[]> {
