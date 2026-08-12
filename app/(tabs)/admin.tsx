@@ -351,8 +351,17 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
 }
 
 // ─── FRMT tab ─────────────────────────────────────────────────
-function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: {
+// Libellés du journal d'audit des liaisons (frmt_link_events).
+const FRMT_EVENT_CFG: Record<string, { icon: string; label: string; color: string }> = {
+  auto_link:  { icon: '🔗', label: 'Liaison auto',  color: Colors.success },
+  admin_link: { icon: '🔗', label: 'Liaison admin', color: Colors.brand },
+  unlink:     { icon: '🔓', label: 'Délié',         color: Colors.textSecondary },
+  fraud:      { icon: '🚫', label: 'Fraudeur',      color: Colors.danger },
+};
+
+function FrmtTab({ entries, events, allPlayers, loading, onLink, onUnlink, onRefresh }: {
   entries: any[];
+  events: any[];
   allPlayers: any[];
   loading: boolean;
   onLink: (entryId: string, entry: any, playerId: string) => Promise<void>;
@@ -453,6 +462,38 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
           </View>
         ))}
       </View>
+
+      {/* Journal des liaisons — vigilance anti-usurpation : chaque liaison
+          (auto ou admin), déliage et marquage fraudeur passe ici. */}
+      {events.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: Fonts.uiBlack, marginBottom: 6 }}>
+            🕘 Liaisons récentes
+          </Text>
+          <View style={{ gap: 5 }}>
+            {events.map((ev: any) => {
+              const cfg = FRMT_EVENT_CFG[ev.event] ?? { icon: '•', label: ev.event, color: Colors.textSecondary };
+              const d = new Date(ev.created_at);
+              const dateStr = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+                + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+              return (
+                <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: cfg.color, minWidth: 88 }}>{cfg.icon} {cfg.label}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.textPrimary, flexShrink: 1 }} numberOfLines={1}>
+                    {ev.player_name ?? '?'}
+                    <Text style={{ color: Colors.textSecondary, fontWeight: '600' }}>
+                      {ev.frmt_name ? ` → ${ev.frmt_name}` : ''}{ev.ranking_position != null ? ` (#${ev.ranking_position})` : ''}
+                    </Text>
+                  </Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textSecondary, marginLeft: 'auto' }}>
+                    {ev.elo_bonus > 0 ? `${ev.event === 'unlink' || ev.event === 'fraud' ? '−' : '+'}${ev.elo_bonus} · ` : ''}{dateStr}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {/* Search */}
       <View style={sty.searchRow}>
@@ -691,6 +732,7 @@ export default function AdminScreen() {
 
   // FRMT
   const [frmtEntries, setFrmtEntries] = useState<any[]>([]);
+  const [frmtEvents, setFrmtEvents] = useState<any[]>([]);
   const [allPlayers, setAllPlayers] = useState<any[]>([]);
   const [frmtLoading, setFrmtLoading] = useState(false);
 
@@ -757,7 +799,11 @@ export default function AdminScreen() {
     // birth_year : pour comparer l'année déclarée du joueur à celle de
     // l'entrée FRMT au moment d'une liaison manuelle (homonymes).
     const { data: players } = await supabase.from('players').select('id,name,birth_year').is('deleted_at', null).order('name');
+    // Journal d'audit anti-usurpation (frmt_link_events, lecture admin RLS).
+    const { data: events } = await supabase.from('frmt_link_events')
+      .select('*').order('created_at', { ascending: false }).limit(12);
     setFrmtEntries(allRankings);
+    setFrmtEvents(events ?? []);
     setAllPlayers(players ?? []);
     setFrmtLoading(false);
   }, []);
@@ -1089,6 +1135,7 @@ export default function AdminScreen() {
             allPlayers={allPlayers}
             loading={frmtLoading}
             onLink={handleLink}
+            events={frmtEvents}
             onUnlink={handleUnlink}
             onRefresh={loadFrmt}
           />
