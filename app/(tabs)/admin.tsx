@@ -494,7 +494,11 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                 <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700', minWidth: 26 }}>#{entry.ranking_position ?? '—'}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>{entry.frmt_name}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, flexShrink: 1 }} numberOfLines={1}>{entry.frmt_name}</Text>
+                {/* Année de naissance scrapée : seul discriminant entre homonymes. */}
+                {entry.birth_year != null && (
+                  <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>[{entry.birth_year}]</Text>
+                )}
               </View>
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {entry.ranking_points != null && (
@@ -584,7 +588,10 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
                   <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.brand, fontFamily: Fonts.uiBlack }}>{(p.name || '?').charAt(0).toUpperCase()}</Text>
                   </View>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textPrimary, flex: 1, fontFamily: Fonts.uiBold }}>{p.name}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textPrimary, flexShrink: 1, fontFamily: Fonts.uiBold }} numberOfLines={1}>{p.name}</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '700', flex: 1 }}>
+                    {p.birth_year != null ? `[${p.birth_year}]` : ''}
+                  </Text>
                   {linking && <ActivityIndicator size="small" color={Colors.brand} />}
                 </TouchableOpacity>
               )}
@@ -747,7 +754,9 @@ export default function AdminScreen() {
       allRankings.push(...data);
       if (data.length < PAGE) break;
     }
-    const { data: players } = await supabase.from('players').select('id,name').is('deleted_at', null).order('name');
+    // birth_year : pour comparer l'année déclarée du joueur à celle de
+    // l'entrée FRMT au moment d'une liaison manuelle (homonymes).
+    const { data: players } = await supabase.from('players').select('id,name,birth_year').is('deleted_at', null).order('name');
     setFrmtEntries(allRankings);
     setAllPlayers(players ?? []);
     setFrmtLoading(false);
