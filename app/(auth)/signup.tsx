@@ -1042,12 +1042,13 @@ export default function SignupScreen() {
                     }}>
                       Ton niveau de départ
                     </Text>
-                    {/* numberOfLines+adjustsFontSizeToFit+paddingRight : sans eux,
-                        en grande police système Android le texte wrappe et le
-                        nombre disparaît (« Niv. » seul) — cf. saga titres
-                        italiques. Enfant unique (template string) : les spans
-                        multiples aggravent le phénomène. */}
-                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
+                    {/* Saga « Niv. » vide (Android) : ① spans multiples → le nombre
+                        disparaissait au re-render → enfant UNIQUE (template string) ;
+                        ② adjustsFontSizeToFit → texte invisible au premier rendu
+                        (bug RN Android, police custom) → remplacé par
+                        maxFontSizeMultiplier (le texte est court, il tient toujours
+                        sur une ligne, pas besoin de rétrécissement dynamique). */}
+                    <Text numberOfLines={1} maxFontSizeMultiplier={1.15} style={{
                       fontFamily: Fonts.welcome, fontSize: 44, lineHeight: 57,
                       color: AUTH_BRAND, includeFontPadding: false, paddingRight: 8,
                     }}>
