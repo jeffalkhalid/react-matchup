@@ -2506,7 +2506,11 @@ export default function LobbyScreen() {
             // Libération de place déléguée à la fonction serveur partagée
             // (promotion du 1er waitlister, sinon +1 compteur). La notif de
             // promotion part du webhook notify-promotion (waitlist→accepted).
-            await supabase.rpc('free_spot_and_promote', { p_game_id: gameId });
+            // Défi : ne PAS appeler — le départ atomique (trg_defi_teammate_leave)
+            // gère tout ; cet appel ressuscitait en 'open' un défi annulé.
+            if (!game?.is_challenge) {
+              await supabase.rpc('free_spot_and_promote', { p_game_id: gameId });
+            }
           }
 
           fetchData();
