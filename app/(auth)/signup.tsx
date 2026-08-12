@@ -1048,9 +1048,13 @@ export default function SignupScreen() {
                         (bug RN Android, police custom) → remplacé par
                         maxFontSizeMultiplier (le texte est court, il tient toujours
                         sur une ligne, pas besoin de rétrécissement dynamique). */}
+                    {/* paddingHorizontal 16 : à 44pt le débord de l'italique
+                        dépasse largement le box du texte — 8px rognaient encore
+                        le dernier chiffre (vu sur device). Symétrique pour
+                        garder le centrage. */}
                     <Text numberOfLines={1} maxFontSizeMultiplier={1.15} style={{
                       fontFamily: Fonts.welcome, fontSize: 44, lineHeight: 57,
-                      color: AUTH_BRAND, includeFontPadding: false, paddingRight: 8,
+                      color: AUTH_BRAND, includeFontPadding: false, paddingHorizontal: 16,
                     }}>
                       {`Niv. ${formatPadelLevel(effectiveScore())}`}
                     </Text>
