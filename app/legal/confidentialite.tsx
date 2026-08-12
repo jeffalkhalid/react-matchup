@@ -34,7 +34,7 @@ export default function ConfidentialiteScreen() {
         ]} />
         <P>
           Si vous demandez la liaison à votre <B>classement officiel FRMT</B>, nous collectons aussi
-          votre nom, prénom et votre mois et année de naissance. Ces données servent{' '}
+          votre nom, prénom et votre année de naissance. Ces données servent{' '}
           <B>uniquement</B> à vous associer à la bonne entrée du classement (l'année permet de
           distinguer les homonymes) et ne sont jamais affichées publiquement.
         </P>

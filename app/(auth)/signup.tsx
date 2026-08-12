@@ -37,21 +37,20 @@ interface FormData {
   gender: string; ageGroup: string; handedness: string; preferredSide: string;
   estimatedLevel: string; frequency: string; tournaments: string;
   hasFrmtRank: '' | 'yes' | 'no'; frmtFirstName: string; frmtLastName: string;
-  frmtBirthMonth: string; frmtBirthYear: string;
+  frmtBirthYear: string;
   techniques: string[]; name: string; email: string; password: string;
 }
 const INITIAL: FormData = {
   gender: '', ageGroup: '', handedness: '', preferredSide: '',
   estimatedLevel: '', frequency: '', tournaments: '',
   hasFrmtRank: '', frmtFirstName: '', frmtLastName: '',
-  frmtBirthMonth: '', frmtBirthYear: '',
+  frmtBirthYear: '',
   techniques: [], name: '', email: '', password: '',
 };
 
-// Mois/année de naissance : la FRMT publie l'ANNÉE des classés → sert à
-// départager les homonymes au matching (le mois est stocké pour l'avenir).
-const isValidBirthMonth = (v: string) => { const n = parseInt(v, 10); return !isNaN(n) && n >= 1 && n <= 12; };
-const isValidBirthYear  = (v: string) => { const n = parseInt(v, 10); return !isNaN(n) && n >= 1920 && n <= 2020; };
+// Année de naissance : la FRMT publie l'ANNÉE des classés (pas le mois) →
+// seule l'année sert à départager les homonymes au matching.
+const isValidBirthYear = (v: string) => { const n = parseInt(v, 10); return !isNaN(n) && n >= 1920 && n <= 2020; };
 const TECHNIQUES = [
   { id: 'Vitre',       label: 'Défense avec la vitre' },
   { id: 'Lob',         label: 'Lob profond millimétré' },
@@ -338,7 +337,6 @@ export default function SignupScreen() {
   const [pwFocused, setPwFocused] = useState(false);
   const [frmtFirstFocused, setFrmtFirstFocused] = useState(false);
   const [frmtLastFocused, setFrmtLastFocused] = useState(false);
-  const [frmtMonthFocused, setFrmtMonthFocused] = useState(false);
   const [frmtYearFocused, setFrmtYearFocused] = useState(false);
   const [frmtChecking, setFrmtChecking] = useState(false);
   const [frmtTaken, setFrmtTaken] = useState(false);
@@ -403,7 +401,7 @@ export default function SignupScreen() {
       // (il continue sans liaison, cf. handleStep3Next / meta).
       if (COLLECT_FRMT_IDENTITY) {
         if (!formData.frmtFirstName.trim() || !formData.frmtLastName.trim()) return false;
-        if (!isValidBirthMonth(formData.frmtBirthMonth) || !isValidBirthYear(formData.frmtBirthYear)) return false;
+        if (!isValidBirthYear(formData.frmtBirthYear)) return false;
       }
       return true;
     }
@@ -472,10 +470,9 @@ export default function SignupScreen() {
       };
       if (COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes' && !frmtTaken && formData.frmtFirstName.trim() && formData.frmtLastName.trim()) {
         meta.frmt_full_name = `${formData.frmtFirstName.trim()} ${formData.frmtLastName.trim()}`;
-        // Mois+année : uniquement pour la liaison FRMT (départage des
-        // homonymes) — envoyés seulement quand une liaison est demandée.
+        // Année : uniquement pour la liaison FRMT (départage des homonymes)
+        // — envoyée seulement quand une liaison est demandée.
         if (isValidBirthYear(formData.frmtBirthYear)) meta.birth_year = parseInt(formData.frmtBirthYear, 10);
-        if (isValidBirthMonth(formData.frmtBirthMonth)) meta.birth_month = parseInt(formData.frmtBirthMonth, 10);
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -594,7 +591,7 @@ export default function SignupScreen() {
         {backBtn}
         {nextBtn('Suivant', () => {
           if (skipFrmtStep) {
-            setFormData(prev => ({ ...prev, hasFrmtRank: 'no', frmtFirstName: '', frmtLastName: '', frmtBirthMonth: '', frmtBirthYear: '' }));
+            setFormData(prev => ({ ...prev, hasFrmtRank: 'no', frmtFirstName: '', frmtLastName: '', frmtBirthYear: '' }));
             setFrmtTaken(false);
             setStep(4);
           } else {
@@ -894,7 +891,7 @@ export default function SignupScreen() {
                         Vérification du classement
                       </Text>
                       <Text style={{ color: tokens.label, fontSize: 12, lineHeight: 17, fontFamily: Fonts.ui }}>
-                        Ton nom, prénom et ta date de naissance servent uniquement à te lier
+                        Ton nom, prénom et ton année de naissance servent uniquement à te lier
                         au classement FRMT (l'année départage les homonymes). Jamais affichés publiquement.
                       </Text>
                       <Row>
@@ -927,36 +924,18 @@ export default function SignupScreen() {
                           />
                         </View>
                       </Row>
-                      <Row>
-                        <View style={{ flex: 1 }}>
-                          <FieldInput
-                            label="Mois de naissance"
-                            value={formData.frmtBirthMonth}
-                            onChangeText={v => { set('frmtBirthMonth', v.replace(/[^0-9]/g, '').slice(0, 2)); }}
-                            placeholder="MM"
-                            error={!!formData.frmtBirthMonth && !isValidBirthMonth(formData.frmtBirthMonth) && !frmtMonthFocused}
-                            focused={frmtMonthFocused}
-                            onFocus={() => setFrmtMonthFocused(true)}
-                            onBlur={() => setFrmtMonthFocused(false)}
-                            keyboardType="number-pad"
-                            tokens={tokens}
-                          />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <FieldInput
-                            label="Année de naissance"
-                            value={formData.frmtBirthYear}
-                            onChangeText={v => { set('frmtBirthYear', v.replace(/[^0-9]/g, '').slice(0, 4)); if (frmtTaken) setFrmtTaken(false); }}
-                            placeholder="AAAA"
-                            error={(!!formData.frmtBirthYear && !isValidBirthYear(formData.frmtBirthYear) && !frmtYearFocused) || frmtTaken}
-                            focused={frmtYearFocused}
-                            onFocus={() => setFrmtYearFocused(true)}
-                            onBlur={() => setFrmtYearFocused(false)}
-                            keyboardType="number-pad"
-                            tokens={tokens}
-                          />
-                        </View>
-                      </Row>
+                      <FieldInput
+                        label="Année de naissance"
+                        value={formData.frmtBirthYear}
+                        onChangeText={v => { set('frmtBirthYear', v.replace(/[^0-9]/g, '').slice(0, 4)); if (frmtTaken) setFrmtTaken(false); }}
+                        placeholder="AAAA"
+                        error={(!!formData.frmtBirthYear && !isValidBirthYear(formData.frmtBirthYear) && !frmtYearFocused) || frmtTaken}
+                        focused={frmtYearFocused}
+                        onFocus={() => setFrmtYearFocused(true)}
+                        onBlur={() => setFrmtYearFocused(false)}
+                        keyboardType="number-pad"
+                        tokens={tokens}
+                      />
                       {frmtTaken && (
                         <Text style={{ color: AUTH_ERROR_TEXT, fontSize: 12, lineHeight: 17, fontFamily: Fonts.uiSemi }}>
                           Ce nom et prénom sont déjà associés à un autre compte PAG MATCH.

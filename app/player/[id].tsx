@@ -550,7 +550,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [editOpen,   setEditOpen]   = useState(false);
   const [editSaving, setEditSaving] = useState(false);
-  const [editForm,   setEditForm]   = useState({ name: '', court_side: '', playing_days: [] as string[], frmt_full_name: '', birth_month: '', birth_year: '', preferred_court: '' });
+  const [editForm,   setEditForm]   = useState({ name: '', court_side: '', playing_days: [] as string[], frmt_full_name: '', birth_year: '', preferred_court: '' });
   const [editFrmtTaken, setEditFrmtTaken] = useState(false);
   const [genderReqOpen, setGenderReqOpen] = useState(false);
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
@@ -1004,7 +1004,6 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       court_side:      profile.court_side ?? '',
       playing_days:    Array.isArray(profile.playing_days) ? [...profile.playing_days] : [],
       frmt_full_name:  profile.frmt_full_name ?? '',
-      birth_month:     profile.birth_month != null ? String(profile.birth_month) : '',
       birth_year:      profile.birth_year != null ? String(profile.birth_year) : '',
       preferred_court: profile.preferred_court ?? '',
     });
@@ -1024,12 +1023,10 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
 
   const handleEditSave = async () => {
     if (!editForm.name.trim()) return;
-    // Mois/année de naissance (liaison FRMT) : optionnels, mais s'ils sont
-    // renseignés ils doivent être plausibles — on refuse plutôt que de
-    // stocker une faute de frappe qui raterait le matching en silence.
-    const bMonth = editForm.birth_month.trim() ? parseInt(editForm.birth_month, 10) : null;
-    const bYear  = editForm.birth_year.trim()  ? parseInt(editForm.birth_year, 10)  : null;
-    if (bMonth != null && (isNaN(bMonth) || bMonth < 1 || bMonth > 12)) { Alert.alert('Mois invalide', 'Le mois de naissance doit être entre 1 et 12.'); return; }
+    // Année de naissance (liaison FRMT) : optionnelle, mais si renseignée
+    // elle doit être plausible — on refuse plutôt que de stocker une faute
+    // de frappe qui raterait le matching en silence.
+    const bYear = editForm.birth_year.trim() ? parseInt(editForm.birth_year, 10) : null;
     if (bYear != null && (isNaN(bYear) || bYear < 1920 || bYear > 2020)) { Alert.alert('Année invalide', "L'année de naissance doit être entre 1920 et 2020."); return; }
     setEditSaving(true);
     // Nom+prénom FRMT : la liaison serveur (trigger try_link_frmt_for_player)
@@ -1056,7 +1053,6 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       court_side:      editForm.court_side || null,
       playing_days:    editForm.playing_days.length > 0 ? editForm.playing_days : null,
       frmt_full_name:  newFrmt || null,
-      birth_month:     bMonth,
       birth_year:      bYear,
       preferred_court: editForm.preferred_court || null,
     }).eq('id', profile.id);
@@ -1528,31 +1524,17 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                           Tels qu'ils apparaissent sur le classement FRMT — la vérification est automatique. Jamais affichés publiquement.
                         </Text>
                       )}
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                        <View style={{ flex: 1 }}>
-                          <TextInput
-                            value={editForm.birth_month}
-                            onChangeText={v => setEditForm(f => ({ ...f, birth_month: v.replace(/[^0-9]/g, '').slice(0, 2) }))}
-                            style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}
-                            placeholder="Mois (MM)"
-                            placeholderTextColor={Colors.textMuted}
-                            keyboardType="number-pad"
-                          />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <TextInput
-                            value={editForm.birth_year}
-                            onChangeText={v => { setEditForm(f => ({ ...f, birth_year: v.replace(/[^0-9]/g, '').slice(0, 4) })); if (editFrmtTaken) setEditFrmtTaken(false); }}
-                            style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}
-                            placeholder="Année (AAAA)"
-                            placeholderTextColor={Colors.textMuted}
-                            keyboardType="number-pad"
-                          />
-                        </View>
-                      </View>
+                      <TextInput
+                        value={editForm.birth_year}
+                        onChangeText={v => { setEditForm(f => ({ ...f, birth_year: v.replace(/[^0-9]/g, '').slice(0, 4) })); if (editFrmtTaken) setEditFrmtTaken(false); }}
+                        style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary, marginTop: 10 }}
+                        placeholder="Année de naissance (AAAA)"
+                        placeholderTextColor={Colors.textMuted}
+                        keyboardType="number-pad"
+                      />
                       <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
-                        Mois et année de naissance — servent uniquement à la liaison
-                        (l'année distingue les homonymes du classement).
+                        Année de naissance — sert uniquement à la liaison
+                        (elle distingue les homonymes du classement).
                       </Text>
                     </>
                   )}

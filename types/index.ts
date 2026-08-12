@@ -25,7 +25,6 @@ export interface Player {
   fiability_pct: number;
   gender?: Gender;
   birth_year?: number;  // liaison FRMT uniquement (départage homonymes), jamais affiché
-  birth_month?: number; // idem — la FRMT ne publie que l'année, stocké pour l'avenir
   handedness?: Handedness;
   court_side?: CourtSide;
   level?: number;

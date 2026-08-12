@@ -76,8 +76,8 @@ export default function CguScreen() {
           de litige. Toute fraude répétée peut entraîner des sanctions.
         </P>
         <P>
-          La liaison au classement officiel FRMT est optionnelle : le nom, prénom et le mois et
-          l'année de naissance demandés à cette fin servent uniquement à vous associer à la bonne
+          La liaison au classement officiel FRMT est optionnelle : le nom, le prénom et l'année
+          de naissance demandés à cette fin servent uniquement à vous associer à la bonne
           entrée du classement et ne sont jamais affichés publiquement. Revendiquer l'identité d'un
           autre joueur est un cas de fraude pouvant entraîner la suspension du compte.
         </P>
