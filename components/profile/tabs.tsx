@@ -14,11 +14,14 @@ const A = accentOf(ACCENT);
 // ════════════════════════════════════════════════════════════════════
 //  STATS
 // ════════════════════════════════════════════════════════════════════
-export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, losses, streak, form, infoRows, lastMatch, renderFooter, onPlayerPress }: {
+export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, losses, streak, form, infoRows, lastMatch, renderFooter, onPlayerPress, fiability, fiabilityLabel, fiabilityColor }: {
   curLevel: number; delta30: number | null; timeline: TimelinePoint[];
   winRate: number; played: number; wins: number; losses: number; streak: number;
   form: ('V' | 'D')[]; infoRows: [string, string][]; lastMatch: MatchView | null; renderFooter: (m: MatchView) => React.ReactNode;
   onPlayerPress?: (id: string) => void;
+  // Fiabilité du score (confiance ELO, pilote le K) — perdue à la refonte du
+  // profil, réintégrée sous le niveau actuel.
+  fiability: number; fiabilityLabel: string; fiabilityColor: string;
 }) {
   const [filt, setFilt] = useState('10 résultats');
   const slice = filt === '5 résultats' ? timeline.slice(-5) : filt === 'Tous' ? timeline : timeline.slice(-10);
@@ -48,6 +51,9 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
                 </Text>
               )}
             </View>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: PM.muted, marginTop: 3 }}>
+              Fiabilité du score : <Text style={{ color: fiabilityColor, fontWeight: '900' }}>{fiability} % · {fiabilityLabel}</Text>
+            </Text>
           </View>
           <Text style={{ fontSize: 11, fontWeight: '800', color: PM.muted, marginTop: 4 }}>30 derniers jours</Text>
         </View>

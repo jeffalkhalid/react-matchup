@@ -431,30 +431,8 @@ function Kicker({ children, style }: { children: React.ReactNode; style?: any })
   );
 }
 
-// Jauge circulaire de fiabilité — anneau coloré, % au centre.
-function ReliabilityRing({ pct, color, size = 76, stroke = 8 }: {
-  pct: number; color: string; size?: number; stroke?: number;
-}) {
-  const clamped = Math.min(100, Math.max(0, pct));
-  const r       = (size - stroke) / 2;
-  const c       = 2 * Math.PI * r;
-  const offset  = c * (1 - clamped / 100);
-  const mid     = size / 2;
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <Circle cx={mid} cy={mid} r={r} stroke={LIGHT.divider} strokeWidth={stroke} fill="none" />
-        <Circle
-          cx={mid} cy={mid} r={r} stroke={color} strokeWidth={stroke} fill="none"
-          strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
-          transform={`rotate(-90 ${mid} ${mid})`}
-        />
-      </Svg>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 22, lineHeight: 29, color, letterSpacing: -0.5 }}>{Math.round(clamped)}</Text>
-      <Text style={{ fontSize: 9, fontWeight: '800', color: LIGHT.muted, marginTop: -1 }}>%</Text>
-    </View>
-  );
-}
+// (ReliabilityRing supprimé : orphelin depuis la refonte du profil — la
+// fiabilité s'affiche désormais en texte sous le niveau, onglet Stats.)
 
 // Avatar carré arrondi à dégradé ligue→or, initiales en Anton (design épuré).
 function GradientAvatar({ name, color, size = 76 }: { name: string; color: string; size?: number }) {
@@ -1327,6 +1305,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         {tab === 'Stats' && (
           <StatsTab
             curLevel={curLevel} delta30={delta30} timeline={timeline}
+            fiability={fib} fiabilityLabel={fibLabel} fiabilityColor={fibColor}
             winRate={winRate} played={totalM} wins={wins} losses={losses}
             streak={streak} form={formVD} infoRows={prefRows} lastMatch={lastMatchView} renderFooter={renderMatchFooter}
             onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }}
