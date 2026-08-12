@@ -187,7 +187,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
   players: any[];
   loading: boolean;
   actingId: string | null;
-  onUnlink: (playerId: string) => void | Promise<void>;
+  onUnlink: (playerId: string, name: string) => void;
   onFraud: (playerId: string, name: string) => void;
   onUnblock: (playerId: string) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
@@ -317,7 +317,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
                     </TouchableOpacity>
                   ) : p.frmt_verified ? (
                     <>
-                      <TouchableOpacity onPress={() => onUnlink(p.id)} style={sty.chip}>
+                      <TouchableOpacity onPress={() => onUnlink(p.id, p.name)} style={sty.chip}>
                         <Text style={sty.chipText}>Délier</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => onFraud(p.id, p.name)} style={[sty.chip, { borderColor: '#ef444450', backgroundColor: '#ef444415' }]}>
@@ -356,7 +356,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
   allPlayers: any[];
   loading: boolean;
   onLink: (entryId: string, entry: any, playerId: string) => Promise<void>;
-  onUnlink: (entryId: string) => Promise<void>;
+  onUnlink: (entryId: string, playerName: string) => void;
   onRefresh: () => Promise<void> | void;
 }) {
   const [search, setSearch] = useState('');
@@ -528,7 +528,7 @@ function FrmtTab({ entries, allPlayers, loading, onLink, onUnlink, onRefresh }: 
                 </Text>
               </TouchableOpacity>
               {entry.player && (
-                <TouchableOpacity onPress={() => onUnlink(entry.id)}
+                <TouchableOpacity onPress={() => onUnlink(entry.id, entry.player?.name ?? entry.frmt_name)}
                   style={{ backgroundColor: '#ef444415', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: '#ef444430' }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.danger }}>Délier</Text>
                 </TouchableOpacity>
@@ -813,12 +813,25 @@ export default function AdminScreen() {
     setPlayersLoading(false);
   }, []);
 
-  const handlePlayerUnlink = async (playerId: string) => {
-    setPlayerActingId(playerId);
-    const { error } = await supabase.rpc('admin_unlink_frmt_player', { p_player_id: playerId });
-    setPlayerActingId(null);
-    if (error) { Alert.alert('Erreur', error.message); return; }
-    await loadPlayers();
+  // Délier est devenu une action lourde (bonus retiré + revendication oubliée
+  // + point effacé de la courbe) → confirmation, comme Fraudeur.
+  const handlePlayerUnlink = (playerId: string, name: string) => {
+    Alert.alert(
+      'Délier du classement FRMT',
+      `${name} : on retire la liaison ET le bonus de niveau, on oublie le nom déclaré et on efface le point FRMT de sa courbe. Il pourra se re-lier depuis son profil. Continuer ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Délier', style: 'destructive', onPress: async () => {
+            setPlayerActingId(playerId);
+            const { error } = await supabase.rpc('admin_unlink_frmt_player', { p_player_id: playerId });
+            setPlayerActingId(null);
+            if (error) { Alert.alert('Erreur', error.message); return; }
+            await loadPlayers();
+          },
+        },
+      ],
+    );
   };
 
   const handlePlayerFraud = (playerId: string, name: string) => {
@@ -954,11 +967,23 @@ export default function AdminScreen() {
     await loadFrmt();
   };
 
-  const handleUnlink = async (entryId: string) => {
-    // RPC : délie + remet les flags FRMT du joueur (sans baisser l'ELO acquis).
-    const { error } = await supabase.rpc('admin_unlink_frmt', { p_entry_id: entryId });
-    if (error) { Alert.alert('Erreur', error.message); return; }
-    await loadFrmt();
+  const handleUnlink = (entryId: string, playerName: string) => {
+    // Action lourde depuis frmt_unlink_removes_bonus.sql : retire liaison +
+    // bonus + revendication + point de courbe → confirmation obligatoire.
+    Alert.alert(
+      'Délier du classement FRMT',
+      `${playerName} : on retire la liaison ET le bonus de niveau, on oublie le nom déclaré et on efface le point FRMT de sa courbe. Il pourra se re-lier depuis son profil. Continuer ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Délier', style: 'destructive', onPress: async () => {
+            const { error } = await supabase.rpc('admin_unlink_frmt', { p_entry_id: entryId });
+            if (error) { Alert.alert('Erreur', error.message); return; }
+            await loadFrmt();
+          },
+        },
+      ],
+    );
   };
 
   const handleDeleteGame = (gameId: string) => {
