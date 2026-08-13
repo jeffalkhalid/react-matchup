@@ -346,10 +346,30 @@ export default function SignupScreen() {
   const [frmtPreview, setFrmtPreview] = useState<{ position: number; points: number | null; target_elo: number } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  const set = (field: keyof FormData, value: string) =>
-    setFormData(prev => ({ ...prev, [field]: value }));
+  // Niveaux bas : on ne pose NI la question tournois fédéral NI les coups
+  // techniques (étapes 3 et 4 sautées, parcours 1→2→5) — non pertinents pour
+  // un joueur qui débute, et ça raccourcit l'inscription.
+  const LOW_LEVELS = ['Novice', 'Débutant', 'Amateur'];
+  const isLowLevel = LOW_LEVELS.includes(formData.estimatedLevel);
 
-  // « Jamais » de tournoi FRMT → pas de classement possible : l'étape 3 est
+  const set = (field: keyof FormData, value: string) => {
+    // Redescendre sur un niveau bas purge les réponses des questions qui ne
+    // seront plus posées (tournois, identité FRMT, techniques) — sinon un
+    // aller-retour Expert→Novice garderait un frmt_full_name fantôme.
+    if (field === 'estimatedLevel' && LOW_LEVELS.includes(value)) {
+      setFrmtTaken(false);
+      setFrmtPreview(null);
+      setFormData(prev => ({
+        ...prev, estimatedLevel: value,
+        tournaments: '', hasFrmtRank: '', frmtFirstName: '', frmtLastName: '', frmtBirthYear: '',
+        techniques: [],
+      }));
+      return;
+    }
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // « Jamais » de tournoi fédéral → pas de classement possible : l'étape 3 est
   // sautée (hasFrmtRank forcé à 'no' au passage 2→4).
   const skipFrmtStep = formData.tournaments === 'Jamais';
 
@@ -387,6 +407,11 @@ export default function SignupScreen() {
       Novice: 0, Débutant: 120, Amateur: 250, Intermédiaire: 420, Avancé: 580, Expert: 725,
     };
     const selfBonus = LEVEL_BONUS[formData.estimatedLevel] ?? 0;
+    // Niveaux bas : les questions tournois/coups ne sont pas posées → plus de
+    // signaux d'activité pour valider la déclaration. On la prend telle quelle :
+    // enjeu faible (plafond Amateur 3.3) et la phase de placement (K=85 sur
+    // 4 matchs) recale vite un optimiste.
+    if (isLowLevel) return 800 + selfBonus;
     // Le NIVEAU déclaré est le seul driver. L'activité (getObjSignal) ne s'ajoute
     // PAS : elle sert uniquement à VALIDER le niveau via getHonestyFactor (une
     // déclaration non soutenue par l'activité est revue à la baisse).
@@ -400,7 +425,7 @@ export default function SignupScreen() {
 
   const canProceed = (s: number) => {
     if (s === 1) return !!(formData.gender && formData.ageGroup && formData.handedness && formData.preferredSide);
-    if (s === 2) return !!(formData.estimatedLevel && formData.frequency && formData.tournaments);
+    if (s === 2) return !!(formData.estimatedLevel && formData.frequency && (isLowLevel || formData.tournaments));
     if (s === 3) {
       // frmtTaken ne bloque PAS : un homonyme légitime doit pouvoir s'inscrire
       // (il continue sans liaison, cf. handleStep3Next / meta).
@@ -570,7 +595,9 @@ export default function SignupScreen() {
     const backBtn = (
       <TouchableOpacity
         onPress={() => setStep(s => {
-          const prev = s - 1 === 3 && skipFrmtStep ? 2 : s - 1;
+          let prev = s - 1;
+          if (s === 5 && isLowLevel) prev = 2;            // niveaux bas : 3 et 4 sautées
+          else if (prev === 3 && skipFrmtStep) prev = 2;  // « Jamais » : 3 sautée
           return Math.max(1, prev);
         })}
         activeOpacity={0.85}
@@ -620,8 +647,13 @@ export default function SignupScreen() {
     if (step === 2) return (
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {backBtn}
-        {nextBtn('Suivant', () => {
-          if (skipFrmtStep) {
+        {nextBtn(isLowLevel ? 'Voir mon niveau' : 'Suivant', () => {
+          if (isLowLevel) {
+            // Niveau bas : ni tournois fédéral, ni techniques → droit à l'étape
+            // finale (les réponses ont été purgées à la sélection du niveau).
+            setFrmtPreview(null);
+            setStep(5);
+          } else if (skipFrmtStep) {
             setFormData(prev => ({ ...prev, hasFrmtRank: 'no', frmtFirstName: '', frmtLastName: '', frmtBirthYear: '' }));
             setFrmtTaken(false);
             setStep(4);
@@ -883,16 +915,20 @@ export default function SignupScreen() {
                     </View>
                   </View>
 
-                  <View>
-                    <Label text="Tournois FRMT ?" tokens={tokens} />
-                    <View style={{ gap: 8 }}>
-                      <Row>
-                        <SelectCard label="Jamais" value="Jamais" field="tournaments" formData={formData} onSet={set} tokens={tokens} />
-                        <SelectCard label="Quelques-uns" value="Oui, quelques-uns" field="tournaments" formData={formData} onSet={set} tokens={tokens} />
-                      </Row>
-                      <SelectCard label="Souvent" value="Oui, souvent" field="tournaments" formData={formData} onSet={set} tokens={tokens} />
+                  {/* Question réservée aux niveaux Intermédiaire+ : un joueur
+                      Novice/Débutant/Amateur n'a pas de parcours fédéral. */}
+                  {!isLowLevel && (
+                    <View>
+                      <Label text="Tournois Fédéral FRMT ?" tokens={tokens} />
+                      <View style={{ gap: 8 }}>
+                        <Row>
+                          <SelectCard label="Jamais" value="Jamais" field="tournaments" formData={formData} onSet={set} tokens={tokens} />
+                          <SelectCard label="Quelques-uns" value="Oui, quelques-uns" field="tournaments" formData={formData} onSet={set} tokens={tokens} />
+                        </Row>
+                        <SelectCard label="Souvent" value="Oui, souvent" field="tournaments" formData={formData} onSet={set} tokens={tokens} />
+                      </View>
                     </View>
-                  </View>
+                  )}
                 </View>
               )}
 
@@ -905,8 +941,8 @@ export default function SignupScreen() {
                   <Text style={{
                     color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19,
                   }}>
-                    Tu as joué en tournoi FRMT (Fédération Royale Marocaine de Tennis) :
-                    ton classement officiel peut être lié à ton compte.
+                    Tu as joué en tournoi fédéral FRMT (Fédération Royale Marocaine de
+                    Tennis) : ton classement officiel peut être lié à ton compte.
                   </Text>
 
                   {COLLECT_FRMT_IDENTITY && (
@@ -1072,7 +1108,9 @@ export default function SignupScreen() {
                         </Text>
                       </View>
                     )}
-                    {getHonestyFactor() < 0.95 && (
+                    {/* Bandeau « ajusté selon… » : sans objet pour les niveaux
+                        bas (questions non posées, déclaration prise telle quelle). */}
+                    {!isLowLevel && getHonestyFactor() < 0.95 && (
                       <View style={{
                         marginTop: 10,
                         backgroundColor: 'rgba(239,68,68,0.10)',
