@@ -11,7 +11,7 @@ import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { Colors, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
-import { CommunityCard } from '../../components/community/CommunityCard';
+import { isAmbassador } from '../../lib/ambassador';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon } from '../../components/community/icons';
 import { BadgePill } from '../../components/profile/BadgePill';
@@ -210,36 +210,55 @@ export default function HomeScreen() {
         paddingTop: insets.top + 8,
       }}>
         <HeaderActions top={insets.top + 6} right={20} tint="dark" />
-        {/* Loupe recherche — miroir gauche du cluster droit ; ouvre l'écran de recherche joueurs */}
-        <TouchableOpacity
-          onPress={() => router.push('/community/friends' as any)}
-          activeOpacity={0.75}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={{
-            position: 'absolute', top: insets.top + 6, left: 20, zIndex: 20,
-            width: 40, height: 40, borderRadius: 20,
-            backgroundColor: Colors.heroBg,
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Icon name="search" size={20} color={Colors.brand} stroke={2} />
-        </TouchableOpacity>
-        {/* Header — logo PAG MATCH (identique au splash de chargement) */}
+        {/* Coin gauche — loupe (recherche joueurs) + Communauté, miroir du cluster droit */}
+        <View style={{
+          position: 'absolute', top: insets.top + 6, left: 20, zIndex: 20,
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+        }}>
+          <TouchableOpacity
+            onPress={() => router.push('/community/friends' as any)}
+            activeOpacity={0.75}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{
+              width: 40, height: 40, borderRadius: 20,
+              backgroundColor: Colors.heroBg,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Icon name="search" size={20} color={Colors.brand} stroke={2} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/community' as any)}
+            activeOpacity={0.75}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{
+              width: 40, height: 40, borderRadius: 20,
+              backgroundColor: Colors.heroBg,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Icon name="users" size={20} color={Colors.brand} stroke={2} />
+          </TouchableOpacity>
+        </View>
+        {/* Header — logo PAG MATCH centré pleine largeur (identique au splash).
+            Pill légèrement compactée : deux boutons à gauche (fin à 108 px) +
+            cluster droit (dès ~250 px sur 360 dp) — la pill 131 px centrée
+            (114..245) garde ~6 px d'air de chaque côté. */}
         <View style={{ alignItems: 'center', marginBottom: 4 }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: Colors.heroBg,
-            paddingHorizontal: 18, paddingVertical: 9,
+            paddingHorizontal: 10, paddingVertical: 9,
             borderRadius: 999,
           }}>
             <Image
               source={require('../../assets/auth/splash-racket.png')}
-              style={{ width: 26, height: 26 }}
+              style={{ width: 22, height: 22 }}
               resizeMode="contain"
             />
             <Image
               source={require('../../assets/auth/splash-wordmark.png')}
-              style={{ width: 118, height: 26, marginLeft: -8 }}
+              style={{ width: 96, height: 22, marginLeft: -7 }}
               resizeMode="contain"
             />
           </View>
@@ -386,7 +405,7 @@ export default function HomeScreen() {
                   en-dessous, c'est le ScrollView qui prend le relais. */}
 
               {/* B. Hero profil — ~3/7,6 de la hauteur */}
-              <View style={{ flex: 3, minHeight: compact ? 184 : 214 }}>
+              <View style={{ flex: 3, minHeight: (isAmbassador(player) ? 14 : 0) + (compact ? 184 : 214) }}>
                 <HomeProfileCard
                   name={player.name}
                   elo={player.elo_score}
@@ -396,6 +415,7 @@ export default function HomeScreen() {
                   frmt={formatFrmtRanking(player)}
                   onPress={() => router.push(`/player/${player.id}` as any)}
                   compact={compact}
+                  memberNumber={isAmbassador(player) ? player.member_number : null}
                 />
               </View>
 
@@ -407,8 +427,8 @@ export default function HomeScreen() {
                 />
               </View>
 
-              {/* D. Prochain match — ~2,2/7,6 */}
-              <View style={{ flex: 2.2, minHeight: compact ? 148 : 168 }}>
+              {/* D. Prochain match — ~2,2/7,6 (plancher relevé : slots joueurs 40 px) */}
+              <View style={{ flex: 2.2, minHeight: compact ? 162 : 180 }}>
                 <UpcomingMatchCard
                   game={visibleUpcoming[0] ?? null}
                   count={visibleUpcoming.length}
@@ -441,10 +461,6 @@ export default function HomeScreen() {
                 />
               </View>
 
-              {/* F. Communauté — ~0,8/7,6 */}
-              <View style={{ flex: 0.8, minHeight: compact ? 58 : 60 }}>
-                <CommunityCard />
-              </View>
             </View>
             </ScrollView>
           </>

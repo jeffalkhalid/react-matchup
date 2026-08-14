@@ -8,6 +8,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { occupiesSpot } from '../../lib/games';
+import { matchNature } from '../../lib/matchView';
+import { NaturePill } from '../profile/components';
 import { Icon } from '../community/icons';
 import type { OpenGame } from '../../types';
 
@@ -56,36 +58,36 @@ function initials(name: string): string {
 function PlayerSlot({ p, team }: { p: SlotPlayer | null; team: 'A' | 'B' }) {
   const dark = team === 'A';
   return (
-    <View style={{ alignItems: 'center', width: 46 }}>
+    <View style={{ alignItems: 'center', width: 60 }}>
       {p ? (
         <>
           <View style={{
-            width: 28, height: 28, borderRadius: 999,
+            width: 40, height: 40, borderRadius: 999,
             backgroundColor: dark ? Colors.primary : Colors.brand,
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 11, color: dark ? '#FFFFFF' : Colors.primary, includeFontPadding: false }}>
+            <Text style={{ fontFamily: Fonts.display, fontSize: 15, color: dark ? '#FFFFFF' : Colors.primary, includeFontPadding: false }}>
               {initials(p.name)}
             </Text>
           </View>
-          <View style={{ backgroundColor: dark ? Colors.brand : Colors.primary, borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1, marginTop: -7 }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 7.5, color: dark ? Colors.primary : Colors.brand }}>
+          <View style={{ backgroundColor: dark ? Colors.brand : Colors.primary, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -8 }}>
+            <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 9, color: dark ? Colors.primary : Colors.brand }}>
               {eloToLevel(p.elo).toFixed(1)}
             </Text>
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 8.5, color: Colors.textSecondary, marginTop: 2, maxWidth: 46 }}>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: Colors.textSecondary, marginTop: 3, maxWidth: 60 }}>
             {p.name.split(/\s+/)[0]}
           </Text>
         </>
       ) : (
         <>
           <View style={{
-            width: 28, height: 28, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed',
+            width: 40, height: 40, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed',
             borderColor: Colors.textMuted, alignItems: 'center', justifyContent: 'center',
           }}>
-            <Icon name="plus" size={12} color={Colors.textMuted} stroke={2} />
+            <Icon name="plus" size={16} color={Colors.textMuted} stroke={2} />
           </View>
-          <Text style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 8.5, color: Colors.textMuted, marginTop: 11 }}>
+          <Text style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: Colors.textMuted, marginTop: 13 }}>
             Libre
           </Text>
         </>
@@ -159,16 +161,13 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
               </Text>
             </View>
 
-            {/* Club + format */}
+            {/* Club + nature du match (défi / compétitif / amical — même pastille que MatchCard) */}
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
                 {game.location || 'Lieu à définir'}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                <Icon name="users" size={11} color={Colors.textMuted} stroke={2.2} />
-                <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted }}>
-                  {`Format ${game.game_format === 'singles' ? '1v1' : '2v2'}${game.is_challenge ? ' · Défi' : ''}`}
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, alignSelf: 'flex-start' }}>
+                <NaturePill {...matchNature(game)} />
               </View>
             </View>
 
@@ -184,8 +183,8 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
               <View style={{ flexDirection: 'row', gap: 4 }}>
                 {slots(teams.A, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `a${i}`} p={p} team="A" />)}
               </View>
-              <View style={{ width: 26, height: 26, borderRadius: 999, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 9, color: Colors.textSecondary }}>VS</Text>
+              <View style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 10, color: Colors.textSecondary }}>VS</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 4 }}>
                 {slots(teams.B, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `b${i}`} p={p} team="B" />)}
