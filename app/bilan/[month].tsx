@@ -8,6 +8,7 @@ import { track } from '../../lib/analytics';
 import { postBilan } from '../../lib/activityFeed';
 import { getMonthlyRecap, getRecapMonths, getLatestRecapMonth, type MonthlyRecap } from '../../lib/bilan';
 import { GradientBg } from '../../components/bilan/GradientBg';
+import { Icon } from '../../components/community/icons';
 import { StoryProgress } from '../../components/bilan/StoryProgress';
 import { SlideCover } from '../../components/bilan/slides/SlideCover';
 import { SlideVolume } from '../../components/bilan/slides/SlideVolume';
@@ -123,7 +124,7 @@ export default function BilanScreen() {
         )}
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 8 }}>
           <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 20, color: darkText ? '#0A0A0A' : '#FFFFFF' }}>✕</Text>
+            <Icon name="x" size={22} color={darkText ? '#0A0A0A' : '#FFFFFF'} stroke={2.5} />
           </TouchableOpacity>
         </View>
 

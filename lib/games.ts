@@ -145,3 +145,30 @@ export function freeSpots(game: {
   ).length;
   return Math.max(0, 4 - occupied);
 }
+
+/** Invitations en cours (non expirées), hors créateur. */
+export function pendingInviteCount(game: {
+  creator_id: string;
+  participants?: { player_id: string; status: string; invite_expires_at?: string | null }[] | null;
+}): number {
+  return (game.participants ?? []).filter(
+    p => isInviteActive(p) && p.player_id !== game.creator_id,
+  ).length;
+}
+
+// ─── Source de vérité UNIQUE : libellé des places d'une partie ───────────────
+// (messages de partage + cartes + fiche détail). Une place tenue par une
+// invitation EN COURS bloque la jonction (anti-overbooking) mais n'est JAMAIS
+// annoncée « Complet » : l'invité peut refuser. On affiche « en attente de
+// réponse » tant que les 4 joueurs ne sont pas tous confirmés.
+export function spotsLabel(game: {
+  creator_id: string;
+  spots_available?: number | null;
+  participants?: { player_id: string; status: string; invite_expires_at?: string | null }[] | null;
+}): string {
+  const free = freeSpots(game);
+  if (free > 0) return `${free} place${free > 1 ? 's' : ''} dispo`;
+  const pending = pendingInviteCount(game);
+  if (pending > 0) return `${pending} place${pending > 1 ? 's' : ''} en attente de réponse`;
+  return 'Complet';
+}

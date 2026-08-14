@@ -14,7 +14,11 @@ import type {
 // activegame-landing) : elle tente d'ouvrir l'app Android via le scheme
 // `pagmatch://`, et retombe sur la landing + bouton APK si l'app n'est pas
 // installée. UNE seule ligne à changer ici si le domaine évolue.
-export const SHARE_BASE = 'https://pagmatch.com';
+// `www` obligatoire : le domaine nu (apex) vit sur une seule IP Vercel que
+// certains FAI (caches DNS obsolètes, ex. opérateurs marocains) résolvent mal
+// → ERR_CONNECTION_ABORTED ; `www` passe par le CNAME Vercel et évite aussi
+// la redirection 308 apex→www sur chaque lien partagé.
+export const SHARE_BASE = 'https://www.pagmatch.com';
 // Libellé de marque affiché en watermark des stories (décoratif).
 export const SHARE_LABEL = 'pagmatch.com';
 export const REFERRAL_GOAL = 3; // 3 amis parrainés = Trophée Parrain

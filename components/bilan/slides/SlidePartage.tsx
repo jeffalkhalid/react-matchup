@@ -5,6 +5,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { Fonts } from '../../../lib/theme';
+import { Icon } from '../../community/icons';
 import type { MonthlyRecap } from '../../../lib/bilan';
 
 const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -120,10 +121,11 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
           onPress={onPost}
           disabled={busy || posted}
           activeOpacity={0.85}
-          style={{ backgroundColor: '#0A0A0A', borderRadius: 13, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
+          style={{ backgroundColor: '#0A0A0A', borderRadius: 13, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10 }}
         >
+          <Icon name={posted ? 'check' : 'share'} size={15} color="#FFC11A" stroke={2} />
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: '#FFC11A' }}>
-            {posted ? '✓ Publie dans ton fil' : busy ? 'Publication…' : 'Partager mon bilan'}
+            {posted ? 'Publie dans ton fil' : busy ? 'Publication…' : 'Partager mon bilan'}
           </Text>
         </TouchableOpacity>
 
@@ -147,8 +149,9 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
           onPress={saveImg}
           disabled={exporting}
           activeOpacity={0.85}
-          style={{ backgroundColor: '#FFFFFF', borderRadius: 13, paddingVertical: 14, alignItems: 'center' }}
+          style={{ backgroundColor: '#FFFFFF', borderRadius: 13, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }}
         >
+          <Icon name="download" size={15} color="#0A0A0A" stroke={2} />
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: '#0A0A0A' }}>
             {exporting ? 'Export…' : "Enregistrer l'image"}
           </Text>

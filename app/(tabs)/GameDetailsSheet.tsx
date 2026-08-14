@@ -9,7 +9,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts } from '../../lib/theme';
 import { lobbyGameLink } from '../../lib/community';
-import { isInviteActive } from '../../lib/games';
+import { isInviteActive, spotsLabel } from '../../lib/games';
 import { openInMaps, hasMapTarget } from '../../lib/maps';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
 import { Icon } from '../../components/community/icons';
@@ -250,13 +250,9 @@ async function shareGame(game: EnrichedGame) {
   const typeLabel = game.is_challenge ? 'Défi' : (game as any).game_format === 'friendly' ? 'Amical' : 'Compétitif';
   const minLv = formatPadelLevel(game.min_elo ?? 0);
   const maxLv = formatPadelLevel(game.max_elo ?? 1750);
-  // Places dérivées des vrais joueurs (créateur + acceptés/invités, sur 4),
-  // comme l'UI de la fiche (3 - heldCount) — le compteur stocké peut dériver.
-  const heldCount = (game.participants ?? []).filter(
-    (p: any) => (p.status === 'accepted' || (p.status === 'invited' && isInviteActive(p))) && p.player_id !== game.creator_id,
-  ).length;
-  const spots = Math.max(0, 3 - heldCount);
-  const spotsText = spots === 0 ? 'Complet' : `${spots} place${spots > 1 ? 's' : ''} dispo`;
+  // Libellé partagé (lib/games) : places dérivées des vrais joueurs, et jamais
+  // « Complet » si des invitations sont encore en attente de réponse.
+  const spotsText = spotsLabel(game);
   const creatorObj = game.creator as any;
   const creatorLv = creatorObj ? ` (Niv. ${formatPadelLevel(creatorObj.elo_score ?? 1000)})` : '';
   const creatorLabel = `${creatorObj?.name ?? ''}${creatorLv}`;
@@ -330,6 +326,10 @@ export default function GameDetailsSheet({
   const acceptedCount  = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
   const heldCount      = acceptedCount + invitedPlayers.length;
   const isFull         = 1 + heldCount >= 4;
+  // « Complet » AFFICHÉ seulement quand les 4 joueurs sont tous confirmés :
+  // une place tenue par une invitation en cours peut encore se libérer.
+  // isFull continue de bloquer la jonction (anti-overbooking), lui seul.
+  const confirmedFull  = isFull && invitedPlayers.length === 0;
   const waitlistCount  = (game.participants ?? []).filter((p: any) => p.status === 'waitlist').length;
   const requiredVotes  = Math.min(1 + acceptedCount, 3);
 
@@ -357,8 +357,9 @@ export default function GameDetailsSheet({
   const maxLvl   = formatPadelLevel(game.max_elo ?? 1750);
   const typeLabel = game.is_challenge ? 'Défi' : (game.game_format as string) === 'friendly' ? 'Amical' : 'Compétitif';
 
-  const courtHint = isFull
+  const courtHint = confirmedFull
     ? `🔒 Complet · ${waitlistCount} en attente`
+    : isFull ? `⏳ ${invitedPlayers.length} invitation${invitedPlayers.length > 1 ? 's' : ''} en attente de réponse`
     : mySlot ? `✓ Éq. ${SIDE_TEAM[mySlot]} · ${SIDE_SHORT[mySlot]}`
     : (isCreator || isAccepted) ? '↔ Touchez un slot libre pour changer'
     : outOfLevel ? '⚠ Tapez un slot pour demander'
@@ -595,11 +596,13 @@ export default function GameDetailsSheet({
               )}
               <View style={{
                 marginLeft: 'auto',
-                backgroundColor: isFull ? Colors.danger : (3 - heldCount) <= 1 ? Colors.warning : Colors.success,
+                backgroundColor: confirmedFull ? Colors.danger : isFull || (3 - heldCount) <= 1 ? Colors.warning : Colors.success,
                 borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
               }}>
-                <Text style={{ color: isFull ? Colors.textOnDark : Colors.textPrimary, fontSize: 10, fontWeight: '900' }}>
-                  {isFull ? `Complet · ${waitlistCount} en attente` : `${3 - heldCount} place${(3 - heldCount) > 1 ? 's' : ''} libre${(3 - heldCount) > 1 ? 's' : ''}`}
+                <Text style={{ color: confirmedFull ? Colors.textOnDark : Colors.textPrimary, fontSize: 10, fontWeight: '900' }}>
+                  {confirmedFull ? `Complet · ${waitlistCount} en attente`
+                    : isFull ? `${invitedPlayers.length} en attente de réponse`
+                    : `${3 - heldCount} place${(3 - heldCount) > 1 ? 's' : ''} libre${(3 - heldCount) > 1 ? 's' : ''}`}
                 </Text>
               </View>
             </View>
@@ -611,7 +614,7 @@ export default function GameDetailsSheet({
             {/* Status banners */}
             {(isFull || outOfLevel) && (
               <View style={{ paddingHorizontal: 14, paddingTop: 14, gap: 10 }}>
-                {isFull && !isCreator && !alreadyIn && (
+                {isFull && !isCreator && !alreadyIn && (confirmedFull ? (
                   <View style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 16, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                     <Text style={{ fontSize: 18 }}>🔒</Text>
                     <View style={{ flex: 1 }}>
@@ -619,7 +622,15 @@ export default function GameDetailsSheet({
                       <Text style={{ fontSize: 11, color: Colors.danger, marginTop: 2 }}>Rejoignez la liste d'attente — vous serez prévenu si une place se libère.</Text>
                     </View>
                   </View>
-                )}
+                ) : (
+                  <View style={{ backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a', borderRadius: 16, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                    <Text style={{ fontSize: 18 }}>⏳</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: '#B45309' }}>Places en attente de réponse</Text>
+                      <Text style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>Des invitations sont en cours. Rejoignez la liste d'attente — vous serez prévenu si une place se libère.</Text>
+                    </View>
+                  </View>
+                ))}
                 {outOfLevel && !isFull && (
                   <View style={{ backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a', borderRadius: 16, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                     <Text style={{ fontSize: 18 }}>⚠️</Text>

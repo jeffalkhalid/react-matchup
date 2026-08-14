@@ -24,12 +24,13 @@ import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
 import { HeaderActions } from '../../components/HeaderActions';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, SCORE_WINDOW_MS } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
+import { openInMaps } from '../../lib/maps';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
 import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
-import { Icon } from '../../components/community/icons';
+import { Icon, type IconName } from '../../components/community/icons';
 import { fetchBinomeInvitations, fetchMyApplications, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, type DefiApplication } from '../../lib/defis';
 import { notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 
@@ -92,6 +93,22 @@ function hoursUntil(iso: string): number {
   return Math.round((new Date(iso).getTime() - Date.now()) / 3600000);
 }
 
+// Décompose la date en label (« AUJOURD'HUI » / « DEMAIN » / date courte) + heure
+// « HH:MM » pour le bloc horaire proéminent des cartes.
+function splitDate(iso: string): { label: string; tone: 'today' | 'tomorrow' | 'other'; time: string } {
+  const d = new Date(iso);
+  const today = new Date();
+  const tom = new Date(); tom.setDate(today.getDate() + 1);
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (d.toDateString() === today.toDateString()) return { label: "AUJOURD'HUI", tone: 'today', time };
+  if (d.toDateString() === tom.toDateString()) return { label: 'DEMAIN', tone: 'tomorrow', time };
+  return {
+    label: d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase(),
+    tone: 'other',
+    time,
+  };
+}
+
 // ─── Icons ── (inline components replaced by registry <Icon …>) ──────────────
 
 // ─── Avatar ──────────────────────────────────────────────────
@@ -136,14 +153,37 @@ function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?:
   );
 }
 
-// Type de match : pastille NEUTRE (gris) pour les 3 types — la couleur par type
-// a été retirée du lobby pour l'alléger. Seul le libellé (+ l'icône épées du
-// Défi) distingue le type.
+// Pastille locale aux cartes, style maquette : pleine (noir/jaune) ou contour blanc.
+function CardTag({ bg, fg, border, icon, children }: {
+  bg: string; fg: string; border?: string; icon?: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 3,
+      backgroundColor: bg, borderWidth: 1, borderColor: border ?? bg,
+      paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999,
+    }}>
+      {icon}
+      <Text style={{ color: fg, fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase', fontFamily: Fonts.uiBlack }}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+// Type de match : Défi noir (épées), Compétitif jaune, Amical gris.
 function TypePill({ game }: { game: OpenGame }) {
   const t = getGameType(game);
-  if (t === 'challenge') return <Pill variant="neutral" icon={<Icon name="swords" size={11} color={pillAccent('neutral')} stroke={2.2} />}>Défi</Pill>;
-  if (t === 'friendly')  return <Pill variant="neutral">Amical</Pill>;
-  return <Pill variant="neutral">Compétitif</Pill>;
+  if (t === 'challenge') {
+    return (
+      <CardTag bg={Colors.primary} fg={Colors.textOnDark}
+        icon={<Icon name="swords" size={11} color={Colors.textOnDark} stroke={2.2} />}>
+        Défi
+      </CardTag>
+    );
+  }
+  if (t === 'friendly') return <CardTag bg={Colors.bgCardAlt} fg={Colors.textSecondary} border={Colors.border}>Amical</CardTag>;
+  return <CardTag bg={Colors.brand} fg={Colors.textOnBrand}>Compétitif</CardTag>;
 }
 
 function EloFitPill({ fit }: { fit: EloFit }) {
@@ -461,6 +501,34 @@ function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: str
   );
 }
 
+// ─── Footer action ────────────────────────────────────────────
+// Bouton du pied de carte : icône + libellé (Voir détails · Discussion · Partager).
+function FooterAction({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={(e) => { e.stopPropagation?.(); onPress(); }}
+      style={{
+        flex: 1, height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 4, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+        borderRadius: 10, paddingHorizontal: 4,
+      }}
+      activeOpacity={0.7}
+      accessibilityLabel={label}
+    >
+      <Icon name={icon} size={13} color={Colors.textPrimary} stroke={2.2} />
+      <Text
+        numberOfLines={1}
+        style={{
+          fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textPrimary,
+          letterSpacing: 0.2, textTransform: 'uppercase', flexShrink: 1,
+        }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 // ─── Card styles (StyleSheet to bypass NativeWind JSX transforms) ─
 const cs = StyleSheet.create({
   card: {
@@ -505,8 +573,9 @@ async function shareGame(game: EnrichedGame) {
   const typeLabel = game.is_challenge ? 'Défi' : (game as any).game_format === 'friendly' ? 'Amical' : 'Compétitif';
   const minLv = fmtLevel(game.min_elo ?? 0);
   const maxLv = fmtLevel(game.max_elo ?? 1750);
-  const spots = freeSpots(game);
-  const spotsText = spots === 0 ? 'Complet' : `${spots} place${spots > 1 ? 's' : ''} dispo`;
+  // Libellé partagé (lib/games) : jamais « Complet » si des invitations sont
+  // encore en attente de réponse — cf. spotsLabel.
+  const spotsText = spotsLabel(game);
   const creatorObj = game.creator as any;
   const creatorLv = creatorObj ? ` (Niv. ${fmtLevel(creatorObj.elo_score ?? 1000)})` : '';
   const creatorLabel = `${creatorObj?.name ?? ''}${creatorLv}`;
@@ -553,97 +622,133 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
     }),
   ];
   const levelRange = (game.min_elo || game.max_elo)
-    ? `Niv. ${fmtLevel(game.min_elo ?? 0)}–${fmtLevel(game.max_elo ?? 9999)}`
+    ? `Niveau ${fmtLevel(game.min_elo ?? 0)} – ${fmtLevel(game.max_elo ?? 9999)}`
     : null;
+  const dt = game.match_date ? splitDate(game.match_date) : null;
 
   const showInlineSlots = variant !== 'history' && !!playerId;
-  // Barre du haut neutre (gris fin) — la couleur par type a été retirée.
-  // Le rouge ne subsiste que pour l'état « urgent » (place unique + < 6 h).
-  const stripColor = isUrgent ? Colors.danger : Colors.border;
+
+  // Statut des places en pastille — jamais « Complet » tant que des invitations
+  // attendent une réponse (cf. spotsLabel / freeSpots).
+  const placesPill = variant !== 'history' ? (
+    spotsLeft > 0 ? <CardTag bg={Colors.brand} fg={Colors.textOnBrand}>{spotsLeft} place{spotsLeft > 1 ? 's' : ''}</CardTag>
+    : pendingInviteCount(game) > 0 ? <CardTag bg={Colors.bgCard} fg={pillAccent('warning')} border="rgba(245,158,11,0.50)">En attente</CardTag>
+    : <CardTag bg={Colors.bgCard} fg={Colors.textSecondary} border={Colors.border}>Complet</CardTag>
+  ) : null;
+
+  // Pastille de MON statut (À venir) : demandes à traiter, candidature en cours,
+  // invitation, liste d'attente. « ✓ Inscrit » n'apporte rien dans À venir
+  // (on y est forcément) → on affiche plutôt l'état des places à côté.
+  const myStatusPill = (() => {
+    if (variant !== 'upcoming') return null;
+    if ((game.is_creator || game.my_status === 'accepted') && (game.pending_count ?? 0) > 0) {
+      return <Pill variant="warning">{game.pending_count} demande{(game.pending_count ?? 0) > 1 ? 's' : ''}</Pill>;
+    }
+    if (game.my_status === 'pending') {
+      const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId);
+      const got = (mine as any)?.approvals?.length ?? 0;
+      const acceptedCount = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
+      const required = Math.min(1 + acceptedCount, 3);
+      return <Pill variant="warning">En attente · {got}/{required}</Pill>;
+    }
+    if (game.my_status === 'invited') {
+      // Défi : invité en Team A = binôme du créateur ; Team B = adversaire défié.
+      const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId && p.status === 'invited');
+      const isBinome = game.is_challenge && String((mine as any)?.team_side ?? '').startsWith('A');
+      return <Pill variant="warning">{isBinome ? 'Invitation binôme' : game.is_challenge ? '⚡ Défi reçu' : '✉️ Invité'}</Pill>;
+    }
+    if (game.my_status === 'waitlist') {
+      const wl = (game.participants ?? [])
+        .filter((p: any) => p.status === 'waitlist')
+        .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
+      const idx = wl.findIndex((p: any) => p.player_id === playerId);
+      const pos = idx >= 0 ? idx + 1 : null;
+      return <Pill variant="warning">⏳ {pos ? `${pos === 1 ? '1ʳᵉ' : `${pos}ᵉ`} en attente` : "Liste d'attente"}</Pill>;
+    }
+    return null;
+  })();
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={cs.card}>
-      <View style={{ height: 3, backgroundColor: stripColor }} />
-      <View style={{ padding: 14 }}>
-        {/* Pills row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-            <TypePill game={game} />
-            {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
-              <Pill variant="warning">⚡ ×{(+(game as any).stake_multiplier).toFixed(1)}</Pill>
-            )}
-            {isUrgent && <Pill variant="danger">🔥 {hoursLeft}h</Pill>}
-            {(game as any).gender_pref === 'men'   && <Pill variant="info">♂ Hommes</Pill>}
-            {(game as any).gender_pref === 'women' && <Pill variant="magenta">♀ Femmes</Pill>}
-            {(game as any).gender_pref === 'mixed' && <Pill variant="neutral">⚧ Mixte</Pill>}
+      {/* En-tête sectionné : date + heure (colonne gauche) | pills, club, niveau (droite) */}
+      <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
+        {dt && (
+          <>
+            <View>
+              {/* Ruban date : soudé au bord gauche, arrondi côté droit, légèrement descendu. */}
+              <View style={{ backgroundColor: Colors.primary, marginTop: 10, borderTopRightRadius: 14, borderBottomRightRadius: 14, paddingHorizontal: 11, paddingVertical: 7, alignSelf: 'flex-start' }}>
+                <Text style={{
+                  fontSize: 12, fontFamily: Fonts.uiBlack, letterSpacing: 0.6,
+                  color: dt.tone === 'today' ? Colors.brand : dt.tone === 'tomorrow' ? Colors.success : Colors.textOnDark,
+                }}>
+                  {dt.label}
+                </Text>
+              </View>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 10 }}>
+                <Text style={{ fontSize: 27, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, lineHeight: 31 }}>
+                  {dt.time}
+                </Text>
+              </View>
+            </View>
+            {/* Trait vertical heure | détails — en retrait pour ne pas toucher les autres traits ni le ruban date. */}
+            <View style={{ width: 1, backgroundColor: Colors.border, marginVertical: 12, marginLeft: 6 }} />
+          </>
+        )}
+        <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <TypePill game={game} />
+          {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
+            <CardTag bg={Colors.brand} fg={Colors.textOnBrand}
+              icon={<Icon name="zap" size={11} color={Colors.textOnBrand} fill={Colors.textOnBrand} stroke={2} />}>
+              ×{(+(game as any).stake_multiplier).toFixed(1)}
+            </CardTag>
+          )}
+          {isUrgent && <Pill variant="danger">🔥 {hoursLeft}h</Pill>}
+          {(game as any).gender_pref === 'men'   && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border}>Hommes</CardTag>}
+          {(game as any).gender_pref === 'women' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border}>Femmes</CardTag>}
+          {(game as any).gender_pref === 'mixed' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border}>Mixte</CardTag>}
+          <View style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            {myStatusPill}
+            {placesPill}
           </View>
-          {variant === 'explore' && <EloFitPill fit={fit} />}
-          {variant === 'upcoming' && game.my_status === 'pending' && (() => {
-            const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId);
-            const got = (mine as any)?.approvals?.length ?? 0;
-            const acceptedCount = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
-            const required = Math.min(1 + acceptedCount, 3);
-            return <Pill variant="warning">En attente · {got}/{required}</Pill>;
-          })()}
-          {variant === 'upcoming' && game.my_status === 'invited' && (() => {
-            // Défi : invité en Team A = binôme du créateur ; Team B = adversaire défié.
-            const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId && p.status === 'invited');
-            const isBinome = game.is_challenge && String((mine as any)?.team_side ?? '').startsWith('A');
-            return <Pill variant="warning">{isBinome ? 'Invitation binôme' : game.is_challenge ? '⚡ Défi reçu' : '✉️ Invité'}</Pill>;
-          })()}
-          {variant === 'upcoming' && game.my_status === 'accepted' && (
-            <Pill variant="success">✓ Inscrit</Pill>
-          )}
-          {variant === 'upcoming' && game.my_status === 'waitlist' && (() => {
-            const wl = (game.participants ?? [])
-              .filter((p: any) => p.status === 'waitlist')
-              .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
-            const idx = wl.findIndex((p: any) => p.player_id === playerId);
-            const pos = idx >= 0 ? idx + 1 : null;
-            return <Pill variant="warning">⏳ {pos ? `${pos === 1 ? '1ʳᵉ' : `${pos}ᵉ`} en attente` : "Liste d'attente"}</Pill>;
-          })()}
-          {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (game.pending_count ?? 0) > 0 && (
-            <Pill variant="warning">
-              {game.pending_count} demande{(game.pending_count ?? 0) > 1 ? 's' : ''}
-            </Pill>
-          )}
-        </View>
+          </View>
 
-        {/* Lieu + horaire (colonne gauche) et niveau + places (colonne droite), alignés en haut. */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            {game.location ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                <Icon name="mapPin" size={13} color={Colors.textSecondary} stroke={2.2} />
-                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
-                  {game.location}
-                </Text>
+          {game.location ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); openInMaps(game.location); }}
+              activeOpacity={0.6}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              accessibilityLabel="Itinéraire vers le terrain"
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+            >
+              <View style={{ width: 19, height: 19, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="mapPin" size={11} color={Colors.textOnDark} stroke={2.4} />
               </View>
-            ) : null}
-            {game.match_date ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <Icon name="clock" size={12} color={Colors.textSecondary} stroke={2.2} />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.textSecondary }}>{formatDate(game.match_date)}</Text>
+              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
+                {game.location}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+          {levelRange ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <View style={{ width: 19, height: 19, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="radar" size={11} color={Colors.textOnDark} stroke={2.4} />
               </View>
-            ) : null}
-          </View>
-          {(levelRange || variant !== 'history') && (
-            <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
-              {levelRange ? (
-                <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textSecondary, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                  {levelRange}
-                </Text>
-              ) : null}
-              {variant !== 'history' && (
-                <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 1 }}>
-                  {spotsLeft === 0 ? 'Complet'
-                    : `${spotsLeft} place${spotsLeft > 1 ? 's' : ''} libre${spotsLeft > 1 ? 's' : ''}`}
-                </Text>
+              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 1 }} numberOfLines={1}>
+                {levelRange}
+              </Text>
+              {variant === 'explore' && fit !== 'fit' && (
+                <View style={{ marginLeft: 'auto' }}><EloFitPill fit={fit} /></View>
               )}
             </View>
-          )}
+          ) : null}
         </View>
+      </View>
 
+      {/* Trait de section : en-tête / joueurs (en retrait des bords) */}
+      <View style={{ height: 1, backgroundColor: Colors.border, marginHorizontal: 14 }} />
+
+      <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14 }}>
         {/* Joueurs : équipe A — VS — équipe B */}
         <View style={{ alignItems: 'center' }}>
           {showInlineSlots
@@ -657,7 +762,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
 
         {scorable && (
           <>
-            <View style={{ height: 1, backgroundColor: Colors.bgCardAlt, marginTop: 10, marginBottom: 8 }} />
+            <View style={{ height: 1, backgroundColor: Colors.border, marginTop: 10, marginBottom: 8 }} />
             <TouchableOpacity
               onPress={onScorePress ?? onPress}
               activeOpacity={0.8}
@@ -673,7 +778,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
           const isBinome = game.is_challenge && String((myPart as any).team_side ?? '').startsWith('A');
           return (
             <>
-              <View style={{ height: 1, backgroundColor: Colors.bgCardAlt, marginTop: 10, marginBottom: 8 }} />
+              <View style={{ height: 1, backgroundColor: Colors.border, marginTop: 10, marginBottom: 8 }} />
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation?.(); onDeclineInvitation((myPart as any).id, game.id); }}
@@ -695,44 +800,24 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
             </>
           );
         })()}
-        {!hideActions && game.match_date && variant !== 'history' && (
-          <>
-            <View style={{ height: 1, backgroundColor: Colors.bgCardAlt, marginTop: 10, marginBottom: 8 }} />
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (
-                <TouchableOpacity
-                  onPress={(e) => { e.stopPropagation?.(); openCalendar(game); }}
-                  style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 10 }}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Ajouter au calendrier"
-                >
-                  <Icon name="calendar" size={17} color={Colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              {variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted') && (
-                <TouchableOpacity
-                  onPress={(e) => { e.stopPropagation?.(); router.push(`/chat/${game.id}` as any); }}
-                  style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 10 }}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Discussion"
-                >
-                  <Icon name="message" size={17} color={Colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                onPress={(e) => { e.stopPropagation?.(); shareGame(game); }}
-                style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCardAlt, borderRadius: 10 }}
-                activeOpacity={0.7}
-                accessibilityLabel="Partager"
-              >
-                <Icon name="share" size={17} color={Colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
+        {!hideActions && game.match_date && variant !== 'history' && (() => {
+          const isParticipant = variant === 'upcoming' && (game.is_creator || game.my_status === 'accepted');
+          return (
+            <>
+              <View style={{ height: 1, backgroundColor: Colors.border, marginTop: 10, marginBottom: 8 }} />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <FooterAction icon="calendar" label="Calendrier" onPress={() => openCalendar(game)} />
+                {isParticipant && (
+                  <FooterAction icon="message" label="Discussion" onPress={() => router.push(`/chat/${game.id}` as any)} />
+                )}
+                <FooterAction icon="share" label="Partager" onPress={() => shareGame(game)} />
+              </View>
+            </>
+          );
+        })()}
         {footerSlot ? (
           <View style={{ marginTop: 10, gap: 8 }}>
-            <View style={{ height: 1, backgroundColor: Colors.bgCardAlt, marginBottom: 2 }} />
+            <View style={{ height: 1, backgroundColor: Colors.border, marginBottom: 2 }} />
             {footerSlot}
           </View>
         ) : null}
@@ -2301,6 +2386,15 @@ export default function LobbyScreen() {
       if (!confirmed) throw new Error('CONFLICT_CANCELLED');
     }
 
+    // Défi NON ciblé : seule l'invitation du binôme (Team A) est valide —
+    // Team B se remplit par candidature (defi_apply/defi_accept). Des invites
+    // B arrivaient ici par « Défier » depuis un profil ou un vieux « Rejouer »
+    // (état invisible du wizard) et cassaient le cycle de vie ; le serveur
+    // les refuse aussi désormais (trg_defi_no_b_invite).
+    const isOpenDefi = data.gameType === 'Défi' && data.isTargeted !== true;
+    const invitedPlayers = data.confirmedPlayers
+      .filter(p => !isOpenDefi || String(p.team_side ?? 'A_GAU').startsWith('A'));
+
     const { data: game, error } = await supabase
       .from('open_games')
       .insert({
@@ -2317,14 +2411,14 @@ export default function LobbyScreen() {
         min_elo: data.isTargeted ? null : padelLevelToElo(data.minLevel),
         max_elo: data.isTargeted ? null : padelLevelToElo(data.maxLevel),
         status: data.gameType === 'Défi' ? (data.isTargeted ? 'open' : 'draft') : 'open',
-        spots_available: 3 - data.confirmedPlayers.length,
+        spots_available: 3 - invitedPlayers.length,
       })
       .select('id')
       .single();
 
     if (error || !game) { Alert.alert('Erreur', error?.message ?? 'Création échouée'); throw error; }
 
-    const invites = data.confirmedPlayers.map(p => ({
+    const invites = invitedPlayers.map(p => ({
       game_id: game.id,
       player_id: p.id,
       status: 'invited' as const,
@@ -2338,6 +2432,11 @@ export default function LobbyScreen() {
         // Ne pas avaler : sans cette ligne, le partenaire n'est jamais invité
         // (défi créé mais binôme fantôme, ni notif ni visibilité pour l'invité).
         console.log('[handlePublish] invite insert FAILED', partErr);
+        // Best-effort : ne pas laisser une partie orpheline sans invités.
+        try {
+          if (data.gameType === 'Défi') await cancelDefi(game.id);
+          else await supabase.from('open_games').update({ status: 'cancelled' }).eq('id', game.id);
+        } catch { /* la partie orpheline reste annulable à la main */ }
         Alert.alert('Invitation échouée', `Le partenaire n'a pas pu être invité : ${partErr.message}`);
         throw partErr;
       }
@@ -2628,6 +2727,19 @@ export default function LobbyScreen() {
     const gameType: 'Compétitif' | 'Amical' | 'Défi' = m.is_challenge
       ? 'Défi'
       : m.game_format === 'friendly' ? 'Amical' : 'Compétitif';
+
+    // Rejouer un DÉFI : Team B ne s'invite pas sur un défi ouvert (elle se
+    // remplit par candidature de binôme). Les deux adversaires sont encore
+    // là → défi CIBLÉ (les 4 nommés, chacun accepte, confirmé à 4/4).
+    // Sinon → défi ouvert classique, sans invites B.
+    if (gameType === 'Défi') {
+      if (invites.B0 && invites.B1) {
+        setTargetedMode(true);
+      } else {
+        delete invites.B0;
+        delete invites.B1;
+      }
+    }
 
     setOpenMatch(null);
     setRematchInvites(invites);
