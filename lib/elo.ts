@@ -9,6 +9,7 @@ export const PLACEMENT_MARGIN_BLOWOUT = 2.5; // remplace le ×1.5 d'un blowout e
 export const PLACEMENT_DELTA_CAP = 90;       // borne dure anti-overshoot en placement
 
 // Plancher de fiabilité à 10% (clamp 10..100) → K plafonne à 59, plancher 16.
+// Avec le plafond FIABILITY_CAP=90, le K effectif ne descend plus sous 21.
 // Réplique public.elo_k_factor (elo_per_player_k.sql). En placement (matchs
 // joués < PLACEMENT_MATCHES), le K fiabilité est court-circuité par PLACEMENT_K.
 export function getKFactor(totalMatches: number, fiabilityPct?: number): number {
@@ -23,9 +24,25 @@ export function getKFactor(totalMatches: number, fiabilityPct?: number): number 
   return 16;
 }
 
-// Fiabilité +5 par match, plancher 10, plafond 100.
+// Fiabilité : +5 par match, plancher 10, plafond 90 (l'ELO garde toujours du
+// mouvement). Source de vérité = fiability_decay_cap.sql — garder synchro.
+export const FIABILITY_CAP = 90;
+
 export function getNewFiabilityPct(current: number): number {
-  return Math.min(Math.max(10, current) + 5, 100);
+  return Math.min(Math.max(10, current) + 5, FIABILITY_CAP);
+}
+
+// Décote d'inactivité de la fiabilité : grâce 45 jours puis -2 pts/semaine,
+// plancher 40 (jamais relevant : une fiabilité déjà < 40 reste telle quelle).
+// Miroir de public.fiability_inactivity_decay (fiability_decay_cap.sql) —
+// utilisée pour l'AFFICHAGE et la simulation ; la persistance se fait côté
+// serveur au prochain match (décotée + 5).
+export function getFiabilityDecayed(lastMatchAt: string | null | undefined, fiabilityPct?: number | null): number {
+  const clamped = Math.min(FIABILITY_CAP, Math.max(10, fiabilityPct ?? 10));
+  if (!lastMatchAt) return clamped;
+  const daysSince = (Date.now() - new Date(lastMatchAt).getTime()) / (1000 * 60 * 60 * 24);
+  const weeks = Math.max(0, Math.floor((daysSince - 45) / 7));
+  return Math.max(Math.min(clamped, 40), clamped - 2 * weeks);
 }
 
 export function getInactivityDecay(lastMatchAt: string | null): number {
@@ -147,7 +164,8 @@ export function simulateElo(players: EloPlayerInput[], scoreText?: string | null
   const movement = (p: EloPlayerInput) => {
     const totalMatches = (p.win_count ?? 0) + (p.loss_count ?? 0);
     const isPlacement  = totalMatches < PLACEMENT_MATCHES;
-    const kFactor      = getKFactor(totalMatches, p.fiability_pct);
+    // K sur la fiabilité DÉCOTÉE (miroir serveur : un revenant retrouve un K élevé).
+    const kFactor      = getKFactor(totalMatches, getFiabilityDecayed(p.last_match_at, p.fiability_pct));
     const margin       = isPlacement && marginMultiplier === 1.5
       ? PLACEMENT_MARGIN_BLOWOUT
       : marginMultiplier;
