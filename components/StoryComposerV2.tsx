@@ -12,6 +12,7 @@ import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../lib/theme';
+import { Icon } from './community/icons';
 import StoryCardV2, { STORY_REGISTRY, StoryMode } from './story/StoryStyles';
 import type { StoryPlayer, StoryMatchData, InviteData, StoryToggles, StoryMatchOpts } from './story/storyTheme';
 import { STORY_ACCENTS, DEFAULT_TOGGLES } from './story/storyTheme';
@@ -97,8 +98,8 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
   // Laisse le choix Caméra / Galerie (au lieu d'ouvrir directement la galerie).
   const choosePhotoSource = () => {
     Alert.alert('Ajouter une photo', 'Prends une photo ou choisis-en une dans ta galerie.', [
-      { text: '📸 Prendre une photo', onPress: () => pickPhoto(true) },
-      { text: '🖼️ Galerie', onPress: () => pickPhoto(false) },
+      { text: 'Prendre une photo', onPress: () => pickPhoto(true) },
+      { text: 'Galerie', onPress: () => pickPhoto(false) },
       { text: 'Annuler', style: 'cancel' },
     ]);
   };
@@ -131,7 +132,7 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
       const perm = await MediaLibrary.requestPermissionsAsync();
       if (!perm.granted) { Alert.alert('Permission refusée', 'Active l’accès à la galerie.'); return; }
       await MediaLibrary.saveToLibraryAsync(await capture());
-      Alert.alert('✅ Sauvegardé', 'Ta story est dans la galerie.');
+      Alert.alert('Sauvegardé', 'Ta story est dans la galerie.');
     } catch (e: any) { Alert.alert('Erreur', e?.message ?? 'Échec.'); } finally { setBusy(null); }
   };
 
@@ -143,9 +144,9 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
         {/* header */}
         <View style={{ paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.bgCard }}>
           <TouchableOpacity onPress={onClose} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 18, color: Colors.textSecondary }}>✕</Text>
+            <Icon name="x" size={18} color={Colors.textSecondary} />
           </TouchableOpacity>
-          <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{lockMode ? '📸 Partager le match' : '📸 Ma story'}</Text>
+          <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{lockMode ? (mode === 'member' ? 'Ma carte membre' : 'Partager le match') : 'Ma story'}</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -191,11 +192,13 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 14 }}>
             {mode === 'photo' && (
               <>
-                <TouchableOpacity onPress={() => pickPhoto(true)} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 2, borderColor: Colors.brand, backgroundColor: 'rgba(255,193,26,0.14)' }}>
-                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>📸 Caméra</Text>
+                <TouchableOpacity onPress={() => pickPhoto(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 2, borderColor: Colors.brand, backgroundColor: 'rgba(255,193,26,0.14)' }}>
+                  <Icon name="camera" size={14} color={Colors.brandDeep} stroke={2} />
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>Caméra</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => pickPhoto(false)} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.bg }}>
-                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>🖼️ Galerie</Text>
+                <TouchableOpacity onPress={() => pickPhoto(false)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.bg }}>
+                  <Icon name="image" size={14} color={Colors.textPrimary} stroke={2} />
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Galerie</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -248,8 +251,9 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
                 style={{ flex: 1, height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bg, color: Colors.textPrimary, fontSize: 13 }}
               />
               <TouchableOpacity onPress={bgUri ? () => setBgUri(null) : pickBackground}
-                style={{ height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, borderColor: bgUri ? Colors.brand : Colors.border, backgroundColor: bgUri ? 'rgba(255,193,26,0.14)' : Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: bgUri ? Colors.brandDeep : Colors.textPrimary }}>{bgUri ? '✕ Fond' : '🖼️ Fond'}</Text>
+                style={{ height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, borderColor: bgUri ? Colors.brand : Colors.border, backgroundColor: bgUri ? 'rgba(255,193,26,0.14)' : Colors.bg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                <Icon name={bgUri ? 'x' : 'image'} size={13} color={bgUri ? Colors.brandDeep : Colors.textPrimary} stroke={2} />
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: bgUri ? Colors.brandDeep : Colors.textPrimary }}>Fond</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -258,11 +262,11 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
         {/* CTA */}
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 12, backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt }}>
           <TouchableOpacity onPress={handleSave} disabled={!!busy} style={{ flex: 1, paddingVertical: 13, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
-            {busy === 'save' ? <ActivityIndicator color={Colors.textPrimary} /> : <Text style={{ fontSize: 15 }}>💾</Text>}
+            {busy === 'save' ? <ActivityIndicator color={Colors.textPrimary} /> : <Icon name="download" size={16} color={Colors.textPrimary} stroke={2} />}
             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Sauver</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleShare} disabled={!!busy} style={{ flex: 1.4, paddingVertical: 13, borderRadius: 14, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
-            {busy === 'share' ? <ActivityIndicator color={Colors.textOnDark} /> : <Text style={{ fontSize: 15 }}>📤</Text>}
+            {busy === 'share' ? <ActivityIndicator color={Colors.textOnDark} /> : <Icon name="share" size={16} color={Colors.textOnDark} stroke={2} />}
             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Partager</Text>
           </TouchableOpacity>
         </View>

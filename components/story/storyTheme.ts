@@ -41,6 +41,9 @@ export interface StoryPlayer {
   frmtRank?: string; frmtVerified?: boolean; fiability?: number; fiabilityLabel?: string;
   wins: number; losses: number; winRate: number; streak: number;
   recentForm: Array<'W' | 'L'>; club?: string;
+  memberNumber?: number | null;     // Ambassadeur Cercle des 100
+  memberIssued?: string;            // « ÉMISE 03.2026 »
+  ambassadorsCount?: number | null; // places attribuées (pour « il reste X places »)
 }
 export interface StoryMatchData {
   result: 'win' | 'loss'; sets: Array<[number, number]>;

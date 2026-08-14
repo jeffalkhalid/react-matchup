@@ -5,6 +5,8 @@ import { Colors, Fonts, formatPadelLevel } from '../../lib/theme';
 import { Pill } from '../Pill';
 import { Avatar } from './Avatar';
 import { Chips } from './ui';
+import { isAmbassador } from '../../lib/ambassador';
+import { AmbassadorChip, AmbassadorRing } from '../ambassador/primitives';
 import type { SocialPlayer } from '../../types';
 
 export function PlayerRow({ p, sub, onFollow, onPress, busy }: {
@@ -18,11 +20,26 @@ export function PlayerRow({ p, sub, onFollow, onPress, busy }: {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}>
       {/* Zone joueur cliquable → profil (le bouton Suivre reste indépendant) */}
       <TouchableOpacity onPress={onPress} disabled={!onPress} activeOpacity={0.7} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
-        <Avatar name={p.name} size={46} radius={14} league={p.league} />
+        {isAmbassador(p) ? (
+          <AmbassadorRing size={46} radius={14} surface={Colors.bgCard}>
+            <Avatar name={p.name} size={46} radius={14} league={p.league} />
+          </AmbassadorRing>
+        ) : (
+          <Avatar name={p.name} size={46} radius={14} league={p.league} />
+        )}
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
-            {p.name}
-          </Text>
+          {isAmbassador(p) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
+                {p.name}
+              </Text>
+              <AmbassadorChip number={p.member_number!} />
+            </View>
+          ) : (
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
+              {p.name}
+            </Text>
+          )}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
             <Pill variant="brand">Niv. {formatPadelLevel(p.elo_score)}</Pill>
             {sub || p.mutual != null ? (

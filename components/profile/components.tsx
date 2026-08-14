@@ -7,8 +7,10 @@ import Svg, {
 } from 'react-native-svg';
 import { PM, accentOf, ACCENT, initials, PFonts } from './theme';
 import { Glyph } from './glyphs';
-import { Icon } from '../community/icons';
+import { Icon, type IconName } from '../community/icons';
 import { CreatorCrownBadge } from '../CreatorCrownBadge';
+import { AmbassadorPill } from '../ambassador/primitives';
+import { AMB } from '../../lib/ambassador';
 
 const A = accentOf(ACCENT);
 
@@ -114,7 +116,7 @@ const NATURE_STYLE = {
   amical:     { bg: 'rgba(16,185,129,0.10)', fg: PM.successDk },
 } as const;
 
-function NaturePill({ kind, stake }: { kind: 'defi' | 'competitif' | 'amical'; stake?: number }) {
+export function NaturePill({ kind, stake }: { kind: 'defi' | 'competitif' | 'amical'; stake?: number }) {
   const s = NATURE_STYLE[kind];
   const stakeStr = stake && stake > 1 ? ` ×${stake % 1 === 0 ? stake : stake.toFixed(1)}` : '';
   const label = kind === 'defi' ? `⚡ DÉFI${stakeStr}` : kind === 'amical' ? 'AMICAL' : 'COMPÉTITIF';
@@ -182,12 +184,12 @@ export function MatchCard({ m, onShare, compact = false, onPress, footer, showAc
       {/* Actions / footer personnalisable */}
       {footer ? footer : showActions ? (
         <View style={{ flexDirection: 'row', gap: 7, borderTopWidth: 1, borderTopColor: PM.divider, paddingTop: 10 }}>
-          {([['🔥', 'Vamos', undefined], ['💬', 'Commenter', undefined], ['↗', 'Partager', onShare]] as [string, string, (() => void) | undefined][]).map(([ic, lbl, fn]) => (
+          {([['flame', 'Vamos', undefined], ['message', 'Commenter', undefined], ['share', 'Partager', onShare]] as [IconName, string, (() => void) | undefined][]).map(([ic, lbl, fn]) => (
             <TouchableOpacity key={lbl} activeOpacity={0.7} onPress={fn} style={{
               flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
               borderWidth: 1, borderColor: PM.border, backgroundColor: '#fff', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 4,
             }}>
-              <Text style={{ fontSize: 12 }}>{ic}</Text>
+              <Icon name={ic} size={13} color={PM.sub} stroke={2} />
               {!compact && <Text style={{ fontSize: 11, fontWeight: '700', color: PM.sub }}>{lbl}</Text>}
             </TouchableOpacity>
           ))}
@@ -199,7 +201,7 @@ export function MatchCard({ m, onShare, compact = false, onPress, footer, showAc
 
 // ── Bouton d'action d'une carte de match (Vamos / Commenter / Partager) ─
 export function MatchActionButton({ icon, label, onPress, active, count, compact = false }: {
-  icon: string; label: string; onPress?: () => void; active?: boolean; count?: number; compact?: boolean;
+  icon: IconName; label: string; onPress?: () => void; active?: boolean; count?: number; compact?: boolean;
 }) {
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={{
@@ -207,7 +209,7 @@ export function MatchActionButton({ icon, label, onPress, active, count, compact
       borderWidth: 1, borderColor: active ? A.line : PM.border,
       backgroundColor: active ? A.soft : '#fff', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 4,
     }}>
-      <Text style={{ fontSize: 12 }}>{icon}</Text>
+      <Icon name={icon} size={13} color={active ? A.deep : PM.sub} stroke={2} />
       {!compact && <Text style={{ fontSize: 11, fontWeight: '700', color: active ? A.deep : PM.sub }}>{label}{count ? ` ${count}` : ''}</Text>}
     </TouchableOpacity>
   );
@@ -478,11 +480,14 @@ export function ProfileHeader(props: {
   hideBack?: boolean;
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
   tabBadges?: Partial<Record<TabName, { count?: number; dot?: boolean }>>;
+  ambassador?: number | null;
 }) {
-  const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing } = props;
+  const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing, ambassador } = props;
   const iconBtn = { width: 36, height: 36, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' as const, justifyContent: 'center' as const };
   return (
-    <View style={{ backgroundColor: PM.ink, paddingTop: props.topInset + 8, paddingHorizontal: 18 }}>
+    <View style={{
+      backgroundColor: PM.ink, paddingTop: props.topInset + 8, paddingHorizontal: 18,
+    }}>
       {/* Barre logo + actions */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -516,11 +521,28 @@ export function ProfileHeader(props: {
 
       {/* Identité */}
       <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center' }}>
-        <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: PM.inkSoft }}>
-          <Text style={{ fontFamily: PFonts.anton, fontSize: 30, lineHeight: 39, color: PM.ink }}>{initials(name)}</Text>
-        </View>
+        {ambassador != null ? (
+          <View style={{ borderWidth: 2, borderColor: AMB.gold, borderRadius: 999, padding: 3, alignSelf: 'flex-start' }}>
+            <View style={{
+              width: 72, height: 72, borderRadius: 36, backgroundColor: ACCENT,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontFamily: PFonts.anton, fontSize: 30, lineHeight: 39, color: PM.ink }}>
+                {initials(name)}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: PM.inkSoft }}>
+            <Text style={{ fontFamily: PFonts.anton, fontSize: 30, lineHeight: 39, color: PM.ink }}>{initials(name)}</Text>
+          </View>
+        )}
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3 }}>{name}</Text>
+          {/* Nom + pill Ambassadeur sur la MÊME ligne (maquette) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3 }}>{name}</Text>
+            {ambassador != null && <AmbassadorPill number={ambassador} />}
+          </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: ACCENT }}>{level.toFixed(2)}</Text>

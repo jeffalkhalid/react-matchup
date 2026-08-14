@@ -11,6 +11,9 @@ import {
   StoryMatchOpts, StoryToggles, DEFAULT_TOGGLES,
 } from './storyTheme';
 import { Wordmark, Avatars, BigSets, Invite } from './StoryPrimitives';
+import { MemberCard } from '../ambassador/MemberCard';
+import { DarkGoldBackdrop } from '../ambassador/backdrops';
+import { AMB, AMBASSADOR_LIMIT } from '../../lib/ambassador';
 
 type Base = { width: number; invite: InviteData };
 
@@ -427,17 +430,61 @@ function EditorialLight({ width, player: p, invite }: Base & { player: StoryPlay
 }
 
 /* ── Dispatcher : mode + style → composant ────────────────────────── */
-export type StoryMode = 'profil' | 'match' | 'photo';
+export type StoryMode = 'profil' | 'match' | 'photo' | 'member';
 export interface StoryCardProps {
   width: number; mode: StoryMode; styleId: string;
   player: StoryPlayer; match: StoryMatchData; invite: InviteData; photoUri?: string | null;
   matchOpts?: StoryMatchOpts;
 }
 
+/* ── CARTE MEMBRE (Cercle des 100 — boucle virale) ────────────────── */
+// Fond sombre, carte membre compacte inclinée, compteur de places restantes.
+const CardMember = forwardRef<View, StoryCardProps>(({ player, width }, ref) => {
+  const s = makeScale(width);
+  const H = (width * 16) / 9;
+  const n = player.memberNumber ?? 0;
+  const remaining = player.ambassadorsCount != null
+    ? Math.max(0, AMBASSADOR_LIMIT - player.ambassadorsCount)
+    : null;
+  return (
+    <View ref={ref} collapsable={false}
+      style={{ width, height: H, backgroundColor: AMB.inkDeep, overflow: 'hidden' }}>
+      <DarkGoldBackdrop radius={0} from="#17171A" to={AMB.inkDeep} glowAt="top" />
+      {/* étincelles statiques */}
+      <View style={{ position: 'absolute', top: H * 0.14, left: width * 0.12, width: s(12), height: s(12), borderRadius: 999, backgroundColor: 'rgba(255,209,63,0.6)' }} />
+      <View style={{ position: 'absolute', top: H * 0.22, right: width * 0.10, width: s(9), height: s(9), borderRadius: 999, backgroundColor: 'rgba(255,193,26,0.45)' }} />
+      <View style={{ position: 'absolute', bottom: H * 0.20, left: width * 0.09, width: s(9), height: s(9), borderRadius: 999, backgroundColor: 'rgba(255,193,26,0.4)' }} />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: s(66), gap: s(48) }}>
+        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(30), letterSpacing: s(7), color: AMB.gold }}>
+          CERCLE DES 100
+        </Text>
+        <Text
+          numberOfLines={1} adjustsFontSizeToFit
+          style={{ fontFamily: Fonts.welcome, fontSize: s(108), color: '#FFFFFF', textAlign: 'center', paddingRight: s(12) }}>
+          J'y étais en premier.
+        </Text>
+        <View style={{ transform: [{ rotate: '2deg' }] }}>
+          <MemberCard width={width * 0.72} name={player.name} number={n} issued={player.memberIssued ?? ''} compact />
+        </View>
+        {remaining != null && remaining > 0 && (
+          <Text style={{
+            fontFamily: Fonts.ui, fontSize: s(36), lineHeight: s(54),
+            color: 'rgba(255,255,255,0.65)', textAlign: 'center', maxWidth: width * 0.62,
+          }}>
+            Il reste {remaining} place{remaining > 1 ? 's' : ''} au Cercle des 100 — rejoins-moi sur PagMatch.
+          </Text>
+        )}
+        <Wordmark s={s} />
+      </View>
+    </View>
+  );
+});
+
 export const STORY_REGISTRY: Record<StoryMode, Array<{ id: string; name: string }>> = {
   profil: [{ id: 'dark', name: 'Carte Noire' }, { id: 'trading', name: 'Trading Card' }, { id: 'editorial', name: 'Éditorial' }],
   match: [{ id: 'mhero', name: 'Score Hero' }, { id: 'mticket', name: 'Ticket' }, { id: 'mmin', name: 'Minimal' }],
   photo: [{ id: 'pmatch', name: 'Photo Match' }],
+  member: [{ id: 'member', name: 'Carte Membre' }],
 };
 
 const StoryCardV2 = forwardRef<View, StoryCardProps>(function StoryCardV2(props, ref) {
@@ -453,9 +500,10 @@ const StoryCardV2 = forwardRef<View, StoryCardProps>(function StoryCardV2(props,
     : styleId === 'mmin'
       ? <MinimalMatch width={width} match={match} invite={invite} opts={matchOpts} />
       : <ScoreHero width={width} match={match} invite={invite} opts={matchOpts} />;
+  else if (mode === 'member') content = <CardMember width={width} mode={mode} styleId={styleId} player={player} match={match} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />;
   else content = <PhotoMatch width={width} match={match} invite={invite} photoUri={photoUri} />;
   return <View ref={ref} collapsable={false}>{content}</View>;
 });
 
 export default StoryCardV2;
-export { CardDark, TradingCard, EditorialLight, ScoreHero, Ticket, MinimalMatch, PhotoMatch };
+export { CardDark, TradingCard, EditorialLight, ScoreHero, Ticket, MinimalMatch, PhotoMatch, CardMember };

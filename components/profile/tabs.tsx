@@ -8,13 +8,16 @@ import {
 } from './components';
 import { BadgePill } from './BadgePill';
 import { Icon } from '../community/icons';
+import { LaurelMedallion } from '../ambassador/primitives';
+import { Guilloche, DarkGoldBackdrop } from '../ambassador/backdrops';
+import { AMB, formatMemberNumber } from '../../lib/ambassador';
 
 const A = accentOf(ACCENT);
 
 // ════════════════════════════════════════════════════════════════════
 //  STATS
 // ════════════════════════════════════════════════════════════════════
-export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, losses, streak, form, infoRows, lastMatch, renderFooter, onPlayerPress, fiability, fiabilityLabel, fiabilityColor }: {
+export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, losses, streak, form, infoRows, lastMatch, renderFooter, onPlayerPress, fiability, fiabilityLabel, fiabilityColor, ambassador, onShareCard }: {
   curLevel: number; delta30: number | null; timeline: TimelinePoint[];
   winRate: number; played: number; wins: number; losses: number; streak: number;
   form: ('V' | 'D')[]; infoRows: [string, string][]; lastMatch: MatchView | null; renderFooter: (m: MatchView) => React.ReactNode;
@@ -22,6 +25,8 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
   // Fiabilité du score (confiance ELO, pilote le K) — perdue à la refonte du
   // profil, réintégrée sous le niveau actuel.
   fiability: number; fiabilityLabel: string; fiabilityColor: string;
+  ambassador?: { number: number; since: string } | null;
+  onShareCard?: () => void;
 }) {
   const [filt, setFilt] = useState('10 résultats');
   const slice = filt === '5 résultats' ? timeline.slice(-5) : filt === 'Tous' ? timeline : timeline.slice(-10);
@@ -38,6 +43,68 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
 
   return (
     <View style={{ gap: 14 }}>
+      {ambassador && (
+        <View style={{ gap: 9 }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'baseline',
+            justifyContent: 'space-between', paddingHorizontal: 2,
+          }}>
+            <Text style={{
+              fontFamily: PFonts.uiBlack, fontSize: 11, color: PM.text,
+              letterSpacing: 1, textTransform: 'uppercase',
+            }}>
+              Cercle des 100
+            </Text>
+            <Text style={{ fontFamily: PFonts.uiBold, fontSize: 11, color: PM.muted }}>
+              {formatMemberNumber(ambassador.number)} / 100
+            </Text>
+          </View>
+          <View style={{
+            borderWidth: 1, borderColor: AMB.line45, borderRadius: 18,
+            overflow: 'hidden', backgroundColor: AMB.inkDeep,
+          }}>
+            <DarkGoldBackdrop radius={18} from={AMB.inkCardWarm} to="#08080A" glowAt="topLeft" />
+            <Guilloche opacity={0.035} gap={8} />
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 14,
+              paddingVertical: 15, paddingHorizontal: 16,
+            }}>
+              <LaurelMedallion width={60} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{
+                  fontFamily: PFonts.uiBlack, fontSize: 8.5, letterSpacing: 1.8, color: AMB.gold,
+                }}>
+                  CERCLE DES 100
+                </Text>
+                <Text
+                  numberOfLines={1} adjustsFontSizeToFit
+                  style={{
+                    fontFamily: PFonts.barlow, fontSize: 22, color: '#FFFFFF',
+                    textTransform: 'uppercase', marginTop: 3, marginBottom: 2, paddingRight: 6,
+                  }}>
+                  Ambassadeur {formatMemberNumber(ambassador.number)}
+                </Text>
+                <Text style={{
+                  fontFamily: PFonts.uiSemi, fontSize: 10.5, color: 'rgba(255,255,255,0.55)',
+                }}>
+                  Membre fondateur · depuis {ambassador.since}
+                </Text>
+                {onShareCard && (
+                  <TouchableOpacity onPress={onShareCard} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 7, alignSelf: 'flex-start' }}>
+                    <Icon name="share" size={12} color={AMB.goldDeep} stroke={2} />
+                    <Text style={{
+                      fontFamily: PFonts.uiXBold, fontSize: 11, color: AMB.goldDeep,
+                    }}>
+                      Partager ma carte
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
       {/* Évolution du niveau */}
       <Section title="Évolution du niveau">
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>

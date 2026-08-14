@@ -12,6 +12,8 @@ import { formatFrmtRanking } from '../lib/frmt-match';
 import { getFollowingIds, setFollow } from '../lib/community';
 import { ProfileAvatarButton } from '../components/ProfileAvatarButton';
 import { Icon } from '../components/community/icons';
+import { isAmbassador } from '../lib/ambassador';
+import { AmbassadorChip, AmbassadorRing } from '../components/ambassador/primitives';
 import type { Player } from '../types';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -534,14 +536,27 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
       </View>
 
       {/* Avatar */}
-      <View style={{
-        width: 38, height: 38, borderRadius: 11,
-        backgroundColor: col,
-        alignItems: 'center', justifyContent: 'center',
-        borderWidth: isMe ? 2 : 0, borderColor: Colors.brand,
-      }}>
-        <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(player.name)}</Text>
-      </View>
+      {isAmbassador(player) ? (
+        <AmbassadorRing size={38} radius={11} surface={Colors.bgCard}>
+          <View style={{
+            width: 38, height: 38, borderRadius: 11,
+            backgroundColor: col,
+            alignItems: 'center', justifyContent: 'center',
+            borderWidth: isMe ? 2 : 0, borderColor: Colors.brand,
+          }}>
+            <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(player.name)}</Text>
+          </View>
+        </AmbassadorRing>
+      ) : (
+        <View style={{
+          width: 38, height: 38, borderRadius: 11,
+          backgroundColor: col,
+          alignItems: 'center', justifyContent: 'center',
+          borderWidth: isMe ? 2 : 0, borderColor: Colors.brand,
+        }}>
+          <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(player.name)}</Text>
+        </View>
+      )}
 
       {/* Name + badges + meta */}
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -569,6 +584,7 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
               </View>
             );
           })()}
+          {isAmbassador(player) && <AmbassadorChip number={player.member_number!} />}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           <View style={{ backgroundColor: leagueHex + '18', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1 }}>

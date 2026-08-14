@@ -58,6 +58,7 @@ function RootNavigator() {
         <Stack.Screen name="archived-chats" options={{ presentation: 'card' }} />
         <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
         <Stack.Screen name="bilan/[month]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+        <Stack.Screen name="ambassador-welcome" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
       </Stack.Protected>
     </Stack>
   );

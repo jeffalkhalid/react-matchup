@@ -12,12 +12,15 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
+import { getFiabilityDecayed } from '../../lib/elo';
 import { blockUser, unblockUser, isBlocked, reportContent } from '../../lib/moderation';
 import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../lib/community';
 import { ActivityCard } from '../../components/community/ActivityCard';
 import type { Player, EloHistory, ActivityEvent, Achievement } from '../../types';
 import { getPlayerAchievements } from '../../lib/achievements';
 import { PM } from '../../components/profile/theme';
+import { isAmbassador, memberSinceLabel, issuedLabel, fetchAmbassadorsCount } from '../../lib/ambassador';
+import { AmbassadorRevealOverlay } from '../../components/ambassador/AmbassadorRevealOverlay';
 import {
   ProfileHeader, AchievementFeedCard, MatchActionButton, type TabName, type MatchView, type TimelinePoint, type PlayerLite,
 } from '../../components/profile/components';
@@ -536,6 +539,8 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<StoryMode>('profil');
   const [composerLocked, setComposerLocked] = useState(false);
+  const [ambCount, setAmbCount] = useState<number | null>(null);
+  const [revealDone, setRevealDone] = useState(false);
   const [genderReqPending, setGenderReqPending] = useState<{ requested_gender: string; created_at: string } | null>(null);
   const [genderReqChoice, setGenderReqChoice] = useState<'male' | 'female' | 'other' | ''>('');
   const [genderReqReason, setGenderReqReason] = useState('');
@@ -661,7 +666,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     setProfile(profileData);
 
     // Phase 2 — everything else in parallel
-    const [matchesRes, historyRes, repRes, favRes, rankRes] = await Promise.all([
+    const [matchesRes, historyRes, repRes, favRes, rankRes, ambRes] = await Promise.all([
       supabase
         .from('matches')
         .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, status, game_id,
@@ -680,6 +685,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       profileData
         ? supabase.from('players').select('id', { count: 'exact', head: true }).is('deleted_at', null).gt('elo_score', profileData.elo_score)
         : Promise.resolve({ count: 0 }),
+      fetchAmbassadorsCount(),
     ]);
 
     // Supabase renvoie les relations FK comme tableaux ; cast via unknown (forme runtime ≠ MatchRow).
@@ -688,6 +694,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     setReputation(repRes.data ?? []);
     setIsFav(!!favRes.data);
     setRankPos((rankRes.count ?? 0) + 1);
+    setAmbCount(ambRes);
     getPlayerActivity(id).then(setActivity);
     getPlayerAchievements(id).then(setAchievements);
     loadBinomes();
@@ -913,8 +920,9 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const lvlPct     = nextLvl ? (curLevel - prevLvl) / (nextLvl - prevLvl) : 1.0;
   const lvlToNext  = nextLvl ? Math.max(0.01, nextLvl - curLevel) : 0;
 
-  // Fiability
-  const fib      = profile.fiability_pct ?? 50;
+  // Fiability — valeur EFFECTIVE : décote d'inactivité appliquée en direct
+  // (la colonne n'est re-persistée qu'au prochain match, cf. fiability_decay_cap.sql).
+  const fib      = getFiabilityDecayed(profile.last_match_at, profile.fiability_pct ?? 50);
   const fibLabel = fib >= 85 ? 'EXCELLENT' : fib >= 75 ? 'FIABLE' : fib >= 50 ? 'MOYEN' : 'FAIBLE';
   const fibColor = fib >= 75 ? Colors.success : fib >= 50 ? Colors.primary : Colors.danger;
 
@@ -1163,6 +1171,9 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     wins, losses, winRate, streak,
     recentForm: recentForm as ('W' | 'L')[],
     club: clubLabel ?? undefined,
+    memberNumber: profile?.member_number ?? null,
+    memberIssued: issuedLabel(profile?.created_at),
+    ambassadorsCount: ambCount,
   };
   const storyInvite: InviteData = {
     cta: 'Rejoins-moi sur',
@@ -1257,13 +1268,13 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     const reacted = !!myId && fireArr.includes(myId);
     const btns: ReactNode[] = [];
     if (ev && !isSelf) {
-      btns.push(<MatchActionButton key="vamos" icon="🔥" label="Vamos" active={reacted} count={fireArr.length} onPress={() => reactToActivity(ev.id)} />);
+      btns.push(<MatchActionButton key="vamos" icon="flame" label="Vamos" active={reacted} count={fireArr.length} onPress={() => reactToActivity(ev.id)} />);
     }
     if (ev) {
-      btns.push(<MatchActionButton key="comment" icon="💬" label="Commenter" count={ev.comment_count} onPress={() => router.push(`/community/comments/${ev.id}` as any)} />);
+      btns.push(<MatchActionButton key="comment" icon="message" label="Commenter" count={ev.comment_count} onPress={() => router.push(`/community/comments/${ev.id}` as any)} />);
     }
     if (isSelf) {
-      btns.push(<MatchActionButton key="share" icon="↗" label="Partager" onPress={() => onShareMatchView(mv)} />);
+      btns.push(<MatchActionButton key="share" icon="share" label="Partager" onPress={() => onShareMatchView(mv)} />);
     }
     if (btns.length === 0) return null;
     return <View style={{ flexDirection: 'row', gap: 7, borderTopWidth: 1, borderTopColor: PM.divider, paddingTop: 10 }}>{btns}</View>;
@@ -1300,6 +1311,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         setTab={setTab}
         topInset={insets.top}
         tabBadges={isSelf ? { 'Binômes': { count: binomeIncoming.length, dot: binomeNewAccepted } } : undefined}
+        ambassador={isAmbassador(profile) ? profile.member_number : null}
       />
       <View style={{ backgroundColor: PM.page, borderTopLeftRadius: 20, borderTopRightRadius: 20, marginTop: -2, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 40, minHeight: 420 }}>
         {tab === 'Stats' && (
@@ -1309,6 +1321,10 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
             winRate={winRate} played={totalM} wins={wins} losses={losses}
             streak={streak} form={formVD} infoRows={prefRows} lastMatch={lastMatchView} renderFooter={renderMatchFooter}
             onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }}
+            ambassador={isAmbassador(profile)
+              ? { number: profile.member_number!, since: memberSinceLabel(profile.created_at) }
+              : null}
+            onShareCard={isSelf ? () => { setComposerMode('member'); setComposerLocked(true); setComposerOpen(true); } : undefined}
           />
         )}
         {tab === 'Matchs' && <MatchsTab matches={matchViews} renderFooter={renderMatchFooter} onPlayerPress={(pid) => { if (pid !== id) router.push(`/player/${pid}` as any); }} />}
@@ -1352,6 +1368,14 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       </View>
     </ScrollView>
 
+    {/* Révélation réservée aux VISITEURS : sur son propre profil, pas d'overlay. */}
+    {!revealDone && !isSelf && profile != null && isAmbassador(profile) && (
+      <AmbassadorRevealOverlay
+        number={profile.member_number!}
+        since={memberSinceLabel(profile.created_at)}
+        onDone={() => setRevealDone(true)}
+      />
+    )}
 
     {/* ── Edit profile modal ──────────────────────────────────── */}
     <Modal visible={editOpen} transparent animationType="slide" onRequestClose={() => setEditOpen(false)}>

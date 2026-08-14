@@ -43,6 +43,7 @@ export interface Player {
   push_token?: string | null;
   deleted_at?: string | null;
   created_at: string;
+  member_number?: number | null; // Ambassadeur « Cercle des 100 » : rang d'inscription 1-100, à vie
 }
 
 export interface Match {

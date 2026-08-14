@@ -1,5 +1,5 @@
 import { Tabs, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TouchableOpacity, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
@@ -10,6 +10,7 @@ import { useGameChats } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
 import { fetchUnreadCounts } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
+import { AMB_REVEAL_SEEN_KEY, isAmbassador } from '../../lib/ambassador';
 import HelpCenter from '../../components/HelpCenter';
 import OnboardingCarousel from '../../components/OnboardingCarousel';
 import { GUIDE_KEY } from '../../lib/guideTheme';
@@ -121,6 +122,25 @@ export default function TabLayout() {
     AsyncStorage.setItem(GUIDE_KEY, '1');
     setHasSeenOnboarding(true);
   };
+
+  // Révélation Cercle des 100 : une fois, après l'onboarding. Le `ref` évite un
+  // double push si l'effet se ré-exécute avant que la clé AsyncStorage (posée
+  // par l'écran lui-même dès son affichage) ne soit relue. On stocke l'id du
+  // joueur déclenché (pas un booléen) pour se ré-armer si l'identité change
+  // (multi-comptes sur le même appareil) — une tentative max par joueur et par
+  // session, jamais bloquée par le déclenchement d'un joueur précédent.
+  const ambRevealTriggeredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!player?.id || !isAmbassador(player) || hasSeenOnboarding !== true) return;
+    if (ambRevealTriggeredRef.current === player.id) return;
+    (async () => {
+      const seen = await AsyncStorage.getItem(AMB_REVEAL_SEEN_KEY(player.id));
+      if (!seen && ambRevealTriggeredRef.current !== player.id) {
+        ambRevealTriggeredRef.current = player.id;
+        router.push('/ambassador-welcome');
+      }
+    })();
+  }, [player?.id, player?.member_number, hasSeenOnboarding]);
 
   // Auth redirect is handled by the root _layout.tsx navigator — don't redirect here
   // as router.replace('/') from within tabs resolves to (tabs)/index, not app/index.tsx
