@@ -1,6 +1,7 @@
 import { View, Text } from 'react-native';
 import { Fonts } from '../../../lib/theme';
 import type { MonthlyRecap } from '../../../lib/bilan';
+import { bilanTone, formeCardLine } from '../../../lib/bilanCopy';
 
 // Slide 2 — Forme. Winrate en VERT (handoff) ; label "TA FORME" jaune ; carrés V/D vert/rouge (sémantique).
 export function SlideForme({ recap }: { recap: MonthlyRecap }) {
@@ -46,8 +47,8 @@ export function SlideForme({ recap }: { recap: MonthlyRecap }) {
 
       {/* Bottom info card — pinned via marginTop auto */}
       <View style={{ marginTop: 24, backgroundColor: 'rgba(255,193,26,0.12)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.35)', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 }}>
-        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: '#FFC11A' }}>Ta réussite ce mois-ci</Text>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: '#FFFFFF', marginTop: 2 }}>{recap.winRate}% sur {recap.matches} matchs 🥇</Text>
+        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: '#FFC11A' }}>{recap.winRate}% sur {recap.matches} matchs</Text>
+        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: '#FFFFFF', marginTop: 2 }}>{formeCardLine(bilanTone(recap))}</Text>
       </View>
     </View>
   );

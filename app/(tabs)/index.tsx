@@ -15,6 +15,8 @@ import { isAmbassador } from '../../lib/ambassador';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon } from '../../components/community/icons';
 import { BadgePill } from '../../components/profile/BadgePill';
+import { useActiveVoteBadges } from '../../components/profile/BadgeDefsProvider';
+import { isBadgeVisible } from '../../lib/badges';
 import { HomeProfileCard } from '../../components/home/HomeProfileCard';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
@@ -36,7 +38,8 @@ export default function HomeScreen() {
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
-  const [badgeDefs, setBadgeDefs] = useState<any[]>([]);
+  // Badges votables = badge_defs actifs (source unique, pilotée par l'admin) ; MVP exclu du vote.
+  const badgeDefs = useActiveVoteBadges().filter(b => b.key !== 'MVP');
   const [badgeModalMatch, setBadgeModalMatch] = useState<any>(null);
   const [badgeVotes, setBadgeVotes] = useState<Record<string, string[]>>({});
   const [submittingBadges, setSubmittingBadges] = useState(false);
@@ -54,12 +57,6 @@ export default function HomeScreen() {
   const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48;
   const compact = availableH < 575 * Math.max(1, fontScale);
 
-  useEffect(() => {
-    supabase.from('badges').select('*').eq('is_active', true).then(({ data }) => {
-      if (data) setBadgeDefs(data.filter((b: any) => b.label !== 'MVP'));
-    });
-  }, []);
-
   const fetchData = useCallback(async () => {
     if (!player) return;
     const now = new Date().toISOString();
@@ -69,16 +66,18 @@ export default function HomeScreen() {
     const playerOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
 
     const [
-      { count: badges },
+      { data: badgesReceived },
       { data: participations },
       { data: recentMatches },
       { data: alreadyVoted },
       { data: badgeSkips },
       { count: playersAbove },
     ] = await Promise.all([
+      // badge_type ramené (pas un count serveur) : seuls les badges encore
+      // définis ET actifs dans badge_defs comptent (isBadgeVisible).
       supabase
         .from('reputation_votes')
-        .select('id', { count: 'exact', head: true })
+        .select('badge_type')
         .eq('receiver_id', player.id),
       supabase
         .from('game_participants')
@@ -109,7 +108,7 @@ export default function HomeScreen() {
         .gt('elo_score', player.elo_score),
     ]);
 
-    setBadgeCount(badges ?? 0);
+    setBadgeCount((badgesReceived ?? []).filter((b: any) => isBadgeVisible(b.badge_type)).length);
     setMyRank((playersAbove ?? 0) + 1);
 
     const votedIds = new Set((alreadyVoted ?? []).map((v: any) => v.match_id));
@@ -340,12 +339,12 @@ export default function HomeScreen() {
                               )}
                             </View>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-                              {badgeDefs.map((b: any) => {
-                                const sel = myVotes.includes(b.label);
+                              {badgeDefs.map(b => {
+                                const sel = myVotes.includes(b.key);
                                 return (
-                                  <TouchableOpacity key={b.id} onPress={() => toggleBadgeVote(p.id, b.label)} activeOpacity={0.75}
+                                  <TouchableOpacity key={b.key} onPress={() => toggleBadgeVote(p.id, b.key)} activeOpacity={0.75}
                                     style={{ alignItems: 'center', gap: 4, padding: 10, borderRadius: 14, width: 72, borderWidth: 1.5, borderColor: sel ? '#6366f1' : '#e2e8f0', backgroundColor: sel ? '#eef2ff' : '#fff', position: 'relative' }}>
-                                    <BadgePill badge={b.label} size={24} />
+                                    <BadgePill badge={b.key} size={24} />
                                     <Text style={{ fontSize: 8, fontWeight: '900', color: sel ? '#4338ca' : '#94a3b8', textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.3 }}>{b.label}</Text>
                                     {sel && (
                                       <View style={{ position: 'absolute', top: -5, right: -5, width: 14, height: 14, backgroundColor: Colors.primary, borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }}>
@@ -405,7 +404,7 @@ export default function HomeScreen() {
                   en-dessous, c'est le ScrollView qui prend le relais. */}
 
               {/* B. Hero profil — ~3/7,6 de la hauteur */}
-              <View style={{ flex: 3, minHeight: (isAmbassador(player) ? 14 : 0) + (compact ? 184 : 214) }}>
+              <View style={{ flex: 3, minHeight: compact ? 184 : 214 }}>
                 <HomeProfileCard
                   name={player.name}
                   elo={player.elo_score}

@@ -2,7 +2,7 @@
 // un re-render des badges quand la base répond. Les composants lisent un badge
 // via le hook useBadge(key) pour rester à jour sans rechargement de l'app.
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getBadge, loadBadgeDefs, type BadgeDef } from '../../lib/badges';
+import { getActiveVoteBadges, getBadge, loadBadgeDefs, type BadgeDef, type VoteBadge } from '../../lib/badges';
 
 // La valeur = un compteur de version, incrémenté quand les defs changent.
 const BadgeDefsContext = createContext(0);
@@ -21,4 +21,10 @@ export function BadgeDefsProvider({ children }: { children: React.ReactNode }) {
 export function useBadge(key: string): BadgeDef {
   useContext(BadgeDefsContext); // s'abonne aux changements de version
   return getBadge(key);
+}
+
+/** Badges proposables au vote (actifs, triés) ; re-render quand la base répond. */
+export function useActiveVoteBadges(): VoteBadge[] {
+  useContext(BadgeDefsContext); // s'abonne aux changements de version
+  return getActiveVoteBadges();
 }

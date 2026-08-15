@@ -19,11 +19,6 @@ export function SlideVolume({ recap }: { recap: MonthlyRecap }) {
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 32, color: '#10B981', lineHeight: 42, marginTop: -4, paddingRight: 5 }}>matchs en {recap.shortLabel}</Text>
       </View>
 
-      {/* Trend line */}
-      {recap.monthTrend ? (
-        <Text style={{ fontFamily: Fonts.uiBold, fontSize: 14, color: 'rgba(255,255,255,0.85)', lineHeight: 22, marginTop: 18 }}>{recap.monthTrend} 🔥</Text>
-      ) : null}
-
       {/* Bar chart — uniquement s'il y a de quoi comparer (≥ 2 mois) */}
       {recap.barChart6.length >= 2 ? (
         <View style={{ marginTop: 36 }}>

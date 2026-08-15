@@ -1,195 +1,136 @@
 // Carte hero « profil » de l'accueil : identité, niveau + progression, stats fortes.
 // UI pure — toutes les données viennent de l'écran (usePlayer + compte de badges).
-import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Animated } from 'react-native';
-import Svg, { Rect, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
-import {
-  Colors, Fonts, LeagueGradients, eloToLevel, formatPadelLevel, getLeague, getLeagueLabel,
-} from '../../lib/theme';
+// Maquette 2026-08 : nom + pill Ambassadeur, ligne ligue/FRMT, gros niveau jaune
+// avec cible « → 6.50 », barre de progression épaisse, 3 stats (matchs/victoires/badges).
+import React from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { Colors, Fonts, formatPadelLevel, eloToLevel, getLeague, getLeagueLabel } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
-import { AMB, formatMemberNumberShort } from '../../lib/ambassador';
-import { LaurelWreath, LaurelMedallion } from '../ambassador/primitives';
-import { Guilloche, DarkGoldBackdrop } from '../ambassador/backdrops';
-import type { League } from '../../types';
-
-// Avatar rond au dégradé de la ligue du joueur (mêmes LeagueGradients que les
-// listes) : circulaire pour s'insérer dans l'anneau or rond de l'ambassadeur.
-function GradientAvatar({ letter, size = 62, league }: { letter: string; size?: number; league: League }) {
-  const [g0, g1] = LeagueGradients[league];
-  return (
-    <View style={{ width: size, height: size }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <Defs>
-          <SvgLinearGradient id={`homeAvGrad-${league}`} x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={g0} />
-            <Stop offset="1" stopColor={g1} />
-          </SvgLinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width={size} height={size} rx={size / 2} fill={`url(#homeAvGrad-${league})`} />
-      </Svg>
-      <View style={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Text style={{ color: Colors.primary, fontFamily: Fonts.display, fontSize: size * 0.42, includeFontPadding: false }}>
-          {letter.toUpperCase()}
-        </Text>
-      </View>
-    </View>
-  );
-}
+import { AMB } from '../../lib/ambassador';
 
 export function HomeProfileCard({ name, elo, wins, losses, badgeCount, frmt, onPress, compact, memberNumber }: {
   name: string; elo: number; wins: number; losses: number; badgeCount: number;
   frmt?: { text: string; verified: boolean } | null;
   onPress: () => void;
   compact?: boolean;   // petits écrans : typo/paddings réduits pour tenir sans scroll
-  memberNumber?: number | null;   // Ambassadeur « Cercle des 100 » : sceau + sous-titre
+  memberNumber?: number | null;   // Ambassadeur « Cercle des 100 » : pill or à côté du nom
 }) {
   const leagueType = getLeague(elo);
-  const leagueLabel = 'Ligue ' + getLeagueLabel(leagueType);
   const leagueHex = Colors.league[leagueType];
   const level = eloToLevel(elo);
   const total = wins + losses;
   const winPct = total > 0 ? Math.round((wins / total) * 100) : 0;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Progression vers le prochain palier de 0,25 (6.70 → « Vers 6.75 »), saturée à 8.
+  // Progression vers le prochain palier de 0,25 (6.42 → « 6.50 »), saturée à 8.
   const maxed = level >= 8;
   const target = maxed ? 8 : Math.min(8, (Math.floor(level / 0.25 + 1e-9) + 1) * 0.25);
   const progress = maxed ? 1 : Math.min(1, Math.max(0.05, (level - (target - 0.25)) / 0.25));
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 0.35, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
   const stats: { icon: IconName; iconColor: string; value: number | string; label: string }[] = [
-    { icon: 'racket',     iconColor: Colors.brand, value: total,        label: 'MATCHS' },
-    { icon: 'trophy',     iconColor: '#34D399',    value: wins,         label: 'VICTOIRES' },
-    { icon: 'trendingUp', iconColor: Colors.brand, value: `${winPct}%`, label: 'WIN RATE' },
-    { icon: 'medal',      iconColor: '#F59E0B',    value: badgeCount,   label: 'BADGES' },
+    { icon: 'racket', iconColor: Colors.brand, value: total,        label: 'MATCHS' },
+    { icon: 'trophy', iconColor: '#34D399',    value: `${winPct}%`, label: 'VICTOIRES' },
+    { icon: 'medal',  iconColor: Colors.brand, value: badgeCount,   label: 'BADGES' },
   ];
 
   const amb = memberNumber != null;
 
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{
-        backgroundColor: Colors.heroBg, borderRadius: 24, overflow: 'hidden',
-        paddingHorizontal: 17, paddingVertical: compact ? 11 : 14,
-        // Remplit le wrapper proportionnel de l'écran (voir index) ; l'air se
-        // répartit ENTRE identité / niveau / stats.
-        flex: 1, justifyContent: 'space-between',
-        shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
-        shadowOffset: { width: 0, height: 8 }, elevation: 7,
-        ...(amb && { borderWidth: 1, borderColor: AMB.line35 }),
-      }}>
-        {amb && (
-          <>
-            <DarkGoldBackdrop radius={24} from={AMB.inkWarm} to="#0A0A0A" glowAt="topRight" />
-            <Guilloche opacity={0.03} gap={8} />
-          </>
-        )}
-        {/* Accents jaunes très subtils — fond uni SEULEMENT : sur le fond
-            ambassadeur (dégradé + guilloche), ces disques translucides
-            ressortent en gros cercles à bord net. Le DarkGoldBackdrop
-            fournit déjà le halo dans ce mode. */}
-        {!amb && (
-          <>
-            <View pointerEvents="none" style={{ position: 'absolute', top: -50, right: -30, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.14)' }} />
-            <View pointerEvents="none" style={{ position: 'absolute', bottom: -60, left: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.05)' }} />
-          </>
-        )}
+    <View style={{
+      backgroundColor: Colors.heroBg, borderRadius: 24, overflow: 'hidden',
+      paddingHorizontal: 18, paddingVertical: compact ? 12 : 15,
+      // Remplit le wrapper proportionnel de l'écran (voir index) ; l'air se
+      // répartit ENTRE identité / niveau / stats.
+      flex: 1, justifyContent: 'space-between',
+      shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 }, elevation: 7,
+    }}>
+      {/* Fond identique pour tous (l'effet doré ambassadeur a été retiré) :
+          disques jaunes translucides très subtils. */}
+      <View pointerEvents="none" style={{ position: 'absolute', top: -50, right: -30, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.14)' }} />
+      <View pointerEvents="none" style={{ position: 'absolute', bottom: -60, left: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,193,26,0.05)' }} />
 
-        {/* Identité — tap → profil complet */}
-        <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          {amb ? (
-            <View style={{ position: 'relative', paddingBottom: 9, alignSelf: 'flex-start' }}>
-              <View style={{
-                borderWidth: 2, borderColor: AMB.gold, borderRadius: 999, padding: 2.5,
-                shadowColor: AMB.gold, shadowOpacity: 0.22, shadowRadius: 20,
-                shadowOffset: { width: 0, height: 0 },
-              }}>
-                <GradientAvatar letter={name.charAt(0)} size={compact ? 44 : 52} league={leagueType} />
-              </View>
-              <View style={{ position: 'absolute', bottom: -1, left: 0, right: 0, alignItems: 'center' }}>
-                <LaurelWreath width={58} />
-              </View>
+      {/* Identité — tap → profil complet */}
+      <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={{ gap: compact ? 6 : 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text
+            numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            style={{ fontFamily: Fonts.welcome, fontSize: compact ? 23 : 26, lineHeight: compact ? 28 : 32, color: Colors.textOnDark, letterSpacing: 0.3, paddingRight: 5, flexShrink: 1 }}
+          >
+            {name}
+          </Text>
+          {amb && (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 5,
+              borderWidth: 1, borderColor: AMB.gold, borderRadius: 999,
+              paddingHorizontal: 10, paddingVertical: 4,
+            }}>
+              <Icon name="crown" size={11} color={AMB.gold} fill={AMB.gold} stroke={2} />
+              <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10.5, color: AMB.gold, letterSpacing: 0.4 }}>
+                Ambassadeur
+              </Text>
             </View>
-          ) : (
-            <GradientAvatar letter={name.charAt(0)} size={compact ? 46 : 54} league={leagueType} />
           )}
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-              <Animated.View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: leagueHex, opacity: pulseAnim }} />
-              <Text numberOfLines={1} style={{ fontSize: 9.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: leagueHex, textTransform: 'uppercase', letterSpacing: 1.4 }}>
-                {leagueLabel}
-              </Text>
-              {frmt ? (
-                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 9.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: frmt.verified ? '#34D399' : Colors.brandBright, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  {`· FRMT ${frmt.text}${frmt.verified ? ' ✓' : ''}`}
-                </Text>
-              ) : null}
-            </View>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: compact ? 21 : 24, lineHeight: compact ? 25 : 29, color: Colors.textOnDark, letterSpacing: 0.3, paddingRight: 5 }}>
-              {name}
-            </Text>
-            {amb && (
-              <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, color: AMB.gold, letterSpacing: 0.3, marginTop: 4 }}>
-                Membre fondateur · Cercle des 100
-              </Text>
-            )}
-          </View>
-        </TouchableOpacity>
-
-        {/* Niveau + progression vers le palier suivant */}
-        <View style={{ marginTop: compact ? 8 : 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: compact ? 13.5 : 15, color: Colors.brand }}>
-              Niveau {formatPadelLevel(elo)}
-            </Text>
-            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: compact ? 10 : 11, color: 'rgba(255,255,255,0.55)' }}>
-              {maxed ? 'Niveau max' : `Vers ${target.toFixed(2)}`}
-            </Text>
-          </View>
-          <View style={{ marginTop: compact ? 6 : 7, height: compact ? 5 : 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
-            <View style={{ width: `${Math.round(progress * 100)}%`, height: '100%', borderRadius: 999, backgroundColor: Colors.brand }} />
-          </View>
         </View>
-
-        {/* Bande de stats */}
-        <View style={{ flexDirection: 'row', marginTop: compact ? 9 : 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: compact ? 8 : 11 }}>
-          {stats.map((s, i) => (
-            <View key={s.label} style={{ flex: 1, alignItems: 'center', gap: compact ? 3 : 4, borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(255,255,255,0.08)' }}>
-              <Icon name={s.icon} size={compact ? 14 : 16} color={s.iconColor} stroke={2.2} />
-              <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: compact ? 19 : 22, lineHeight: compact ? 23 : 27, letterSpacing: -0.5, color: Colors.textOnDark }}>
-                {s.value}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <Icon name="gem" size={13} color={leagueHex} stroke={2.2} />
+          <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark, textTransform: 'uppercase', letterSpacing: 1.1 }}>
+            Ligue {getLeagueLabel(leagueType)}
+          </Text>
+          {frmt ? (
+            <>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>•</Text>
+              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900', color: frmt.verified ? '#34D399' : 'rgba(255,255,255,0.85)', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                {`FRMT ${frmt.text}${frmt.verified ? ' ✓' : ''}`}
               </Text>
-              <Text style={{ fontFamily: Fonts.uiBold, fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1.1 }}>
-                {s.label}
+            </>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+
+      {/* Niveau : gros chiffre jaune → cible, barre de progression épaisse */}
+      <View style={{ marginTop: compact ? 8 : 10 }}>
+        <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1.4 }}>
+          Niveau
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 2 }}>
+          {/* Pas de lineHeight serré ici : Anton a des ascendantes hautes et
+              iOS rogne le haut des chiffres si la ligne est plus courte que
+              la police — on laisse la hauteur de ligne par défaut. */}
+          <Text style={{ fontFamily: Fonts.display, fontSize: compact ? 30 : 34, letterSpacing: -0.5, color: Colors.brand, includeFontPadding: false }}>
+            {formatPadelLevel(elo)}
+          </Text>
+          {maxed ? (
+            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: 'rgba(255,255,255,0.55)', marginBottom: 6 }}>
+              Niveau max
+            </Text>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+              <Icon name="arrowRight" size={16} color={Colors.brand} stroke={2.4} />
+              <Text style={{ fontFamily: Fonts.display, fontSize: compact ? 18 : 20, color: 'rgba(255,255,255,0.85)' }}>
+                {target.toFixed(2)}
               </Text>
             </View>
-          ))}
+          )}
+        </View>
+        <View style={{ marginTop: compact ? 7 : 9, height: compact ? 7 : 8, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden' }}>
+          <View style={{ width: `${Math.round(progress * 100)}%`, height: '100%', borderRadius: 999, backgroundColor: Colors.brand }} />
         </View>
       </View>
-      {amb && (
-        <View pointerEvents="none" style={{
-          position: 'absolute', top: -14, right: 16, alignItems: 'center',
-          transform: [{ rotate: '-9deg' }],
-          shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 14,
-          shadowOffset: { width: 0, height: 8 }, elevation: 8,
-        }}>
-          <LaurelMedallion width={66} innerFill={AMB.inkWarm} />
-          <Text style={{ fontFamily: Fonts.display, fontSize: 9, color: AMB.gold, marginTop: -4 }}>
-            {formatMemberNumberShort(memberNumber!)}
-          </Text>
-        </View>
-      )}
+
+      {/* Bande de stats — 3 colonnes : matchs, % victoires, badges */}
+      <View style={{ flexDirection: 'row', marginTop: compact ? 9 : 12, paddingTop: compact ? 4 : 6 }}>
+        {stats.map(s => (
+          <View key={s.label} style={{ flex: 1, alignItems: 'center', gap: compact ? 3 : 4 }}>
+            <Icon name={s.icon} size={compact ? 15 : 17} color={s.iconColor} stroke={2.2} />
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: compact ? 20 : 23, lineHeight: compact ? 24 : 28, letterSpacing: -0.5, color: Colors.textOnDark }}>
+              {s.value}
+            </Text>
+            <Text style={{ fontFamily: Fonts.uiBold, fontSize: 8.5, fontWeight: '700', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1.1 }}>
+              {s.label}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }

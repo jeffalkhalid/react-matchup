@@ -49,13 +49,17 @@ export type WeekendGame = {
 };
 
 function nextWeekendBounds(now = new Date()): { from: string; to: string } {
-  // Du samedi 00h au dimanche 23h59 de la semaine en cours / à venir.
+  // Du samedi 00h au dimanche 23h59 du week-end en cours / à venir.
+  // Le dimanche, le week-end courant a commencé la veille (sinon on sauterait
+  // au week-end suivant et les matchs du dimanche même disparaîtraient).
   const d = new Date(now);
   const day = d.getDay(); // 0 dim … 6 sam
-  const daysToSat = (6 - day + 7) % 7; // prochain samedi (0 si on est samedi)
+  const daysToSat = day === 0 ? -1 : (6 - day) % 7;
   const sat = new Date(d); sat.setDate(d.getDate() + daysToSat); sat.setHours(0, 0, 0, 0);
   const sun = new Date(sat); sun.setDate(sat.getDate() + 1); sun.setHours(23, 59, 59, 999);
-  return { from: sat.toISOString(), to: sun.toISOString() };
+  // Borne basse rognée à maintenant : ne jamais proposer un match déjà passé.
+  const from = now > sat ? now : sat;
+  return { from: from.toISOString(), to: sun.toISOString() };
 }
 
 export async function getWeekendGames(uid: string): Promise<WeekendGame[]> {

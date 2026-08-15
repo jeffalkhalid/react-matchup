@@ -417,10 +417,13 @@ export function AchievementMedal({ ach }: { ach: AchievementView }) {
         )}
       </View>
 
+      {/* Majuscules en JS (pas textTransform) : sur Android, uppercase+letterSpacing
+          mesure le texte AVANT transformation et rogne les dernières lettres
+          (« CLUTC », « LÈVE-TÔ ») ; + paddingRight pour le débord italique. */}
       <Text numberOfLines={2} style={{
-        fontFamily: PFonts.barlow, fontSize: 13, lineHeight: 17, letterSpacing: 0.3, textTransform: 'uppercase',
-        color: done ? '#fff' : PM.text, textAlign: 'center', marginTop: 4, paddingHorizontal: 4,
-      }}>{ach.name}</Text>
+        fontFamily: PFonts.barlow, fontSize: 13, lineHeight: 17, letterSpacing: 0.3,
+        color: done ? '#fff' : PM.text, textAlign: 'center', marginTop: 4, paddingHorizontal: 4, paddingRight: 8,
+      }}>{ach.name.toUpperCase()}</Text>
 
       <Text numberOfLines={2} style={{ fontSize: 8.5, color: done ? 'rgba(255,255,255,0.72)' : PM.muted, textAlign: 'center', minHeight: 21, paddingHorizontal: 6 }}>{ach.desc}</Text>
 
@@ -452,7 +455,10 @@ export function AchievementFeedCard({ ach }: { ach: AchievementView }) {
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 9.5, fontWeight: '800', color: ACCENT, letterSpacing: 0.6, textTransform: 'uppercase' }}>🏆 Palmarès débloqué</Text>
-        <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 18, lineHeight: 23, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>{ach.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}
+          style={{ fontFamily: PFonts.barlow, fontSize: 18, lineHeight: 23, color: '#fff', marginTop: 2, paddingRight: 6 }}>
+          {ach.name.toUpperCase()}
+        </Text>
         <Text numberOfLines={1} style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>{ach.desc}</Text>
       </View>
     </View>

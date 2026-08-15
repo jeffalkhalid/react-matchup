@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, TextInput, Alert, StyleSheet, Modal,
-  Share, Linking, Image,
+  Share, Linking, Image, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +30,7 @@ import { openInMaps } from '../../lib/maps';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
 import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
+import { isBadgeVisible } from '../../lib/badges';
 import { Icon, type IconName } from '../../components/community/icons';
 import { fetchBinomeInvitations, fetchMyApplications, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, type DefiApplication } from '../../lib/defis';
 import { notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
@@ -154,17 +155,19 @@ function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?:
 }
 
 // Pastille locale aux cartes, style maquette : pleine (noir/jaune) ou contour blanc.
-function CardTag({ bg, fg, border, icon, children }: {
-  bg: string; fg: string; border?: string; icon?: React.ReactNode; children: React.ReactNode;
+// `s` = échelle liée à la largeur d'écran (1 sur iPhone ≥392 dp, réduit sur Android
+// étroit) pour que 4 pastilles max tiennent côte à côte sur une seule ligne.
+function CardTag({ bg, fg, border, icon, s = 1, children }: {
+  bg: string; fg: string; border?: string; icon?: React.ReactNode; s?: number; children: React.ReactNode;
 }) {
   return (
     <View style={{
-      flexDirection: 'row', alignItems: 'center', gap: 3,
+      flexDirection: 'row', alignItems: 'center', gap: 2,
       backgroundColor: bg, borderWidth: 1, borderColor: border ?? bg,
-      paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999,
+      paddingHorizontal: 4.5 * s, paddingVertical: 2, borderRadius: 999,
     }}>
       {icon}
-      <Text style={{ color: fg, fontSize: 9.5, letterSpacing: 0.3, textTransform: 'uppercase', fontFamily: Fonts.uiBlack }}>
+      <Text style={{ color: fg, fontSize: 8 * s, letterSpacing: 0.2 * s, textTransform: 'uppercase', fontFamily: Fonts.uiBlack }}>
         {children}
       </Text>
     </View>
@@ -172,24 +175,24 @@ function CardTag({ bg, fg, border, icon, children }: {
 }
 
 // Type de match : Défi noir (épées), Compétitif jaune, Amical gris.
-function TypePill({ game }: { game: OpenGame }) {
+function TypePill({ game, s = 1 }: { game: OpenGame; s?: number }) {
   const t = getGameType(game);
   if (t === 'challenge') {
     return (
-      <CardTag bg={Colors.primary} fg={Colors.textOnDark}
-        icon={<Icon name="swords" size={11} color={Colors.textOnDark} stroke={2.2} />}>
+      <CardTag bg={Colors.primary} fg={Colors.textOnDark} s={s}
+        icon={<Icon name="swords" size={10 * s} color={Colors.textOnDark} stroke={2.2} />}>
         Défi
       </CardTag>
     );
   }
-  if (t === 'friendly') return <CardTag bg={Colors.bgCardAlt} fg={Colors.textSecondary} border={Colors.border}>Amical</CardTag>;
-  return <CardTag bg={Colors.brand} fg={Colors.textOnBrand}>Compétitif</CardTag>;
+  if (t === 'friendly') return <CardTag bg={Colors.bgCardAlt} fg={Colors.textSecondary} border={Colors.border} s={s}>Amical</CardTag>;
+  return <CardTag bg={Colors.brand} fg={Colors.textOnBrand} s={s}>Compétitif</CardTag>;
 }
 
-function EloFitPill({ fit }: { fit: EloFit }) {
-  if (fit === 'fit')   return <Pill variant="success">✓ Mon niveau</Pill>;
-  if (fit === 'close') return <Pill variant="warning">⚠ Limite</Pill>;
-  return <Pill variant="danger">Hors niveau</Pill>;
+function EloFitPill({ fit, s = 1 }: { fit: EloFit; s?: number }) {
+  if (fit === 'fit')   return <CardTag bg={Colors.bgCard} fg={pillAccent('success')} border="rgba(16,185,129,0.45)" s={s}>✓ Mon niveau</CardTag>;
+  if (fit === 'close') return <CardTag bg={Colors.bgCard} fg={pillAccent('warning')} border="rgba(245,158,11,0.50)" s={s}>Limite</CardTag>;
+  return <CardTag bg={Colors.bgCard} fg={pillAccent('danger')} border="rgba(239,68,68,0.45)" s={s}>Hors niveau</CardTag>;
 }
 
 // ─── ModePill ─────────────────────────────────────────────────
@@ -508,18 +511,18 @@ function FooterAction({ icon, label, onPress }: { icon: IconName; label: string;
     <TouchableOpacity
       onPress={(e) => { e.stopPropagation?.(); onPress(); }}
       style={{
-        flex: 1, height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        flex: 1, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
         gap: 4, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
         borderRadius: 10, paddingHorizontal: 4,
       }}
       activeOpacity={0.7}
       accessibilityLabel={label}
     >
-      <Icon name={icon} size={13} color={Colors.textPrimary} stroke={2.2} />
+      <Icon name={icon} size={12} color={Colors.textPrimary} stroke={2.2} />
       <Text
         numberOfLines={1}
         style={{
-          fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textPrimary,
+          fontSize: 9, fontFamily: Fonts.uiBlack, color: Colors.textPrimary,
           letterSpacing: 0.2, textTransform: 'uppercase', flexShrink: 1,
         }}
       >
@@ -607,6 +610,10 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   footerSlot?: React.ReactNode;   // contenu additionnel rendu DANS la carte (ex. actions défi)
 }) {
   const router = useRouter();
+  const { width: winW } = useWindowDimensions();
+  // Échelle des pastilles : 1 dès 392 dp (iPhone), réduite proportionnellement
+  // sur les écrans plus étroits (Android 360) pour tenir 4 pastilles par ligne.
+  const ps = Math.min(1, Math.max(0.85, winW / 392));
   const fit = getEloFit(game, myElo);
   const hoursLeft = game.match_date ? hoursUntil(game.match_date) : 0;
   const spotsLeft = freeSpots(game);
@@ -622,7 +629,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
     }),
   ];
   const levelRange = (game.min_elo || game.max_elo)
-    ? `Niveau ${fmtLevel(game.min_elo ?? 0)} – ${fmtLevel(game.max_elo ?? 9999)}`
+    ? `${fmtLevel(game.min_elo ?? 0)} – ${fmtLevel(game.max_elo ?? 9999)}`
     : null;
   const dt = game.match_date ? splitDate(game.match_date) : null;
 
@@ -630,32 +637,36 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
 
   // Statut des places en pastille — jamais « Complet » tant que des invitations
   // attendent une réponse (cf. spotsLabel / freeSpots).
+  // Style contour ambre partagé par les pastilles de statut « en cours ».
+  const warnTag = { bg: Colors.bgCard, fg: pillAccent('warning'), border: 'rgba(245,158,11,0.50)' };
+
   const placesPill = variant !== 'history' ? (
-    spotsLeft > 0 ? <CardTag bg={Colors.brand} fg={Colors.textOnBrand}>{spotsLeft} place{spotsLeft > 1 ? 's' : ''}</CardTag>
-    : pendingInviteCount(game) > 0 ? <CardTag bg={Colors.bgCard} fg={pillAccent('warning')} border="rgba(245,158,11,0.50)">En attente</CardTag>
-    : <CardTag bg={Colors.bgCard} fg={Colors.textSecondary} border={Colors.border}>Complet</CardTag>
+    spotsLeft > 0 ? <CardTag bg={Colors.brand} fg={Colors.textOnBrand} s={ps}>{spotsLeft} place{spotsLeft > 1 ? 's' : ''}</CardTag>
+    : pendingInviteCount(game) > 0 ? <CardTag {...warnTag} s={ps}>En attente</CardTag>
+    : <CardTag bg={Colors.bgCard} fg={Colors.textSecondary} border={Colors.border} s={ps}>Complet</CardTag>
   ) : null;
 
   // Pastille de MON statut (À venir) : demandes à traiter, candidature en cours,
   // invitation, liste d'attente. « ✓ Inscrit » n'apporte rien dans À venir
   // (on y est forcément) → on affiche plutôt l'état des places à côté.
+  // Libellés courts et sans emoji : 4 pastilles max doivent tenir sur la ligne.
   const myStatusPill = (() => {
     if (variant !== 'upcoming') return null;
     if ((game.is_creator || game.my_status === 'accepted') && (game.pending_count ?? 0) > 0) {
-      return <Pill variant="warning">{game.pending_count} demande{(game.pending_count ?? 0) > 1 ? 's' : ''}</Pill>;
+      return <CardTag {...warnTag} s={ps}>{game.pending_count} demande{(game.pending_count ?? 0) > 1 ? 's' : ''}</CardTag>;
     }
     if (game.my_status === 'pending') {
       const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId);
       const got = (mine as any)?.approvals?.length ?? 0;
       const acceptedCount = (game.participants ?? []).filter((p: any) => p.status === 'accepted').length;
       const required = Math.min(1 + acceptedCount, 3);
-      return <Pill variant="warning">En attente · {got}/{required}</Pill>;
+      return <CardTag {...warnTag} s={ps}>Attente {got}/{required}</CardTag>;
     }
     if (game.my_status === 'invited') {
       // Défi : invité en Team A = binôme du créateur ; Team B = adversaire défié.
       const mine = (game.participants ?? []).find((p: any) => p.player_id === playerId && p.status === 'invited');
       const isBinome = game.is_challenge && String((mine as any)?.team_side ?? '').startsWith('A');
-      return <Pill variant="warning">{isBinome ? 'Invitation binôme' : game.is_challenge ? '⚡ Défi reçu' : '✉️ Invité'}</Pill>;
+      return <CardTag {...warnTag} s={ps}>{isBinome ? 'Binôme invité' : game.is_challenge ? 'Défi reçu' : 'Invité'}</CardTag>;
     }
     if (game.my_status === 'waitlist') {
       const wl = (game.participants ?? [])
@@ -663,51 +674,44 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
         .sort((a: any, b: any) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
       const idx = wl.findIndex((p: any) => p.player_id === playerId);
       const pos = idx >= 0 ? idx + 1 : null;
-      return <Pill variant="warning">⏳ {pos ? `${pos === 1 ? '1ʳᵉ' : `${pos}ᵉ`} en attente` : "Liste d'attente"}</Pill>;
+      return <CardTag {...warnTag} s={ps}>{pos ? `${pos === 1 ? '1ʳᵉ' : `${pos}ᵉ`} en attente` : "Liste d'attente"}</CardTag>;
     }
     return null;
   })();
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={cs.card}>
-      {/* En-tête sectionné : date + heure (colonne gauche) | pills, club, niveau (droite) */}
+      {/* En-tête : ruban date + heure (colonne gauche) | pills, club, niveau (droite) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
         {dt && (
           <>
-            <View>
-              {/* Ruban date : soudé au bord gauche, arrondi côté droit, légèrement descendu. */}
-              <View style={{ backgroundColor: Colors.primary, marginTop: 10, borderTopRightRadius: 14, borderBottomRightRadius: 14, paddingHorizontal: 11, paddingVertical: 7, alignSelf: 'flex-start' }}>
-                <Text style={{
-                  fontSize: 12, fontFamily: Fonts.uiBlack, letterSpacing: 0.6,
-                  color: dt.tone === 'today' ? Colors.brand : dt.tone === 'tomorrow' ? Colors.success : Colors.textOnDark,
-                }}>
-                  {dt.label}
-                </Text>
-              </View>
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 10 }}>
-                <Text style={{ fontSize: 27, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, lineHeight: 31 }}>
-                  {dt.time}
-                </Text>
-              </View>
+            {/* Colonne date + heure : compacte, date en noir sans fond. */}
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, gap: 2 }}>
+              <Text style={{ fontSize: 8.5 * ps, fontFamily: Fonts.uiBlack, letterSpacing: 0.3 * ps, color: Colors.textPrimary, textTransform: 'uppercase' }}>
+                {dt.label}
+              </Text>
+              <Text style={{ fontSize: 18, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, lineHeight: 22 }}>
+                {dt.time}
+              </Text>
             </View>
-            {/* Trait vertical heure | détails — en retrait pour ne pas toucher les autres traits ni le ruban date. */}
-            <View style={{ width: 1, backgroundColor: Colors.border, marginVertical: 12, marginLeft: 6 }} />
+            {/* Trait vertical heure | détails — en retrait pour ne pas toucher les traits horizontaux. */}
+            <View style={{ width: 1, backgroundColor: Colors.border, marginVertical: 12 }} />
           </>
         )}
-        <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <TypePill game={game} />
+        <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 8, paddingVertical: 10, gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+          <TypePill game={game} s={ps} />
           {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
-            <CardTag bg={Colors.brand} fg={Colors.textOnBrand}
-              icon={<Icon name="zap" size={11} color={Colors.textOnBrand} fill={Colors.textOnBrand} stroke={2} />}>
+            <CardTag bg={Colors.brand} fg={Colors.textOnBrand} s={ps}
+              icon={<Icon name="zap" size={10 * ps} color={Colors.textOnBrand} fill={Colors.textOnBrand} stroke={2} />}>
               ×{(+(game as any).stake_multiplier).toFixed(1)}
             </CardTag>
           )}
-          {isUrgent && <Pill variant="danger">🔥 {hoursLeft}h</Pill>}
-          {(game as any).gender_pref === 'men'   && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border}>Hommes</CardTag>}
-          {(game as any).gender_pref === 'women' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border}>Femmes</CardTag>}
-          {(game as any).gender_pref === 'mixed' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border}>Mixte</CardTag>}
-          <View style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          {isUrgent && <CardTag bg={Colors.bgCard} fg={pillAccent('danger')} border="rgba(239,68,68,0.45)" s={ps}>🔥 {hoursLeft}h</CardTag>}
+          {(game as any).gender_pref === 'men'   && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Hommes</CardTag>}
+          {(game as any).gender_pref === 'women' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Femmes</CardTag>}
+          {(game as any).gender_pref === 'mixed' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Mixte</CardTag>}
+          <View style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             {myStatusPill}
             {placesPill}
           </View>
@@ -719,26 +723,31 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               activeOpacity={0.6}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
               accessibilityLabel="Itinéraire vers le terrain"
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
             >
-              <View style={{ width: 19, height: 19, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="mapPin" size={11} color={Colors.textOnDark} stroke={2.4} />
+              <View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="mapPin" size={10} color={Colors.textOnDark} stroke={2.4} />
               </View>
-              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
+              <Text style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
                 {game.location}
               </Text>
             </TouchableOpacity>
           ) : null}
           {levelRange ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-              <View style={{ width: 19, height: 19, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="radar" size={11} color={Colors.textOnDark} stroke={2.4} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="signal" size={10} color={Colors.textOnDark} stroke={2.4} />
               </View>
-              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 1 }} numberOfLines={1}>
+              <Text
+                style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3, flexShrink: 1 }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
                 {levelRange}
               </Text>
-              {variant === 'explore' && fit !== 'fit' && (
-                <View style={{ marginLeft: 'auto' }}><EloFitPill fit={fit} /></View>
+              {variant === 'explore' && (
+                <View style={{ marginLeft: 'auto' }}><EloFitPill fit={fit} s={ps} /></View>
               )}
             </View>
           ) : null}
@@ -826,6 +835,25 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   );
 }
 
+
+// Miroir LOCAL de l'UPDATE de handleResolveAccept : adopte le contre-score
+// (score_text + vainqueurs/perdants, ids ET jointures) sur l'objet en mémoire.
+// Sans ça, la carte bascule dans « Matchs passés » avec l'ancien score_text
+// jusqu'au prochain refetch (score contesté affiché avec les mauvais sets).
+function applyCounterLocally(m: Match): Match {
+  if (!m.counter_score_text) return { ...m, status: 'validated' };
+  const players = [m.winner, m.winner_2, m.loser, m.loser_2].filter(Boolean) as NonNullable<Match['winner']>[];
+  const byId = (pid?: string) => players.find(p => p.id === pid);
+  return {
+    ...m,
+    status: 'validated',
+    score_text: m.counter_score_text,
+    winner_id: m.counter_winner_id, winner_id_2: m.counter_winner_id_2,
+    loser_id: m.counter_loser_id, loser_id_2: m.counter_loser_id_2,
+    winner: byId(m.counter_winner_id), winner_2: byId(m.counter_winner_id_2),
+    loser: byId(m.counter_loser_id), loser_2: byId(m.counter_loser_id_2),
+  };
+}
 
 // ─── Pending validation bottom sheet ──────────────────────────
 function PendingValidationSheet({ matches, playerId, onClose, onValidated, onContest, onOpenVote, onResolved }: {
@@ -952,8 +980,6 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
               const isValidated = validatedIds.has(m.id);
               const isValidating = validatingId === m.id;
               const won = m.winner_id === playerId || m.winner_id_2 === playerId;
-              const winnerNames = [m.winner, m.winner_2].filter(Boolean).map(p => displayName(p, won ? 'partner' : 'opponent')).join(' & ') || '?';
-              const loserNames  = [m.loser,  m.loser_2 ].filter(Boolean).map(p => displayName(p, won ? 'opponent' : 'partner')).join(' & ') || '?';
 
               // Contexte du match (lieu · date) — pour savoir QUELLE partie on valide.
               const loc = m.game?.location;
@@ -990,6 +1016,14 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                           {m.counter_score_text} · {iWonCounter ? 'victoire' : 'défaite'}
                         </Text>
                       </View>
+                      {!!m.counter_reason && (
+                        <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: 2 }}>Motif de la contestation</Text>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.textPrimary, fontStyle: 'italic' }}>
+                            « {m.counter_reason} »
+                          </Text>
+                        </View>
+                      )}
                     </View>
                     {disputingId === m.id ? (
                       /* Motif du litige déroulé → confirmation */
@@ -1068,75 +1102,66 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                 );
               }
 
+              // ── Score en attente : MÊME carte que l'historique (source unique
+              // matchToView + <MatchCard>), statut + actions dans le footer.
               return (
-                <View key={m.id} style={{
-                  backgroundColor: isValidated ? 'rgba(16,185,129,0.06)' : Colors.bgCard,
-                  borderWidth: 1, borderColor: isValidated ? 'rgba(16,185,129,0.45)' : Colors.border,
-                  borderRadius: 14, padding: 14, marginBottom: 10,
-                }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Pill variant={isValidated ? 'success' : 'warning'}>
-                        {isValidated ? '✓ Validé' : '⏳ En attente'}
-                      </Pill>
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted }}>
-                        {won ? 'Victoire' : 'Défaite'}
-                      </Text>
-                    </View>
-                    {m.score_text ? (
-                      <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: won ? '#047857' : '#B91C1C' }}>
-                        {m.score_text}
-                      </Text>
-                    ) : null}
-                  </View>
-                  {metaLine}
-                  <View style={{ marginBottom: 12 }}>
-                    <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: '#047857' }} numberOfLines={1}>
-                      🏆 {winnerNames}
-                    </Text>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, marginVertical: 2 }}>vs</Text>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary }} numberOfLines={1}>
-                      {loserNames}
-                    </Text>
-                  </View>
-                  {isValidated ? (
-                    <TouchableOpacity
-                      onPress={onOpenVote}
-                      activeOpacity={0.85}
-                      style={{
-                        backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(99,102,241,0.45)',
-                        borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#4338ca' }}>🏅 Distribue tes badges</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => handleValidate(m)}
-                        disabled={isValidating}
-                        activeOpacity={0.85}
-                        style={{
-                          flex: 1, backgroundColor: Colors.success, borderRadius: 12,
-                          paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
-                        }}
-                      >
-                        {isValidating
-                          ? <ActivityIndicator color={Colors.textOnDark} />
-                          : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Valider</Text>}
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => { onContest(m.id); onClose(); }}
-                        activeOpacity={0.85}
-                        style={{
-                          flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.50)',
-                          borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#B45309' }}>✏️ Contester</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                <View key={m.id} style={{ marginBottom: 10 }}>
+                  <MatchScoreCard
+                    m={matchToView(m, playerId)}
+                    showDelta={false}
+                    footer={
+                      <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Pill variant={isValidated ? 'success' : 'warning'}>
+                            {isValidated ? '✓ Validé' : '⏳ Score à valider'}
+                          </Pill>
+                          {!isValidated && (
+                            <Text style={{ flex: 1, fontSize: 10, fontWeight: '600', color: Colors.textMuted }} numberOfLines={1}>
+                              Valide ou conteste ce score
+                            </Text>
+                          )}
+                        </View>
+                        {isValidated ? (
+                          <TouchableOpacity
+                            onPress={onOpenVote}
+                            activeOpacity={0.85}
+                            style={{
+                              backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(99,102,241,0.45)',
+                              borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#4338ca' }}>🏅 Distribue tes badges</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => handleValidate(m)}
+                              disabled={isValidating}
+                              activeOpacity={0.85}
+                              style={{
+                                flex: 1, backgroundColor: Colors.success, borderRadius: 12,
+                                paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
+                              }}
+                            >
+                              {isValidating
+                                ? <ActivityIndicator color={Colors.textOnDark} />
+                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Valider</Text>}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => { onContest(m.id); onClose(); }}
+                              activeOpacity={0.85}
+                              style={{
+                                flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.50)',
+                                borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+                              }}
+                            >
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#B45309' }}>✏️ Contester</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    }
+                  />
                 </View>
               );
             })}
@@ -1180,7 +1205,8 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
       .select('badge_type, giver:giver_id(name)')
       .eq('match_id', match.id)
       .eq('receiver_id', playerId)
-      .then(({ data }) => setBadges((data ?? []) as any));
+      // Seuls les badges encore définis ET actifs dans badge_defs sont montrés.
+      .then(({ data }) => setBadges(((data ?? []) as any[]).filter(b => isBadgeVisible(b.badge_type)) as any));
   }, [match.id, playerId]);
 
   const won = match.winner_id === playerId || match.winner_id_2 === playerId;
@@ -3192,7 +3218,10 @@ export default function LobbyScreen() {
             router.push('/(tabs)?openBadge=1' as any);
           }}
           onResolved={(matchId, status) => {
-            setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status } : m));
+            // 'validated' = contre-score accepté → adopter TOUT le résultat du
+            // contestataire localement (comme l'UPDATE DB), pas juste le statut.
+            setMatches(prev => prev.map(m => m.id !== matchId ? m
+              : status === 'validated' ? applyCounterLocally(m) : { ...m, status }));
             reloadNotifs();
           }}
         />

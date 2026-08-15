@@ -7,6 +7,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { Fonts } from '../../../lib/theme';
 import { Icon } from '../../community/icons';
 import type { MonthlyRecap } from '../../../lib/bilan';
+import { bilanTone, partageTitle } from '../../../lib/bilanCopy';
 
 const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const firstName = (n: string) => (n || '').split(' ')[0];
@@ -18,6 +19,7 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
   const cardRef = useRef<View>(null);
   const [exporting, setExporting] = useState(false);
   const badgeCount = recap.badges.length;
+  const title = partageTitle(bilanTone(recap));
 
   const captureCard = async (): Promise<string> => {
     return await captureRef(cardRef, { format: 'png', quality: 1, result: 'tmpfile' });
@@ -48,9 +50,9 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
       const p = await MediaLibrary.requestPermissionsAsync();
       if (p.granted) {
         await MediaLibrary.saveToLibraryAsync(uri);
-        Alert.alert('Enregistre', 'Image ajoutee a ta galerie.');
+        Alert.alert('Enregistré', 'Image ajoutée à ta galerie.');
       } else {
-        Alert.alert('Permission refusee', "Autorise l'acces a la galerie pour enregistrer l'image.");
+        Alert.alert('Permission refusée', "Autorise l'accès à la galerie pour enregistrer l'image.");
       }
     } catch {
       Alert.alert('Oups', "Impossible d'enregistrer l'image.");
@@ -66,7 +68,7 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
 
       {/* Title */}
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 42, color: '#0A0A0A', lineHeight: 55, marginTop: 4, paddingRight: 5 }}>
-        Tu as fait <Text style={{ color: '#FFFFFF' }}>un mois</Text> de feu 🔥
+        {title.pre}<Text style={{ color: '#FFFFFF' }}>{title.accent}</Text>{title.post}
       </Text>
 
       {/* Recap card noire — wrapped in ref for capture */}

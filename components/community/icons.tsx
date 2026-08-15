@@ -11,7 +11,7 @@ export type IconName =
   | 'calendar' | 'pencil' | 'heart' | 'eye' | 'flame' | 'map' | 'bookOpen' | 'repeat'
   | 'medal' | 'mail' | 'megaphone' | 'crown' | 'hourglass' | 'star' | 'checkSquare'
   | 'shield' | 'lock' | 'fileText' | 'logOut' | 'trash' | 'racket'
-  | 'download' | 'image';
+  | 'download' | 'image' | 'gem' | 'signal';
 
 export interface IconProps {
   name: IconName;
@@ -59,6 +59,20 @@ export function Icon({ name, size = 24, color = '#0A0A0A', stroke = 2, fill = 'n
         return <G>
           <Path {...common} d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
           <Circle {...common} cx="12" cy="10" r="3" />
+        </G>;
+      case 'signal':
+        return <G>
+          <Path {...common} d="M2 20h.01" />
+          <Path {...common} d="M7 20v-4" />
+          <Path {...common} d="M12 20v-8" />
+          <Path {...common} d="M17 20V8" />
+          <Path {...common} d="M22 4v16" />
+        </G>;
+      case 'gem':
+        return <G>
+          <Path {...common} d="M6 3h12l4 6-10 13L2 9Z" />
+          <Path {...common} d="M11 3 8 9l4 13 4-13-3-6" />
+          <Path {...common} d="M2 9h20" />
         </G>;
       case 'check':
         return <Polyline {...common} points="20 6 9 17 4 12" />;

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, FlatList, Modal, StyleSheet, Switch,
+  Alert, ActivityIndicator, FlatList, LayoutAnimation, Modal, StyleSheet, Switch,
 } from 'react-native';
+import ColorPicker, { HueSlider, Panel1, Preview } from 'reanimated-color-picker';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
@@ -1189,6 +1190,10 @@ export default function AdminScreen() {
 // ─── Badges tab ───────────────────────────────────────────────
 const BADGE_COLOR_PRESETS = ['#E6A21A', '#E5484D', '#F2750A', '#5B6B82', '#1FA8B0', '#7C5CD6', '#16A34A', '#D98A1A'];
 
+// Normalisation d'une saisie hex : # auto, majuscules, caractères hex uniquement.
+const normalizeHex = (v: string) => '#' + v.replace(/[^0-9a-fA-F]/g, '').toUpperCase().slice(0, 6);
+const isValidHex = (v: string) => /^#[0-9A-F]{6}$/.test(v);
+
 interface BadgeRow {
   key: string;
   label: string;
@@ -1262,6 +1267,11 @@ function BadgesTab() {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, BadgeRow>>({});
+  // Cartes repliées par défaut ; une seule dépliée à la fois (accordéon).
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  // Nuancier partagé : cible = 'NEW' (formulaire d'ajout) ou la clé d'un badge.
+  const [pickerTarget, setPickerTarget] = useState<string | null>(null);
+  const [pickerColor, setPickerColor] = useState('#5B6B82');
 
   // Add form state
   const [newKey, setNewKey] = useState('');
@@ -1290,9 +1300,27 @@ function BadgesTab() {
     setDrafts(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   };
 
+  const toggleExpanded = (key: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedKey(k => (k === key ? null : key));
+  };
+
+  const openPicker = (target: string, current: string) => {
+    setPickerColor(isValidHex(current) ? current : '#5B6B82');
+    setPickerTarget(target);
+  };
+
+  const applyPicker = () => {
+    if (!pickerTarget) return;
+    if (pickerTarget === 'NEW') setNewColor(pickerColor);
+    else setDraftField(pickerTarget, 'color', pickerColor);
+    setPickerTarget(null);
+  };
+
   const handleSave = async (rowKey: string) => {
     const draft = drafts[rowKey];
     if (!draft) return;
+    if (!isValidHex(draft.color)) { Alert.alert('Couleur invalide', 'Utilise un code hex complet, ex. #E6A21A.'); return; }
     setSavingKey(rowKey);
     const { error } = await supabase
       .from('badge_defs')
@@ -1300,8 +1328,10 @@ function BadgesTab() {
       .eq('key', rowKey);
     setSavingKey(null);
     if (error) { Alert.alert('Erreur', error.message); return; }
+    // MAJ locale (la base a accepté exactement ces valeurs) : pas de loadRows(),
+    // dont le passage par `loading` démonte la liste et remet le scroll en haut.
+    setRows(prev => prev.map(r => (r.key === rowKey ? { ...draft } : r)).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0)));
     await loadBadgeDefs();
-    await loadRows();
     Alert.alert('', 'Badge enregistré.');
   };
 
@@ -1317,8 +1347,10 @@ function BadgesTab() {
             const { error } = await supabase.from('badge_defs').delete().eq('key', rowKey);
             setSavingKey(null);
             if (error) { Alert.alert('Erreur', error.message); return; }
+            // MAJ locale sans loadRows() : conserve la position de scroll.
+            setRows(prev => prev.filter(r => r.key !== rowKey));
+            setDrafts(prev => { const next = { ...prev }; delete next[rowKey]; return next; });
             await loadBadgeDefs();
-            await loadRows();
           },
         },
       ],
@@ -1327,20 +1359,24 @@ function BadgesTab() {
 
   const handleAdd = async () => {
     if (!newKey.trim() || !newLabel.trim()) { Alert.alert('Erreur', 'La clé et le label sont requis.'); return; }
+    if (!isValidHex(newColor)) { Alert.alert('Couleur invalide', 'Utilise un code hex complet, ex. #E6A21A.'); return; }
     const maxSort = rows.reduce((m, r) => Math.max(m, r.sort ?? 0), 0);
-    setAdding(true);
-    const { error } = await supabase.from('badge_defs').insert({
+    const newRow: BadgeRow = {
       key: newKey.trim(),
       label: newLabel.trim(),
       icon_key: newIconKey,
       color: newColor,
       active: true,
       sort: maxSort + 1,
-    });
+    };
+    setAdding(true);
+    const { error } = await supabase.from('badge_defs').insert(newRow);
     setAdding(false);
     if (error) { Alert.alert('Erreur', error.message); return; }
+    // MAJ locale sans loadRows() : conserve la position de scroll.
+    setRows(prev => [...prev, newRow]);
+    setDrafts(prev => ({ ...prev, [newRow.key]: { ...newRow } }));
     await loadBadgeDefs();
-    await loadRows();
     setNewKey('');
     setNewLabel('');
     setNewIconKey('medal');
@@ -1388,15 +1424,22 @@ function BadgesTab() {
                   style={{ width: 24, height: 24, borderRadius: 999, backgroundColor: c, borderWidth: newColor === c ? 2.5 : 0, borderColor: Colors.textPrimary }} />
               ))}
             </View>
-            <TextInput
-              value={newColor}
-              onChangeText={setNewColor}
-              placeholder="#5B6B82"
-              placeholderTextColor={Colors.textSecondary}
-              style={[sty.scoreInput, { fontSize: 12 }]}
-              autoCapitalize="characters"
-              maxLength={7}
-            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                value={newColor}
+                onChangeText={v => setNewColor(normalizeHex(v))}
+                placeholder="#5B6B82"
+                placeholderTextColor={Colors.textSecondary}
+                style={[sty.scoreInput, { fontSize: 12, flex: 1 }, !isValidHex(newColor) && { borderColor: Colors.danger }]}
+                autoCapitalize="characters"
+                maxLength={7}
+              />
+              <TouchableOpacity onPress={() => openPicker('NEW', newColor)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.bg, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12 }}>
+                <Text style={{ fontSize: 12 }}>🎨</Text>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.textPrimary, fontFamily: Fonts.uiBold }}>Nuancier</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
         <Text style={sty.fieldLabel}>Icône</Text>
@@ -1424,28 +1467,36 @@ function BadgesTab() {
       {rows.map(row => {
         const draft = drafts[row.key] ?? row;
         const saving = savingKey === row.key;
+        const expanded = expandedKey === row.key;
         const iconXml = (ik: string, fill: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BADGE_ICON_VIEWBOX}" fill="${fill}">${BADGE_ICONS[ik] ?? BADGE_ICONS[FALLBACK_ICON_KEY]}</svg>`;
         return (
-          <View key={row.key} style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 16, gap: 12 }}>
-            {/* Clé en lecture seule */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ backgroundColor: Colors.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: Colors.border }}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, fontFamily: Fonts.uiBlack }}>{row.key}</Text>
+          <View key={row.key} style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: expanded ? 16 : 12, gap: expanded ? 12 : 0 }}>
+            {/* En-tête compacte (aperçu live) : tap = déplier/replier l'éditeur */}
+            <TouchableOpacity onPress={() => toggleExpanded(row.key)} activeOpacity={0.7}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <BadgeIconPreview iconKey={draft.icon_key} color={isValidHex(draft.color) ? draft.color : '#CBD5E1'} size={36} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>{draft.label}</Text>
+                <Text style={{ fontSize: 10, color: Colors.textMuted, fontFamily: Fonts.uiBold }}>{row.key}</Text>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>Actif</Text>
-                <Switch
-                  value={draft.active}
-                  onValueChange={v => setDraftField(row.key, 'active', v)}
-                  trackColor={{ false: Colors.border, true: Colors.primary + '88' }}
-                  thumbColor={draft.active ? Colors.primary : Colors.textMuted}
-                />
+              <View style={{ backgroundColor: draft.active ? '#DCFCE7' : '#F1F5F9', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ fontSize: 10, fontWeight: '900', color: draft.active ? '#166534' : '#64748B', fontFamily: Fonts.uiBlack }}>
+                  {draft.active ? 'Actif' : 'Inactif'}
+                </Text>
               </View>
-            </View>
+              <Text style={{ fontSize: 11, color: Colors.textMuted }}>{expanded ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
 
-            {/* Aperçu live */}
-            <View style={{ alignItems: 'center' }}>
-              <BadgeIconPreview iconKey={draft.icon_key} color={draft.color} />
+            {expanded && (<>
+            {/* Actif */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+              <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>Actif</Text>
+              <Switch
+                value={draft.active}
+                onValueChange={v => setDraftField(row.key, 'active', v)}
+                trackColor={{ false: Colors.border, true: Colors.primary + '88' }}
+                thumbColor={draft.active ? Colors.primary : Colors.textMuted}
+              />
             </View>
 
             {/* Label */}
@@ -1468,15 +1519,22 @@ function BadgesTab() {
                     style={{ width: 28, height: 28, borderRadius: 999, backgroundColor: c, borderWidth: draft.color === c ? 2.5 : 0, borderColor: Colors.textPrimary }} />
                 ))}
               </View>
-              <TextInput
-                value={draft.color}
-                onChangeText={v => setDraftField(row.key, 'color', v)}
-                placeholder="#E6A21A"
-                placeholderTextColor={Colors.textSecondary}
-                style={[sty.scoreInput, { fontSize: 13 }]}
-                autoCapitalize="characters"
-                maxLength={7}
-              />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  value={draft.color}
+                  onChangeText={v => setDraftField(row.key, 'color', normalizeHex(v))}
+                  placeholder="#E6A21A"
+                  placeholderTextColor={Colors.textSecondary}
+                  style={[sty.scoreInput, { fontSize: 13, flex: 1 }, !isValidHex(draft.color) && { borderColor: Colors.danger }]}
+                  autoCapitalize="characters"
+                  maxLength={7}
+                />
+                <TouchableOpacity onPress={() => openPicker(row.key, draft.color)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.bg, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12 }}>
+                  <Text style={{ fontSize: 12 }}>🎨</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.textPrimary, fontFamily: Fonts.uiBold }}>Nuancier</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Icône */}
@@ -1521,9 +1579,32 @@ function BadgesTab() {
                 <Text style={{ color: Colors.danger, fontWeight: '700', fontSize: 13, fontFamily: Fonts.uiBold }}>🗑️ Suppr.</Text>
               </TouchableOpacity>
             </View>
+            </>)}
           </View>
         );
       })}
+
+      {/* ── Nuancier (modal partagé : formulaire d'ajout ou badge existant) ── */}
+      <Modal visible={pickerTarget !== null} transparent animationType="fade" onRequestClose={() => setPickerTarget(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', justifyContent: 'center', padding: 28 }}>
+          <View style={{ backgroundColor: Colors.bgCard, borderRadius: 20, padding: 18, gap: 14 }}>
+            <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Choisir une couleur</Text>
+            <ColorPicker value={pickerColor} onCompleteJS={c => setPickerColor(c.hex.slice(0, 7).toUpperCase())} style={{ gap: 14 }}>
+              <Preview hideInitialColor />
+              <Panel1 style={{ height: 180, borderRadius: 14 }} />
+              <HueSlider style={{ borderRadius: 999 }} />
+            </ColorPicker>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={() => setPickerTarget(null)} style={[sty.btnCancel, { flex: 1 }]}>
+                <Text style={{ color: Colors.textSecondary, fontWeight: '700', fontSize: 13, fontFamily: Fonts.uiBold, textAlign: 'center' }}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={applyPicker} style={[sty.btnValidate, { flex: 1 }]}>
+                <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack, textAlign: 'center' }}>Valider</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

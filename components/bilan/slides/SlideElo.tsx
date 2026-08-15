@@ -3,6 +3,7 @@ import Svg, { Line, Path } from 'react-native-svg';
 import { Colors, Fonts } from '../../../lib/theme';
 import { LineChartElo } from '../LineChartElo';
 import type { MonthlyRecap } from '../../../lib/bilan';
+import { progressionTitle } from '../../../lib/bilanCopy';
 
 // Slide 3 — Progression de NIVEAU (jamais d'ELO). Gain vert / régression rouge.
 export function SlideElo({ recap }: { recap: MonthlyRecap }) {
@@ -15,7 +16,7 @@ export function SlideElo({ recap }: { recap: MonthlyRecap }) {
       <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#67E8F9', letterSpacing: 2, textTransform: 'uppercase' }}>Ta progression</Text>
 
       {/* Title */}
-      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', lineHeight: 39, marginTop: 8 }}>Ton niveau a fait…</Text>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 30, color: '#FFFFFF', lineHeight: 39, marginTop: 8 }}>{progressionTitle(recap.levelDelta)}</Text>
 
       {/* Big number */}
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 24 }}>

@@ -514,12 +514,14 @@ export default function ChatScreen() {
         {/* Expanded player panel */}
         {headerOpen && game && (
           <View style={{ paddingHorizontal: 14, paddingBottom: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' }}>
-            {/* Type badge */}
+            {/* Type badge + lien vers la fiche du match */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <View style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-                <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, fontWeight: '900', color: theme.variant === 'ink' ? Colors.textOnDark : theme.accent, textTransform: 'uppercase', letterSpacing: 1 }}>{theme.label}</Text>
+              <View style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand, textTransform: 'uppercase', letterSpacing: 1 }}>{theme.label}</Text>
               </View>
-              <Text style={{ fontSize: 11, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary }} numberOfLines={1}>{game.location}</Text>
+              <TouchableOpacity onPress={() => router.push(`/(tabs)/lobby?gameId=${game.id}` as any)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.brand }}>Voir le match ›</Text>
+              </TouchableOpacity>
             </View>
             {/* Player avatars */}
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20 }}>

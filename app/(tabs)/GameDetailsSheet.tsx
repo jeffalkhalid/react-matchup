@@ -548,8 +548,8 @@ export default function GameDetailsSheet({
                     <Line x1="12" y1="2" x2="12" y2="15" />
                   </Svg>
                 </TouchableOpacity>
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                <View style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+                  <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' }}>
                     {typeLabel}
                   </Text>
                 </View>

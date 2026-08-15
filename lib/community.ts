@@ -4,6 +4,7 @@
 
 import { supabase } from './supabase';
 import { notifyPlayers } from './notify';
+import { isBadgeVisible } from './badges';
 import { getLeague, eloToLevel } from './theme';
 import type {
   Player, SocialPlayer, ActivityEvent, GameAlert, ReferralStats, League, ActivityComment,
@@ -222,7 +223,9 @@ export async function getActivityFeed(myId: string, limit = 50, includeSelf = fa
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  const list = (events ?? []) as ActivityEvent[];
+  // Les events « badge » d'un badge désactivé/supprimé (badge_defs) sont masqués.
+  const list = ((events ?? []) as ActivityEvent[])
+    .filter(e => e.type !== 'badge' || isBadgeVisible(e.payload?.badge_label));
   if (list.length === 0) return [];
 
   const actorIds = [...new Set(list.map(e => e.player_id))];
@@ -271,7 +274,9 @@ export async function getPlayerActivity(playerId: string, limit = 20): Promise<A
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  const list = (events ?? []) as ActivityEvent[];
+  // Même masquage que getActivityFeed pour les badges désactivés/supprimés.
+  const list = ((events ?? []) as ActivityEvent[])
+    .filter(e => e.type !== 'badge' || isBadgeVisible(e.payload?.badge_label));
   if (list.length === 0) return [];
 
   const eventIds = list.map(e => e.id);

@@ -14,6 +14,8 @@ import { CreatorCrownBadge } from '../components/CreatorCrownBadge';
 import { notifyPlayers } from '../lib/notify';
 import { isGameReadyToScore } from '../lib/games';
 import { BadgePill } from '../components/profile/BadgePill';
+import { useActiveVoteBadges } from '../components/profile/BadgeDefsProvider';
+import type { VoteBadge } from '../lib/badges';
 
 // ─── Constants ────────────────────────────────────────────────
 const SCORE_OPTS = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -161,7 +163,7 @@ function SetRow({ idx, set, onChange, onRemove, canRemove }: {
 // ─── Badge grid ───────────────────────────────────────────────
 function BadgeGrid({ player, votes, badges, onToggle }: {
   player: Participant; votes: string[];
-  badges: any[]; onToggle: (label: string) => void;
+  badges: VoteBadge[]; onToggle: (key: string) => void;
 }) {
   return (
     <View style={sty.badgeCard}>
@@ -176,14 +178,14 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
         )}
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-        {badges.map((b: any) => {
-          const sel = votes.includes(b.label);
+        {badges.map(b => {
+          const sel = votes.includes(b.key);
           return (
-            <TouchableOpacity key={b.id} onPress={() => onToggle(b.label)}
+            <TouchableOpacity key={b.key} onPress={() => onToggle(b.key)}
               style={[sty.badgeBtn, sel && sty.badgeBtnSel]}
               activeOpacity={0.75}
             >
-              <BadgePill badge={b.label} size={24} />
+              <BadgePill badge={b.key} size={24} />
               <Text style={[sty.badgeTxt, sel && sty.badgeTxtSel]}>{b.label}</Text>
               {sel && (
                 <View style={sty.badgeCheck}>
@@ -208,7 +210,8 @@ export default function ScoreEntryScreen() {
 
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
-  const [badges, setBadges] = useState<any[]>([]);
+  // Badges votables = badge_defs actifs (source unique, pilotée par l'admin) ; MVP exclu du vote.
+  const badges = useActiveVoteBadges().filter(b => b.key !== 'MVP');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<GameType>('all');
 
@@ -363,12 +366,6 @@ export default function ScoreEntryScreen() {
     autoOpened.current = true;
     openScoring(games[0]);
   }, [contestMatchId, games]);
-
-  useEffect(() => {
-    supabase.from('badges').select('*').eq('is_active', true).then(({ data }) => {
-      if (data) setBadges(data.filter((b: any) => b.label !== 'MVP'));
-    });
-  }, []);
 
   // Auto-add 3rd set when first two sets are 1-1
   useEffect(() => {

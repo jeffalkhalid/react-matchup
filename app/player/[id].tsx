@@ -6,7 +6,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line, Polyline, Polygon, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
-import { getBadge } from '../../lib/badges';
+import { getBadge, isBadgeVisible } from '../../lib/badges';
 import { Glyph } from '../../components/profile/glyphs';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
@@ -691,7 +691,8 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     // Supabase renvoie les relations FK comme tableaux ; cast via unknown (forme runtime ≠ MatchRow).
     setMatches(((matchesRes.data ?? []) as unknown as MatchRow[]).filter(isDoubles));
     setEloHistory(historyRes.data ?? []);
-    setReputation(repRes.data ?? []);
+    // Seuls les badges encore définis ET actifs dans badge_defs comptent.
+    setReputation((repRes.data ?? []).filter((v: any) => isBadgeVisible(v.badge_type)));
     setIsFav(!!favRes.data);
     setRankPos((rankRes.count ?? 0) + 1);
     setAmbCount(ambRes);

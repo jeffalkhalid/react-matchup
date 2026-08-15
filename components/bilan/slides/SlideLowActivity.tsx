@@ -27,7 +27,7 @@ export function SlideLowActivity({ recap, onPrevMonth, onPing, onClose }: {
       </View>
       <TouchableOpacity onPress={onClose} activeOpacity={0.85}
         style={{ marginTop: 8, borderRadius: 999, paddingVertical: 13, alignItems: 'center', backgroundColor: '#FFC11A' }}>
-        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 14, color: '#0A0A0A' }}>Recommencer {recap.label} sur les chapeaux →</Text>
+        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 14, color: '#0A0A0A' }}>On relance la machine ? →</Text>
       </TouchableOpacity>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <TouchableOpacity onPress={onPrevMonth} activeOpacity={0.85} style={{ flex: 1, borderRadius: 999, paddingVertical: 11, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)' }}>

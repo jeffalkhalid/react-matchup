@@ -20,7 +20,7 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
         <>
           {/* Title */}
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 28, color: '#FFFFFF', lineHeight: 36, marginTop: 8, paddingRight: 5 }}>
-            Le <Text style={{ color: '#FFC11A' }}>{fmtDate(b.date)}</Text> tu as fait ça
+            Le <Text style={{ color: '#FFC11A' }}>{fmtDate(b.date)}</Text>, tu as sorti ça
           </Text>
 
           {/* Score card */}
