@@ -1,66 +1,98 @@
-import { useState } from 'react';
-import { Modal, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Modal } from 'react-native';
 import { useSegments, useRouter } from 'expo-router';
-import { Colors, Fonts } from '../lib/theme';
 import HelpCenterSheet from './guide/HelpCenter';
+import ShowMeOverlay from './guide/ShowMeOverlay';
+import { SHOW_ME, type ShowMeKey } from './guide/help/data';
+import { onHelpOpen } from '../lib/helpEvents';
+import { requestTourReplay } from '../lib/tourAnchors';
+import { usePlayer } from '../hooks/usePlayer';
+import { track } from '../lib/analytics';
 
-// Centre d'aide — feuille (bottom sheet) rouverte au tap sur le bouton « ? ».
-// Contextualisé par la route courante : le hub met en avant la rubrique
-// correspondant à l'écran d'où l'aide est ouverte (« Tu es ici »).
+// Centre d'aide — feuille (pageSheet) montée une fois dans app/(tabs)/_layout.
+// S'ouvre via requestHelpOpen() (pastille « ? » de HeaderActions, cluster
+// d'en-tête — l'ancienne demi-pastille flottante du bord droit a disparu).
+// Toujours rouvert sur le HUB, jamais sur la dernière rubrique lue — le
+// contexte a changé. Contextualisé par la route courante (« Tu es ici »).
+//
+// « Me montrer sur l'écran » : la feuille se referme, l'app navigue vers
+// l'écran de la rubrique, et UN spotlight se pose sur l'ancre (ShowMeOverlay).
+// « Revenir au guide » rouvre la feuille directement sur la rubrique d'origine.
 export default function HelpCenter() {
   const segments = useSegments();
   const router = useRouter();
+  const { player } = usePlayer();
   const [open, setOpen] = useState(false);
+  // Rubrique sur laquelle rouvrir la feuille (retour de « Me montrer »), sinon hub.
+  const [initialTopic, setInitialTopic] = useState<string | null>(null);
+  const [showMe, setShowMe] = useState<{ key: ShowMeKey; from: string | null } | null>(null);
+
+  // Dernier segment de route (ex. 'lobby', 'matchmaking', 'chats', '(tabs)').
+  const contextRoute = (segments[segments.length - 1] as string) ?? null;
+  const contextRouteRef = useRef(contextRoute); contextRouteRef.current = contextRoute;
+
+  useEffect(() => onHelpOpen(() => {
+    setInitialTopic(null);
+    setShowMe(null);
+    setOpen(true);
+    track('help_opened', { route: contextRouteRef.current });
+  }), []);
 
   const close = () => setOpen(false);
-  // Dernier segment de route (ex. 'lobby', 'matchmaking', 'ranking', 'chats').
-  const contextRoute = (segments[segments.length - 1] as string) ?? null;
+
+  // Pseudo-routes du guide : '@tour' rejoue la visite guidée complète,
+  // '@profile' ouvre le profil du joueur connecté. Le reste = route expo-router.
+  const handleRoute = (route: string) => {
+    close();
+    if (route === '@tour') { track('tour_replayed'); requestTourReplay(); return; }
+    if (route === '@profile') {
+      if (player?.id) router.push(`/player/${player.id}` as any);
+      return;
+    }
+    router.push(route as any);
+  };
+
+  const handleShowMe = (key: ShowMeKey, fromTopic: string | null) => {
+    const spec = SHOW_ME[key];
+    track('help_showme', { key, from: fromTopic });
+    close();
+    router.navigate(spec.screen as any);
+    // L'overlay attend la fermeture de la feuille (pageSheet ~300 ms) pour se poser.
+    setTimeout(() => setShowMe({ key, from: fromTopic }), 340);
+  };
 
   return (
     <>
-      {/* ── Bouton « ? » — demi-pastille milieu droit ── */}
-      <TouchableOpacity
-        onPress={() => setOpen(true)}
-        activeOpacity={0.82}
-        style={{
-          position: 'absolute',
-          right: 0,
-          top: '50%',
-          marginTop: -22,
-          width: 40,
-          height: 44,
-          borderTopLeftRadius: 12,
-          borderBottomLeftRadius: 12,
-          backgroundColor: Colors.primary,
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: Colors.primary,
-          shadowOpacity: 0.4,
-          shadowRadius: 10,
-          shadowOffset: { width: -2, height: 0 },
-          elevation: 8,
-          zIndex: 90,
-        }}
-      >
-        <Text style={{ color: Colors.textOnDark, fontSize: 19, fontWeight: '900', lineHeight: 24, fontFamily: Fonts.uiBlack }}>?</Text>
-      </TouchableOpacity>
-
-      {/* ── Feuille d'aide ── */}
       <Modal
         visible={open}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={close}
       >
-        {/* Remonté à chaque ouverture → repart du hub, contextualisé sur la route courante. */}
+        {/* Remonté à chaque ouverture → repart du hub (ou de la rubrique de retour). */}
         {open && (
           <HelpCenterSheet
             contextRoute={contextRoute}
+            initialTopic={initialTopic}
             onClose={close}
-            onRoute={(route) => { close(); router.push(route as any); }}
+            onRoute={handleRoute}
+            onShowMe={handleShowMe}
           />
         )}
       </Modal>
+
+      {showMe && (
+        <ShowMeOverlay
+          spec={SHOW_ME[showMe.key]}
+          onBack={() => {
+            const from = showMe.from;
+            setShowMe(null);
+            setInitialTopic(from);
+            setOpen(true);
+          }}
+          onDone={() => setShowMe(null)}
+        />
+      )}
     </>
   );
 }

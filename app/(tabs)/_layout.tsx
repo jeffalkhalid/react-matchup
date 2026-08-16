@@ -12,8 +12,9 @@ import { fetchUnreadCounts } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
 import { AMB_REVEAL_SEEN_KEY, isAmbassador } from '../../lib/ambassador';
 import HelpCenter from '../../components/HelpCenter';
-import OnboardingCarousel from '../../components/OnboardingCarousel';
+import GuidedTour from '../../components/tour/GuidedTour';
 import { GUIDE_KEY } from '../../lib/guideTheme';
+import { onTourReplay, registerTourAnchor } from '../../lib/tourAnchors';
 
 // Écran d'ouverture de l'app : l'Accueil (hero profil + prochain match).
 // API native expo-router (le préfixe `unstable_` est hérité de Next.js, l'option est stable).
@@ -74,7 +75,10 @@ function CreateTabButton({ ...rest }: any) {
       style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }}
       activeOpacity={0.85}
     >
-      <View style={{
+      <View
+        ref={(v) => registerTourAnchor('tab-create', v)}
+        collapsable={false}
+        style={{
         width: 46, height: 46, borderRadius: 999,
         backgroundColor: Colors.primary,
         alignItems: 'center', justifyContent: 'center',
@@ -111,12 +115,16 @@ export default function TabLayout() {
     () => chatGames.filter(g => !g.archived).reduce((sum, g) => sum + g.unread, 0),
     [chatGames],
   );
-  // null = lecture du flag en cours · false = afficher l'onboarding · true = vu.
+  // null = lecture du flag en cours · false = afficher la visite guidée · true = vu.
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
+  // Rejouer la visite à la demande (guide « ? » → « Revoir la visite guidée »).
+  const [tourReplay, setTourReplay] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(GUIDE_KEY).then(v => setHasSeenOnboarding(!!v));
   }, []);
+
+  useEffect(() => onTourReplay(() => setTourReplay(true)), []);
 
   const finishOnboarding = () => {
     AsyncStorage.setItem(GUIDE_KEY, '1');
@@ -267,8 +275,11 @@ export default function TabLayout() {
     </Tabs>
     {/* Bouton « ? » + centre d'aide — toujours monté, par-dessus les tabs */}
     <HelpCenter />
-    {/* Onboarding plein écran — uniquement au premier lancement, avant les tabs */}
-    {hasSeenOnboarding === false && <OnboardingCarousel onDone={finishOnboarding} />}
+    {/* Visite guidée spotlight — auto au premier lancement, ou rejouée à la demande
+        (guide « ? » → « Revoir la visite guidée »). A remplacé l'ancien carousel. */}
+    {(hasSeenOnboarding === false || tourReplay) && (
+      <GuidedTour onDone={() => { setTourReplay(false); finishOnboarding(); }} />
+    )}
     </View>
   );
 }

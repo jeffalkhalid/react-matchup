@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Fonts } from '../../../lib/theme';
-import { GuideTheme, RUBRIC } from '../../../lib/guideTheme';
+import { GuideTheme } from '../../../lib/guideTheme';
 import { Icon } from '../../community/icons';
 import type { FaqEntry } from './data';
 
@@ -11,14 +11,14 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 export function FaqItem({ item, T, open, onToggle }:
   { item: FaqEntry; T: GuideTheme; open: boolean; onToggle: () => void }) {
-  const accent = RUBRIC.faq.accent;
+  const accent = T.accent;
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
     onToggle();
   };
   return (
-    <View style={{ borderRadius: 14, borderWidth: 1, borderColor: open ? `${accent}55` : T.border,
-      backgroundColor: open ? RUBRIC.faq.soft : T.card, overflow: 'hidden' }}>
+    <View style={{ borderRadius: 14, borderWidth: 1, borderColor: open ? T.accentBorder : T.border,
+      backgroundColor: open ? T.accentSoft : T.card, overflow: 'hidden' }}>
       <Pressable onPress={toggle} style={{ flexDirection: 'row', alignItems: 'center', padding: 14 }}>
         <Text style={{ flex: 1, fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: T.text, lineHeight: 18 }}>{item.q}</Text>
         <View style={{ marginLeft: 11, transform: [{ rotate: open ? '180deg' : '0deg' }] }}>

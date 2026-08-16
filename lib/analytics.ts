@@ -14,7 +14,17 @@ export type AnalyticsEvent =
   | 'bilan_completed'
   | 'bilan_shared'
   | 'notif_bilan_received'
-  | 'notif_bilan_tapped';
+  | 'notif_bilan_tapped'
+  // Visite guidée (onboarding spotlight)
+  | 'tour_started'
+  | 'tour_step_viewed'
+  | 'tour_completed'
+  | 'tour_skipped'
+  | 'tour_replayed'
+  // Centre d'aide (« ? »)
+  | 'help_opened'
+  | 'help_topic_opened'
+  | 'help_showme';
 
 export function track(event: AnalyticsEvent, props: Record<string, unknown> = {}): void {
   // Ne jamais await côté appelant : on lance et on oublie.

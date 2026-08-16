@@ -2,11 +2,16 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Fonts } from '../../../lib/theme';
-import { GuideTheme, RUBRIC } from '../../../lib/guideTheme';
+import { GuideTheme } from '../../../lib/guideTheme';
 import { Icon } from '../../community/icons';
-import { ILLUST } from '../illustrations';
-import { HELP, FAQ, HUB_RUBRICS } from './data';
+import { TOPICS, FAQ, ORDER, type ShowMeKey } from './data';
+import { TabLocator } from './TabLocator';
 import { FaqItem } from './FaqItem';
+
+// DÉTAIL d'une rubrique — refonte « Guide d'aide » : on ne décrit plus la
+// fonction, on dit OÙ TAPER. Bande « Où ça se trouve » (tab bar miniature,
+// entrée surlignée), étapes numérotées, pied fixe : « Me montrer sur l'écran »
+// (spotlight rejoué sur le vrai écran), ‹ CTA d'écran ›, compteur « n / 21 ».
 
 function HeaderBtn({ T, name, onPress }: { T: GuideTheme; name: 'arrowLeft' | 'x'; onPress: () => void }) {
   return (
@@ -17,105 +22,144 @@ function HeaderBtn({ T, name, onPress }: { T: GuideTheme; name: 'arrowLeft' | 'x
   );
 }
 
-export function HelpDetail({ rkey, T, onBack, onClose, onPrevNext, onRoute }:
-  { rkey: string; T: GuideTheme; onBack: () => void; onClose: () => void;
-    onPrevNext: (d: -1 | 1) => void; onRoute: (route: string) => void }) {
+export function HelpDetail({ rkey, T, onBack, onClose, onPrevNext, onRoute, onShowMe }: {
+  rkey: string; T: GuideTheme;
+  onBack: () => void; onClose: () => void;
+  onPrevNext: (d: -1 | 1) => void;
+  onRoute: (route: string) => void;
+  onShowMe: (k: ShowMeKey, fromTopic: string | null) => void;
+}) {
   const insets = useSafeAreaInsets();
   const isFaq = rkey === 'faq';
-  const r = RUBRIC[rkey];
-  const data = HELP[rkey];
-  const Illust = data?.illust ? ILLUST[data.illust] : null;
+  const t = TOPICS[rkey];
+  // Dépannage : accordéon, première question ouverte à l'arrivée, une seule à la fois.
   const [openFaq, setOpenFaq] = useState(0);
-  const idx = HUB_RUBRICS.indexOf(rkey);
+  const idx = ORDER.indexOf(rkey);
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
-      {/* header */}
+      {/* ── header ── */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top + 14, paddingHorizontal: 16, paddingBottom: 8 }}>
         <HeaderBtn T={T} name="arrowLeft" onPress={onBack} />
         <Text numberOfLines={1} style={{ flex: 1, marginHorizontal: 8, fontFamily: Fonts.uiExtraBold, fontSize: 15, color: T.text }}>
-          {isFaq ? 'Dépannage & FAQ' : r.title}
+          {isFaq ? 'Dépannage' : t.title}
         </Text>
         <HeaderBtn T={T} name="x" onPress={onClose} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 6, paddingBottom: insets.bottom + 28 }}
-        showsVerticalScrollIndicator={false}>
-        {/* tag */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: r.soft,
-          borderWidth: 1, borderColor: `${r.accent}40`, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 11, marginBottom: 12 }}>
-          <Text style={{ fontSize: 13, marginRight: 6 }}>{r.emoji}</Text>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: r.accent }}>
-            {isFaq ? 'Questions fréquentes' : r.title}
+      {isFaq ? (
+        <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 8, paddingBottom: insets.bottom + 28 }}
+          showsVerticalScrollIndicator={false}>
+          <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10.5, letterSpacing: 1.8, textTransform: 'uppercase', color: T.accent }}>
+            Questions fréquentes
           </Text>
-        </View>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 23, letterSpacing: -0.5, lineHeight: 26, color: T.text, marginBottom: 7 }}>
-          {isFaq ? 'On te débloque' : r.sub}
-        </Text>
-
-        {isFaq ? (
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 23, letterSpacing: -0.5, lineHeight: 27, color: T.text, marginTop: 7 }}>
+            On te débloque
+          </Text>
           <View style={{ marginTop: 16, gap: 9 }}>
             {FAQ.map((item, k) => (
               <FaqItem key={k} item={item} T={T} open={openFaq === k} onToggle={() => setOpenFaq(openFaq === k ? -1 : k)} />
             ))}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, padding: 14, borderRadius: 14,
               backgroundColor: T.card, borderWidth: 1, borderColor: T.border, borderStyle: 'dashed' }}>
-              <Icon name="settings" size={17} color={T.muted} />
+              <Icon name="mail" size={17} color={T.muted} />
               <Text style={{ flex: 1, marginLeft: 9, fontFamily: Fonts.ui, fontSize: 12.5, color: T.sub }}>
-                Toujours bloqué ? <Text style={{ fontFamily: Fonts.uiExtraBold, color: T.text }}>Réglages › Aide</Text>
+                Toujours bloqué ? <Text style={{ fontFamily: Fonts.uiExtraBold, color: T.text }}>support@pagmatch.com</Text>
               </Text>
             </View>
           </View>
-        ) : (
-          <>
-            {Illust && (
-              <View style={{ alignItems: 'center', marginVertical: 20 }}>
-                <View style={{ position: 'absolute', width: 260, height: 220, borderRadius: 999, backgroundColor: r.soft, top: -6 }} />
-                <Illust />
-              </View>
-            )}
-            {/* comment ça marche */}
-            <View style={{ backgroundColor: T.card, borderWidth: 1, borderColor: T.border, borderRadius: 16, padding: 16 }}>
-              <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase', color: r.accent, marginBottom: 13 }}>
-                Comment ça marche
+        </ScrollView>
+      ) : (
+        <>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}>
+            <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10.5, letterSpacing: 1.8, textTransform: 'uppercase', color: T.accent }}>
+              {t.kicker}
+            </Text>
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 23, letterSpacing: -0.5, lineHeight: 27, color: T.text, marginTop: 7 }}>
+              {t.head}
+            </Text>
+            <Text style={{ fontFamily: Fonts.ui, fontSize: 13.5, lineHeight: 20, color: T.sub, marginTop: 8 }}>
+              {t.lede}
+            </Text>
+
+            {/* ── Où ça se trouve ── */}
+            <View style={{ marginTop: 16, padding: 14, borderRadius: 16, backgroundColor: T.card,
+              borderWidth: 1, borderColor: T.border }}>
+              <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', color: T.muted }}>
+                Où ça se trouve
               </Text>
-              {data.steps.map((s, k) => (
-                <View key={k} style={{ flexDirection: 'row', paddingBottom: k === data.steps.length - 1 ? 0 : 14 }}>
-                  <View style={{ width: 24, height: 24, borderRadius: 999, backgroundColor: r.soft, borderWidth: 1,
-                    borderColor: `${r.accent}45`, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
-                    <Text style={{ fontFamily: Fonts.display, fontSize: 13, lineHeight: 17, color: r.accent }}>{k + 1}</Text>
+              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: T.text, marginTop: 9 }}>
+                {t.path}
+              </Text>
+              {t.tab >= 0 ? (
+                <TabLocator T={T} active={t.tab} />
+              ) : (
+                <Text style={{ fontFamily: Fonts.ui, fontSize: 11.5, lineHeight: 16, color: T.muted, marginTop: 9 }}>
+                  Hors tab bar : on passe par l'en-tête ou par une autre rubrique.
+                </Text>
+              )}
+            </View>
+
+            {/* ── étapes : où taper ── */}
+            <View style={{ marginTop: 14, gap: 13 }}>
+              {t.steps.map((s, k) => (
+                <View key={k} style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 999, backgroundColor: T.accentSoft,
+                    borderWidth: 1, borderColor: T.accentBorder, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+                    <Text style={{ fontFamily: Fonts.display, fontSize: 13, lineHeight: 17, color: T.accent }}>{k + 1}</Text>
                   </View>
-                  <Text style={{ flex: 1, marginLeft: 12, fontFamily: Fonts.ui, fontSize: 13.5, lineHeight: 19, color: T.text }}>{s}</Text>
+                  <Text style={{ flex: 1, fontFamily: Fonts.ui, fontSize: 13.5, lineHeight: 19, color: T.text }}>{s}</Text>
                 </View>
               ))}
             </View>
+          </ScrollView>
 
-            {data.cta && (
-              <Pressable onPress={() => onRoute(data.cta!.route)} style={{ marginTop: 16, height: 52, borderRadius: 999,
-                backgroundColor: T.ctaBg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 15, color: T.ctaFg, marginRight: 8 }}>{data.cta.label}</Text>
-                <Icon name="arrowRight" size={18} color={T.ctaFg} stroke={2.2} />
+          {/* ── pied fixe : Me montrer · ‹ CTA › · n / 21 ── */}
+          <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 14,
+            backgroundColor: T.bg, borderTopWidth: 1, borderTopColor: T.divider, gap: 9 }}>
+            {t.showMe && (
+              <Pressable onPress={() => onShowMe(t.showMe!, rkey)}
+                style={{ height: 50, borderRadius: 999, backgroundColor: T.ctaBg,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <Icon name="eye" size={16} color={T.ctaFg} stroke={2.4} />
+                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 15, color: T.ctaFg }}>
+                  Me montrer sur l'écran
+                </Text>
               </Pressable>
             )}
-
-            {/* précédent / suivant */}
-            <View style={{ flexDirection: 'row', marginTop: 18, gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 9 }}>
               <Pressable disabled={idx <= 0} onPress={() => onPrevNext(-1)}
-                style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: T.chip, borderWidth: 1, borderColor: T.border,
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', opacity: idx <= 0 ? 0.4 : 1 }}>
-                <Icon name="chevronLeft" size={16} color={T.sub} />
-                <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13, color: T.sub, marginLeft: 6 }}>Précédent</Text>
+                style={{ width: 50, height: 46, borderRadius: 14, backgroundColor: T.chip, borderWidth: 1,
+                  borderColor: T.border, alignItems: 'center', justifyContent: 'center', opacity: idx <= 0 ? 0.4 : 1 }}>
+                <Icon name="chevronLeft" size={17} color={T.sub} stroke={2.2} />
               </Pressable>
-              <Pressable disabled={idx >= HUB_RUBRICS.length - 1} onPress={() => onPrevNext(1)}
-                style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: T.chip, borderWidth: 1, borderColor: T.border,
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', opacity: idx >= HUB_RUBRICS.length - 1 ? 0.4 : 1 }}>
-                <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13, color: T.sub, marginRight: 6 }}>Suivant</Text>
-                <Icon name="chevronRight" size={16} color={T.sub} />
+              {t.cta ? (
+                <Pressable onPress={() => onRoute(t.cta!.route)}
+                  style={{ flex: 1, minWidth: 0, height: 46, borderRadius: 14, backgroundColor: T.chip,
+                    borderWidth: 1, borderColor: T.border, flexDirection: 'row', alignItems: 'center',
+                    justifyContent: 'center', gap: 7 }}>
+                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: T.text }}>
+                    {t.cta.label}
+                  </Text>
+                  <Icon name="arrowRight" size={15} color={T.sub} stroke={2.2} />
+                </Pressable>
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
+              <Pressable disabled={idx >= ORDER.length - 1} onPress={() => onPrevNext(1)}
+                style={{ width: 50, height: 46, borderRadius: 14, backgroundColor: T.chip, borderWidth: 1,
+                  borderColor: T.border, alignItems: 'center', justifyContent: 'center',
+                  opacity: idx >= ORDER.length - 1 ? 0.4 : 1 }}>
+                <Icon name="chevronRight" size={17} color={T.sub} stroke={2.2} />
               </Pressable>
             </View>
-          </>
-        )}
-      </ScrollView>
+            <Text style={{ textAlign: 'center', fontFamily: Fonts.uiBold, fontSize: 10.5, letterSpacing: 0.4, color: T.muted }}>
+              {idx + 1} / {ORDER.length} · {t.kicker}
+            </Text>
+          </View>
+        </>
+      )}
     </View>
   );
 }

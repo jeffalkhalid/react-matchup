@@ -32,9 +32,8 @@ export default function AmbassadorWelcomeScreen() {
   const takenCount = taken ?? n;
   const firstName = player.name.trim().split(/\s+/)[0];
 
-  const close = (toProfile: boolean) => {
-    if (toProfile) router.replace(`/player/${player.id}`);
-    else if (router.canGoBack()) router.back();
+  const close = () => {
+    if (router.canGoBack()) router.back();
     else router.replace('/(tabs)');
   };
 
@@ -101,16 +100,11 @@ export default function AmbassadorWelcomeScreen() {
           }} />
         </View>
       </View>
-      <View style={{ gap: 10, marginTop: 16 }}>
-        <TouchableOpacity onPress={() => close(true)} activeOpacity={0.85}
+      <View style={{ marginTop: 16 }}>
+        <TouchableOpacity onPress={close} activeOpacity={0.85}
           style={{ backgroundColor: AMB.gold, borderRadius: 16, padding: 16, alignItems: 'center' }}>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: '#0A0A0A' }}>
-            Voir mes privilèges
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => close(false)} activeOpacity={0.7} style={{ alignItems: 'center', padding: 8 }}>
-          <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>
-            Plus tard
+            C'est parti
           </Text>
         </TouchableOpacity>
       </View>

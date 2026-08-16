@@ -34,6 +34,7 @@ import { isBadgeVisible } from '../../lib/badges';
 import { Icon, type IconName } from '../../components/community/icons';
 import { fetchBinomeInvitations, fetchMyApplications, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, type DefiApplication } from '../../lib/defis';
 import { notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
+import { registerTourAnchor, useTourInfo } from '../../lib/tourAnchors';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
@@ -327,12 +328,14 @@ function getSlotTheme(_game: OpenGame) {
 }
 
 // ─── Inline slot grid ─────────────────────────────────────────
-function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSide }: {
+function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSide, slotAnchor }: {
   game: EnrichedGame;
   playerId: string;
   onApply?: (gameId: string, side: string) => void;
   onChangeSide?: (participantId: string, side: string) => void;
   onCreatorChangeSide?: (gameId: string, side: string) => void;
+  // Visite guidée : pose l'ancre 'lobby-slot' sur le 1ᵉʳ emplacement libre (1ʳᵉ carte).
+  slotAnchor?: boolean;
 }) {
   const router = useRouter();
   const slots = buildGameSlots(game, playerId);
@@ -359,6 +362,11 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
   const canJoin = !isCreator && !alreadyIn && !isFull && !!onApply && !game.is_challenge;
   // Dans un défi, les équipes sont fixes (binôme A vs binôme B) → aucun changement d'équipe.
   const canChange = !game.is_challenge && !isFull && (isCreator ? !!onCreatorChangeSide : (isAccepted && !!onChangeSide));
+
+  // 1ᵉʳ emplacement libre = cible de l'ancre visite guidée (étape « Rejoindre »).
+  const firstFreeIdx = slots.findIndex(s => s === null);
+  const anchorRef = (idx: number) =>
+    slotAnchor && idx === firstFreeIdx ? (v: any) => registerTourAnchor('lobby-slot', v) : undefined;
 
   const renderSlot = (idx: number) => {
     const s = slots[idx];
@@ -402,7 +410,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
 
     if (canJoin) {
       return (
-        <TouchableOpacity key={idx} onPress={() => onApply!(game.id, side)}
+        <TouchableOpacity key={idx} ref={anchorRef(idx)} onPress={() => onApply!(game.id, side)}
           activeOpacity={0.7} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
           <View style={{
@@ -423,7 +431,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
         ? onCreatorChangeSide!(game.id, side)
         : onChangeSide!(myParticipant?.id, side);
       return (
-        <TouchableOpacity key={idx} onPress={handlePress}
+        <TouchableOpacity key={idx} ref={anchorRef(idx)} onPress={handlePress}
           activeOpacity={0.7} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
           <View style={{
@@ -440,7 +448,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
     }
 
     return (
-      <View key={idx} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}>
+      <View key={idx} ref={anchorRef(idx)} collapsable={false} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}>
         <View style={{
           width: 30, height: 30, borderRadius: 999,
           borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
@@ -596,7 +604,7 @@ async function shareGame(game: EnrichedGame) {
 }
 
 // ─── Game Card ────────────────────────────────────────────────
-export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, footerSlot }: {
+export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, footerSlot, tourSlotAnchor }: {
   game: EnrichedGame; variant: 'explore' | 'upcoming' | 'history';
   myElo: number; playerId?: string; onPress: () => void;
   onApply?: (gameId: string, side: string) => void;
@@ -608,6 +616,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   onAcceptInvitation?: (participantId: string, gameId: string) => void;
   onDeclineInvitation?: (participantId: string, gameId: string) => void;
   footerSlot?: React.ReactNode;   // contenu additionnel rendu DANS la carte (ex. actions défi)
+  tourSlotAnchor?: boolean;       // visite guidée : ancre 'lobby-slot' sur le 1ᵉʳ slot libre
 }) {
   const router = useRouter();
   const { width: winW } = useWindowDimensions();
@@ -764,7 +773,8 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
             ? <InlineSlots game={game} playerId={playerId!}
                 onApply={onApply}
                 onChangeSide={onChangeSide}
-                onCreatorChangeSide={onCreatorChangeSide} />
+                onCreatorChangeSide={onCreatorChangeSide}
+                slotAnchor={tourSlotAnchor} />
             : <AvatarRow players={allPlayers} slots={0} />
           }
         </View>
@@ -1474,6 +1484,40 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
   // actif → la liste filtrée s'affiche à plat (et l'état vide peut apparaître).
   const showForYou = !hasActiveFilter && recommended.length > 0;
   const recommendedIds = useMemo(() => new Set(recommended.map(g => g.id)), [recommended]);
+
+  // Visite guidée, lobby SANS partie réelle : on affiche une carte d'EXEMPLE
+  // (données factices, non cliquable) pour que les étapes « rejoindre » aient
+  // toujours leur cible — rejoindre un match est LE geste que l'onboarding
+  // enseigne. La carte disparaît dès la fin de la visite ('tour-active' false).
+  const tourActive = useTourInfo('tour-active') === true;
+  const showTourDemo = tourActive && !showForYou && filtered.length === 0;
+  const tourDemoGame = useMemo(() => {
+    if (!showTourDemo) return null;
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(19, 0, 0, 0);
+    const p = (id: string, name: string, elo: number, team_side: string) => ({
+      player_id: id, status: 'accepted', team_side, player: { name, elo_score: elo },
+    });
+    return {
+      id: 'tour-demo-game',
+      creator_id: 'tour-demo-yassine',
+      creator: { id: 'tour-demo-yassine', name: 'Yassine', elo_score: myElo + 80 },
+      creator_side: 'A_GAU',
+      participants: [
+        p('tour-demo-nadia', 'Nadia', myElo - 30, 'A_DRO'),
+        p('tour-demo-omar', 'Omar', myElo + 100, 'B_GAU'),
+      ],
+      match_date: d.toISOString(),
+      location: 'Padel Club Casa · Piste 3',
+      min_elo: myElo - 100,
+      max_elo: myElo + 150,
+      is_challenge: false,
+      game_format: 'competitive',
+      spots_available: 1,
+    } as unknown as EnrichedGame;
+  }, [showTourDemo, myElo]);
+
   const mainList = useMemo(
     () => showForYou ? filtered.filter(g => !recommendedIds.has(g.id)) : filtered,
     [filtered, showForYou, recommendedIds],
@@ -1529,11 +1573,30 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
             ✨ Pour toi · {recommended.length}
           </Text>
           <View style={{ paddingHorizontal: 14, gap: 10 }}>
-            {recommended.map(g => (
-              <GameCard key={g.id} game={g} variant="explore" myElo={myElo} playerId={playerId}
-                onApply={onApply} onChangeSide={onChangeSide} onCreatorChangeSide={onCreatorChangeSide}
-                onPress={() => onOpenGame(g)} footerSlot={defiFooter(g)} />
+            {recommended.map((g, i) => (
+              // 1ʳᵉ carte visible du lobby = ancre de la visite guidée (étapes 3-4).
+              <View key={g.id} ref={i === 0 ? (v) => registerTourAnchor('lobby-card', v) : undefined} collapsable={false}>
+                <GameCard game={g} variant="explore" myElo={myElo} playerId={playerId}
+                  onApply={onApply} onChangeSide={onChangeSide} onCreatorChangeSide={onCreatorChangeSide}
+                  onPress={() => onOpenGame(g)} footerSlot={defiFooter(g)} tourSlotAnchor={i === 0} />
+              </View>
             ))}
+          </View>
+        </View>
+      )}
+
+      {/* Carte d'exemple de la visite guidée — uniquement lobby vide + visite active. */}
+      {showTourDemo && tourDemoGame && (
+        <View style={{ paddingHorizontal: 14, marginBottom: 16 }}>
+          <Text style={{
+            fontSize: 11, fontWeight: '900', color: Colors.textSecondary,
+            letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8,
+          }}>
+            Exemple · le temps de la visite
+          </Text>
+          <View ref={(v) => registerTourAnchor('lobby-card', v)} collapsable={false}>
+            <GameCard game={tourDemoGame} variant="explore" myElo={myElo} playerId={playerId}
+              onApply={() => {}} onPress={() => {}} tourSlotAnchor />
           </View>
         </View>
       )}
@@ -1586,10 +1649,13 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
                     </View>
                   ))
             : <View style={{ gap: 10 }}>
-                {mainList.map(g => (
-                  <GameCard key={g.id} game={g} variant="explore" myElo={myElo} playerId={playerId}
-                    onApply={onApply} onChangeSide={onChangeSide} onCreatorChangeSide={onCreatorChangeSide}
-                    onPress={() => onOpenGame(g)} footerSlot={defiFooter(g)} />
+                {mainList.map((g, i) => (
+                  // Sans bloc « Pour toi », la 1ʳᵉ carte de la liste porte l'ancre visite guidée.
+                  <View key={g.id} ref={!showForYou && i === 0 ? (v) => registerTourAnchor('lobby-card', v) : undefined} collapsable={false}>
+                    <GameCard game={g} variant="explore" myElo={myElo} playerId={playerId}
+                      onApply={onApply} onChangeSide={onChangeSide} onCreatorChangeSide={onCreatorChangeSide}
+                      onPress={() => onOpenGame(g)} footerSlot={defiFooter(g)} tourSlotAnchor={!showForYou && i === 0} />
+                  </View>
                 ))}
               </View>
           }
@@ -2979,7 +3045,7 @@ export default function LobbyScreen() {
         paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 16,
         borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
       }}>
-        <HeaderActions top={insets.top + 8} right={16} tint="light" />
+        <HeaderActions top={insets.top + 8} right={16} tint="light" bellAnchor="bell-lobby" />
 
         {/* Brand lockup — raquette + wordmark PAGMATCH */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>

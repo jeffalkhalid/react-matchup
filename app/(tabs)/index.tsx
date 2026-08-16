@@ -21,6 +21,7 @@ import { HomeProfileCard } from '../../components/home/HomeProfileCard';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
+import { registerTourAnchor } from '../../lib/tourAnchors';
 import type { OpenGame } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -403,8 +404,11 @@ export default function HomeScreen() {
                   minHeight sous lequel le contenu ne s'écrase pas —
                   en-dessous, c'est le ScrollView qui prend le relais. */}
 
-              {/* B. Hero profil — ~3/7,6 de la hauteur */}
-              <View style={{ flex: 3, minHeight: compact ? 184 : 214 }}>
+              {/* B. Hero profil — ~3/7,6 de la hauteur — ancre visite guidée (étape 1) */}
+              <View
+                ref={(v) => registerTourAnchor('home-profile', v)}
+                collapsable={false}
+                style={{ flex: 3, minHeight: compact ? 184 : 214 }}>
                 <HomeProfileCard
                   name={player.name}
                   elo={player.elo_score}
@@ -418,8 +422,11 @@ export default function HomeScreen() {
                 />
               </View>
 
-              {/* C. Actions principales — ~0,8/7,6 */}
-              <View style={{ flex: 0.8, minHeight: compact ? 54 : 62 }}>
+              {/* C. Actions principales — ~0,8/7,6 — ancre visite guidée (étape 2) */}
+              <View
+                ref={(v) => registerTourAnchor('home-ctas', v)}
+                collapsable={false}
+                style={{ flex: 0.8, minHeight: compact ? 54 : 62 }}>
                 <HomePrimaryActions
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
