@@ -90,6 +90,7 @@ export default function NotificationsScreen() {
     if (type === 'badge')      return <Icon name="medal" size={18} color={Colors.success} />;
     if (type === 'levelup')    return <Icon name="trendingUp" size={18} color="#b45309" />;
     if (type === 'to_score')   return <Icon name="checkSquare" size={18} color="#0891b2" />;
+    if (type === 'cancelled')  return <Icon name="x" size={18} color="#dc2626" stroke={2.5} />;
     return <Icon name="checkSquare" size={18} color="#d97706" />;
   };
 
@@ -102,6 +103,7 @@ export default function NotificationsScreen() {
     if (type === 'badge')      return { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)' };
     if (type === 'levelup')    return { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)' };
     if (type === 'to_score')   return { bg: 'rgba(8,145,178,0.10)',  border: 'rgba(8,145,178,0.40)' };
+    if (type === 'cancelled')  return { bg: 'rgba(220,38,38,0.08)',  border: 'rgba(220,38,38,0.35)' };
     return { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)' };
   };
 
@@ -114,6 +116,7 @@ export default function NotificationsScreen() {
     if (type === 'badge')     return { title: '#065f46', sub: '#059669' };
     if (type === 'levelup')   return { title: '#92400e', sub: '#b45309' };
     if (type === 'to_score')  return { title: '#155e75', sub: '#0e7490' };
+    if (type === 'cancelled') return { title: '#991b1b', sub: '#dc2626' };
     return { title: '#7c2d12', sub: '#c2410c' };
   };
 

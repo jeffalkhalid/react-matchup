@@ -6,8 +6,8 @@ import { requestHelpOpen } from '../lib/helpEvents';
 // calibré au pixel (2 pastilles gauche + logo 131 px centré + 2 pastilles
 // droite sur 360 dp) : une 3e pastille dans le cluster atterrit SUR le logo.
 // Les 4 autres onglets utilisent l'option B du handoff (« ? » dans
-// HeaderActions) ; ici on garde l'option A, resserrée 30×33 (au lieu de
-// l'ancienne 40×44) pour recouvrir le moins de contenu possible.
+// HeaderActions) ; ici on garde l'option A en 36×40 (demande Jeff — le 30×33
+// initial était trop discret), centrée verticalement sur la zone de contenu.
 export default function HelpFab() {
   return (
     <TouchableOpacity
@@ -19,11 +19,11 @@ export default function HelpFab() {
         position: 'absolute',
         right: 0,
         top: '50%',
-        marginTop: -17,
-        width: 30,
-        height: 33,
-        borderTopLeftRadius: 10,
-        borderBottomLeftRadius: 10,
+        marginTop: -20,
+        width: 36,
+        height: 40,
+        borderTopLeftRadius: 12,
+        borderBottomLeftRadius: 12,
         backgroundColor: Colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
@@ -35,7 +35,7 @@ export default function HelpFab() {
         zIndex: 90,
       }}
     >
-      <Text style={{ color: Colors.textOnDark, fontSize: 15, fontWeight: '900', lineHeight: 19, fontFamily: Fonts.uiBlack }}>?</Text>
+      <Text style={{ color: Colors.textOnDark, fontSize: 17, fontWeight: '900', lineHeight: 22, fontFamily: Fonts.uiBlack }}>?</Text>
     </TouchableOpacity>
   );
 }

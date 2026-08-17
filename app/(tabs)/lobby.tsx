@@ -40,6 +40,7 @@ import { registerTourAnchor, useTourInfo } from '../../lib/tourAnchors';
 type TabKey = 'explorer' | 'upcoming' | 'history';
 type FilterMode = 'all' | 'urgent';
 type TypeFilter = 'all' | 'competitive' | 'friendly' | 'challenge';
+type LevelFilter = 'mine' | 'outside' | 'all';
 type RoleFilter = 'all' | 'playing' | 'creator' | 'pending';
 type EloFit = 'fit' | 'close' | 'outside';
 
@@ -226,18 +227,57 @@ function TypeChip({ active, onPress, children }: {
 }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={{
-      paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+      paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999,
       backgroundColor: active ? 'rgba(255,193,26,0.14)' : Colors.bgCard,
       borderWidth: 1, borderColor: active ? Colors.brand : Colors.border,
     }}>
       <Text style={{
         color: active ? Colors.brandDeep : Colors.textSecondary,
         fontFamily: Fonts.uiExtraBold,
-        fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase',
+        fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase',
       }}>
         {children}
       </Text>
     </TouchableOpacity>
+  );
+}
+
+// ─── Contrôle segmenté pleine largeur (niveau + type de match) ─
+// Segments joints (pas des chips) : actif = noir texte blanc, inactifs blancs
+// séparés par un trait. L'icône éventuelle n'apparaît que sur le segment actif.
+function SegmentControl<T extends string>({ options, value, onChange }: {
+  options: { v: T; label: string; icon?: IconName }[];
+  value: T; onChange: (v: T) => void;
+}) {
+  return (
+    <View style={{
+      flexDirection: 'row', marginHorizontal: 14, borderRadius: 14,
+      backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+      overflow: 'hidden',
+    }}>
+      {options.map((o, i) => {
+        const active = value === o.v;
+        return (
+          <TouchableOpacity key={o.v} onPress={() => onChange(o.v)} activeOpacity={0.8}
+            style={{
+              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+              paddingVertical: 12, paddingHorizontal: 4,
+              backgroundColor: active ? Colors.primary : 'transparent',
+              borderLeftWidth: i > 0 ? 1 : 0, borderLeftColor: Colors.border,
+            }}>
+            {o.icon && active && (
+              <Icon name={o.icon} size={13} color={Colors.textOnDark} stroke={2.2} />
+            )}
+            <Text numberOfLines={1} style={{
+              color: active ? Colors.textOnDark : Colors.textPrimary,
+              fontFamily: Fonts.uiExtraBold, fontSize: 12,
+            }}>
+              {o.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
@@ -1417,7 +1457,8 @@ function EmptyState({ text, sub }: { text: string; sub?: string }) {
 // Factorisé pour que le badge de l'onglet ET la liste utilisent EXACTEMENT
 // la même logique → le compteur reflète les filtres actifs.
 function filterExploreGames(
-  games: EnrichedGame[], filterMode: FilterMode, typeFilter: TypeFilter, search: string,
+  games: EnrichedGame[], filterMode: FilterMode, typeFilter: TypeFilter, levelFilter: LevelFilter,
+  search: string, myElo: number,
 ): EnrichedGame[] {
   let arr = games;
   if (filterMode === 'urgent') arr = arr.filter(g => {
@@ -1425,6 +1466,11 @@ function filterExploreGames(
     return freeSpots(g) === 1 && h > 0 && h <= 6;
   });
   if (typeFilter !== 'all') arr = arr.filter(g => getGameType(g) === typeFilter);
+  // Niveau : « Mon niveau » = mon ELO dans la fourchette de la partie (fit),
+  // « Hors mon niveau » = tout le reste (limite incluse). Même prédicat que la
+  // pastille ✓ Mon niveau / Hors niveau des cartes (getEloFit).
+  if (levelFilter === 'mine')    arr = arr.filter(g => getEloFit(g, myElo) === 'fit');
+  if (levelFilter === 'outside') arr = arr.filter(g => getEloFit(g, myElo) !== 'fit');
   if (search.trim()) {
     const q = search.toLowerCase();
     arr = arr.filter(g =>
@@ -1436,10 +1482,11 @@ function filterExploreGames(
 }
 
 // ─── Explorer tab ─────────────────────────────────────────────
-function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTypeFilter, search, setSearch, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTypeFilter, levelFilter, setLevelFilter, search, setSearch, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
   games: EnrichedGame[]; myElo: number;
   filterMode: FilterMode; setFilterMode: (v: FilterMode) => void;
   typeFilter: TypeFilter; setTypeFilter: (v: TypeFilter) => void;
+  levelFilter: LevelFilter; setLevelFilter: (v: LevelFilter) => void;
   search: string; setSearch: (v: string) => void; onOpenGame: (g: EnrichedGame) => void;
   playerId: string;
   onApply: (gameId: string, side: string) => void;
@@ -1466,12 +1513,12 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
     );
   };
   const filtered = useMemo(
-    () => filterExploreGames(games, filterMode, typeFilter, search),
-    [games, filterMode, typeFilter, search],
+    () => filterExploreGames(games, filterMode, typeFilter, levelFilter, search, myElo),
+    [games, filterMode, typeFilter, levelFilter, search, myElo],
   );
 
-  const hasActiveFilter = filterMode !== 'all' || typeFilter !== 'all' || search.trim().length > 0;
-  const resetFilters = () => { setFilterMode('all'); setTypeFilter('all'); setSearch(''); };
+  const hasActiveFilter = filterMode !== 'all' || typeFilter !== 'all' || levelFilter !== 'all' || search.trim().length > 0;
+  const resetFilters = () => { setFilterMode('all'); setTypeFilter('all'); setLevelFilter('all'); setSearch(''); };
 
   const recommended = useMemo(() => games.filter(g => getEloFit(g, myElo) === 'fit'), [games, myElo]);
   const urgentCount = useMemo(() => games.filter(g => {
@@ -1562,6 +1609,18 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         <TypeChip active={typeFilter === 'challenge'} onPress={() => setTypeFilter('challenge')}>Défi</TypeChip>
       </ScrollView>
 
+      {/* Niveau des parties — segmenté Mon niveau / Hors mon niveau / Tous */}
+      <View style={{ marginBottom: 14 }}>
+        <Text style={{
+          fontSize: 11, fontWeight: '900', color: Colors.textPrimary,
+          letterSpacing: 1.5, textTransform: 'uppercase',
+          paddingHorizontal: 14, marginBottom: 8,
+        }}>
+          Niveau des parties
+        </Text>
+        <LevelSegment value={levelFilter} onChange={setLevelFilter} />
+      </View>
+
       {/* "Pour toi" — pile verticale des parties à ton niveau */}
       {showForYou && (
         <View style={{ marginBottom: 16 }}>
@@ -1604,12 +1663,21 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
       {/* Main list — hidden entirely when "Pour toi" already covers every game */}
       {(mainList.length > 0 || !showForYou) && (
         <View style={{ paddingHorizontal: 14 }}>
-          <Text style={{
-            fontSize: 11, fontWeight: '900', color: Colors.textSecondary,
-            letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8,
-          }}>
-            {mainList.length} partie{mainList.length > 1 ? 's' : ''} {countLabel}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{
+              fontSize: 11, fontWeight: '900', color: Colors.textSecondary,
+              letterSpacing: 1.5, textTransform: 'uppercase',
+            }}>
+              {mainList.length} partie{mainList.length > 1 ? 's' : ''} {countLabel}
+            </Text>
+            {hasActiveFilter && (
+              <TouchableOpacity onPress={resetFilters} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+                  Réinitialiser les filtres
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {mainList.length === 0
             ? (hasActiveFilter && games.length > 0
                 ? (
@@ -1958,6 +2026,7 @@ export default function LobbyScreen() {
   const [tab, setTab] = useState<TabKey>('explorer');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
 
@@ -2747,22 +2816,9 @@ export default function LobbyScreen() {
               if (error) { Alert.alert('Erreur', error.message); return; }
             }
 
-            const targetIds = (game.participants ?? [])
-              .filter((p: any) =>
-                ['accepted', 'pending', 'waitlist'].includes(p.status)
-                || (p.status === 'invited' && isInviteActive(p)))
-              .map((p: any) => p.player_id)
-              .filter((id: string) => id && id !== player.id);
-
-            // Défi : le push part de cancel_defi (serveur) — pas de doublon client.
-            if (!game.is_challenge && targetIds.length > 0) {
-              notifyPlayers({
-                playerIds: targetIds,
-                title: '❌ Partie annulée',
-                body: `${player.name} a annulé la partie à ${game.location ?? ''}.`,
-                data: { type: 'lobby', gameId },
-              });
-            }
+            // Push 100% serveur : trg_notify_game_cancelled (partie normale)
+            // ou cancel_defi (défi) — le client n'envoie rien, pas de doublon
+            // et la notif part même si l'app est tuée juste après l'update.
 
             setOpenGameId(null);
             fetchData();
@@ -3032,8 +3088,8 @@ export default function LobbyScreen() {
   const upcomingBadge = upcomingGames.filter(g => isConfirmedInGame(g, player.id)).length;
   // Badge Explorer = nombre de parties APRÈS application des filtres (Option A).
   const exploreBadge = useMemo(
-    () => filterExploreGames(games, filterMode, typeFilter, search).length,
-    [games, filterMode, typeFilter, search],
+    () => filterExploreGames(games, filterMode, typeFilter, levelFilter, search, myElo).length,
+    [games, filterMode, typeFilter, levelFilter, search, myElo],
   );
   const scoresToValidate = matches.filter(m => matchNeedsMyAction(m, player.id) !== null).length;
 
@@ -3141,6 +3197,7 @@ export default function LobbyScreen() {
               games={games} myElo={myElo}
               filterMode={filterMode} setFilterMode={setFilterMode}
               typeFilter={typeFilter} setTypeFilter={setTypeFilter}
+              levelFilter={levelFilter} setLevelFilter={setLevelFilter}
               search={search} setSearch={setSearch} onOpenGame={(g) => openGameById(g.id)}
               playerId={player.id}
               onApply={(gameId, side) => handleApply(gameId, false, side)}

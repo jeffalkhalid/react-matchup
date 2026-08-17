@@ -15,7 +15,7 @@ import { getLeague, getLeagueLabel, eloToLevel } from './theme';
 // présents dans la liste mais pas dans le compteur, etc.).
 export interface NotifItem {
   id: string;
-  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined' | 'dm_request';
+  type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined' | 'dm_request' | 'cancelled';
   title: string;
   subtitle: string;
   route: string;
@@ -24,7 +24,7 @@ export interface NotifItem {
 // Notifs "info" sans action requise : supprimables définitivement (persistées
 // dans la table dismissed_notifications). Les autres types disparaissent en
 // traitant l'action correspondante.
-export const DISMISSIBLE_NOTIF: ReadonlySet<NotifItem['type']> = new Set(['joined', 'levelup']);
+export const DISMISSIBLE_NOTIF: ReadonlySet<NotifItem['type']> = new Set(['joined', 'levelup', 'cancelled']);
 export const isDismissibleNotif = (t: NotifItem['type']) => DISMISSIBLE_NOTIF.has(t);
 
 export async function buildNotificationItems(playerId: string): Promise<NotifItem[]> {
@@ -67,6 +67,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: badgeSkips },
     { data: queuedApps },
     { data: lockedApps },
+    { data: cancelledParts },
   ] = await Promise.all([
     supabase
       .from('defi_applications')
@@ -149,6 +150,17 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
       .eq('status', 'locked')
       .gte('resolved_at', sevenDaysAgo),
+    // Parties ANNULÉES où j'étais inscrit/invité/candidat — trace in-app de
+    // l'annulation (le push seul est volatil : raté = aucune trace, la partie
+    // annulée étant filtrée de toutes les listes). Carte info supprimable,
+    // auto-expirée quand la date du match est passée.
+    supabase
+      .from('game_participants')
+      .select('id, status, game:game_id!inner(id, location, match_date, is_challenge, creator_id)')
+      .eq('player_id', playerId)
+      .in('status', ['accepted', 'pending', 'waitlist', 'invited'])
+      .eq('game.status', 'cancelled')
+      .gt('game.match_date', nowIso),
   ]);
 
   const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
@@ -265,7 +277,27 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       route: `/dm/${c.id}`,
     }));
 
+  // Parties annulées — libellé neutre : un défi peut être annulé par le serveur
+  // (binôme sans réponse, defi_lifecycle_guards), pas seulement par le créateur.
+  const cancelledItems: NotifItem[] = (cancelledParts ?? [])
+    .filter((c: any) => c.game && c.game.creator_id !== playerId)
+    .map((c: any) => {
+      const isChall = !!c.game?.is_challenge;
+      const where = c.game?.location ? ` à ${c.game.location}` : '';
+      const when = c.game?.match_date
+        ? ` du ${new Date(c.game.match_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}`
+        : '';
+      return {
+        id: `cancelled-${c.id}`,
+        type: 'cancelled' as const,
+        title: isChall ? '❌ Défi annulé' : '❌ Partie annulée',
+        subtitle: `${isChall ? 'Le défi' : 'La partie'}${where}${when} a été annulé${isChall ? '' : 'e'}`,
+        route: '/(tabs)/lobby',
+      };
+    });
+
   const result: NotifItem[] = [
+    ...cancelledItems,
     ...dmRequestItems,
     ...pendingReqItems,
     ...joinedItems,
