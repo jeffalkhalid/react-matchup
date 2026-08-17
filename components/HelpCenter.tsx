@@ -44,7 +44,13 @@ export default function HelpCenter() {
   // '@profile' ouvre le profil du joueur connecté. Le reste = route expo-router.
   const handleRoute = (route: string) => {
     close();
-    if (route === '@tour') { track('tour_replayed'); requestTourReplay(); return; }
+    if (route === '@tour') {
+      track('tour_replayed');
+      // Laisse la feuille se refermer avant de monter l'overlay de la visite
+      // (sinon il apparaît sous le pageSheet en cours de fermeture).
+      setTimeout(requestTourReplay, 340);
+      return;
+    }
     if (route === '@profile') {
       if (player?.id) router.push(`/player/${player.id}` as any);
       return;

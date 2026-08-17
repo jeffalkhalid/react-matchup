@@ -123,7 +123,11 @@ export default function GuidedTour({ onDone }: { onDone: () => void }) {
   const stepRef = useRef(step); stepRef.current = step;
   const finRef = useRef(fin); finRef.current = fin;
   const reduceMotionRef = useRef(false);
-  const currentScreen = useRef<'home' | 'lobby'>('home');
+  // null au montage : on ne SAIT PAS sur quel écran l'utilisateur est (replay
+  // depuis le guide « ? » ouvert au Lobby, p.ex.) → la 1ʳᵉ étape navigue
+  // TOUJOURS vers son écran. Initialiser à 'home' faisait jouer la visite
+  // par-dessus le Lobby avec les ancres de l'Accueil caché (mesures fausses).
+  const currentScreen = useRef<'home' | 'lobby' | null>(null);
   const overlayRef = useRef<View>(null);
   const overlayOrigin = useRef({ x: 0, y: 0 });
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);

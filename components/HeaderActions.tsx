@@ -13,10 +13,12 @@ import { requestHelpOpen } from '../lib/helpEvents';
 // troisième pastille du cluster — option B du handoff design_handoff_guide_aide.
 // Le total de notifs vient du hook partagé (même nombre que l'écran /notifications).
 // `bellAnchor` : nom d'ancre de la visite guidée à poser sur la cloche (ex. 'bell-lobby').
-// `help` : pastille « ? » incluse (défaut). L'Accueil la désactive — son en-tête
-// est plein (logo centré 131 px + 4 pastilles) — et monte HelpFab à la place.
-export function HeaderActions({ top, right, tint = 'light', bellAnchor, help = true }: {
-  top: number; right: number; tint?: 'light' | 'dark'; bellAnchor?: TourAnchorName; help?: boolean;
+// `help` : pastille « ? » incluse (défaut). `avatar` : pastille profil incluse
+// (défaut). L'Accueil passe avatar={false} : sa carte héro ouvre déjà le profil
+// et son en-tête est plein au pixel (logo centré 131 px + 4 pastilles max sur
+// 360 dp) — le « ? » prend la place de l'avatar, à côté de la cloche.
+export function HeaderActions({ top, right, tint = 'light', bellAnchor, help = true, avatar = true }: {
+  top: number; right: number; tint?: 'light' | 'dark'; bellAnchor?: TourAnchorName; help?: boolean; avatar?: boolean;
 }) {
   const router = useRouter();
   const { total } = useNotificationCount();
@@ -45,7 +47,7 @@ export function HeaderActions({ top, right, tint = 'light', bellAnchor, help = t
       >
         <NotificationBell count={total} tint={tint} onPress={() => router.push('/notifications' as any)} />
       </View>
-      <ProfileAvatarButton />
+      {avatar && <ProfileAvatarButton />}
     </View>
   );
 }

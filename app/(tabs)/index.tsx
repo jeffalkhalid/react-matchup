@@ -13,7 +13,6 @@ import { Colors, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { isAmbassador } from '../../lib/ambassador';
 import { HeaderActions } from '../../components/HeaderActions';
-import HelpFab from '../../components/HelpFab';
 import { Icon } from '../../components/community/icons';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { useActiveVoteBadges } from '../../components/profile/BadgeDefsProvider';
@@ -210,10 +209,10 @@ export default function HomeScreen() {
         flex: 1,
         paddingTop: insets.top + 8,
       }}>
-        {/* Pas de « ? » dans le cluster ici : l'en-tête Accueil est plein (logo
-            centré + 4 pastilles) — l'aide passe par la demi-pastille HelpFab. */}
-        <HeaderActions top={insets.top + 6} right={20} tint="dark" help={false} />
-        <HelpFab />
+        {/* « ? » à côté de la cloche, À LA PLACE de l'avatar : la carte héro
+            ouvre déjà le profil, et l'en-tête est plein au pixel (logo centré
+            131 px — pas de place pour une 5e pastille sur 360 dp). */}
+        <HeaderActions top={insets.top + 6} right={20} tint="dark" avatar={false} />
         {/* Coin gauche — loupe (recherche joueurs) + Communauté, miroir du cluster droit */}
         <View style={{
           position: 'absolute', top: insets.top + 6, left: 20, zIndex: 20,
