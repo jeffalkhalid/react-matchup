@@ -13,8 +13,10 @@ import { requestHelpOpen } from '../lib/helpEvents';
 // troisième pastille du cluster — option B du handoff design_handoff_guide_aide.
 // Le total de notifs vient du hook partagé (même nombre que l'écran /notifications).
 // `bellAnchor` : nom d'ancre de la visite guidée à poser sur la cloche (ex. 'bell-lobby').
-export function HeaderActions({ top, right, tint = 'light', bellAnchor }: {
-  top: number; right: number; tint?: 'light' | 'dark'; bellAnchor?: TourAnchorName;
+// `help` : pastille « ? » incluse (défaut). L'Accueil la désactive — son en-tête
+// est plein (logo centré 131 px + 4 pastilles) — et monte HelpFab à la place.
+export function HeaderActions({ top, right, tint = 'light', bellAnchor, help = true }: {
+  top: number; right: number; tint?: 'light' | 'dark'; bellAnchor?: TourAnchorName; help?: boolean;
 }) {
   const router = useRouter();
   const { total } = useNotificationCount();
@@ -25,16 +27,18 @@ export function HeaderActions({ top, right, tint = 'light', bellAnchor }: {
       position: 'absolute', top, right, zIndex: 20,
       flexDirection: 'row', alignItems: 'center', gap: 10,
     }}>
-      <TouchableOpacity
-        onPress={requestHelpOpen}
-        activeOpacity={0.75}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        accessibilityLabel="Aide"
-        style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: helpBg,
-          alignItems: 'center', justifyContent: 'center' }}
-      >
-        <Text style={{ color: helpFg, fontSize: 17, fontWeight: '900', lineHeight: 21 }}>?</Text>
-      </TouchableOpacity>
+      {help && (
+        <TouchableOpacity
+          onPress={requestHelpOpen}
+          activeOpacity={0.75}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel="Aide"
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: helpBg,
+            alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ color: helpFg, fontSize: 17, fontWeight: '900', lineHeight: 21 }}>?</Text>
+        </TouchableOpacity>
+      )}
       <View
         ref={bellAnchor ? (v) => registerTourAnchor(bellAnchor, v) : undefined}
         collapsable={false}
