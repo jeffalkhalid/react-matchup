@@ -24,18 +24,20 @@ export default function HelpFab() {
         height: 40,
         borderTopLeftRadius: 12,
         borderBottomLeftRadius: 12,
-        backgroundColor: Colors.primary,
+        // Jaune brand : le bord droit de l'Accueil croise la carte héro NOIRE —
+        // une pastille sombre y disparaissait (noir sur noir).
+        backgroundColor: Colors.brand,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: Colors.primary,
-        shadowOpacity: 0.4,
+        shadowColor: '#0A0A0A',
+        shadowOpacity: 0.35,
         shadowRadius: 8,
-        shadowOffset: { width: -2, height: 0 },
+        shadowOffset: { width: -2, height: 2 },
         elevation: 8,
         zIndex: 90,
       }}
     >
-      <Text style={{ color: Colors.textOnDark, fontSize: 17, fontWeight: '900', lineHeight: 22, fontFamily: Fonts.uiBlack }}>?</Text>
+      <Text style={{ color: '#0A0A0A', fontSize: 17, fontWeight: '900', lineHeight: 22, fontFamily: Fonts.uiBlack }}>?</Text>
     </TouchableOpacity>
   );
 }
