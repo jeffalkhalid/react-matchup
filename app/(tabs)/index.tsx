@@ -22,6 +22,7 @@ import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
 import { registerTourAnchor } from '../../lib/tourAnchors';
+import { requestHelpOpen } from '../../lib/helpEvents';
 import type { OpenGame } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -131,7 +132,7 @@ export default function HomeScreen() {
     // (noms + niveaux des deux camps ; l'occupation dérive de occupiesSpot).
     const { data: upcoming } = await supabase
       .from('open_games')
-      .select('id, location, match_date, status, creator_id, creator_side, spots_available, game_format, is_challenge, creator:creator_id(id, name, elo_score), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score))')
+      .select('id, location, match_date, status, creator_id, creator_side, spots_available, game_format, is_challenge, min_elo, max_elo, creator:creator_id(id, name, elo_score), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score))')
       .gt('match_date', now)
       .neq('status', 'cancelled')
       .or(orFilter)
@@ -209,10 +210,11 @@ export default function HomeScreen() {
         flex: 1,
         paddingTop: insets.top + 8,
       }}>
-        {/* « ? » à côté de la cloche, À LA PLACE de l'avatar : la carte héro
-            ouvre déjà le profil, et l'en-tête est plein au pixel (logo centré
-            131 px — pas de place pour une 5e pastille sur 360 dp). */}
-        <HeaderActions top={insets.top + 6} right={20} tint="dark" avatar={false} />
+        {/* Cluster droit complet (cloche + avatar). Pas de « ? » ici : l'en-tête
+            est plein au pixel (logo centré 131 px — pas de place pour une 5e
+            pastille sur 360 dp) → sur l'Accueil, le « ? » vit dans le coin
+            haut-droit de la carte héro, sous le cluster. */}
+        <HeaderActions top={insets.top + 6} right={20} tint="dark" help={false} />
         {/* Coin gauche — loupe (recherche joueurs) + Communauté, miroir du cluster droit */}
         <View style={{
           position: 'absolute', top: insets.top + 6, left: 20, zIndex: 20,
@@ -423,6 +425,23 @@ export default function HomeScreen() {
                   compact={compact}
                   memberNumber={isAmbassador(player) ? player.member_number : null}
                 />
+                {/* « ? » (centre d'aide) — coin haut-droit de la carte héro, zone
+                    libre (cercle décoratif). L'en-tête n'a pas la place, cf. plus haut. */}
+                <TouchableOpacity
+                  onPress={requestHelpOpen}
+                  activeOpacity={0.75}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel="Aide"
+                  style={{
+                    position: 'absolute', top: 12, right: 12, zIndex: 5,
+                    width: 32, height: 32, borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.10)',
+                    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ color: Colors.brand, fontSize: 15, fontWeight: '900', lineHeight: 19 }}>?</Text>
+                </TouchableOpacity>
               </View>
 
               {/* C. Actions principales — ~0,8/7,6 — ancre visite guidée (étape 2) */}
