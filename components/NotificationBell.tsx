@@ -7,11 +7,12 @@ const BADGE_RED = '#E5484D';
 const OUTLINE_DARK = '#0E2A22'; // contour badge sur header sombre
 const OUTLINE_LIGHT = '#FFFFFF'; // contour badge sur fond clair (Accueil)
 
-// Cloche de notifications réutilisable. Pastille 40×40 NON positionnée (le parent,
-// p.ex. HeaderActions, la place en absolu). Animation swing + anneau pulse repris
-// de l'ancienne cloche d'Accueil. `tint` adapte les couleurs au fond.
-export function NotificationBell({ count, onPress, tint = 'light' }: {
-  count: number; onPress: () => void; tint?: 'light' | 'dark';
+// Cloche de notifications réutilisable. Pastille `size`×`size` (défaut 40) NON
+// positionnée (le parent, p.ex. HeaderActions, la place en absolu). Animation
+// swing + anneau pulse repris de l'ancienne cloche d'Accueil. `tint` adapte les
+// couleurs au fond.
+export function NotificationBell({ count, onPress, tint = 'light', size = 40 }: {
+  count: number; onPress: () => void; tint?: 'light' | 'dark'; size?: number;
 }) {
   const has = count > 0;
   const display = count > 9 ? '9+' : String(count);
@@ -69,13 +70,13 @@ export function NotificationBell({ count, onPress, tint = 'light' }: {
       activeOpacity={0.75}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       style={{
-        width: 40, height: 40, borderRadius: 20,
+        width: size, height: size, borderRadius: size / 2,
         backgroundColor: bgColor,
         alignItems: 'center', justifyContent: 'center',
       }}
     >
       <Animated.View style={{ transform: [{ rotate }] }}>
-        <Icon name="bell" size={20} color={iconColor} stroke={1.4} />
+        <Icon name="bell" size={Math.round(size / 2)} color={iconColor} stroke={1.4} />
       </Animated.View>
 
       {has && (

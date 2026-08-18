@@ -22,7 +22,6 @@ import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
 import { registerTourAnchor } from '../../lib/tourAnchors';
-import { requestHelpOpen } from '../../lib/helpEvents';
 import type { OpenGame } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -210,60 +209,60 @@ export default function HomeScreen() {
         flex: 1,
         paddingTop: insets.top + 8,
       }}>
-        {/* Cluster droit complet (cloche + avatar). Pas de « ? » ici : l'en-tête
-            est plein au pixel (logo centré 131 px — pas de place pour une 5e
-            pastille sur 360 dp) → sur l'Accueil, le « ? » vit dans le coin
-            haut-droit de la carte héro, sous le cluster. */}
-        <HeaderActions top={insets.top + 6} right={20} tint="dark" help={false} />
+        {/* En-tête compact (demande Jeff) : le « ? » rejoint cloche + avatar dans
+            le cluster droit, TOUT rétréci (pastilles 34, avatar 30, logo 107 px)
+            pour que le logo reste STRICTEMENT centré sur 360 dp :
+            gauche 12..80 · logo 126,5..233,5 · droite 238..348. */}
+        <HeaderActions top={insets.top + 6} right={12} tint="dark" size={34} />
         {/* Coin gauche — loupe (recherche joueurs) + Communauté, miroir du cluster droit */}
         <View style={{
-          position: 'absolute', top: insets.top + 6, left: 20, zIndex: 20,
-          flexDirection: 'row', alignItems: 'center', gap: 8,
+          position: 'absolute', top: insets.top + 6, left: 12, zIndex: 20,
+          flexDirection: 'row', alignItems: 'center', gap: 6,
         }}>
           <TouchableOpacity
             onPress={() => router.push('/community/friends' as any)}
             activeOpacity={0.75}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={{
-              width: 40, height: 40, borderRadius: 20,
+              width: 34, height: 34, borderRadius: 17,
               backgroundColor: Colors.heroBg,
               alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Icon name="search" size={20} color={Colors.brand} stroke={2} />
+            <Icon name="search" size={17} color={Colors.brand} stroke={2} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push('/community' as any)}
             activeOpacity={0.75}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={{
-              width: 40, height: 40, borderRadius: 20,
+              width: 34, height: 34, borderRadius: 17,
               backgroundColor: Colors.heroBg,
               alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Icon name="users" size={20} color={Colors.brand} stroke={2} />
+            <Icon name="users" size={17} color={Colors.brand} stroke={2} />
           </TouchableOpacity>
         </View>
         {/* Header — logo PAG MATCH centré pleine largeur (identique au splash).
-            Pill légèrement compactée : deux boutons à gauche (fin à 108 px) +
-            cluster droit (dès ~250 px sur 360 dp) — la pill 131 px centrée
-            (114..245) garde ~6 px d'air de chaque côté. */}
+            Pill compactée à ~107 px (racket 19 + wordmark 79) pour tenir entre
+            les deux clusters SANS être décentrée — ne pas ré-agrandir sans
+            recalculer le budget 360 dp ci-dessus. */}
         <View style={{ alignItems: 'center', marginBottom: 4 }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: Colors.heroBg,
-            paddingHorizontal: 10, paddingVertical: 9,
+            paddingHorizontal: 8, paddingVertical: 8,
             borderRadius: 999,
           }}>
             <Image
               source={require('../../assets/auth/splash-racket.png')}
-              style={{ width: 22, height: 22 }}
+              style={{ width: 19, height: 19 }}
               resizeMode="contain"
             />
             <Image
               source={require('../../assets/auth/splash-wordmark.png')}
-              style={{ width: 96, height: 22, marginLeft: -7 }}
+              style={{ width: 79, height: 18, marginLeft: -6 }}
               resizeMode="contain"
             />
           </View>
@@ -425,23 +424,6 @@ export default function HomeScreen() {
                   compact={compact}
                   memberNumber={isAmbassador(player) ? player.member_number : null}
                 />
-                {/* « ? » (centre d'aide) — coin haut-droit de la carte héro, zone
-                    libre (cercle décoratif). L'en-tête n'a pas la place, cf. plus haut. */}
-                <TouchableOpacity
-                  onPress={requestHelpOpen}
-                  activeOpacity={0.75}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityLabel="Aide"
-                  style={{
-                    position: 'absolute', top: 12, right: 12, zIndex: 5,
-                    width: 32, height: 32, borderRadius: 16,
-                    backgroundColor: 'rgba(255,255,255,0.10)',
-                    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ color: Colors.brand, fontSize: 15, fontWeight: '900', lineHeight: 19 }}>?</Text>
-                </TouchableOpacity>
               </View>
 
               {/* C. Actions principales — ~0,8/7,6 — ancre visite guidée (étape 2) */}
