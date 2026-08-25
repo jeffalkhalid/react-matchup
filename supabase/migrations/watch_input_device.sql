@@ -131,21 +131,22 @@ GRANT EXECUTE ON FUNCTION public.claim_phone_input(uuid) TO authenticated;
 -- ── Un changement de scoreur remet la saisie sur le téléphone du nouveau ──
 CREATE OR REPLACE FUNCTION public.take_over_scoring(p_session_id uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  v_me uuid := public.current_player_id();
-  s RECORD;
+DECLARE v_me uuid := public.current_player_id(); s RECORD;
 BEGIN
   IF v_me IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+
   SELECT * INTO s FROM public.live_match_sessions WHERE id = p_session_id FOR UPDATE;
-  IF s IS NULL THEN RAISE EXCEPTION 'session_not_found'; END IF;
-  IF s.status <> 'live' THEN RAISE EXCEPTION 'session_not_live'; END IF;
+  IF s IS NULL OR s.status <> 'live' THEN RAISE EXCEPTION 'session_not_live'; END IF;
   IF NOT (v_me = ANY(s.team1_ids || s.team2_ids)) THEN RAISE EXCEPTION 'not_a_participant'; END IF;
+  IF v_me = s.scorer_id THEN RETURN; END IF;
 
   INSERT INTO public.live_match_events (session_id, seq, author_id, event_type, payload)
   VALUES (p_session_id,
           coalesce((SELECT max(seq) FROM public.live_match_events WHERE session_id = p_session_id), 0) + 1,
-          v_me, 'scorer_changed', jsonb_build_object('scorer_id', v_me));
+          v_me, 'scorer_changed', jsonb_build_object('from', s.scorer_id));
 
+  -- SEULE addition par rapport a la version de production : la saisie repart
+  -- sur le telephone du NOUVEAU scoreur (spec §8).
   UPDATE public.live_match_sessions
      SET scorer_id = v_me, input_device = 'phone', input_device_at = now(), updated_at = now()
    WHERE id = p_session_id;

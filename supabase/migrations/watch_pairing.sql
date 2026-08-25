@@ -33,10 +33,13 @@ CREATE INDEX IF NOT EXISTS watch_links_player_idx
 CREATE TABLE IF NOT EXISTS public.watch_pairing_attempts (
   id           bigserial PRIMARY KEY,
   attempted_at timestamptz NOT NULL DEFAULT now(),
-  ok           boolean NOT NULL
+  ok           boolean NOT NULL,
+  ip           text
 );
 CREATE INDEX IF NOT EXISTS watch_pairing_attempts_at_idx
   ON public.watch_pairing_attempts(attempted_at DESC);
+CREATE INDEX IF NOT EXISTS watch_pairing_attempts_ip_idx
+  ON public.watch_pairing_attempts(ip, attempted_at DESC);
 
 -- Aucune policy RLS : ces tables ne sont JAMAIS lues directement, uniquement
 -- via les RPC SECURITY DEFINER ci-dessous.
@@ -78,18 +81,35 @@ RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   c RECORD;
   v_token text;
-  v_recent int;
+  v_ip text;
+  v_ip_fails int;
+  v_all_fails int;
 BEGIN
-  SELECT count(*) INTO v_recent FROM public.watch_pairing_attempts
-   WHERE ok = false AND attempted_at > now() - interval '1 minute';
-  IF v_recent >= 10 THEN
-    RAISE EXCEPTION 'rate_limited';
+  -- IP de l'appelant si PostgREST la fournit, NULL sinon.
+  BEGIN
+    v_ip := split_part(coalesce(current_setting('request.headers', true)::json->>'x-forwarded-for', ''), ',', 1);
+    IF v_ip = '' THEN v_ip := NULL; END IF;
+  EXCEPTION WHEN others THEN
+    v_ip := NULL;
+  END;
+
+  -- Limiteur PAR ORIGINE : 10 echecs/minute pour la meme IP.
+  IF v_ip IS NOT NULL THEN
+    SELECT count(*) INTO v_ip_fails FROM public.watch_pairing_attempts
+     WHERE ok = false AND ip = v_ip AND attempted_at > now() - interval '1 minute';
+    IF v_ip_fails >= 10 THEN RAISE EXCEPTION 'rate_limited'; END IF;
   END IF;
+
+  -- Filet global VOLONTAIREMENT haut : borne une attaque distribuee sans
+  -- permettre a un seul acteur de bloquer l'appairage de toute l'app.
+  SELECT count(*) INTO v_all_fails FROM public.watch_pairing_attempts
+   WHERE ok = false AND attempted_at > now() - interval '1 minute';
+  IF v_all_fails >= 200 THEN RAISE EXCEPTION 'rate_limited'; END IF;
 
   SELECT * INTO c FROM public.watch_pairing_codes WHERE code = p_code FOR UPDATE;
 
   IF c IS NULL OR c.consumed_at IS NOT NULL OR c.expires_at < now() THEN
-    INSERT INTO public.watch_pairing_attempts (ok) VALUES (false);
+    INSERT INTO public.watch_pairing_attempts (ok, ip) VALUES (false, v_ip);
     IF c IS NULL THEN RAISE EXCEPTION 'invalid_code'; END IF;
     IF c.consumed_at IS NOT NULL THEN RAISE EXCEPTION 'code_already_used'; END IF;
     RAISE EXCEPTION 'code_expired';
@@ -102,7 +122,7 @@ BEGIN
   VALUES (c.player_id, encode(sha256(convert_to(v_token, 'UTF8')), 'hex'), p_device_label);
 
   UPDATE public.watch_pairing_codes SET consumed_at = now() WHERE code = p_code;
-  INSERT INTO public.watch_pairing_attempts (ok) VALUES (true);
+  INSERT INTO public.watch_pairing_attempts (ok, ip) VALUES (true, v_ip);
 
   RETURN v_token; -- rendu EN CLAIR une seule fois, jamais restituable ensuite
 END; $$;
