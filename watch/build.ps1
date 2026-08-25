@@ -1,12 +1,16 @@
 # =====================================================================
-# SPIKE JETABLE — script de build/run du projet Connect IQ PagMatch Probe.
+# Script de build/run du projet Connect IQ PagMatch (app montre).
+# Localise le SDK installe, genere la cle de signature developpeur si besoin,
+# force le JBR d'Android Studio (le `java` du PATH est un JRE 1.8 trop vieux
+# pour le SDK Connect IQ), puis compile via monkeyc et, en option, lance le
+# simulateur.
 # Windows PowerShell 5.1 (pas de && ni de ternaire).
 #
 # Usage :
 #   .\build.ps1 -ListDevices                 # que propose mon SDK ?
 #   .\build.ps1 -SyncProducts                # recale manifest.xml sur le SDK
-#   .\build.ps1 -Device fenix7 -Sim          # compile + lance dans le simulateur
-#   .\build.ps1 -Device fenix7               # compile seulement (.prg a sideloader)
+#   .\build.ps1 -Device epix2 -Sim           # compile + lance dans le simulateur
+#   .\build.ps1 -Device epix2                # compile seulement (.prg a sideloader)
 # =====================================================================
 param(
     [string] $Device = "",
@@ -38,7 +42,7 @@ function Resolve-Sdk {
         if ($null -ne $latest) { return $latest.FullName }
     }
 
-    throw "SDK Connect IQ introuvable. Installe-le via le SDK Manager Garmin (voir README.md), ou passe -SdkPath <chemin>."
+    throw "SDK Connect IQ introuvable. Installe-le via le SDK Manager Garmin (voir docs/superpowers/plans/2026-08-25-app-montre.md), ou passe -SdkPath <chemin>."
 }
 
 $Sdk = Resolve-Sdk

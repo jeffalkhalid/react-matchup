@@ -23,6 +23,7 @@ class SessionView extends WatchUi.View {
     hidden var _isScorer = true;
     hidden var _msg = "Chargement...";
     hidden var _timer = null;
+    hidden var _inFlight = null;   // client_seq de la requete en vol, null si aucune
 
     function initialize() { View.initialize(); }
 
@@ -107,20 +108,35 @@ class SessionView extends WatchUi.View {
     }
 
     function sendHead() {
+        // Une seule requete a la fois : sans ce verrou, une reponse tardive
+        // retirerait de la file un evenement jamais acquitte.
+        if (_inFlight != null) { return; }
         var e = Queue.head();
         if (e == null) { return; }
+        _inFlight = e["seq"];
         Api.applyEvent(e["sid"], e["type"], e["team"], e["seq"], method(:onSent));
     }
 
     function onSent(responseCode as Lang.Number, data as Lang.Dictionary or Lang.String or Null) as Void {
+        var sent = _inFlight;
+        _inFlight = null;
+
+        var head = Queue.head();
+        // Reponse orpheline : la tete de file n'est plus celle qu'on a envoyee.
+        // Ne RIEN retirer, sinon on jette un evenement non acquitte.
+        if (head == null || sent == null || head["seq"] != sent) {
+            WatchUi.requestUpdate();
+            return;
+        }
+
         if (responseCode == 200) {
             Queue.popHead();
             if (data != null) { apply(data); }
-            if (Queue.size() > 0) { sendHead(); } // on vide la file d'affilée
+            if (Queue.size() > 0) { sendHead(); } // on vide la file d'affilee
             return;
         }
-        // 4xx = refus métier définitif : rejouer ne servirait à rien et
-        // bloquerait la file pour toujours. On jette et on prévient.
+        // 4xx = refus metier definitif : rejouer ne servirait a rien et
+        // bloquerait la file pour toujours. On jette et on previent.
         if (responseCode >= 400 && responseCode < 500) {
             Queue.popHead();
             _msg = "Refuse (" + responseCode.toString() + ")";

@@ -1,4 +1,4 @@
-# SPIKE JETABLE — configuration de build minimale.
+# Configuration de build du projet Connect IQ PagMatch (app montre).
 # Les dossiers `source` et `resources` sont pris par défaut : rien d'autre
 # à déclarer tant qu'on ne fait pas de ressources par-device.
 project.manifest = manifest.xml
