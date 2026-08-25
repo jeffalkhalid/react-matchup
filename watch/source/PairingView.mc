@@ -84,17 +84,25 @@ class PairingDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
+    // redeem_watch_pairing_code repond en jsonb : {"ok":true,"token":"..."} ou
+    // {"ok":false,"reason":"..."}. Un refus metier arrive donc en 200 - c'est
+    // voulu : un RAISE annulerait l'ecriture du compteur anti-force-brute.
     function onRedeem(responseCode, data) {
-        if (responseCode == 200 && data != null) {
-            Api.setToken(data);
+        if (responseCode == 200 && data != null && data["ok"] == true && data["token"] != null) {
+            Api.setToken(data["token"]);
             // SessionDelegate PREND la vue en argument : ne jamais l'instancier
             // sans, sinon l'app plante à la bascule.
             var v = new SessionView();
             WatchUi.switchToView(v, new SessionDelegate(v), WatchUi.SLIDE_IMMEDIATE);
-        } else if (responseCode == 400 || responseCode == 404) {
-            _view.setStatus("Code refuse");
-        } else {
-            _view.setStatus("Erreur " + responseCode.toString());
+            return;
         }
+        // Raison metier (corps 200 "reason", ou "message" d'un vrai 4xx).
+        var txt = Api.reasonText(Api.errorReason(data));
+        if (txt != null) { _view.setStatus(txt); return; }
+        if (responseCode == 200 || responseCode == 400 || responseCode == 404) {
+            _view.setStatus("Code refuse");
+            return;
+        }
+        _view.setStatus("Erreur " + responseCode.toString());
     }
 }

@@ -20,11 +20,14 @@ class SessionView extends WatchUi.View {
     hidden var _pointLabel = null;   // "30 - 40" en mode points, null sinon
     hidden var _mode = "games";
     hidden var _contests = 0;
-    hidden var _finished = false;
+    hidden var _finished = false;   // session cloturee cote serveur (statut <> live)
+    hidden var _decided = false;    // match JOUE mais session encore live (spec §9)
     hidden var _isScorer = true;
+    hidden var _hadControl = false; // la montre a-t-elle deja eu la main ce match ?
     hidden var _msg = "Chargement...";
     hidden var _timer = null;
     hidden var _inFlight = null;   // client_seq de la requete en vol, null si aucune
+    hidden var _inFlightTicks = 0; // chien de garde : ticks depuis le depart
 
     function initialize() { View.initialize(); }
 
@@ -40,10 +43,22 @@ class SessionView extends WatchUi.View {
     }
 
     function onTick() as Void {
+        // Chien de garde : si la plateforme ne rappelle JAMAIS, _inFlight reste
+        // pose, sendHead ressort aussitot et onTick ne rafraichit plus (branche
+        // else) -> ecran fige sous le doigt. Au bout de ~15 s on relache.
+        // Aucun risque de doublon : le rejeu porte le meme client_seq et le
+        // serveur est idempotent dessus.
+        if (_inFlight != null) {
+            _inFlightTicks = _inFlightTicks + 1;
+            if (_inFlightTicks >= 3) { _inFlight = null; _inFlightTicks = 0; }
+        }
         if (Queue.size() > 0) { sendHead(); } else { refresh(); }
     }
 
     function sessionId() { return _sid; }
+    // Volontairement sur _finished (statut serveur) et NON sur _decided :
+    // le telephone autorise « Continuer un set » apres un match joue, la
+    // montre doit pouvoir marquer ces jeux-la.
     function isReady() { return _sid != null && !_finished && _isScorer; }
     function isPointMode() { return _mode != null && _mode.equals("points"); }
 
@@ -53,7 +68,12 @@ class SessionView extends WatchUi.View {
 
     function onSession(responseCode as Lang.Number, data as Lang.Dictionary or Lang.String or Null) as Void {
         if (responseCode != 200) {
-            _msg = "Hors ligne (" + responseCode.toString() + ")";
+            var reason = Api.errorReason(data);
+            // Lien revoque depuis le telephone : sans ca l'app resterait bloquee
+            // sur une erreur generique, sans aucun chemin de retour (F4).
+            if (reason != null && reason.equals("token_revoked")) { unpair(); return; }
+            var txt = Api.reasonText(reason);
+            _msg = txt != null ? txt : "Hors ligne (" + responseCode.toString() + ")";
             WatchUi.requestUpdate();
             return;
         }
@@ -74,6 +94,8 @@ class SessionView extends WatchUi.View {
         _contests = d["contest_count"];
         _finished = d["finished"];
         _isScorer = d["is_scorer"];
+        // Serveur pas encore migre (cle absente) -> on ne suppose rien.
+        _decided = d["match_decided"] == true;
 
         var sw = d["sets_won"];
         _setsWon1 = sw["t1"];
@@ -93,11 +115,17 @@ class SessionView extends WatchUi.View {
             _pointLabel = g["t1"] + " - " + g["t2"];
         }
 
-        if (_finished) {
+        var device = d["input_device"];
+        // Memoire locale : « le telephone a REPRIS la main » n'a de sens que si la
+        // montre l'a effectivement eue. input_device_at ne suffit pas : il bouge
+        // aussi quand le telephone marque, donc des le premier jeu du match.
+        if (device != null && device.equals("watch")) { _hadControl = true; }
+
+        if (_finished || _decided) {
             _msg = "Match termine - valide sur le tel";
         } else if (!_isScorer) {
             _msg = "Tu n es plus le scoreur";
-        } else if (d["input_device"].equals("phone") && Queue.size() == 0) {
+        } else if (_hadControl && device != null && device.equals("phone") && Queue.size() == 0) {
             _msg = "Le telephone a repris la main";
         } else {
             _msg = "";
@@ -121,12 +149,14 @@ class SessionView extends WatchUi.View {
         var e = Queue.head();
         if (e == null) { return; }
         _inFlight = e["seq"];
+        _inFlightTicks = 0;
         Api.applyEvent(e["sid"], e["type"], e["team"], e["seq"], method(:onSent));
     }
 
     function onSent(responseCode as Lang.Number, data as Lang.Dictionary or Lang.String or Null) as Void {
         var sent = _inFlight;
         _inFlight = null;
+        _inFlightTicks = 0;
 
         var head = Queue.head();
         // Reponse orpheline : la tete de file n'est plus celle qu'on a envoyee.
@@ -142,15 +172,40 @@ class SessionView extends WatchUi.View {
             if (Queue.size() > 0) { sendHead(); } // on vide la file d'affilee
             return;
         }
-        // 4xx = refus metier definitif : rejouer ne servirait a rien et
-        // bloquerait la file pour toujours. On jette et on previent.
-        if (responseCode >= 400 && responseCode < 500) {
+        var reason = Api.errorReason(data);
+        // Lien revoque : le jeton ne vaut plus rien, on repart de l'appairage.
+        if (reason != null && reason.equals("token_revoked")) { unpair(); return; }
+
+        // On ne jette QUE sur un refus metier definitif. Le reste de la bande
+        // 4xx est de l'infrastructure et le rejeu marchera : 404 = cache de
+        // schema PostgREST en cours de rechargement (nos propres NOTIFY pgrst
+        // le provoquent), 408/429 = temporisation du edge. Les y jeter
+        // effacerait un vrai point. Les codes de transport Connect IQ, negatifs,
+        // tombent aussi ici : rejeu, jamais de retrait.
+        if (responseCode == 400 || responseCode == 403 || responseCode == 409) {
             Queue.popHead();
-            _msg = "Refuse (" + responseCode.toString() + ")";
+            var txt = Api.reasonText(reason);
+            _msg = txt != null ? txt : "Refuse (" + responseCode.toString() + ")";
         } else {
             _msg = "En attente reseau (" + Queue.size().toString() + ")";
         }
         WatchUi.requestUpdate();
+    }
+
+    // Retour a l'ecran d'appairage. SEUL chemin de retour apres un
+    // « Delier ma montre » depuis le telephone : sans lui, fn_watch_link leve
+    // token_revoked pour toujours et l'app est bonne a reinstaller.
+    // La file est videe : ses evenements visent une session que cette montre
+    // n'a plus le droit de toucher.
+    hidden function unpair() {
+        Api.clearToken();
+        Queue.clear();
+        _inFlight = null;
+        if (_timer != null) { _timer.stop(); _timer = null; }
+        var v = new PairingView();
+        v.setStatus("Montre deliee - reappairer");
+        // PairingDelegate PREND la vue en argument (cf. PagMatchApp).
+        WatchUi.switchToView(v, new PairingDelegate(v), WatchUi.SLIDE_IMMEDIATE);
     }
 
     function onUpdate(dc) {

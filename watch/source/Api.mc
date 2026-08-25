@@ -47,7 +47,40 @@ module Api {
         );
     }
 
+    // ---- Refus serveur : les rendre LISIBLES au poignet (spec §13) ----------
+    // PostgREST renvoie le texte du RAISE dans le champ "message" du corps
+    // ({"code":"P0001","message":"not_the_scorer",...}), que Connect IQ nous
+    // livre déjà parse en Dictionary. redeem_watch_pairing_code, elle, répond
+    // 200 avec {"ok":false,"reason":"..."} : même extraction, deux clés.
+    function errorReason(data) {
+        if (data == null) { return null; }
+        if (!(data instanceof Lang.Dictionary)) { return null; }
+        var m = data["message"];
+        if (m == null) { m = data["reason"]; }
+        if (m == null) { return null; }
+        if (!(m instanceof Lang.String)) { return null; }
+        return m;
+    }
+
+    // Chaines SANS ACCENTS : les polices systeme Garmin ne les garantissent pas.
+    // Retourne null si la raison est inconnue -> l'appelant garde son message
+    // generique, jamais un echec muet.
+    function reasonText(reason) {
+        if (reason == null) { return null; }
+        if (reason.equals("token_revoked"))     { return "Montre deliee - reappairer"; }
+        if (reason.equals("not_the_scorer"))    { return "Tu n es plus le scoreur"; }
+        if (reason.equals("watch_has_control")) { return "La montre a la main"; }
+        if (reason.equals("session_not_live"))  { return "Match termine"; }
+        if (reason.equals("not_a_participant")) { return "Plus dans ce match"; }
+        if (reason.equals("rate_limited"))      { return "Trop d essais - patiente"; }
+        if (reason.equals("invalid_code"))      { return "Code invalide"; }
+        if (reason.equals("code_expired"))      { return "Code expire"; }
+        if (reason.equals("code_already_used")) { return "Code deja utilise"; }
+        return null;
+    }
+
     // cb.invoke(responseCode, data)
+    // Reponse : {"ok":true,"token":"..."} ou {"ok":false,"reason":"..."}.
     function redeem(code, cb) {
         post("redeem_watch_pairing_code",
              { "p_code" => code, "p_device_label" => Config.DEVICE_LABEL }, cb);
