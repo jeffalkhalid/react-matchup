@@ -247,9 +247,15 @@ export default function LiveScoreScreen() {
       return;
     }
     if (pending > 0) return;
+    // La montre a la main : le serveur a REFUSé nos derniers taps
+    // (watch_has_control) et `flush` les a jetés. L'optimiste local est donc en
+    // avance sur un état serveur qui ne le rattrapera JAMAIS — la comparaison de
+    // progression ci-dessous ne repasserait plus vraie et le score gonflé
+    // resterait à l'écran jusqu'à la fin du match. On réadopte donc le serveur.
+    if (watchHasControl) { setLocalEvents(eventsFromState(st)); return; }
     setLocalEvents(prev =>
       progressKey(st) >= progressKey(replayEvents(prev, replayOpts)) ? eventsFromState(st) : prev);
-  }, [session, isScorer, pending, queueReady, sessionId, replayOpts]);
+  }, [session, isScorer, pending, queueReady, sessionId, replayOpts, watchHasControl]);
 
   const state: LiveState = useMemo(
     () => (isScorer ? replayEvents(localEvents, replayOpts) : serverState),
@@ -586,8 +592,12 @@ export default function LiveScoreScreen() {
             </TouchableOpacity>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
-              <TouchableOpacity onPress={onUndo} disabled={!canUndo}
-                style={[sty.smallBtn, !canUndo && { opacity: 0.4 }]} activeOpacity={0.75}>
+              {/* Écran en lecture seule tant que la montre marque (spec §8) :
+                  sans `watchHasControl` ici, l'annulation reculait le score
+                  à l'écran, le serveur la refusait, et le score resautait en
+                  avant au tick suivant — un bouton qui rebondit sans explication. */}
+              <TouchableOpacity onPress={onUndo} disabled={!canUndo || watchHasControl}
+                style={[sty.smallBtn, (!canUndo || watchHasControl) && { opacity: 0.4 }]} activeOpacity={0.75}>
                 <Text style={sty.smallBtnTxt}>↩︎ Annuler</Text>
               </TouchableOpacity>
               {(session.contest_count ?? 0) > 0 && (
@@ -637,7 +647,9 @@ export default function LiveScoreScreen() {
                 style={[sty.smallBtn, { flex: 1 }]} activeOpacity={0.75}>
                 <Text style={sty.smallBtnTxt}>Continuer un set</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={onUndo} style={[sty.smallBtn, { flex: 1 }]} activeOpacity={0.75}>
+              {/* Idem carte de fin : verrouillé pendant que la montre a la main. */}
+              <TouchableOpacity onPress={onUndo} disabled={watchHasControl}
+                style={[sty.smallBtn, { flex: 1 }, watchHasControl && { opacity: 0.4 }]} activeOpacity={0.75}>
                 <Text style={sty.smallBtnTxt}>↩︎ Annuler</Text>
               </TouchableOpacity>
             </View>

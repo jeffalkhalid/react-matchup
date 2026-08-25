@@ -91,6 +91,10 @@ async function flush(sessionId: string): Promise<void> {
       if (error) {
         // Erreurs métier (not_the_scorer, session_not_live…) : jeter l'événement,
         // il n'a plus de sens. Erreurs réseau : garder, on réessaiera.
+        // `watch_has_control` en fait partie — rejouer doublerait le point. En
+        // contrepartie l'optimiste local de l'écran est désormais en avance sur le
+        // serveur : c'est app/live/[sessionId].tsx qui le réaligne en forçant la
+        // réadoption de l'état serveur quand input_device === 'watch'.
         const msg = String(error.message ?? '');
         const business = ['not_the_scorer', 'session_not_live', 'session_not_found', 'invalid_event_type', 'not_a_participant', 'not_authenticated', 'wrong_scoring_mode', 'watch_has_control'];
         if (business.some(b => msg.includes(b))) {
