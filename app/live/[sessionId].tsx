@@ -193,14 +193,19 @@ export default function LiveScoreScreen() {
     const unsubscribe = subscribeLiveSession(sessionId, s => {
       if (cancelled || !mounted.current) return;
       // Un payload realtime peut arriver SANS les colonnes scoring_mode /
-      // golden_point (cache de schéma Realtime pas encore rafraîchi après la
-      // migration, réplique en retard). Retomber alors sur 'games' en plein
-      // match ferait envoyer des game_won → rejetés wrong_scoring_mode → taps
-      // perdus en silence. On préserve donc les valeurs déjà connues.
+      // golden_point / input_device (cache de schéma Realtime pas encore
+      // rafraîchi après la migration, réplique en retard). Retomber alors sur
+      // 'games' en plein match ferait envoyer des game_won → rejetés
+      // wrong_scoring_mode → taps perdus en silence ; retomber sur 'phone'
+      // pour input_device réactiverait les boutons alors que la montre a
+      // toujours la main → taps rejetés watch_has_control → score qui diverge
+      // sans jamais se resynchroniser (progressKey local dépasse le serveur).
+      // On préserve donc les valeurs déjà connues.
       setSession(prev => prev ? {
         ...s,
         scoring_mode: s.scoring_mode ?? prev.scoring_mode,
         golden_point: s.golden_point ?? prev.golden_point,
+        input_device: s.input_device ?? prev.input_device,
       } : s);
     });
     return () => { cancelled = true; unsubscribe(); };
