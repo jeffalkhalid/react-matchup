@@ -2,6 +2,11 @@
 -- App montre — verrou d'appareil de saisie + moteur commun.
 -- Cf. spec §7 (idempotence) et §8 (garde-fou).
 --
+-- ORDRE D'APPLICATION - il n'y a pas de runner, un humain applique a la main :
+--    1) watch_pairing.sql  ->  2) watch_input_device.sql  ->  3) watch_rpcs.sql
+-- Ce fichier est le DEUXIÈME : il référence public.watch_links(id), créée par
+-- watch_pairing.sql. Appliqué avant, il échoue (l'ordre alphabétique trompe).
+--
 -- ⚠️ apply_live_event CHANGE DE SIGNATURE (ajout de p_claim). L'ancienne
 -- 3-args est DROPée d'abord : deux surcharges rendraient l'appel PostgREST
 -- ambigu (piège déjà rencontré sur start_live_session).
@@ -89,7 +94,17 @@ BEGIN
   RETURN v_state;
 END; $$;
 
-REVOKE ALL ON FUNCTION public.fn_apply_live_event_as(uuid, uuid, text, jsonb, uuid, int, text) FROM PUBLIC;
+-- Supabase accorde EXECUTE par défaut à anon ET authenticated sur toute
+-- nouvelle fonction du schéma public : REVOKE ... FROM PUBLIC seul NE RETIRE
+-- PAS ces deux droits directs (même piège que live_scoring.sql:335).
+-- CRITIQUE ici : fn_apply_live_event_as prend l'acteur EN PARAMÈTRE et ne
+-- consulte jamais current_player_id(). Laissée joignable par authenticated,
+-- n'importe quel participant pourrait la rappeler via PostgREST avec
+-- p_actor = l'id du scoreur et forger des points sur un match qu'il perd,
+-- contournant not_the_scorer. Elle n'est appelée que depuis apply_live_event
+-- et watch_apply_event, toutes deux SECURITY DEFINER : le propriétaire a
+-- EXECUTE implicite sur ses propres fonctions, aucun grant n'est nécessaire.
+REVOKE ALL ON FUNCTION public.fn_apply_live_event_as(uuid, uuid, text, jsonb, uuid, int, text) FROM PUBLIC, anon, authenticated;
 
 -- ── RPC téléphone : délègue au moteur commun ──────────────────────────────
 DROP FUNCTION IF EXISTS public.apply_live_event(uuid, text, jsonb);
@@ -100,6 +115,10 @@ DECLARE v_me uuid := public.current_player_id();
 BEGIN
   IF v_me IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
   -- p_claim = le joueur a explicitement appuyé sur « Reprendre la saisie ici ».
+  -- RÉSERVÉ : aucun appelant à ce jour (le client passe par la RPC dédiée
+  -- claim_phone_input, qui ne pose aucun événement). Branche conservée
+  -- volontairement pour un futur « marquer ET reprendre la main » en un aller-
+  -- retour : ce n'est PAS du code mort à supprimer.
   IF p_claim THEN
     UPDATE public.live_match_sessions
        SET input_device = 'phone', input_device_at = now()

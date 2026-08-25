@@ -1,6 +1,11 @@
 -- ============================================================
 -- App montre — RPC appelées par la montre (clé anon + jeton).
 -- Cf. spec §6. Ces RPC ne doivent RIEN exposer au-delà du joueur lié.
+--
+-- ORDRE D'APPLICATION - il n'y a pas de runner, un humain applique a la main :
+--    1) watch_pairing.sql  ->  2) watch_input_device.sql  ->  3) watch_rpcs.sql
+-- Ce fichier est le DERNIER : il dépend de watch_links (watch_pairing.sql) et
+-- de fn_apply_live_event_as (watch_input_device.sql).
 -- ============================================================
 BEGIN;
 
@@ -17,7 +22,12 @@ BEGIN
   RETURN l;
 END; $$;
 
-REVOKE ALL ON FUNCTION public.fn_watch_link(text) FROM PUBLIC;
+-- Supabase accorde EXECUTE par défaut à anon ET authenticated sur toute
+-- nouvelle fonction du schéma public : REVOKE ... FROM PUBLIC seul NE RETIRE
+-- PAS ces deux droits directs (même piège que live_scoring.sql:335).
+-- fn_watch_link est un helper interne : joignable, elle laisserait n'importe
+-- quel appelant éprouver des jetons et lire la ligne watch_links complète.
+REVOKE ALL ON FUNCTION public.fn_watch_link(text) FROM PUBLIC, anon, authenticated;
 
 -- Formatage 0/15/30/40/AV — MIROIR EXACT de gameScoreLabels (lib/liveScore.ts:109).
 -- Toute évolution de l'une doit être répercutée sur l'autre.
@@ -38,7 +48,8 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
   END;
 $$;
 
-REVOKE ALL ON FUNCTION public.fn_game_label(int, int, boolean, boolean) FROM PUBLIC;
+-- Même retrait que ci-dessus : PUBLIC seul ne suffit pas (cf. fn_watch_link).
+REVOKE ALL ON FUNCTION public.fn_game_label(int, int, boolean, boolean) FROM PUBLIC, anon, authenticated;
 
 -- Sérialisation commune de l'état, pour que les deux RPC renvoient la
 -- MÊME forme (contrat unique côté montre).
@@ -81,11 +92,30 @@ BEGIN
     'contest_count', coalesce(s.contest_count, 0),
     'input_device',  coalesce(s.input_device, 'phone'),
     'is_scorer',     (s.scorer_id = p_player),
+    -- DEUX notions distinctes, à ne surtout pas fusionner (spec §9) :
+    --  • finished       = la session n'est plus 'live' → le téléphone a déjà
+    --    validé ; c'est ce qui coupe la saisie au poignet.
+    --  • match_decided  = le match est JOUÉ (2 sets d'écart-vainqueur) alors que
+    --    la session tourne encore → la montre invite à sortir le téléphone,
+    --    mais laisse marquer : l'app permet « Continuer un set ».
+    -- MIROIR de isMatchDecided (lib/liveScore.ts:173) : évoluer les deux ensemble.
+    -- NB : st->>'finished' ne convient PAS ici, il ne vaut true qu'après
+    -- l'événement 'finished' posé par finalize_live_session - soit la même
+    -- information que s.status, donc toujours trop tard.
+    'match_decided', (
+      greatest(coalesce((st->'setsWon'->>'t1')::int, 0),
+               coalesce((st->'setsWon'->>'t2')::int, 0)) >= 2
+      AND coalesce((st->'setsWon'->>'t1')::int, 0) <> coalesce((st->'setsWon'->>'t2')::int, 0)
+    ),
     'finished',      (s.status <> 'live')
   );
 END; $$;
 
-REVOKE ALL ON FUNCTION public.fn_watch_payload(uuid, uuid) FROM PUBLIC;
+-- Idem, et c'est le plus sensible des trois : joignable, fn_watch_payload est
+-- une lecture NON AUTHENTIFIÉE de l'état d'une session live et des noms des
+-- joueurs à partir du seul uuid de session - exactement ce que le commentaire
+-- d'en-tête de ce fichier interdit.
+REVOKE ALL ON FUNCTION public.fn_watch_payload(uuid, uuid) FROM PUBLIC, anon, authenticated;
 
 -- ── Quelle session dois-je scorer ? ───────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.watch_current_session(p_token text)
@@ -118,6 +148,8 @@ BEGIN
   RETURN public.fn_watch_payload(p_session_id, l.player_id);
 END; $$;
 
+-- Les DEUX RPC ci-dessous sont, elles, faites pour être appelées par la montre
+-- (clé anon + jeton d'appairage) : on les ré-accorde juste après.
 REVOKE ALL ON FUNCTION public.watch_current_session(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.watch_apply_event(text, uuid, text, jsonb, int) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.watch_current_session(text) TO anon, authenticated;
