@@ -165,33 +165,37 @@ class SessionView extends WatchUi.View {
             return;
         }
 
-        // Disposition verticale (416x416 sur epix2) : deux blocs equipe
-        // resserres pour degager de la place a la ligne de point vif
-        // (mode points uniquement) sans chevaucher la ligne de message.
+        // Disposition verticale (416x416 sur epix2, cadran ROND) : les lignes
+        // preexistantes gardent leurs positions d'origine (le cadran retrecit
+        // vite en corde horizontale pres du bezel — ne jamais les en
+        // rapprocher). La ligne de point vif (mode points) est logee dans
+        // l'espace deja libre entre le score equipe 2 et le message, en
+        // FONT_SMALL (plus bas que FONT_NUMBER_MILD) pour ne pas mordre sur
+        // ses voisines.
         dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 8 / 100, Graphics.FONT_XTINY, _team1, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, h * 10 / 100, Graphics.FONT_XTINY, _team1, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 22 / 100, Graphics.FONT_NUMBER_MILD,
+        dc.drawText(w / 2, h * 26 / 100, Graphics.FONT_NUMBER_MILD,
                     _setsWon1.toString() + " - " + _games1.toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 38 / 100, Graphics.FONT_XTINY, _team2, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, h * 50 / 100, Graphics.FONT_XTINY, _team2, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 52 / 100, Graphics.FONT_NUMBER_MILD,
+        dc.drawText(w / 2, h * 64 / 100, Graphics.FONT_NUMBER_MILD,
                     _setsWon2.toString() + " - " + _games2.toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
         if (_pointLabel != null) {
             dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 70 / 100, Graphics.FONT_NUMBER_MILD, _pointLabel, Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(w / 2, h * 75 / 100, Graphics.FONT_SMALL, _pointLabel, Graphics.TEXT_JUSTIFY_CENTER);
         }
 
         if (_contests > 0) {
             dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 90 / 100, Graphics.FONT_XTINY,
+            dc.drawText(w / 2, h * 84 / 100, Graphics.FONT_XTINY,
                         _contests.toString() + " contestation(s)", Graphics.TEXT_JUSTIFY_CENTER);
         } else if (!_msg.equals("")) {
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 90 / 100, Graphics.FONT_XTINY, _msg, Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(w / 2, h * 84 / 100, Graphics.FONT_XTINY, _msg, Graphics.TEXT_JUSTIFY_CENTER);
         }
     }
 }
