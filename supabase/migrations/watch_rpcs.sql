@@ -19,6 +19,27 @@ END; $$;
 
 REVOKE ALL ON FUNCTION public.fn_watch_link(text) FROM PUBLIC;
 
+-- Formatage 0/15/30/40/AV — MIROIR EXACT de gameScoreLabels (lib/liveScore.ts:109).
+-- Toute évolution de l'une doit être répercutée sur l'autre.
+CREATE OR REPLACE FUNCTION public.fn_game_label(
+  p_t1 int, p_t2 int, p_golden boolean, p_tiebreak boolean)
+RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE
+    WHEN p_tiebreak THEN jsonb_build_object('t1', p_t1::text, 't2', p_t2::text)
+    WHEN p_t1 >= 3 AND p_t2 >= 3 THEN
+      CASE
+        WHEN p_golden OR p_t1 = p_t2 THEN jsonb_build_object('t1', '40', 't2', '40')
+        WHEN p_t1 > p_t2            THEN jsonb_build_object('t1', 'AV', 't2', '40')
+        ELSE                             jsonb_build_object('t1', '40', 't2', 'AV')
+      END
+    ELSE jsonb_build_object(
+      't1', (ARRAY['0','15','30','40'])[least(p_t1, 3) + 1],
+      't2', (ARRAY['0','15','30','40'])[least(p_t2, 3) + 1])
+  END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_game_label(int, int, boolean, boolean) FROM PUBLIC;
+
 -- Sérialisation commune de l'état, pour que les deux RPC renvoient la
 -- MÊME forme (contrat unique côté montre).
 CREATE OR REPLACE FUNCTION public.fn_watch_payload(p_session_id uuid, p_player uuid)
@@ -46,6 +67,17 @@ BEGIN
     'sets_won',      coalesce(st->'setsWon', jsonb_build_object('t1', 0, 't2', 0)),
     'current_game',  coalesce(st->'currentGame', 'null'::jsonb),
     'tie_break',     coalesce(st->'tieBreak', 'false'::jsonb),
+    'game_label',    CASE
+      WHEN coalesce(s.scoring_mode, 'games') <> 'points'
+        OR st->'currentGame' IS NULL
+        OR jsonb_typeof(st->'currentGame') = 'null'
+      THEN NULL
+      ELSE public.fn_game_label(
+        (st->'currentGame'->>'t1')::int,
+        (st->'currentGame'->>'t2')::int,
+        coalesce(s.golden_point, true),
+        coalesce((st->>'tieBreak')::boolean, false))
+    END,
     'contest_count', coalesce(s.contest_count, 0),
     'input_device',  coalesce(s.input_device, 'phone'),
     'is_scorer',     (s.scorer_id = p_player),
