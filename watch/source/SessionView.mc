@@ -77,7 +77,11 @@ class SessionView extends WatchUi.View {
             WatchUi.requestUpdate();
             return;
         }
-        if (data == null) {
+        // Le serveur renvoie TOUJOURS un objet (jamais null) : Connect IQ
+        // rejetterait un `null` par -400. `has_session` porte donc l'absence
+        // de match. On garde le test `data == null` en filet pour un serveur
+        // pas encore migre.
+        if (data == null || data instanceof Lang.String || data["has_session"] != true) {
             _sid = null;
             _msg = "Aucun match en cours";
             WatchUi.requestUpdate();

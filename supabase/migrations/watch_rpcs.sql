@@ -69,6 +69,13 @@ BEGIN
     JOIN public.players p ON p.id = u.pid;
 
   RETURN jsonb_build_object(
+    -- ⚠️ Connect IQ n'accepte QUE des objets JSON en réponse : un `null`, une
+    -- chaîne, un nombre ou un tableau — pourtant du JSON valide — sont rejetés
+    -- côté montre par l'erreur -400 INVALID_HTTP_BODY_IN_NETWORK_RESPONSE, sans
+    -- que l'appel serveur n'échoue pour autant. Toute RPC appelée par la montre
+    -- doit donc TOUJOURS renvoyer un objet, jamais NULL. D'où `has_session`,
+    -- qui porte l'absence de match au lieu de la coder par un `null`.
+    'has_session',   true,
     'session_id',    s.id,
     'scoring_mode',  coalesce(s.scoring_mode, 'games'),
     'golden_point',  coalesce(s.golden_point, true),
@@ -126,8 +133,10 @@ BEGIN
   SELECT id INTO v_sid FROM public.live_match_sessions
    WHERE scorer_id = l.player_id AND status = 'live'
    ORDER BY started_at DESC LIMIT 1;
-  IF v_sid IS NULL THEN RETURN NULL; END IF;
-  RETURN public.fn_watch_payload(v_sid, l.player_id);
+  -- Aucun match à scorer : on renvoie un OBJET, jamais NULL (cf. -400 plus haut).
+  IF v_sid IS NULL THEN RETURN jsonb_build_object('has_session', false); END IF;
+  RETURN coalesce(public.fn_watch_payload(v_sid, l.player_id),
+                  jsonb_build_object('has_session', false));
 END; $$;
 
 -- ── Marquer depuis la montre ──────────────────────────────────────────────
@@ -145,7 +154,8 @@ BEGIN
   END IF;
   PERFORM public.fn_apply_live_event_as(
     p_session_id, l.player_id, p_event_type, p_payload, l.id, p_client_seq, 'watch');
-  RETURN public.fn_watch_payload(p_session_id, l.player_id);
+  RETURN coalesce(public.fn_watch_payload(p_session_id, l.player_id),
+                  jsonb_build_object('has_session', false));
 END; $$;
 
 -- Les DEUX RPC ci-dessous sont, elles, faites pour être appelées par la montre
