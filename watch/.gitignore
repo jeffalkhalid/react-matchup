@@ -1,0 +1,4 @@
+# Artefacts de build et clé de signature — jamais versionnés.
+bin/
+*.der
+*.pem

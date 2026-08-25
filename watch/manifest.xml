@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+  Application Connect IQ PagMatch pour Garmin Epix (Gen 2).
+  Cibles : les 3 tailles de boîtier (42/47/51 mm) pour ne pas dépendre de
+  la taille exacte de la montre de test.
+-->
+<iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
+    <iq:application
+        entry="PagMatchApp"
+        id="93306816158941DBB076C9E156F8BB01"
+        launcherIcon="@Drawables.LauncherIcon"
+        minSdkVersion="3.2.0"
+        name="@Strings.AppName"
+        type="watch-app">
+
+        <iq:products>
+            <iq:product id="epix2"/>
+            <iq:product id="epix2pro42mm"/>
+            <iq:product id="epix2pro47mm"/>
+            <iq:product id="epix2pro51mm"/>
+        </iq:products>
+
+        <!-- Communications = indispensable pour makeWebRequest. Sans elle,
+             l'appel échoue silencieusement à l'exécution. -->
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+
+        <iq:languages>
+            <iq:language>eng</iq:language>
+            <iq:language>fre</iq:language>
+        </iq:languages>
+
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>
