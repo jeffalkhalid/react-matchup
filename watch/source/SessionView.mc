@@ -13,6 +13,9 @@ class SessionView extends WatchUi.View {
     hidden var _sid = null;
     hidden var _team1 = "Equipe 1";
     hidden var _team2 = "Equipe 2";
+    // Score set par set, prêt à dessiner : « 6 4 1 ».
+    hidden var _score1 = "";
+    hidden var _score2 = "";
     hidden var _setsWon1 = 0;
     hidden var _setsWon2 = 0;
     hidden var _games1 = 0;
@@ -105,9 +108,20 @@ class SessionView extends WatchUi.View {
         _setsWon1 = sw["t1"];
         _setsWon2 = sw["t2"];
 
-        // Set en cours = dernier élément du tableau des sets.
+        // Ligne de score SET PAR SET, une colonne par set, exactement comme la
+        // carte de match du téléphone : « 6 4 1 ». L'ancien format « sets - jeux »
+        // (« 2 - 1 ») se lisait spontanément comme un score de 2 à 1 alors qu'il
+        // voulait dire « 2 sets gagnés, 1 jeu en cours » — illisible au poignet.
         var sets = d["sets"];
+        _score1 = "";
+        _score2 = "";
         if (sets != null && sets.size() > 0) {
+            for (var i = 0; i < sets.size(); i = i + 1) {
+                var s = sets[i];
+                if (i > 0) { _score1 = _score1 + " "; _score2 = _score2 + " "; }
+                _score1 = _score1 + s["t1"].toString();
+                _score2 = _score2 + s["t2"].toString();
+            }
             var last = sets[sets.size() - 1];
             _games1 = last["t1"];
             _games2 = last["t2"];
@@ -235,13 +249,13 @@ class SessionView extends WatchUi.View {
         dc.drawText(w / 2, h * 10 / 100, Graphics.FONT_XTINY, _team1, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 26 / 100, Graphics.FONT_NUMBER_MILD,
-                    _setsWon1.toString() + " - " + _games1.toString(), Graphics.TEXT_JUSTIFY_CENTER);
+                    _score1, Graphics.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 50 / 100, Graphics.FONT_XTINY, _team2, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 64 / 100, Graphics.FONT_NUMBER_MILD,
-                    _setsWon2.toString() + " - " + _games2.toString(), Graphics.TEXT_JUSTIFY_CENTER);
+                    _score2, Graphics.TEXT_JUSTIFY_CENTER);
 
         if (_pointLabel != null) {
             dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
