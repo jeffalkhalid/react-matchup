@@ -87,6 +87,14 @@ module Api {
              { "p_code" => code, "p_device_label" => Config.DEVICE_LABEL }, cb);
     }
 
+    // Valide le score depuis la montre. Le serveur refuse un match non joué
+    // (no_winner / not_enough_sets), donc la montre ne peut pas valider trop tôt.
+    // Reponse : {"ok":true,"match_id":"..."}.
+    function finalize(sessionId, cb) {
+        post("watch_finalize_session",
+             { "p_token" => token(), "p_session_id" => sessionId }, cb);
+    }
+
     function currentSession(cb) {
         post("watch_current_session", { "p_token" => token() }, cb);
     }

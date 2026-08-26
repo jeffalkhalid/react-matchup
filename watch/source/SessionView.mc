@@ -145,8 +145,13 @@ class SessionView extends WatchUi.View {
         // aussi quand le telephone marque, donc des le premier jeu du match.
         if (device != null && device.equals("watch")) { _hadControl = true; }
 
-        if (_finished || _decided) {
-            _msg = "Match termine - valide sur le tel";
+        if (_finished) {
+            // Session close cote serveur : plus rien a faire au poignet.
+            _msg = "Match termine";
+        } else if (_decided) {
+            // Match joue mais pas encore valide : on indique le geste, sinon
+            // personne ne devine qu'un appui long ouvre la validation.
+            _msg = "Match joue - HAUT long = valider";
         } else if (!_isScorer) {
             _msg = "Tu n es plus le scoreur";
         } else if (_hadControl && device != null && device.equals("phone") && Queue.size() == 0) {
@@ -164,6 +169,20 @@ class SessionView extends WatchUi.View {
         _msg = "";
         WatchUi.requestUpdate();
         sendHead();
+    }
+
+    // Appui long sur HAUT : ouvre la confirmation de validation. On ne propose
+    // rien tant que le serveur n'a pas dit que le match etait joue — inutile
+    // d'envoyer une demande vouee au refus.
+    function askFinalize() {
+        if (_sid == null || !_isScorer || _finished) { return; }
+        if (!_decided) {
+            _msg = "Match pas termine";
+            WatchUi.requestUpdate();
+            return;
+        }
+        var v = new ConfirmView(_sid, _score1 + "  /  " + _score2);
+        WatchUi.pushView(v, new ConfirmDelegate(v), WatchUi.SLIDE_LEFT);
     }
 
     function sendHead() {
@@ -293,7 +312,20 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
         return _view.isPointMode() ? "point_won" : "game_won";
     }
 
-    function onSelect()       { _view.tap(scoreEvent(), 1); return true; }
-    function onNextPage()     { _view.tap(scoreEvent(), 2); return true; }
-    function onPreviousPage() { _view.tap("undo", 0);       return true; }
+    // Mapping SPATIAL : les deux equipes sont affichees l'une au-dessus de
+    // l'autre, les deux boutons sont l'un au-dessus de l'autre sur le flanc
+    // gauche. HAUT marque pour l'equipe du HAUT, BAS pour celle du BAS — le
+    // geste suit le regard, il n'y a rien a memoriser.
+    // (Avant : SELECT en haut a DROITE pour l'equipe 1 et BAS a gauche pour
+    // l'equipe 2 — deux cotes, deux hauteurs, aucun lien avec l'ecran.)
+    function onPreviousPage() { _view.tap(scoreEvent(), 1); return true; }  // HAUT
+    function onNextPage()     { _view.tap(scoreEvent(), 2); return true; }  // BAS
+    function onSelect()       { _view.tap("undo", 0);       return true; }  // START
+
+    // Validation : appui LONG sur HAUT (menu). Geste deliberé, impossible par
+    // reflexe, et qui n'entre en conflit avec aucun bouton de saisie.
+    function onMenu() {
+        _view.askFinalize();
+        return true;
+    }
 }
