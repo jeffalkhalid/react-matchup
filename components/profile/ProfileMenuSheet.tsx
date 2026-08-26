@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
+import { getWatchPairingEnabled } from '../../lib/watchLink';
 
 function Group({ title }: { title: string }) {
   return (
@@ -30,6 +32,18 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // Interrupteur global du Panel Arbitre. Les hooks doivent rester AVANT le
+  // `return null` ci-dessous : les appeler après le rendrait conditionnel.
+  // Défaut `true` : on ne masque jamais l'entrée à cause d'un aléa réseau.
+  const [watchOn, setWatchOn] = useState(true);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    getWatchPairingEnabled().then(v => { if (!cancelled) setWatchOn(v); });
+    return () => { cancelled = true; };
+  }, [visible]);
+
   if (!visible) return null;
 
   // Navigation interne : on ferme la feuille puis on pousse l'écran.
@@ -51,7 +65,7 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Row icon="pencil" label="Modifier le profil" onPress={() => act(onEdit)} />
           <Row icon="message" label="Qui peut commenter" onPress={() => act(onComments)} />
           <Row icon="mail" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
-          <Row icon="clock" label="Connecter ma montre" onPress={() => nav('/watch-link')} />
+          {watchOn && <Row icon="clock" label="Connecter ma montre" onPress={() => nav('/watch-link')} />}
 
           <Group title="Raccourcis" />
           <Row icon="trophy" label="Classement" onPress={() => nav('/ranking')} />

@@ -109,6 +109,13 @@ DECLARE
   v_all_fails int;
   v_reason text;
 BEGIN
+  -- Interrupteur global (Panel Arbitre) : aucun nouvel appairage quand la
+  -- fonctionnalité montre est coupée. Testé AVANT tout le reste pour ne même
+  -- pas consommer le code du joueur.
+  IF NOT public.fn_watch_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+
   -- IP de l'appelant si PostgREST la fournit, NULL sinon.
   BEGIN
     v_ip := split_part(coalesce(current_setting('request.headers', true)::json->>'x-forwarded-for', ''), ',', 1);

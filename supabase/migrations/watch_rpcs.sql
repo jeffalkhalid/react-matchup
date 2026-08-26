@@ -129,6 +129,13 @@ CREATE OR REPLACE FUNCTION public.watch_current_session(p_token text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE l public.watch_links; v_sid uuid;
 BEGIN
+  -- Interrupteur global : on répond un OBJET (jamais NULL, cf. -400) portant
+  -- `disabled`, pour que la montre affiche un message clair plutôt qu'une
+  -- erreur technique. Testé avant le jeton : inutile de valider un lien pour
+  -- une fonctionnalité coupée.
+  IF NOT public.fn_watch_enabled() THEN
+    RETURN jsonb_build_object('has_session', false, 'disabled', true);
+  END IF;
   l := public.fn_watch_link(p_token);
   SELECT id INTO v_sid FROM public.live_match_sessions
    WHERE scorer_id = l.player_id AND status = 'live'
@@ -146,6 +153,13 @@ CREATE OR REPLACE FUNCTION public.watch_apply_event(
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE l public.watch_links;
 BEGIN
+  -- Interrupteur global : un point envoyé alors que la fonctionnalité est
+  -- coupée ne doit PAS être enregistré. On lève (4xx) : la montre jette
+  -- l'événement au lieu de le rejouer indéfiniment, et son prochain
+  -- rafraîchissement (5 s) affichera le message « fonction desactivee ».
+  IF NOT public.fn_watch_enabled() THEN
+    RAISE EXCEPTION 'feature_disabled';
+  END IF;
   l := public.fn_watch_link(p_token);
   -- Seuls les événements de saisie sont permis depuis la montre : ni contestation,
   -- ni abandon, ni finalisation (spec §12 — la montre ne valide pas).

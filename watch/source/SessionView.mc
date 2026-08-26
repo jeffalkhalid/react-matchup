@@ -86,7 +86,13 @@ class SessionView extends WatchUi.View {
         // pas encore migre.
         if (data == null || data instanceof Lang.String || data["has_session"] != true) {
             _sid = null;
-            _msg = "Aucun match en cours";
+            // Interrupteur global coupe depuis le Panel Arbitre : on le dit,
+            // au lieu de laisser croire qu'aucun match n'est en cours.
+            if (data != null && !(data instanceof Lang.String) && data["disabled"] == true) {
+                _msg = "Fonction desactivee";
+            } else {
+                _msg = "Aucun match en cours";
+            }
             WatchUi.requestUpdate();
             return;
         }

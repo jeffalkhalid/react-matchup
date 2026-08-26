@@ -14,6 +14,22 @@ export function formatCode(code: string): string {
   return /^\d{6}$/.test(code) ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
 }
 
+// Interrupteur global du Panel Arbitre (app_config.watch_pairing_enabled).
+// Absent ou illisible → considéré ACTIVÉ : on ne cache jamais la
+// fonctionnalité à cause d'un aléa réseau. Le vrai verrou est côté serveur,
+// celui-ci ne fait que masquer l'entrée du menu.
+export async function getWatchPairingEnabled(): Promise<boolean> {
+  try {
+    const { supabase } = await import('./supabase');
+    const { data, error } = await supabase
+      .from('app_config').select('value').eq('key', 'watch_pairing_enabled').maybeSingle();
+    if (error) return true;
+    return data?.value !== 'false';
+  } catch {
+    return true;
+  }
+}
+
 export async function createPairingCode(): Promise<string> {
   const { supabase } = await import('./supabase');
   const { data, error } = await supabase.rpc('create_watch_pairing_code');

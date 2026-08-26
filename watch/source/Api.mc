@@ -76,6 +76,7 @@ module Api {
         if (reason.equals("invalid_code"))      { return "Code invalide"; }
         if (reason.equals("code_expired"))      { return "Code expire"; }
         if (reason.equals("code_already_used")) { return "Code deja utilise"; }
+        if (reason.equals("feature_disabled"))  { return "Fonction desactivee"; }
         return null;
     }
 

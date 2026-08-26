@@ -1216,6 +1216,9 @@ function BadgeIconPreview({ iconKey, color, size = 56 }: { iconKey: string; colo
 // ── Réglages applicatifs (app_config) ──────────────────────────────
 function SettingsTab() {
   const [win, setWin] = useState('');
+  const [liveOn, setLiveOn] = useState(false);
+  // Défaut `true` : clé absente = activé, même convention que fn_watch_enabled().
+  const [watchOn, setWatchOn] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -1223,6 +1226,10 @@ function SettingsTab() {
     setLoading(true);
     const { data } = await supabase.from('app_config').select('value').eq('key', 'defi_promotion_window_minutes').maybeSingle();
     setWin((data?.value ?? '30').replace(/[^0-9]/g, '') || '30');
+    const { data: live } = await supabase.from('app_config').select('value').eq('key', 'live_scoring_enabled').maybeSingle();
+    setLiveOn(live?.value === 'true');
+    const { data: watch } = await supabase.from('app_config').select('value').eq('key', 'watch_pairing_enabled').maybeSingle();
+    setWatchOn(watch?.value !== 'false');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -1256,6 +1263,41 @@ function SettingsTab() {
           <TouchableOpacity onPress={save} disabled={saving} style={{ backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11, opacity: saving ? 0.6 : 1 }}>
             {saving ? <ActivityIndicator size="small" color={Colors.textOnBrand} /> : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Enregistrer</Text>}
           </TouchableOpacity>
+        </View>
+      </View>
+      <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, gap: 10 }}>
+        <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Score en direct</Text>
+        <Text style={{ fontSize: 12, color: Colors.textMuted, lineHeight: 17 }}>
+          Active le suivi du score jeu par jeu pendant les matchs (scoreur désigné au lobby, lecture en temps réel). Éteint, la feature est totalement invisible.
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{liveOn ? 'Activé' : 'Désactivé'}</Text>
+          <Switch value={liveOn} onValueChange={async (v) => {
+            setLiveOn(v);
+            const { error } = await supabase.from('app_config')
+              .upsert({ key: 'live_scoring_enabled', value: v ? 'true' : 'false', updated_at: new Date().toISOString() }, { onConflict: 'key' });
+            if (error) { setLiveOn(!v); Alert.alert('Erreur', error.message); }
+          }} />
+        </View>
+      </View>
+
+      <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, gap: 10 }}>
+        <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Connexion des montres</Text>
+        <Text style={{ fontSize: 12, color: Colors.textMuted, lineHeight: 17 }}>
+          Autorise les joueurs à lier une montre Garmin et à marquer les points au poignet.
+          Éteint, l'entrée « Connecter ma montre » disparaît de l'app ET les montres déjà
+          liées cessent immédiatement de marquer — c'est un vrai coupe-circuit, il agit
+          sans publier de mise à jour. Pour délier UNE seule montre (perte, vol), passe
+          plutôt par « Délier » dans l'écran du joueur.
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{watchOn ? 'Activé' : 'Désactivé'}</Text>
+          <Switch value={watchOn} onValueChange={async (v) => {
+            setWatchOn(v);
+            const { error } = await supabase.from('app_config')
+              .upsert({ key: 'watch_pairing_enabled', value: v ? 'true' : 'false', updated_at: new Date().toISOString() }, { onConflict: 'key' });
+            if (error) { setWatchOn(!v); Alert.alert('Erreur', error.message); }
+          }} />
         </View>
       </View>
     </ScrollView>
