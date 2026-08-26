@@ -333,7 +333,25 @@ export default function LiveScoreScreen() {
     ]);
   };
 
-  const onFinalize = async () => {
+  // Le score enregistré ne retient QUE les sets terminés : un set entamé est
+  // écarté par finalize_live_session. Sans avertissement, le joueur découvre
+  // après coup qu'il manque un set (cas réel du 2026-08-26 : un 4e set à 5-0
+  // joué après la victoire, absent du score final).
+  const onFinalize = () => {
+    const cur = state.sets[state.sets.length - 1];
+    const partial = !!cur && (cur.t1 > 0 || cur.t2 > 0);
+    if (!partial) { doFinalize(); return; }
+    Alert.alert(
+      'Set en cours non enregistré',
+      `Le set en cours (${cur.t1}-${cur.t2}) n'est pas terminé : il ne sera PAS enregistré.\n\nScore retenu : ${finalScore || '—'}`,
+      [
+        { text: 'Continuer à jouer', style: 'cancel' },
+        { text: 'Valider quand même', onPress: () => doFinalize() },
+      ],
+    );
+  };
+
+  const doFinalize = async () => {
     if (!sessionId || !player || busy) return;
     setBusy(true);
     try {
@@ -575,6 +593,43 @@ export default function LiveScoreScreen() {
           </View>
         )}
 
+        {/* 8. Fin de match */}
+        {showEndCard && (
+          <View style={sty.endCard}>
+            <Text style={sty.endTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              Victoire {winnerLabel}
+            </Text>
+            <Text style={sty.endScore}>{finalScore || '—'}</Text>
+            {/* File non vide : le serveur n'a pas encore encaissé les derniers
+                jeux — valider maintenant enregistrerait un score en retard. */}
+            {pending > 0 && (
+              <Text style={sty.pendingTxt}>⏳ {pending} en attente de réseau — validation possible une fois synchronisé</Text>
+            )}
+            <TouchableOpacity onPress={onFinalize} disabled={busy || pending > 0}
+              style={[sty.primaryBtn, (busy || pending > 0) && { opacity: 0.6 }]} activeOpacity={0.85}>
+              {busy
+                ? <ActivityIndicator color={Colors.textOnDark} size="small" />
+                : <Text style={sty.primaryBtnTxt}>Valider le score</Text>}
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+              <TouchableOpacity onPress={() => { setForceEnd(false); setAckSets(setsPlayed); }}
+                style={[sty.smallBtn, { flex: 1 }]} activeOpacity={0.75}>
+                <Text style={sty.smallBtnTxt}>Continuer un set</Text>
+              </TouchableOpacity>
+              {/* Libellé EXPLICITE : « Annuler » seul se lit comme « fermer la
+                  carte », alors que ce bouton annule le dernier point — ce qui
+                  déchire le jeu gagné, rouvre le set et ramène le match à
+                  égalité. Piège rencontré en match réel (2026-08-26). */}
+              <TouchableOpacity onPress={onUndo} disabled={watchHasControl}
+                style={[sty.smallBtn, { flex: 1 }, watchHasControl && { opacity: 0.4 }]} activeOpacity={0.75}>
+                <Text style={sty.smallBtnTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                  ↩︎ Annuler le dernier point
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* 5. Saisie (scoreur) */}
         {isScorer ? (
           <>
@@ -624,37 +679,6 @@ export default function LiveScoreScreen() {
           </>
         )}
 
-        {/* 8. Fin de match */}
-        {showEndCard && (
-          <View style={sty.endCard}>
-            <Text style={sty.endTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-              Victoire {winnerLabel}
-            </Text>
-            <Text style={sty.endScore}>{finalScore || '—'}</Text>
-            {/* File non vide : le serveur n'a pas encore encaissé les derniers
-                jeux — valider maintenant enregistrerait un score en retard. */}
-            {pending > 0 && (
-              <Text style={sty.pendingTxt}>⏳ {pending} en attente de réseau — validation possible une fois synchronisé</Text>
-            )}
-            <TouchableOpacity onPress={onFinalize} disabled={busy || pending > 0}
-              style={[sty.primaryBtn, (busy || pending > 0) && { opacity: 0.6 }]} activeOpacity={0.85}>
-              {busy
-                ? <ActivityIndicator color={Colors.textOnDark} size="small" />
-                : <Text style={sty.primaryBtnTxt}>Valider le score</Text>}
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-              <TouchableOpacity onPress={() => { setForceEnd(false); setAckSets(setsPlayed); }}
-                style={[sty.smallBtn, { flex: 1 }]} activeOpacity={0.75}>
-                <Text style={sty.smallBtnTxt}>Continuer un set</Text>
-              </TouchableOpacity>
-              {/* Idem carte de fin : verrouillé pendant que la montre a la main. */}
-              <TouchableOpacity onPress={onUndo} disabled={watchHasControl}
-                style={[sty.smallBtn, { flex: 1 }, watchHasControl && { opacity: 0.4 }]} activeOpacity={0.75}>
-                <Text style={sty.smallBtnTxt}>↩︎ Annuler</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
       </ScrollView>
     </View>
   );
