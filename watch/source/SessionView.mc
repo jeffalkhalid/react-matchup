@@ -235,6 +235,16 @@ class SessionView extends WatchUi.View {
         return 0;
     }
 
+    // "1 contestation", "2 contestations". L'accord se fait ici et nulle part
+    // ailleurs : la chaine est lue par deux appelants (la variante composee du
+    // message et la branche contestation seule), et un pluriel faux sur l'un
+    // des deux serait exactement le genre de divergence qu'on traque.
+    // 16 caracteres au pire ("10 contestations"), ASCII, sans accent.
+    hidden function contestLabel() {
+        if (_contests > 1) { return _contests.toString() + " contestations"; }
+        return "1 contestation";
+    }
+
     // Enregistre localement PUIS envoie : le poignet ne doit jamais attendre.
     function tap(eventType, team) {
         if (!isReady()) { return; }
@@ -402,24 +412,36 @@ class SessionView extends WatchUi.View {
         //    n'occupe la place : la corde y est plus large.
         var msgY = hasPoint ? (h * 84 / 100) : (h * 78 / 100);
         if (_contests > 0 && !_msg.equals("")) {
-            // Les DEUX faits comptent : une contestation ouverte, ET ce qui
-            // vient de se passer. Cette branche montrait la contestation A LA
-            // PLACE de _msg : tant qu'une contestation restait ouverte — ce
-            // qui dure jusqu'a son contest_resolved, session bien vivante —
-            // une annulation par balayage n'affichait RIEN. Le point
-            // disparaissait sans trace, exactement le defaut qu'on venait de
-            // corriger ailleurs.
+            // Les DEUX faits comptent : une contestation ouverte, ET ce que _msg
+            // a a dire. Cette branche montrait autrefois la contestation A LA
+            // PLACE de _msg, si bien qu'une annulation par balayage n'affichait
+            // RIEN tant qu'une contestation etait ouverte.
             //
-            // drawBest tente d'abord la forme qui porte les deux, puis retombe
-            // sur le seul _msg. C'est le bon ordre de sacrifice : le compteur
-            // de contestations est PERSISTANT, il sera encore la au prochain
-            // rafraichissement ; l'accuse de reception, lui, ne repassera
-            // jamais.
+            // ORDRE DE SACRIFICE, et il compte. On a d'abord essaye
+            // [compose, _msg] : faux, parce que _msg n'est PAS toujours
+            // transitoire. apply() le repose a chaque rafraichissement sur des
+            // etats DURABLES ("Match termine", "Valider : appui long",
+            // "Plus scoreur", "Tel a la main"...). Dans ces etats la forme
+            // composee depasse la largeur, drawBest retombait sur _msg seul, et
+            // le compteur de contestations disparaissait POUR TOUJOURS : on
+            // pouvait valider un score conteste sans que rien ne le signale.
+            //
+            // L'ordre juste est donc compose -> contestation seule -> _msg :
+            //   - annulation ("Annulation +1 cont", 18 car.) : la forme
+            //     composee tient, l'accuse s'affiche ;
+            //   - etat durable ("Valider : appui long" + suffixe = 28 car.) :
+            //     elle ne tient pas, et c'est la CONTESTATION qui survit.
+            // C'est le bon survivant : une contestation ouverte doit etre
+            // visible avant une validation irreversible, alors que
+            // "Valider : appui long" ne fait que rappeler un geste que
+            // l'utilisateur est de toute facon en train de faire.
             Layout.drawBest(dc, msgY,
-                            [_msg + " +" + _contests.toString() + " cont", _msg],
+                            [_msg + " +" + _contests.toString() + " cont",
+                             contestLabel(),
+                             _msg],
                             Layout.textLadder(), Graphics.COLOR_ORANGE);
         } else if (_contests > 0) {
-            Layout.drawFit(dc, msgY, _contests.toString() + " contestation",
+            Layout.drawFit(dc, msgY, contestLabel(),
                            Layout.textLadder(), Graphics.COLOR_ORANGE);
         } else {
             Layout.drawFit(dc, msgY, _msg, Layout.textLadder(), Graphics.COLOR_LT_GRAY);

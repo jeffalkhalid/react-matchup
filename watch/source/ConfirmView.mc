@@ -30,8 +30,12 @@ class ConfirmView extends WatchUi.View {
     hidden var _done = false;
     // Cible tactile de confirmation, MESUREE au dernier onUpdate (meme principe
     // que la bande morte de SessionView : on lit le Dc, on ne suppose pas).
-    // Largeur ou hauteur nulle = pas de cible : aucun toucher ne valide. Pour
-    // une action irreversible, ne rien faire est le bon defaut.
+    // Les quatre champs sont poses a CHAQUE onUpdate, sans condition — y compris
+    // sur un appareil non tactile, ou aucun cadre n'est dessine : ils decrivent
+    // une geometrie, pas une decision d'affichage. Seul isConfirmTarget decide,
+    // et il exige une largeur ET une hauteur strictement positives ; a zero,
+    // aucun toucher ne valide. Pour une action irreversible, ne rien faire est
+    // le bon defaut.
     hidden var _btnX = 0;
     hidden var _btnY = 0;
     hidden var _btnW = 0;
@@ -113,41 +117,52 @@ class ConfirmView extends WatchUi.View {
         }
         var no = Layout.isTouch() ? "Vers droite = non" : "RETOUR = non";
 
-        var yesY = h * 56 / 100;
         var noY  = h * 74 / 100;
         var msgY = h * 86 / 100;
 
         // ---------------------------------------------------------------
-        // LA CIBLE D'ABORD, LE LIBELLE ENSUITE.
+        // LA CIBLE D'ABORD, LE LIBELLE DEDANS.
         //
-        // Il y a une dependance circulaire : la largeur de la cible depend de
-        // sa hauteur (c'est une corde, sur un cadran rond), sa hauteur
-        // dependrait de la police du libelle, et la police depend de la
-        // largeur disponible. On la casse par le PIRE CAS : la cible est
-        // dimensionnee sur FONT_LARGE, le barreau le plus haut de textLadder.
-        // Toute police retenue ensuite est plus petite ou egale, donc la cible
-        // reste au moins aussi large que la valeur qu'on mesure ici.
+        // Dependance circulaire : la largeur de la cible depend de sa hauteur
+        // (c'est une corde, sur un cadran rond), sa hauteur dependrait de la
+        // police du libelle, et la police depend de la largeur disponible. On
+        // la casse par le PIRE CAS : tout est dimensionne sur FONT_LARGE, le
+        // barreau le plus haut de textLadder. Toute police retenue ensuite est
+        // plus petite ou egale.
+        //
+        // La BANDE est calculee en premier et rien ne la repousse ensuite.
+        // C'est le point corrige ici : la version precedente appliquait les
+        // bornes de voisinage PUIS des bornes de coherence qui pouvaient les
+        // annuler (top ramene sur yesY, plus haut que la ligne de score des que
+        // FONT_LARGE depassait ~19 % de la hauteur d'ecran). Les deux familles
+        // de bornes ne peuvent plus entrer en conflit : la bande est absolue,
+        // la boite vit DEDANS, et le libelle est centre DANS la boite. Trois
+        // inclusions emboitees, vraies pour n'importe quelles metriques de
+        // police.
         // ---------------------------------------------------------------
         var worstH = Graphics.getFontHeight(Graphics.FONT_LARGE);
         var minH   = Graphics.getFontHeight(Graphics.FONT_XTINY);
-        var top = yesY - worstH / 2;
-        var bot = yesY + worstH + worstH / 2;
-        // Bornes de voisinage : jamais sur la ligne de score (pire cas de sa
-        // propre police, elle puise dans le meme textLadder), jamais sur la
-        // ligne « non ».
-        var limitTop = scoreY + worstH;
-        if (top < limitTop) { top = limitTop; }
-        if (bot > noY)      { bot = noY; }
-        // Bornes de coherence : le cadre doit CONTENIR le libelle, sinon on
-        // dessine une affordance qui ment. yesY est le haut du glyphe (drawFit
-        // n'utilise pas TEXT_JUSTIFY_VCENTER), et une ligne de FONT_XTINY est
-        // la plus petite qu'on puisse ecrire.
-        if (top > yesY)        { top = yesY; }
-        if (bot < yesY + minH) { bot = yesY + minH; }
 
-        // Largeur : la plus etroite des deux cordes utilisables, prise aux
-        // DEUX bords du cadre — sur un cadran rond celle du bas est la plus
-        // courte et c'est elle qui commande.
+        // Bande utilisable : sous le pire cas d'encre de la ligne de score
+        // (elle puise dans le meme textLadder), au-dessus du haut de la ligne
+        // « non ». Bornes ABSOLUES.
+        var bandTop = scoreY + worstH;
+        var bandBot = noY;
+        var bandH   = bandBot - bandTop;
+
+        // Boite souhaitee : une ligne du pire cas, plus une demi-ligne de marge
+        // de chaque cote. Rabotee a la bande si la bande est plus etroite, puis
+        // centree dedans. bandH negatif (ecran degenere) donne une hauteur nulle
+        // : pas de cible, et isConfirmTarget refusera tout toucher.
+        var wantH = worstH * 2;
+        var boxH  = wantH < bandH ? wantH : bandH;
+        if (boxH < 0) { boxH = 0; }
+        var top = bandTop + (bandH - boxH) / 2;
+        var bot = top + boxH;
+
+        // Largeur : la plus etroite des deux cordes utilisables, prise aux DEUX
+        // bords de la boite — sur un cadran rond celle du bas est la plus courte
+        // et c'est elle qui commande.
         // Layout.usableWidth renvoie un Float sur un ecran rond ; on convertit
         // ICI, une seule fois, pour qu'aucun flottant n'atteigne une primitive
         // de dessin et pour que le dessin et le test de toucher travaillent sur
@@ -160,29 +175,30 @@ class ConfirmView extends WatchUi.View {
         _btnX = dc.getWidth() / 2 - bw / 2;
         _btnY = top;
         _btnW = bw;
-        _btnH = bot - top;
+        _btnH = boxH;
 
         // ---------------------------------------------------------------
         // LE LIBELLE, MESURE CONTRE LA CIBLE.
         //
-        // C'etait le defaut : la police etait choisie sur usableWidth(yesY),
-        // plus large que le cadre, si bien que les lettres des extremites
-        // tombaient HORS de la zone tactile — on visait un texte dessine et
-        // il ne se passait rien. Le texte et le cadre partagent maintenant UNE
-        // largeur, bw. On filtre aussi sur la hauteur : la ligne doit tenir
-        // dans le cadre, pas seulement a cote.
+        // La police est choisie contre bw, la largeur REELLE de la boite, et
+        // non contre la corde de sa ligne : c'etait le defaut, les lettres des
+        // extremites tombaient hors de la zone tactile. Filtre de hauteur en
+        // plus : la ligne doit tenir DANS la boite, pas seulement a cote.
+        // Le dernier barreau, « OK » en FONT_XTINY, tient des que la boite
+        // fait au moins une ligne de FONT_XTINY de haut.
         // ---------------------------------------------------------------
         var ladder = Layout.textLadder();
-        var roomH = bot - yesY;
         var yesText = null;
         var yesFont = null;
+        var lineH = 0;
         for (var v = 0; v < yesVariants.size() && yesFont == null; v = v + 1) {
             for (var i = 0; i < ladder.size(); i = i + 1) {
                 var f = ladder[i];
-                if (Graphics.getFontHeight(f) <= roomH
-                    && dc.getTextWidthInPixels(yesVariants[v], f) <= bw) {
+                var fh = Graphics.getFontHeight(f);
+                if (fh <= boxH && dc.getTextWidthInPixels(yesVariants[v], f) <= bw) {
                     yesText = yesVariants[v];
                     yesFont = f;
+                    lineH = fh;
                     break;
                 }
             }
@@ -199,9 +215,12 @@ class ConfirmView extends WatchUi.View {
             dc.fillRoundedRectangle(_btnX, _btnY, _btnW, _btnH, minH / 2);
         }
         if (yesFont != null) {
+            // Centre vertical DANS la boite : c'est ce qui garantit que le
+            // libelle est contenu par sa propre cible, sans clamp a posteriori.
             // Dessine avec LA police qu'on vient de mesurer, et non via
             // Layout.drawFit qui en rechoisirait une contre une autre largeur :
             // ce serait re-creer les deux sources qu'on vient de fusionner.
+            var yesY = top + (boxH - lineH) / 2;
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(dc.getWidth() / 2, yesY, yesFont, yesText,
                         Graphics.TEXT_JUSTIFY_CENTER);
