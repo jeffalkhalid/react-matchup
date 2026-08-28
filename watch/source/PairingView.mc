@@ -38,27 +38,25 @@ class PairingView extends WatchUi.View {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         dc.clear();
-        var w = dc.getWidth();
         var h = dc.getHeight();
 
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 18 / 100, Graphics.FONT_XTINY, "Code affiche dans l app", Graphics.TEXT_JUSTIFY_CENTER);
+        Layout.drawFit(dc, h * 18 / 100, "Code affiche dans l app",
+                       Layout.textLadder(), Graphics.COLOR_LT_GRAY);
 
         var s = "";
         for (var i = 0; i < 6; i = i + 1) {
             s = s + _digits[i].toString();
             if (i == 2) { s = s + " "; }
         }
-        dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 40 / 100, Graphics.FONT_NUMBER_MILD, s, Graphics.TEXT_JUSTIFY_CENTER);
+        Layout.drawFit(dc, h * 40 / 100, s, Layout.numberLadder(), Graphics.COLOR_YELLOW);
 
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 62 / 100, Graphics.FONT_XTINY, "Chiffre " + (_pos + 1) + "/6", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, h * 74 / 100, Graphics.FONT_XTINY, "HAUT/BAS puis SELECT", Graphics.TEXT_JUSTIFY_CENTER);
+        Layout.drawFit(dc, h * 62 / 100, "Chiffre " + (_pos + 1) + "/6",
+                       Layout.textLadder(), Graphics.COLOR_WHITE);
+        Layout.drawFit(dc, h * 74 / 100, "HAUT/BAS puis SELECT",
+                       Layout.textLadder(), Graphics.COLOR_WHITE);
 
         if (!_status.equals("")) {
-            dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 86 / 100, Graphics.FONT_XTINY, _status, Graphics.TEXT_JUSTIFY_CENTER);
+            Layout.drawFit(dc, h * 86 / 100, _status, Layout.textLadder(), Graphics.COLOR_RED);
         }
     }
 }

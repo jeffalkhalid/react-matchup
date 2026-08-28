@@ -63,22 +63,19 @@ class ConfirmView extends WatchUi.View {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         dc.clear();
-        var w = dc.getWidth();
         var h = dc.getHeight();
 
-        dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 20 / 100, Graphics.FONT_XTINY, "Valider le score ?", Graphics.TEXT_JUSTIFY_CENTER);
+        Layout.drawFit(dc, h * 20 / 100, "Valider le score ?",
+                       Layout.textLadder(), Graphics.COLOR_YELLOW);
 
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 38 / 100, Graphics.FONT_SMALL, _score, Graphics.TEXT_JUSTIFY_CENTER);
+        Layout.drawFit(dc, h * 38 / 100, _score, Layout.textLadder(), Graphics.COLOR_WHITE);
 
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 60 / 100, Graphics.FONT_XTINY, "START = oui", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, h * 70 / 100, Graphics.FONT_XTINY, "RETOUR = non", Graphics.TEXT_JUSTIFY_CENTER);
+        Layout.drawFit(dc, h * 60 / 100, "START = oui", Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+        Layout.drawFit(dc, h * 70 / 100, "RETOUR = non", Layout.textLadder(), Graphics.COLOR_LT_GRAY);
 
         if (!_msg.equals("")) {
-            dc.setColor(_done ? Graphics.COLOR_GREEN : Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 82 / 100, Graphics.FONT_XTINY, _msg, Graphics.TEXT_JUSTIFY_CENTER);
+            Layout.drawFit(dc, h * 82 / 100, _msg, Layout.textLadder(),
+                           _done ? Graphics.COLOR_GREEN : Graphics.COLOR_ORANGE);
         }
     }
 }
