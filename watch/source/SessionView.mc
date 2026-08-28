@@ -7,6 +7,7 @@ using Toybox.WatchUi;
 using Toybox.Graphics;
 using Toybox.Timer;
 using Toybox.Lang;
+using Toybox.System;
 
 class SessionView extends WatchUi.View {
 
@@ -158,7 +159,7 @@ class SessionView extends WatchUi.View {
         } else if (_decided) {
             // Match joue mais pas encore valide : on indique le geste, sinon
             // personne ne devine qu'un appui long ouvre la validation.
-            _msg = "Valider : HAUT long";
+            _msg = Layout.isTouch() ? "Valider : appui long" : "Valider : HAUT long";
         } else if (!_isScorer) {
             _msg = "Plus scoreur";
         } else if (_hadControl && device != null && device.equals("phone") && Queue.size() == 0) {
@@ -355,6 +356,38 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
     // reflexe, et qui n'entre en conflit avec aucun bouton de saisie.
     function onMenu() {
         _view.askFinalize();
+        return true;
+    }
+
+    // Sur ecran tactile, le geste suit le regard comme pour les boutons :
+    // on touche la MOITIE de l'ecran ou se trouve l'equipe qui a marque.
+    // Indispensable sur les montres sans boutons haut/bas (Venu Sq,
+    // Vivoactive), ou onNextPage/onPreviousPage ne sont pas atteignables.
+    function onTap(clickEvent) {
+        var coords = clickEvent.getCoordinates();
+        var y = coords[1];
+        var mid = System.getDeviceSettings().screenHeight / 2;
+        _view.tap(scoreEvent(), y < mid ? 1 : 2);
+        return true;
+    }
+
+    // Validation tactile : appui LONG sur l'ecran. Meme chemin que onMenu
+    // (HAUT long) : on ne duplique pas la logique de askFinalize(), on
+    // l'appelle. Geste deliberé, impossible par reflexe, et DISTINCT de
+    // l'annulation (onSwipe, ci-dessous) — les deux ne doivent JAMAIS se
+    // confondre.
+    function onHold(clickEvent) {
+        _view.askFinalize();
+        return true;
+    }
+
+    // Filet d'annulation pour les appareils tactiles sans aucun bouton
+    // physique (etrextouch). Meme chemin que onSelect (bouton START) :
+    // _view.tap("undo", 0). Ajoute sans condition sur le materiel : sur une
+    // montre a boutons, START reste le geste documente et celui-ci ne genera
+    // jamais rien.
+    function onSwipe(swipeEvent) {
+        _view.tap("undo", 0);
         return true;
     }
 }
