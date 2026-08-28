@@ -151,11 +151,11 @@ class SessionView extends WatchUi.View {
         } else if (_decided) {
             // Match joue mais pas encore valide : on indique le geste, sinon
             // personne ne devine qu'un appui long ouvre la validation.
-            _msg = "Match joue - HAUT long = valider";
+            _msg = "Valider : HAUT long";
         } else if (!_isScorer) {
-            _msg = "Tu n es plus le scoreur";
+            _msg = "Plus scoreur";
         } else if (_hadControl && device != null && device.equals("phone") && Queue.size() == 0) {
-            _msg = "Le telephone a repris la main";
+            _msg = "Tel a la main";
         } else {
             _msg = "";
         }
@@ -230,7 +230,7 @@ class SessionView extends WatchUi.View {
             var txt = Api.reasonText(reason);
             _msg = txt != null ? txt : "Refuse (" + responseCode.toString() + ")";
         } else {
-            _msg = "En attente reseau (" + Queue.size().toString() + ")";
+            _msg = "En attente : " + Queue.size().toString();
         }
         WatchUi.requestUpdate();
     }
@@ -287,13 +287,20 @@ class SessionView extends WatchUi.View {
             dc.drawText(w / 2, h * 75 / 100, Graphics.FONT_SMALL, _pointLabel, Graphics.TEXT_JUSTIFY_CENTER);
         }
 
+        // Position REMONTEE quand il n'y a pas de score de point a afficher.
+        // Sur un ecran ROND, la largeur utile a la hauteur y vaut la corde
+        // 2*racine(r^2 - (y-r)^2) : a 84 % elle tombe a ~305 px, a 78 % elle
+        // remonte a ~345 px. Plus on descend, plus le bizeau rogne le texte
+        // AUX DEUX BOUTS - defaut constate au poignet le 2026-08-26.
+        var msgY = (_pointLabel != null) ? (h * 84 / 100) : (h * 78 / 100);
+
         if (_contests > 0) {
             dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 84 / 100, Graphics.FONT_XTINY,
-                        _contests.toString() + " contestation(s)", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(w / 2, msgY, Graphics.FONT_XTINY,
+                        _contests.toString() + " contestation", Graphics.TEXT_JUSTIFY_CENTER);
         } else if (!_msg.equals("")) {
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 84 / 100, Graphics.FONT_XTINY, _msg, Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(w / 2, msgY, Graphics.FONT_XTINY, _msg, Graphics.TEXT_JUSTIFY_CENTER);
         }
     }
 }
