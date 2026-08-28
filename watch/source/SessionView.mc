@@ -401,7 +401,24 @@ class SessionView extends WatchUi.View {
         // 4. Le message, le moins critique. Remonte quand aucun point
         //    n'occupe la place : la corde y est plus large.
         var msgY = hasPoint ? (h * 84 / 100) : (h * 78 / 100);
-        if (_contests > 0) {
+        if (_contests > 0 && !_msg.equals("")) {
+            // Les DEUX faits comptent : une contestation ouverte, ET ce qui
+            // vient de se passer. Cette branche montrait la contestation A LA
+            // PLACE de _msg : tant qu'une contestation restait ouverte — ce
+            // qui dure jusqu'a son contest_resolved, session bien vivante —
+            // une annulation par balayage n'affichait RIEN. Le point
+            // disparaissait sans trace, exactement le defaut qu'on venait de
+            // corriger ailleurs.
+            //
+            // drawBest tente d'abord la forme qui porte les deux, puis retombe
+            // sur le seul _msg. C'est le bon ordre de sacrifice : le compteur
+            // de contestations est PERSISTANT, il sera encore la au prochain
+            // rafraichissement ; l'accuse de reception, lui, ne repassera
+            // jamais.
+            Layout.drawBest(dc, msgY,
+                            [_msg + " +" + _contests.toString() + " cont", _msg],
+                            Layout.textLadder(), Graphics.COLOR_ORANGE);
+        } else if (_contests > 0) {
             Layout.drawFit(dc, msgY, _contests.toString() + " contestation",
                            Layout.textLadder(), Graphics.COLOR_ORANGE);
         } else {
@@ -432,8 +449,13 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
     // function that corresponds to the behavior will not be called. »
     // Or un comportement n'est PAS un bouton :
     //   onSelect       = KEY_ENTER *ou* un CLICK_TYPE_TAP sur ecran tactile
-    //   onNextPage     = KEY_DOWN  *ou* un SWIPE_UP
+    //   onNextPage     = KEY_DOWN  *ou* un SWIPE_UP *ou* un SWIPE_LEFT
     //   onPreviousPage = KEY_UP    *ou* un SWIPE_DOWN
+    // La doc SDK ne cite que SWIPE_UP pour onNextPage ; le cablage reel de
+    // l'epix2 (%APPDATA%/Garmin/ConnectIQ/Devices/epix2/simulator.json, entree
+    // display.behaviors) y ajoute swipeLeft. C'est par LA que passe
+    // l'annulation par balayage vers la gauche : sans ce fait, on ne comprend
+    // pas pourquoi elle aboutit dans onSwipe.
     // Tant qu'ils renvoyaient true, onTap et onSwipe n'etaient JAMAIS appeles :
     // toucher l'ecran ANNULAIT le point precedent (onSelect etait cable sur
     // undo), et balayer vers le haut MARQUAIT un point pour l'equipe 2.

@@ -98,86 +98,113 @@ class ConfirmView extends WatchUi.View {
         Layout.drawBest(dc, scoreY, _scoreVariants, Layout.textLadder(),
                         Graphics.COLOR_WHITE);
 
-        // Le libelle du OUI decrit maintenant une cible et non plus l'ecran
-        // entier : « ICI » designe le cadre dessine juste dessous, dans lequel
-        // ce texte est ecrit. Deuxieme formulation, plus courte, pour les
-        // ecrans ou la premiere ne tient pas (meme principe que _scoreVariants).
-        // Le libelle du NON est inchange.
+        // Le libelle du OUI decrit une cible et non plus l'ecran entier :
+        // « ICI » designe le cadre dans lequel ce texte est ecrit. Les
+        // formulations vont de la plus riche a la plus pauvre (meme principe
+        // que _scoreVariants) et se terminent par « OK », assez court pour
+        // qu'aucun ecran du parc ne puisse le refuser : sans ce dernier
+        // barreau, un cadran minuscule affichait un ecran de validation ou
+        // RIEN ne disait comment valider. Le libelle du NON est inchange.
         var yesVariants;
         if (Layout.isTouch()) {
-            yesVariants = ["Toucher ICI = oui", "ICI = oui"];
+            yesVariants = ["Toucher ICI = oui", "ICI = oui", "OK"];
         } else {
-            yesVariants = ["START = oui"];
+            yesVariants = ["START = oui", "OK"];
         }
         var no = Layout.isTouch() ? "Vers droite = non" : "RETOUR = non";
 
-        // Le OUI remonte et le NON descend par rapport a l'ancienne mise en
-        // page : il faut la place du cadre entre les deux.
         var yesY = h * 56 / 100;
         var noY  = h * 74 / 100;
         var msgY = h * 86 / 100;
 
-        // On choisit NOUS-MEMES la formulation et la police au lieu de laisser
-        // drawBest le faire : il faut la hauteur de la police pour dimensionner
-        // la cible autour du libelle. Le drawFit qui suit reselectionne
-        // exactement la meme police, pour le meme texte et la meme largeur.
+        // ---------------------------------------------------------------
+        // LA CIBLE D'ABORD, LE LIBELLE ENSUITE.
+        //
+        // Il y a une dependance circulaire : la largeur de la cible depend de
+        // sa hauteur (c'est une corde, sur un cadran rond), sa hauteur
+        // dependrait de la police du libelle, et la police depend de la
+        // largeur disponible. On la casse par le PIRE CAS : la cible est
+        // dimensionnee sur FONT_LARGE, le barreau le plus haut de textLadder.
+        // Toute police retenue ensuite est plus petite ou egale, donc la cible
+        // reste au moins aussi large que la valeur qu'on mesure ici.
+        // ---------------------------------------------------------------
+        var worstH = Graphics.getFontHeight(Graphics.FONT_LARGE);
+        var minH   = Graphics.getFontHeight(Graphics.FONT_XTINY);
+        var top = yesY - worstH / 2;
+        var bot = yesY + worstH + worstH / 2;
+        // Bornes de voisinage : jamais sur la ligne de score (pire cas de sa
+        // propre police, elle puise dans le meme textLadder), jamais sur la
+        // ligne « non ».
+        var limitTop = scoreY + worstH;
+        if (top < limitTop) { top = limitTop; }
+        if (bot > noY)      { bot = noY; }
+        // Bornes de coherence : le cadre doit CONTENIR le libelle, sinon on
+        // dessine une affordance qui ment. yesY est le haut du glyphe (drawFit
+        // n'utilise pas TEXT_JUSTIFY_VCENTER), et une ligne de FONT_XTINY est
+        // la plus petite qu'on puisse ecrire.
+        if (top > yesY)        { top = yesY; }
+        if (bot < yesY + minH) { bot = yesY + minH; }
+
+        // Largeur : la plus etroite des deux cordes utilisables, prise aux
+        // DEUX bords du cadre — sur un cadran rond celle du bas est la plus
+        // courte et c'est elle qui commande.
+        // Layout.usableWidth renvoie un Float sur un ecran rond ; on convertit
+        // ICI, une seule fois, pour qu'aucun flottant n'atteigne une primitive
+        // de dessin et pour que le dessin et le test de toucher travaillent sur
+        // exactement la meme valeur entiere.
+        var wTop = Layout.usableWidth(dc, top);
+        var wBot = Layout.usableWidth(dc, bot);
+        var bwf = wTop < wBot ? wTop : wBot;
+        var bw = bwf.toNumber();
+
+        _btnX = dc.getWidth() / 2 - bw / 2;
+        _btnY = top;
+        _btnW = bw;
+        _btnH = bot - top;
+
+        // ---------------------------------------------------------------
+        // LE LIBELLE, MESURE CONTRE LA CIBLE.
+        //
+        // C'etait le defaut : la police etait choisie sur usableWidth(yesY),
+        // plus large que le cadre, si bien que les lettres des extremites
+        // tombaient HORS de la zone tactile — on visait un texte dessine et
+        // il ne se passait rien. Le texte et le cadre partagent maintenant UNE
+        // largeur, bw. On filtre aussi sur la hauteur : la ligne doit tenir
+        // dans le cadre, pas seulement a cote.
+        // ---------------------------------------------------------------
+        var ladder = Layout.textLadder();
+        var roomH = bot - yesY;
         var yesText = null;
         var yesFont = null;
-        for (var i = 0; i < yesVariants.size(); i = i + 1) {
-            var f = Layout.fitFont(dc, yesVariants[i],
-                                   Layout.usableWidth(dc, yesY),
-                                   Layout.textLadder());
-            if (f != null) { yesText = yesVariants[i]; yesFont = f; break; }
-        }
-
-        _btnX = 0; _btnY = 0; _btnW = 0; _btnH = 0;
-        if (yesFont != null) {
-            // GEOMETRIE MESUREE, pas reglee a l'oeil :
-            //   hauteur = une ligne du libelle + une demi-ligne de marge de
-            //     chaque cote (yesY est le HAUT du glyphe : drawFit n'utilise
-            //     pas TEXT_JUSTIFY_VCENTER) ;
-            //   largeur = la plus etroite des deux cordes utilisables aux bords
-            //     haut et bas du cadre, pour rester dans l'ecran sur un cadran
-            //     rond ;
-            //   bornes  = jamais au-dessus de la ligne de score, jamais en
-            //     dessous de la ligne « non », quelle que soit la police
-            //     retenue. La cible ne mord donc sur aucun voisin.
-            // Elle reste large — environ un cinquieme de l'ecran : ce qu'on
-            // ecarte, c'est le contact ACCIDENTEL, pas la visee approximative.
-            var lineH = Graphics.getFontHeight(yesFont);
-            var pad = lineH / 2;
-            var top = yesY - pad;
-            var bot = yesY + lineH + pad;
-            // Pire cas pour la ligne de score : elle utilise textLadder elle
-            // aussi et peut donc descendre de toute la hauteur de FONT_LARGE,
-            // son barreau le plus haut, meme si le libelle du OUI a herite d'une
-            // police plus petite. On borne sur CE cas-la, pas sur lineH.
-            var limitTop = scoreY + Graphics.getFontHeight(Graphics.FONT_LARGE);
-            if (top < limitTop) { top = limitTop; }
-            if (bot > noY)      { bot = noY; }
-            if (bot > top) {
-                var wTop = Layout.usableWidth(dc, top);
-                var wBot = Layout.usableWidth(dc, bot);
-                var bw = wTop < wBot ? wTop : wBot;
-                if (bw > 0) {
-                    _btnX = dc.getWidth() / 2 - bw / 2;
-                    _btnY = top;
-                    _btnW = bw;
-                    _btnH = bot - top;
-                    // Dessinee UNIQUEMENT sur ecran tactile : ailleurs elle
-                    // designerait un geste qui n'existe pas. La couleur ne dit
-                    // rien que le texte ne dise deja — c'est le CADRE qui
-                    // montre ou toucher.
-                    if (Layout.isTouch()) {
-                        dc.setColor(Graphics.COLOR_DK_GRAY,
-                                    Graphics.COLOR_TRANSPARENT);
-                        dc.fillRoundedRectangle(_btnX, _btnY, _btnW, _btnH,
-                                                lineH / 3);
-                    }
+        for (var v = 0; v < yesVariants.size() && yesFont == null; v = v + 1) {
+            for (var i = 0; i < ladder.size(); i = i + 1) {
+                var f = ladder[i];
+                if (Graphics.getFontHeight(f) <= roomH
+                    && dc.getTextWidthInPixels(yesVariants[v], f) <= bw) {
+                    yesText = yesVariants[v];
+                    yesFont = f;
+                    break;
                 }
             }
-            Layout.drawFit(dc, yesY, yesText, Layout.textLadder(),
-                           Graphics.COLOR_WHITE);
+        }
+
+        // La cible est dessinee MEME si aucun libelle ne tenait : un cadre muet
+        // laisse encore confirmer au toucher, alors que ne rien dessiner du
+        // tout priverait de tout moyen de valider une montre sans bouton.
+        // Dessinee uniquement sur ecran tactile : ailleurs elle designerait un
+        // geste qui n'existe pas. La couleur ne dit rien que le texte ne dise
+        // deja — c'est le CADRE qui montre ou toucher.
+        if (Layout.isTouch() && _btnW > 0 && _btnH > 0) {
+            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            dc.fillRoundedRectangle(_btnX, _btnY, _btnW, _btnH, minH / 2);
+        }
+        if (yesFont != null) {
+            // Dessine avec LA police qu'on vient de mesurer, et non via
+            // Layout.drawFit qui en rechoisirait une contre une autre largeur :
+            // ce serait re-creer les deux sources qu'on vient de fusionner.
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(dc.getWidth() / 2, yesY, yesFont, yesText,
+                        Graphics.TEXT_JUSTIFY_CENTER);
         }
 
         Layout.drawFit(dc, noY, no, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
