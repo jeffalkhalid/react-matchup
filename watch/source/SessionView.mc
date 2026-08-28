@@ -244,9 +244,25 @@ class SessionView extends WatchUi.View {
         sendHead();
     }
 
-    // Appui long sur HAUT : ouvre la confirmation de validation. On ne propose
-    // rien tant que le serveur n'a pas dit que le match etait joue — inutile
-    // d'envoyer une demande vouee au refus.
+    // Annulation du dernier evenement. Passe par tap() comme n'importe quel
+    // autre evenement, mais elle s'ANNONCE : tap() efface _msg, si bien que le
+    // seul signe d'une annulation etait le score qui bougeait tout seul apres
+    // l'aller-retour serveur. Personne ne fixe l'ecran a cet instant-la, et une
+    // annulation est destructrice.
+    // Le message suit la convention de _msg, sans nouveau mecanisme : il tient
+    // jusqu'a la prochaine reponse du serveur (apply, via onSent ou le refresh
+    // periodique de onTick), qui le remplace normalement.
+    function undo() {
+        if (!isReady()) { return; }
+        tap("undo", 0);
+        _msg = "Annulation";
+        WatchUi.requestUpdate();
+    }
+
+    // Ouvre la confirmation de validation. DEUX chemins y menent : appui LONG
+    // sur HAUT (comportement MENU) et, sur une montre tactile, appui LONG sur
+    // l'ecran (onHold). On ne propose rien tant que le serveur n'a pas dit que
+    // le match etait joue — inutile d'envoyer une demande vouee au refus.
     //
     // Le score part sur ConfirmView en PLUSIEURS formulations (riche -> pauvre) :
     // ConfirmView.onUpdate les tente avec Layout.drawBest et dessine la premiere
@@ -426,7 +442,7 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
     // correspondante (onKey pour un bouton, onTap/onSwipe pour un geste), et on
     // reprend les boutons un par un dans onKey ci-dessous. Le trajet des
     // boutons physiques est identique a ce qu'il etait : HAUT -> equipe 1,
-    // BAS -> equipe 2, START -> undo.
+    // BAS -> equipe 2, START -> undo (via undo(), qui l'affiche en plus).
     //
     // onMenu reste a true : il n'a pas d'equivalent tactile a liberer ici.
     // ------------------------------------------------------------------
@@ -457,7 +473,7 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
         // bouton START/STOP remonte l'un ou l'autre. Les deux font undo, donc
         // aucune ambiguite possible.
         if (k == WatchUi.KEY_ENTER || k == WatchUi.KEY_START) {
-            _view.tap("undo", 0);
+            _view.undo();
             return true;
         }
         return false;
@@ -485,21 +501,31 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    // Balayage = annuler, comme START. Ce n'est pas un ajout inoffensif : sur
-    // toute montre tactile ce geste agit desormais, y compris celles qui ont
-    // des boutons.
+    // Balayage vers la GAUCHE, et LUI SEUL, annule.
     //
-    // SWIPE_RIGHT est EXCLU. Doc SDK, BehaviorDelegate.onBack : « Some devices
-    // interpret SWIPE_RIGHT SwipeEvents as KEY_ESC events. » Sur ces appareils,
-    // balayer vers la droite = RETOUR, et SessionView est la vue racine : le
-    // geste sort de l'application. On ne le detourne pas — annuler un point par
-    // le geste de sortie serait le meme piege qu'avant — et on ne le bloque pas
-    // non plus : sur une montre tactile sans aucun bouton (eTrex Touch) c'est le
-    // SEUL moyen de sortir. On renvoie false pour le laisser suivre son chemin
-    // normal.
+    // Trois directions cablees sur une action destructrice, juste a cote d'une
+    // bande morte calculee sur les metriques de police pour proteger UN point
+    // d'un toucher errant, etait incoherent. Une manche qui glisse ou une main
+    // qui essuie la sueur produit surtout des trainees LE LONG DU BRAS, donc
+    // verticales a l'ecran : ce sont precisement celles qu'on ne veut pas
+    // cabler. Reste l'horizontale, et la droite est prise (voir plus bas).
+    //
+    // HAUT et BAS sont absorbes sans rien faire (return true). On ne renvoie
+    // pas false : ce serait rendre la main au comportement par defaut de
+    // nextPage / previousPage, et rien ne documente ce qu'il ferait ici. Ne
+    // rien faire, explicitement, est verifiable ; parier ne l'est pas.
+    //
+    // SWIPE_RIGHT est EXCLU et laisse passer (return false). Doc SDK,
+    // BehaviorDelegate.onBack : « Some devices interpret SWIPE_RIGHT
+    // SwipeEvents as KEY_ESC events. » C'est le geste de RETOUR du systeme, et
+    // SessionView est la vue racine : il sort de l'application. Sur un appareil
+    // tactile depourvu de bouton RETOUR, c'est la seule sortie possible — le
+    // detourner enfermerait l'utilisateur dans l'ecran de match. On n'y touche
+    // pas.
     function onSwipe(swipeEvent) {
-        if (swipeEvent.getDirection() == WatchUi.SWIPE_RIGHT) { return false; }
-        _view.tap("undo", 0);
+        var dir = swipeEvent.getDirection();
+        if (dir == WatchUi.SWIPE_RIGHT) { return false; }
+        if (dir == WatchUi.SWIPE_LEFT)  { _view.undo(); return true; }
         return true;
     }
 }
