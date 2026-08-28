@@ -7,9 +7,19 @@ using Toybox.WatchUi;
 using Toybox.Graphics;
 using Toybox.Timer;
 using Toybox.Lang;
-using Toybox.System;
 
 class SessionView extends WatchUi.View {
+
+    // Hauteurs de dessin, en % de la hauteur du Dc. Elles sont ICI et non en
+    // dur dans onUpdate parce que la regle de decision du toucher
+    // (teamForTapY) doit s'appuyer EXACTEMENT sur les memes nombres que le
+    // dessin : deux jeux de valeurs qui derivent l'un de l'autre, et un point
+    // part a la mauvaise equipe.
+    // L'ordre des equipes est fige : equipe 1 en haut, equipe 2 en bas.
+    const Y_NAME1_PCT  = 10;
+    const Y_SCORE1_PCT = 26;
+    const Y_NAME2_PCT  = 50;
+    const Y_SCORE2_PCT = 64;
 
     hidden var _sid = null;
     hidden var _team1 = "Equipe 1";
@@ -34,6 +44,10 @@ class SessionView extends WatchUi.View {
     hidden var _timer = null;
     hidden var _inFlight = null;   // client_seq de la requete en vol, null si aucune
     hidden var _inFlightTicks = 0; // chien de garde : ticks depuis le depart
+    // Hauteur du Dc relevee au dernier onUpdate. C'est la SEULE hauteur qui
+    // decrit ce qui est reellement dessine ; le screenHeight de
+    // getDeviceSettings decrit le materiel et peut en differer.
+    hidden var _screenH = 0;
 
     function initialize() { View.initialize(); }
 
@@ -170,6 +184,57 @@ class SessionView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
+    // A quelle equipe attribuer un toucher a la hauteur y ? 1, 2, ou 0 =
+    // AUCUNE, on ignore le toucher.
+    //
+    // Pourquoi ce n'est pas « au-dessus de la moitie = equipe 1 » :
+    // Layout.drawFit appelle drawText avec TEXT_JUSTIFY_CENTER SEUL, sans
+    // TEXT_JUSTIFY_VCENTER. Le y qu'on lui donne est donc le HAUT de la boite
+    // de glyphe, pas son centre. Le score de l'equipe 1 est pose a
+    // Y_SCORE1_PCT et DESCEND de toute la hauteur de sa police ; rien ne
+    // garantit qu'il s'arrete avant la mi-hauteur. Couper a h/2 creditait
+    // l'equipe 2 quand on touchait le bas des chiffres de l'equipe 1 — la
+    // cible la plus naturelle.
+    //
+    // Regle, et non valeur reglee a l'oeil :
+    //   bas possible de l'equipe 1 = Y_SCORE1_PCT + hauteur de FONT_NUMBER_HOT
+    //     (la police la plus haute de numberLadder, donc le pire cas ; si
+    //     drawFit a du descendre l'echelle, le vrai bas est plus haut encore)
+    //   haut de l'equipe 2         = Y_NAME2_PCT (son nom, son premier element)
+    // La bande morte va du plus petit au plus grand des deux : ils peuvent se
+    // croiser sur un ecran ou FONT_NUMBER_HOT est tres haute, et la formule
+    // reste juste dans les deux sens. On l'elargit d'une demi-ligne de la plus
+    // petite police du parc de chaque cote : c'est le plus petit pas vertical
+    // que cette interface sait dessiner, et un doigt est au moins aussi
+    // imprecis que ca.
+    //
+    // Enfin on la BORNE aux deux lignes de score : la ligne de score d'une
+    // equipe est le seul element qui lui appartient sans discussion possible,
+    // elle ne doit jamais tomber dans la bande morte — sinon, sur un ecran ou
+    // FONT_NUMBER_HOT serait enorme, viser les chiffres de l'equipe 2 ne ferait
+    // plus rien du tout et la montre deviendrait inutilisable au toucher.
+    //
+    // Un toucher dans la bande ne fait RIEN. C'est le compromis voulu : un
+    // toucher sans effet se rattrape d'un second toucher, un point credite a
+    // la mauvaise equipe se paie en pleine partie.
+    function teamForTapY(y) {
+        // Jamais dessine : on ne connait pas la mise en page, on ne devine pas.
+        if (_screenH <= 0) { return 0; }
+        var score1Top = _screenH * Y_SCORE1_PCT / 100;
+        var score2Top = _screenH * Y_SCORE2_PCT / 100;
+        var bottom1 = score1Top + Graphics.getFontHeight(Graphics.FONT_NUMBER_HOT);
+        var top2 = _screenH * Y_NAME2_PCT / 100;
+        var guard = Graphics.getFontHeight(Graphics.FONT_XTINY) / 2;
+        var bandTop    = (bottom1 < top2 ? bottom1 : top2) - guard;
+        var bandBottom = (bottom1 > top2 ? bottom1 : top2) + guard;
+        if (bandTop < score1Top)    { bandTop = score1Top; }
+        if (bandBottom > score2Top) { bandBottom = score2Top; }
+        if (bandBottom < bandTop)   { bandBottom = bandTop; }
+        if (y < bandTop)    { return 1; }
+        if (y > bandBottom) { return 2; }
+        return 0;
+    }
+
     // Enregistre localement PUIS envoie : le poignet ne doit jamais attendre.
     function tap(eventType, team) {
         if (!isReady()) { return; }
@@ -289,6 +354,7 @@ class SessionView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         dc.clear();
         var h = dc.getHeight();
+        _screenH = h;
 
         if (_sid == null) {
             Layout.drawFit(dc, h / 2, _msg, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
@@ -300,8 +366,8 @@ class SessionView extends WatchUi.View {
         // dessine rien plutot qu'un texte rogne.
 
         // 1. Le score, l'element consulte entre deux points.
-        Layout.drawFit(dc, h * 26 / 100, _score1, Layout.numberLadder(), Graphics.COLOR_WHITE);
-        Layout.drawFit(dc, h * 64 / 100, _score2, Layout.numberLadder(), Graphics.COLOR_WHITE);
+        Layout.drawFit(dc, h * Y_SCORE1_PCT / 100, _score1, Layout.numberLadder(), Graphics.COLOR_WHITE);
+        Layout.drawFit(dc, h * Y_SCORE2_PCT / 100, _score2, Layout.numberLadder(), Graphics.COLOR_WHITE);
 
         // 2. Le point en cours — la raison d'etre du mode points.
         var hasPoint = false;
@@ -311,9 +377,9 @@ class SessionView extends WatchUi.View {
         }
 
         // 3. Les noms : complets, puis initiales, puis rien.
-        Layout.drawBest(dc, h * 10 / 100, [_team1, _team1Short],
+        Layout.drawBest(dc, h * Y_NAME1_PCT / 100, [_team1, _team1Short],
                         Layout.textLadder(), Graphics.COLOR_YELLOW);
-        Layout.drawBest(dc, h * 50 / 100, [_team2, _team2Short],
+        Layout.drawBest(dc, h * Y_NAME2_PCT / 100, [_team2, _team2Short],
                         Layout.textLadder(), Graphics.COLOR_YELLOW);
 
         // 4. Le message, le moins critique. Remonte quand aucun point
@@ -342,51 +408,97 @@ class SessionDelegate extends WatchUi.BehaviorDelegate {
         return _view.isPointMode() ? "point_won" : "game_won";
     }
 
-    // Mapping SPATIAL : les deux equipes sont affichees l'une au-dessus de
-    // l'autre, les deux boutons sont l'un au-dessus de l'autre sur le flanc
-    // gauche. HAUT marque pour l'equipe du HAUT, BAS pour celle du BAS — le
-    // geste suit le regard, il n'y a rien a memoriser.
-    // (Avant : SELECT en haut a DROITE pour l'equipe 1 et BAS a gauche pour
-    // l'equipe 2 — deux cotes, deux hauteurs, aucun lien avec l'ecran.)
-    function onPreviousPage() { _view.tap(scoreEvent(), 1); return true; }  // HAUT
-    function onNextPage()     { _view.tap(scoreEvent(), 2); return true; }  // BAS
-    function onSelect()       { _view.tap("undo", 0);       return true; }  // START
+    // ------------------------------------------------------------------
+    // POURQUOI CES TROIS COMPORTEMENTS RENVOIENT false
+    //
+    // Doc SDK, WatchUi.BehaviorDelegate : « If a BehaviorDelegate returns true
+    // for a function (indicating the input was used) then the InputDelegate
+    // function that corresponds to the behavior will not be called. »
+    // Or un comportement n'est PAS un bouton :
+    //   onSelect       = KEY_ENTER *ou* un CLICK_TYPE_TAP sur ecran tactile
+    //   onNextPage     = KEY_DOWN  *ou* un SWIPE_UP
+    //   onPreviousPage = KEY_UP    *ou* un SWIPE_DOWN
+    // Tant qu'ils renvoyaient true, onTap et onSwipe n'etaient JAMAIS appeles :
+    // toucher l'ecran ANNULAIT le point precedent (onSelect etait cable sur
+    // undo), et balayer vers le haut MARQUAIT un point pour l'equipe 2.
+    //
+    // On renvoie donc false, ce qui fait appeler la fonction InputDelegate
+    // correspondante (onKey pour un bouton, onTap/onSwipe pour un geste), et on
+    // reprend les boutons un par un dans onKey ci-dessous. Le trajet des
+    // boutons physiques est identique a ce qu'il etait : HAUT -> equipe 1,
+    // BAS -> equipe 2, START -> undo.
+    //
+    // onMenu reste a true : il n'a pas d'equivalent tactile a liberer ici.
+    // ------------------------------------------------------------------
+    function onPreviousPage() { return false; }  // HAUT  / SWIPE_DOWN
+    function onNextPage()     { return false; }  // BAS   / SWIPE_UP
+    function onSelect()       { return false; }  // START / toucher
 
-    // Validation : appui LONG sur HAUT (menu). Geste deliberé, impossible par
+    // Validation : appui LONG sur HAUT (menu). Geste delibere, impossible par
     // reflexe, et qui n'entre en conflit avec aucun bouton de saisie.
     function onMenu() {
         _view.askFinalize();
         return true;
     }
 
-    // Sur ecran tactile, le geste suit le regard comme pour les boutons :
-    // on touche la MOITIE de l'ecran ou se trouve l'equipe qui a marque.
-    // Indispensable sur les montres sans boutons haut/bas (Venu Sq,
-    // Vivoactive), ou onNextPage/onPreviousPage ne sont pas atteignables.
+    // Boutons physiques. Mapping SPATIAL, inchange : les deux equipes sont
+    // affichees l'une au-dessus de l'autre, les deux boutons sont l'un au-dessus
+    // de l'autre sur le flanc gauche. HAUT marque pour l'equipe du HAUT, BAS
+    // pour celle du BAS — le geste suit le regard, il n'y a rien a memoriser.
+    //
+    // Ce qui n'est pas liste ici renvoie false, DELIBEREMENT : c'est ce qui
+    // laisse RETOUR (KEY_ESC) sortir de l'application. Consommer les touches
+    // inconnues enfermerait l'utilisateur dans l'ecran de match.
+    function onKey(keyEvent) {
+        var k = keyEvent.getKey();
+        if (k == WatchUi.KEY_UP)   { _view.tap(scoreEvent(), 1); return true; }
+        if (k == WatchUi.KEY_DOWN) { _view.tap(scoreEvent(), 2); return true; }
+        // KEY_START est accepte a cote de KEY_ENTER : selon les modeles, le
+        // bouton START/STOP remonte l'un ou l'autre. Les deux font undo, donc
+        // aucune ambiguite possible.
+        if (k == WatchUi.KEY_ENTER || k == WatchUi.KEY_START) {
+            _view.tap("undo", 0);
+            return true;
+        }
+        return false;
+    }
+
+    // Toucher = marquer, pour l'equipe de la moitie d'ecran touchee : le geste
+    // suit le regard, comme pour les boutons.
+    // La frontiere n'est pas h/2 mais une bande morte calculee par la vue (cf.
+    // teamForTapY) : un toucher ambigu ne marque RIEN plutot que de marquer
+    // pour la mauvaise equipe.
     function onTap(clickEvent) {
         var coords = clickEvent.getCoordinates();
-        var y = coords[1];
-        var mid = System.getDeviceSettings().screenHeight / 2;
-        _view.tap(scoreEvent(), y < mid ? 1 : 2);
+        var team = _view.teamForTapY(coords[1]);
+        if (team == 0) { return true; }
+        _view.tap(scoreEvent(), team);
         return true;
     }
 
-    // Validation tactile : appui LONG sur l'ecran. Meme chemin que onMenu
-    // (HAUT long) : on ne duplique pas la logique de askFinalize(), on
-    // l'appelle. Geste deliberé, impossible par reflexe, et DISTINCT de
-    // l'annulation (onSwipe, ci-dessous) — les deux ne doivent JAMAIS se
+    // Appui LONG sur l'ecran = valider. Meme chemin que HAUT-long (onMenu) : on
+    // appelle askFinalize(), on ne duplique pas sa logique. Geste delibere et
+    // DISTINCT de l'annulation (onSwipe) — les deux ne doivent jamais se
     // confondre.
     function onHold(clickEvent) {
         _view.askFinalize();
         return true;
     }
 
-    // Filet d'annulation pour les appareils tactiles sans aucun bouton
-    // physique (etrextouch). Meme chemin que onSelect (bouton START) :
-    // _view.tap("undo", 0). Ajoute sans condition sur le materiel : sur une
-    // montre a boutons, START reste le geste documente et celui-ci ne genera
-    // jamais rien.
+    // Balayage = annuler, comme START. Ce n'est pas un ajout inoffensif : sur
+    // toute montre tactile ce geste agit desormais, y compris celles qui ont
+    // des boutons.
+    //
+    // SWIPE_RIGHT est EXCLU. Doc SDK, BehaviorDelegate.onBack : « Some devices
+    // interpret SWIPE_RIGHT SwipeEvents as KEY_ESC events. » Sur ces appareils,
+    // balayer vers la droite = RETOUR, et SessionView est la vue racine : le
+    // geste sort de l'application. On ne le detourne pas — annuler un point par
+    // le geste de sortie serait le meme piege qu'avant — et on ne le bloque pas
+    // non plus : sur une montre tactile sans aucun bouton (eTrex Touch) c'est le
+    // SEUL moyen de sortir. On renvoie false pour le laisser suivre son chemin
+    // normal.
     function onSwipe(swipeEvent) {
+        if (swipeEvent.getDirection() == WatchUi.SWIPE_RIGHT) { return false; }
         _view.tap("undo", 0);
         return true;
     }

@@ -73,8 +73,19 @@ class ConfirmView extends WatchUi.View {
 
         Layout.drawBest(dc, h * 38 / 100, _scoreVariants, Layout.textLadder(), Graphics.COLOR_WHITE);
 
-        Layout.drawFit(dc, h * 60 / 100, "START = oui", Layout.textLadder(), Graphics.COLOR_LT_GRAY);
-        Layout.drawFit(dc, h * 70 / 100, "RETOUR = non", Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+        // Nommer START et RETOUR est un mensonge sur un appareil tactile qui
+        // n'a ni l'un ni l'autre — et l'appui long sur l'ecran de match y amene
+        // desormais. On nomme donc le geste reellement disponible.
+        // Verifie sur ConfirmDelegate ci-dessous, pas suppose :
+        //   oui = onSelect, qui se declenche aussi sur un CLICK_TYPE_TAP
+        //         (doc SDK BehaviorDelegate.onSelect) -> un simple toucher ;
+        //   non = onBack, dont la doc precise que certains appareils
+        //         interpretent un SWIPE_RIGHT comme un KEY_ESC -> balayage vers
+        //         la droite.
+        var yes = Layout.isTouch() ? "Toucher = oui"     : "START = oui";
+        var no  = Layout.isTouch() ? "Vers droite = non" : "RETOUR = non";
+        Layout.drawFit(dc, h * 60 / 100, yes, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+        Layout.drawFit(dc, h * 70 / 100, no,  Layout.textLadder(), Graphics.COLOR_LT_GRAY);
 
         if (!_msg.equals("")) {
             Layout.drawFit(dc, h * 82 / 100, _msg, Layout.textLadder(),
