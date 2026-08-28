@@ -181,6 +181,14 @@ class SessionView extends WatchUi.View {
     // Appui long sur HAUT : ouvre la confirmation de validation. On ne propose
     // rien tant que le serveur n'a pas dit que le match etait joue — inutile
     // d'envoyer une demande vouee au refus.
+    //
+    // Le score part sur ConfirmView en PLUSIEURS formulations (riche -> pauvre) :
+    // ConfirmView.onUpdate les tente avec Layout.drawBest et dessine la premiere
+    // qui tient. Sans ca, un Layout.drawFit sur la version longue se serait
+    // contente de ne RIEN dessiner sur un petit ecran rond — l'utilisateur
+    // validerait un score qu'il n'a jamais vu. La derniere variante ("647/465",
+    // sans aucun espace) est volontairement compacte au point qu'il est
+    // implausible qu'elle ne tienne nulle part.
     function askFinalize() {
         if (_sid == null || !_isScorer || _finished) { return; }
         if (!_decided) {
@@ -188,8 +196,26 @@ class SessionView extends WatchUi.View {
             WatchUi.requestUpdate();
             return;
         }
-        var v = new ConfirmView(_sid, _score1 + "  /  " + _score2);
+        var scoreVariants = [
+            _score1 + "  /  " + _score2,
+            _score1 + " / " + _score2,
+            stripSpaces(_score1) + "/" + stripSpaces(_score2)
+        ];
+        var v = new ConfirmView(_sid, scoreVariants);
         WatchUi.pushView(v, new ConfirmDelegate(v), WatchUi.SLIDE_LEFT);
+    }
+
+    // "6 4 7" -> "647". Sert uniquement a batir la variante la plus compacte
+    // du score pour ConfirmView (cf. askFinalize) : _score1/_score2 separent
+    // deja chaque set par un espace, on l'enleve pour la formulation la plus
+    // serree qui reste sans ambiguite grace au "/" entre les deux equipes.
+    hidden function stripSpaces(s) {
+        var out = "";
+        var chars = s.toCharArray();
+        for (var i = 0; i < chars.size(); i = i + 1) {
+            if (chars[i] != ' ') { out = out + chars[i].toString(); }
+        }
+        return out;
     }
 
     function sendHead() {

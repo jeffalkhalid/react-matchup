@@ -13,15 +13,18 @@ using Toybox.Lang;
 class ConfirmView extends WatchUi.View {
 
     hidden var _sid;
-    hidden var _score;
+    // Du plus riche au plus pauvre (cf. SessionView.askFinalize) : le premier
+    // qui tient est dessine, jamais rien de tronque, et jamais un ecran de
+    // confirmation sans AUCUN score visible (spec : le score est priorite 1).
+    hidden var _scoreVariants;
     hidden var _msg = "";
     hidden var _busy = false;
     hidden var _done = false;
 
-    function initialize(sid, score) {
+    function initialize(sid, scoreVariants) {
         View.initialize();
         _sid = sid;
-        _score = score;
+        _scoreVariants = scoreVariants;
     }
 
     function confirm() {
@@ -68,7 +71,7 @@ class ConfirmView extends WatchUi.View {
         Layout.drawFit(dc, h * 20 / 100, "Valider le score ?",
                        Layout.textLadder(), Graphics.COLOR_YELLOW);
 
-        Layout.drawFit(dc, h * 38 / 100, _score, Layout.textLadder(), Graphics.COLOR_WHITE);
+        Layout.drawBest(dc, h * 38 / 100, _scoreVariants, Layout.textLadder(), Graphics.COLOR_WHITE);
 
         Layout.drawFit(dc, h * 60 / 100, "START = oui", Layout.textLadder(), Graphics.COLOR_LT_GRAY);
         Layout.drawFit(dc, h * 70 / 100, "RETOUR = non", Layout.textLadder(), Graphics.COLOR_LT_GRAY);
