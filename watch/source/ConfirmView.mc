@@ -25,7 +25,11 @@ class ConfirmView extends WatchUi.View {
     // qui tient est dessine, jamais rien de tronque, et jamais un ecran de
     // confirmation sans AUCUN score visible (spec : le score est priorite 1).
     hidden var _scoreVariants;
+    // Comme _scoreVariants : DEUX formulations, riche et courte. Cette ligne
+    // est le seul endroit ou le refus du serveur atteint l'utilisateur, et
+    // l'echelle lui avait ete oubliee (cf. onUpdate).
     hidden var _msg = "";
+    hidden var _msgShort = "";
     hidden var _busy = false;
     hidden var _done = false;
     // Cible tactile de confirmation, MESUREE au dernier onUpdate (meme principe
@@ -47,10 +51,16 @@ class ConfirmView extends WatchUi.View {
         _scoreVariants = scoreVariants;
     }
 
+    // Pose les deux formulations d'un coup : elles ne peuvent pas diverger.
+    hidden function setMsg(text, short) {
+        _msg = text;
+        _msgShort = (short == null) ? text : short;
+    }
+
     function confirm() {
         if (_busy || _done) { return; }
         _busy = true;
-        _msg = "Envoi...";
+        setMsg("Envoi...", "Envoi");
         WatchUi.requestUpdate();
         Api.finalize(_sid, method(:onDone));
     }
@@ -71,7 +81,7 @@ class ConfirmView extends WatchUi.View {
         if (responseCode == 200 && data != null && !(data instanceof Lang.String)
             && data["ok"] == true) {
             _done = true;
-            _msg = "Score envoye";
+            setMsg("Score envoye", "Envoye");
             WatchUi.requestUpdate();
             // On rend la main a l'ecran de match : son onShow relance un
             // rafraichissement, qui affichera l'etat final renvoye par le serveur.
@@ -82,11 +92,26 @@ class ConfirmView extends WatchUi.View {
         // d'afficher un code.
         var reason = Api.errorReason(data);
         var txt = Api.reasonText(reason);
+        var shortTxt = Api.reasonShort(reason);
         if (txt == null && reason != null) {
-            if (reason.equals("no_winner"))       { txt = "Pas de vainqueur"; }
-            if (reason.equals("not_enough_sets")) { txt = "Moins de 2 sets joues"; }
+            // « Moins de 2 sets joues » faisait 21 caracteres et ne s'affichait
+            // pas sur un petit cadran rond : le serveur refusait la validation
+            // et l'appui sur START avait l'air de ne rien faire du tout.
+            if (reason.equals("no_winner")) {
+                txt = "Pas de vainqueur"; shortTxt = "Non fini";
+            }
+            if (reason.equals("not_enough_sets")) {
+                txt = "Moins de 2 sets"; shortTxt = "2 sets min";
+            }
         }
-        _msg = txt != null ? txt : "Echec (" + responseCode.toString() + ")";
+        if (txt != null) {
+            setMsg(txt, shortTxt);
+        } else {
+            // Le code HTTP est l'information : on le garde dans les deux
+            // formulations plutot que de retomber sur un « Echec » muet.
+            setMsg("Echec (" + responseCode.toString() + ")",
+                   "E " + responseCode.toString());
+        }
         WatchUi.requestUpdate();
     }
 
@@ -247,10 +272,20 @@ class ConfirmView extends WatchUi.View {
         Layout.drawBestBox(dc, noY, msgY - noY, noVariants,
                            Layout.textLadder(), Graphics.COLOR_LT_GRAY);
 
+        // ECHELLE DE FORMULATIONS et budget porte de 11 % a 12 % de la hauteur
+        // (97 % -> 98 %, le meme plancher de derniere ligne que SessionView).
+        // Deux corrections pour un seul defaut : cette ligne etait passee a la
+        // mesure par la ligne de base — bien plus etroite — sans recevoir
+        // l'echelle courte que toutes les autres lignes ont recue, et avec un
+        // budget SOUS le plancher de 12 % etabli par la passe precedente. Le
+        // serveur refusait la finalisation et « Moins de 2 sets joues » ou
+        // « Echec (500) » n'apparaissaient jamais : appuyer sur START avait
+        // l'air sans effet. Verifie au simulateur (fenix5s), pas deduit.
         if (!_msg.equals("")) {
-            Layout.drawBox(dc, msgY, (h * 97 / 100) - msgY, _msg,
-                           Layout.textLadder(),
-                           _done ? Graphics.COLOR_GREEN : Graphics.COLOR_ORANGE);
+            Layout.drawBestBox(dc, msgY, (h * 98 / 100) - msgY,
+                               [_msg, _msgShort],
+                               Layout.textLadder(),
+                               _done ? Graphics.COLOR_GREEN : Graphics.COLOR_ORANGE);
         }
     }
 }

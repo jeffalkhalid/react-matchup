@@ -9,7 +9,11 @@ class PairingView extends WatchUi.View {
 
     hidden var _digits = [0, 0, 0, 0, 0, 0];
     hidden var _pos = 0;
+    // Le statut porte DEUX formulations, riche et courte, comme la consigne et
+    // les noms d'equipe : c'est la seule ligne de cet ecran qui dise POURQUOI
+    // un code a ete refuse, et elle ne doit jamais etre muette (cf. onUpdate).
     hidden var _status = "";
+    hidden var _statusShort = "";
 
     function initialize() { View.initialize(); }
 
@@ -27,7 +31,13 @@ class PairingView extends WatchUi.View {
         return s;
     }
 
-    function setStatus(s) { _status = s; WatchUi.requestUpdate(); }
+    // Deux arguments : la formulation riche et son repli court. Passer null
+    // (ou la meme chaine) en second quand la premiere est deja tres courte.
+    function setStatus(s, short) {
+        _status = s;
+        _statusShort = (short == null) ? s : short;
+        WatchUi.requestUpdate();
+    }
 
     // Renvoie true si le code est complet et doit etre envoye.
     function next() {
@@ -56,7 +66,15 @@ class PairingView extends WatchUi.View {
         var yPos   = h * 60 / 100;
         var yHow   = h * 72 / 100;
         var yStat  = h * 85 / 100;
-        var yEnd   = h * 96 / 100;
+        // 98 % et non 96 % : le budget de la ligne de statut passe de 11 % a
+        // 13 % de la hauteur. En dessous de 12 %, le budget tombe sous la
+        // hauteur de FONT_XTINY sur le plus petit cadran du parc et la ligne
+        // disparait alors meme que la place horizontale ne manque pas — c'est
+        // le plancher etabli par la passe visuelle precedente (cf.
+        // SessionView, ou le meme defaut avait fait disparaitre « 40 - AV »).
+        // 98 % est le meme plancher de derniere ligne que SessionView :
+        // ni le bord du cadran (corde nulle), ni une ligne collee au bord.
+        var yEnd   = h * 98 / 100;
 
         // Formulations de la plus riche a la plus pauvre, comme les noms
         // d'equipe de l'ecran de match. Sans ce garde-fou, la consigne
@@ -65,7 +83,7 @@ class PairingView extends WatchUi.View {
         // est de ne rien dessiner plutot que de rogner. Une consigne plus
         // courte vaut mieux qu'aucune consigne.
         Layout.drawBestBox(dc, yHint, yCode - yHint,
-                           ["Code affiche dans l app", "Code dans l app", "Code"],
+                           ["Code dans l app", "Code app", "Code"],
                            tl, Graphics.COLOR_LT_GRAY);
 
         var g1 = "";
@@ -76,8 +94,9 @@ class PairingView extends WatchUi.View {
         }
         var parts = [g1, g2];
         var nl = Layout.numberLadder();
-        Layout.drawPartsAt(dc, yCode, parts, nl,
-                           Layout.fitPartsIndex(dc, parts, yCode, yPos - yCode, nl),
+        var hCode = yPos - yCode;
+        Layout.drawPartsAt(dc, yCode, hCode, parts, nl,
+                           Layout.fitPartsIndex(dc, parts, yCode, hCode, nl),
                            Graphics.COLOR_YELLOW);
 
         Layout.drawBox(dc, yPos, yHow - yPos, "Chiffre " + (_pos + 1) + "/6",
@@ -86,8 +105,18 @@ class PairingView extends WatchUi.View {
                            ["HAUT/BAS puis SELECT", "HAUT/BAS + SELECT", "HAUT/BAS"],
                            tl, Graphics.COLOR_WHITE);
 
+        // ECHELLE DE FORMULATIONS, comme toutes les autres lignes de cet ecran.
+        // Elle avait ete oubliee ici, et c'est la ligne qui la merite le plus :
+        // mesuree a la corde de sa LIGNE DE BASE, elle ne dispose plus que
+        // d'environ 88 px sur un fenix5s (218 px) contre 126 auparavant, soit
+        // une dizaine de caracteres. « Code invalide » (13 car.), « Code
+        // refuse » (11) et « Code deja utilise » (17) n'etaient donc plus
+        // dessines DU TOUT : l'utilisateur tapait un mauvais code, appuyait sur
+        // SELECT, et l'ecran revenait a « 000 000 / Chiffre 1/6 » sans le
+        // moindre mot d'explication. Verifie au simulateur, pas deduit.
         if (!_status.equals("")) {
-            Layout.drawBox(dc, yStat, yEnd - yStat, _status, tl, Graphics.COLOR_RED);
+            Layout.drawBestBox(dc, yStat, yEnd - yStat, [_status, _statusShort],
+                               tl, Graphics.COLOR_RED);
         }
     }
 }
@@ -107,7 +136,7 @@ class PairingDelegate extends WatchUi.BehaviorDelegate {
 
     function onSelect() {
         if (_view.next()) {
-            _view.setStatus("Envoi...");
+            _view.setStatus("Envoi...", "Envoi");
             Api.redeem(_view.code(), method(:onRedeem));
         }
         return true;
@@ -126,12 +155,16 @@ class PairingDelegate extends WatchUi.BehaviorDelegate {
             return;
         }
         // Raison metier (corps 200 "reason", ou "message" d'un vrai 4xx).
-        var txt = Api.reasonText(Api.errorReason(data));
-        if (txt != null) { _view.setStatus(txt); return; }
+        var reason = Api.errorReason(data);
+        var txt = Api.reasonText(reason);
+        if (txt != null) { _view.setStatus(txt, Api.reasonShort(reason)); return; }
         if (responseCode == 200 || responseCode == 400 || responseCode == 404) {
-            _view.setStatus("Code refuse");
+            _view.setStatus("Code refuse", "Refuse");
             return;
         }
-        _view.setStatus("Erreur " + responseCode.toString());
+        // Le code de reponse est l'information, on le garde dans les DEUX
+        // formulations : « Err 500 » reste actionnable, « Erreur » ne l'est pas.
+        _view.setStatus("Erreur " + responseCode.toString(),
+                        "Err " + responseCode.toString());
     }
 }

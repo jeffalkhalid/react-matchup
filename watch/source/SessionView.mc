@@ -72,7 +72,13 @@ class SessionView extends WatchUi.View {
     hidden var _decided = false;    // match JOUE mais session encore live (spec §9)
     hidden var _isScorer = true;
     hidden var _hadControl = false; // la montre a-t-elle deja eu la main ce match ?
+    // Le message porte DEUX formulations, riche et courte, comme les noms
+    // d'equipe : dessine tres bas, il est le premier a manquer de corde sur un
+    // cadran rond, et c'est souvent lui qui dit POURQUOI quelque chose a
+    // echoue. Les deux sont TOUJOURS posees ensemble (setMsg) : deux champs
+    // qu'on pourrait mettre a jour separement finiraient par diverger.
     hidden var _msg = "Chargement...";
+    hidden var _msgShort = "Chargement";
     hidden var _timer = null;
     hidden var _inFlight = null;   // client_seq de la requete en vol, null si aucune
     hidden var _inFlightTicks = 0; // chien de garde : ticks depuis le depart
@@ -82,6 +88,12 @@ class SessionView extends WatchUi.View {
     hidden var _screenH = 0;
 
     function initialize() { View.initialize(); }
+
+    // Pose les deux formulations du message d'un seul geste.
+    hidden function setMsg(text, short) {
+        _msg = text;
+        _msgShort = (short == null) ? text : short;
+    }
 
     function onShow() {
         // Passe de verification visuelle : le simulateur n'a ni jeton ni
@@ -128,7 +140,12 @@ class SessionView extends WatchUi.View {
             // sur une erreur generique, sans aucun chemin de retour (F4).
             if (reason != null && reason.equals("token_revoked")) { unpair(); return; }
             var txt = Api.reasonText(reason);
-            _msg = txt != null ? txt : "Hors ligne (" + responseCode.toString() + ")";
+            if (txt != null) {
+                setMsg(txt, Api.reasonShort(reason));
+            } else {
+                setMsg("Hors ligne (" + responseCode.toString() + ")",
+                       "Hors ligne");
+            }
             WatchUi.requestUpdate();
             return;
         }
@@ -141,9 +158,9 @@ class SessionView extends WatchUi.View {
             // Interrupteur global coupe depuis le Panel Arbitre : on le dit,
             // au lieu de laisser croire qu'aucun match n'est en cours.
             if (data != null && !(data instanceof Lang.String) && data["disabled"] == true) {
-                _msg = "Fonction desactivee";
+                setMsg("Fonction desactivee", "Desactivee");
             } else {
-                _msg = "Aucun match en cours";
+                setMsg("Aucun match en cours", "Aucun match");
             }
             WatchUi.requestUpdate();
             return;
@@ -205,17 +222,22 @@ class SessionView extends WatchUi.View {
 
         if (_finished) {
             // Session close cote serveur : plus rien a faire au poignet.
-            _msg = "Match termine";
+            setMsg("Match termine", "Termine");
         } else if (_decided) {
             // Match joue mais pas encore valide : on indique le geste, sinon
             // personne ne devine qu'un appui long ouvre la validation.
-            _msg = Layout.isTouch() ? "Valider : appui long" : "Valider : HAUT long";
+            setMsg(Layout.isTouch() ? "Valider : appui long" : "Valider : HAUT long",
+                   "Valider");
         } else if (!_isScorer) {
-            _msg = "Plus scoreur";
+            // MEME formulation que Api.reasonText("not_the_scorer") : c'est le
+            // meme fait, dit par deux chemins (le champ is_scorer et le refus
+            // serveur). Deux libelles differents pour un meme etat se lisent
+            // comme deux problemes differents.
+            setMsg("Plus le scoreur", "Pas toi");
         } else if (_hadControl && device != null && device.equals("phone") && Queue.size() == 0) {
-            _msg = "Tel a la main";
+            setMsg("Tel a la main", "Telephone");
         } else {
-            _msg = "";
+            setMsg("", "");
         }
         WatchUi.requestUpdate();
     }
@@ -289,7 +311,7 @@ class SessionView extends WatchUi.View {
     function tap(eventType, team) {
         if (!isReady()) { return; }
         Queue.push(_sid, eventType, team, Queue.nextSeq());
-        _msg = "";
+        setMsg("", "");
         WatchUi.requestUpdate();
         sendHead();
     }
@@ -305,7 +327,7 @@ class SessionView extends WatchUi.View {
     function undo() {
         if (!isReady()) { return; }
         tap("undo", 0);
-        _msg = "Annulation";
+        setMsg("Annulation", "Annule");
         WatchUi.requestUpdate();
     }
 
@@ -324,7 +346,7 @@ class SessionView extends WatchUi.View {
     function askFinalize() {
         if (_sid == null || !_isScorer || _finished) { return; }
         if (!_decided) {
-            _msg = "Match pas termine";
+            setMsg("Match pas termine", "Non fini");
             WatchUi.requestUpdate();
             return;
         }
@@ -393,9 +415,15 @@ class SessionView extends WatchUi.View {
         if (responseCode == 400 || responseCode == 403 || responseCode == 409) {
             Queue.popHead();
             var txt = Api.reasonText(reason);
-            _msg = txt != null ? txt : "Refuse (" + responseCode.toString() + ")";
+            if (txt != null) {
+                setMsg(txt, Api.reasonShort(reason));
+            } else {
+                setMsg("Refuse (" + responseCode.toString() + ")",
+                       "R " + responseCode.toString());
+            }
         } else {
-            _msg = "En attente : " + Queue.size().toString();
+            setMsg("En attente : " + Queue.size().toString(),
+                   "Attente " + Queue.size().toString());
         }
         WatchUi.requestUpdate();
     }
@@ -411,7 +439,13 @@ class SessionView extends WatchUi.View {
         _inFlight = null;
         if (_timer != null) { _timer.stop(); _timer = null; }
         var v = new PairingView();
-        v.setStatus("Montre deliee - reappairer");
+        // « reappairer » etait redondant — on vient precisement d'ouvrir
+        // l'ecran d'appairage — et portait le message a 26 caracteres, si bien
+        // qu'il ne s'affichait sur AUCUN petit cadran rond. Meme paire que
+        // Api.reasonText/reasonShort("token_revoked") : un seul libelle pour
+        // un seul fait, dit d'un seul endroit.
+        v.setStatus(Api.reasonText("token_revoked"),
+                    Api.reasonShort("token_revoked"));
         // PairingDelegate PREND la vue en argument (cf. PagMatchApp).
         WatchUi.switchToView(v, new PairingDelegate(v), WatchUi.SLIDE_IMMEDIATE);
     }
@@ -423,7 +457,16 @@ class SessionView extends WatchUi.View {
         _screenH = h;
 
         if (_sid == null) {
-            Layout.drawFit(dc, h / 2, _msg, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+            // DERNIER APPELANT de l'ancien chemin de mesure (drawFit, corde
+            // prise au HAUT de l'encre) — le defaut meme corrige partout
+            // ailleurs. Inoffensif tant que la ligne est a h/2, ou la corde est
+            // maximale ; faux des que ce y bouge d'un pixel vers le bas. On le
+            // migre sur drawBestBox : corde a la ligne de base, budget vertical
+            // (tout l'espace jusqu'au plancher de derniere ligne) et echelle de
+            // formulations, comme partout ailleurs.
+            var yFloor = h * Y_BOTTOM_PCT / 100;
+            Layout.drawBestBox(dc, h / 2, yFloor - h / 2, [_msg, _msgShort],
+                               Layout.textLadder(), Graphics.COLOR_LT_GRAY);
             return;
         }
 
@@ -458,11 +501,19 @@ class SessionView extends WatchUi.View {
         //    POSITION doit les distinguer (spec §7).
         //    Le score part en fragments, un par set : cf. Layout.drawPartsAt,
         //    les polices FONT_NUMBER_* n'ont pas toutes de glyphe d'espace.
-        var iScore = Layout.commonIndex(
-            Layout.fitPartsIndex(dc, _sets1, yScore1, hScore1, nl),
-            Layout.fitPartsIndex(dc, _sets2, yScore2, hScore2, nl));
-        Layout.drawPartsAt(dc, yScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE);
-        Layout.drawPartsAt(dc, yScore2, _sets2, nl, iScore, Graphics.COLOR_WHITE);
+        //    Le barreau commun est RE-VERIFIE pour les DEUX lignes
+        //    (Layout.pairPartsIndex) : commonIndex retenait celui de la ligne
+        //    la plus contrainte sans jamais le confronter au budget ni a la
+        //    corde de l'autre. Sur un cadran rond c'est le score de l'equipe 2
+        //    (52 %, corde plus etroite) qui commande presque toujours, donc
+        //    l'equipe 1 qui heritait d'une police jamais mesuree pour son
+        //    creneau — et la garantie « le score 1 ne descend pas sous
+        //    Y_NAME2_PCT », sur laquelle teamForTapY s'appuie, n'en etait plus
+        //    une.
+        var iScore = Layout.pairPartsIndex(dc, _sets1, yScore1, hScore1,
+                                               _sets2, yScore2, hScore2, nl);
+        Layout.drawPartsAt(dc, yScore1, hScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE);
+        Layout.drawPartsAt(dc, yScore2, hScore2, _sets2, nl, iScore, Graphics.COLOR_WHITE);
 
         // 2. Les noms : complets, puis initiales, puis rien — MAIS LES DEUX AU
         //    MEME NIVEAU DE DETAIL ET A LA MEME TAILLE. En essayant chaque nom
@@ -470,21 +521,20 @@ class SessionView extends WatchUi.View {
         //    « Alexandre & Christophe » en entier face a « B&D » (vu sur
         //    venusq, fenix6, fenix6xpro) : la dissymetrie se lit comme une
         //    difference de statut entre les equipes.
-        var iFull = Layout.commonIndex(
-            Layout.fitIndex(dc, _team1, yName1, hName1, tl),
-            Layout.fitIndex(dc, _team2, yName2, hName2, tl));
+        //    Barreau commun re-verifie pour les deux lignes, comme les
+        //    scores (Layout.pairIndex).
         var n1 = _team1;
         var n2 = _team2;
-        var iName = iFull;
+        var iName = Layout.pairIndex(dc, n1, yName1, hName1,
+                                         n2, yName2, hName2, tl);
         if (iName < 0) {
             n1 = _team1Short;
             n2 = _team2Short;
-            iName = Layout.commonIndex(
-                Layout.fitIndex(dc, n1, yName1, hName1, tl),
-                Layout.fitIndex(dc, n2, yName2, hName2, tl));
+            iName = Layout.pairIndex(dc, n1, yName1, hName1,
+                                         n2, yName2, hName2, tl);
         }
-        Layout.drawAt(dc, yName1, n1, tl, iName, Graphics.COLOR_YELLOW);
-        Layout.drawAt(dc, yName2, n2, tl, iName, Graphics.COLOR_YELLOW);
+        Layout.drawAt(dc, yName1, hName1, n1, tl, iName, Graphics.COLOR_YELLOW);
+        Layout.drawAt(dc, yName2, hName2, n2, tl, iName, Graphics.COLOR_YELLOW);
 
         // 3. Le point en cours — la raison d'etre du mode points.
         var hasPoint = false;
@@ -522,16 +572,21 @@ class SessionView extends WatchUi.View {
             // visible avant une validation irreversible, alors que
             // "Valider : appui long" ne fait que rappeler un geste que
             // l'utilisateur est de toute facon en train de faire.
+            // _msgShort ferme la liste : un dernier barreau, jamais un
+            // survivant prioritaire. L'ordre de sacrifice ci-dessus est
+            // inchange, on ajoute seulement un repli sous le plus pauvre.
             Layout.drawBestBox(dc, msgY, msgH,
                                [_msg + " +" + _contests.toString() + " cont",
                                 contestLabel(),
-                                _msg],
+                                _msg,
+                                _msgShort],
                                tl, Graphics.COLOR_ORANGE);
         } else if (_contests > 0) {
             Layout.drawBox(dc, msgY, msgH, contestLabel(),
                            tl, Graphics.COLOR_ORANGE);
         } else {
-            Layout.drawBox(dc, msgY, msgH, _msg, tl, Graphics.COLOR_LT_GRAY);
+            Layout.drawBestBox(dc, msgY, msgH, [_msg, _msgShort],
+                               tl, Graphics.COLOR_LT_GRAY);
         }
     }
 }

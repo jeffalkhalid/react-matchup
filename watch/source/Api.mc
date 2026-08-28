@@ -65,18 +65,54 @@ module Api {
     // Chaines SANS ACCENTS : les polices systeme Garmin ne les garantissent pas.
     // Retourne null si la raison est inconnue -> l'appelant garde son message
     // generique, jamais un echec muet.
+    //
+    // VINGT CARACTERES AU PLUS, par construction. Ce n'est pas une coquetterie
+    // de style : la corde utilisable d'un cadran rond au niveau de la ligne de
+    // message tombe a une petite dizaine de caracteres sur les plus petits
+    // modeles du parc (~88 px sur fenix5s, 218 px), et la regle du module est
+    // de ne RIEN dessiner plutot que de rogner. « Montre deliee - reappairer »
+    // (26 car.) et « Trop d essais - patiente » (24 car.) ne s'affichaient donc
+    // NULLE PART sur un petit cadran rond : le refus serveur n'atteignait
+    // jamais le poignet. Un message court se lit aussi mieux en plein soleil,
+    // une balle a la main.
     function reasonText(reason) {
         if (reason == null) { return null; }
-        if (reason.equals("token_revoked"))     { return "Montre deliee - reappairer"; }
-        if (reason.equals("not_the_scorer"))    { return "Tu n es plus le scoreur"; }
-        if (reason.equals("watch_has_control")) { return "La montre a la main"; }
+        if (reason.equals("token_revoked"))     { return "Montre deliee"; }
+        if (reason.equals("not_the_scorer"))    { return "Plus le scoreur"; }
+        if (reason.equals("watch_has_control")) { return "Montre a la main"; }
         if (reason.equals("session_not_live"))  { return "Match termine"; }
         if (reason.equals("not_a_participant")) { return "Plus dans ce match"; }
-        if (reason.equals("rate_limited"))      { return "Trop d essais - patiente"; }
+        if (reason.equals("rate_limited"))      { return "Trop d essais"; }
         if (reason.equals("invalid_code"))      { return "Code invalide"; }
         if (reason.equals("code_expired"))      { return "Code expire"; }
         if (reason.equals("code_already_used")) { return "Code deja utilise"; }
         if (reason.equals("feature_disabled"))  { return "Fonction desactivee"; }
+        return null;
+    }
+
+    // DEUXIEME BARREAU de la meme raison : la formulation de repli, quand la
+    // premiere ne tient pas. Meme role que les variantes courtes des noms
+    // d'equipe ou de la consigne d'appairage — sauf qu'ici la ligne concernee
+    // est la SEULE qui dise POURQUOI quelque chose a echoue. Une explication
+    // amputee vaut infiniment mieux qu'un ecran muet ou l'utilisateur croit
+    // que son appui n'a pas ete pris en compte.
+    // Dix caracteres au plus : « Invalide » a ete vu s'afficher au simulateur
+    // sur la ligne de statut d'un fenix5s (218 px, le plus petit cadran rond
+    // buildable), la ou « Code invalide » ne passait pas.
+    // Jamais null quand reasonText ne l'est pas : les deux listes se
+    // correspondent raison pour raison, et c'est ici qu'on le verifie.
+    function reasonShort(reason) {
+        if (reason == null) { return null; }
+        if (reason.equals("token_revoked"))     { return "Deliee"; }
+        if (reason.equals("not_the_scorer"))    { return "Pas toi"; }
+        if (reason.equals("watch_has_control")) { return "Montre"; }
+        if (reason.equals("session_not_live"))  { return "Termine"; }
+        if (reason.equals("not_a_participant")) { return "Hors match"; }
+        if (reason.equals("rate_limited"))      { return "Attendre"; }
+        if (reason.equals("invalid_code"))      { return "Invalide"; }
+        if (reason.equals("code_expired"))      { return "Expire"; }
+        if (reason.equals("code_already_used")) { return "Deja pris"; }
+        if (reason.equals("feature_disabled"))  { return "Desactivee"; }
         return null;
     }
 

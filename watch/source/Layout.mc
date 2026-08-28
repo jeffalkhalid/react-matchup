@@ -176,9 +176,75 @@ module Layout {
         return -1;
     }
 
+    // Un barreau DONNE tient-il pour CETTE ligne ? Meme regle que fitIndex,
+    // mais sur un indice impose au lieu d'en chercher un.
+    //
+    // Pourquoi cette fonction existe : fitIndex rend le PREMIER barreau qui
+    // tient, donc le plus grand, et commonIndex fait ensuite adopter aux DEUX
+    // lignes solidaires le barreau de celle qui en demandait le plus. Ce
+    // barreau-la n'a jamais ete confronte aux contraintes de l'AUTRE ligne :
+    // ni a son budget vertical, ni a la corde de SA hauteur. Le cas est
+    // ordinaire, pas exotique — sur un cadran rond le score de l'equipe 2 est
+    // pose a 52 %, ou la corde de sa ligne de base est plus etroite qu'a 18 %,
+    // si bien que c'est presque toujours LUI qui impose le barreau et
+    // l'equipe 1 qui herite d'une police jamais verifiee. Les echelles ne sont
+    // d'ailleurs pas garanties decroissantes en hauteur d'un modele a l'autre
+    // (FONT_NUMBER_MILD contre FONT_LARGE, par exemple, n'a aucun ordre
+    // impose par le SDK) : « plus petit indice » ne veut donc pas dire
+    // « police plus basse », et la garantie sur laquelle s'appuie
+    // SessionView.teamForTapY — le score de l'equipe 1 ne descend jamais
+    // sous Y_NAME2_PCT — n'en serait plus une.
+    function fitsIndex(dc, text, y, maxH, ladder, idx) {
+        if (idx < 0 || idx >= ladder.size()) { return false; }
+        if (text == null) { return false; }
+        if (text.length() == 0) { return false; }
+        var f = ladder[idx];
+        if (Graphics.getFontHeight(f) > maxH) { return false; }
+        return dc.getTextWidthInPixels(text, f) <= lineWidth(dc, y, inkDepth(f));
+    }
+
+    function fitsPartsIndex(dc, parts, y, maxH, ladder, idx) {
+        if (idx < 0 || idx >= ladder.size()) { return false; }
+        if (parts == null) { return false; }
+        if (parts.size() == 0) { return false; }
+        var f = ladder[idx];
+        if (Graphics.getFontHeight(f) > maxH) { return false; }
+        return partsWidth(dc, parts, f) <= lineWidth(dc, y, inkDepth(f));
+    }
+
+    // Barreau COMMUN a deux lignes solidaires, verifie pour les DEUX.
+    // On part du plus petit des deux barreaux retenus separement (commonIndex)
+    // et on continue de descendre l'echelle tant que l'une des deux lignes n'y
+    // tient pas. -1 quand aucun barreau ne convient aux deux : elles
+    // s'affichent ensemble ou pas du tout (cf. commonIndex).
+    function pairIndex(dc, t1, y1, h1, t2, y2, h2, ladder) {
+        var i = commonIndex(fitIndex(dc, t1, y1, h1, ladder),
+                            fitIndex(dc, t2, y2, h2, ladder));
+        if (i < 0) { return -1; }
+        while (i < ladder.size()) {
+            if (fitsIndex(dc, t1, y1, h1, ladder, i)
+                && fitsIndex(dc, t2, y2, h2, ladder, i)) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    function pairPartsIndex(dc, p1, y1, h1, p2, y2, h2, ladder) {
+        var i = commonIndex(fitPartsIndex(dc, p1, y1, h1, ladder),
+                            fitPartsIndex(dc, p2, y2, h2, ladder));
+        if (i < 0) { return -1; }
+        while (i < ladder.size()) {
+            if (fitsPartsIndex(dc, p1, y1, h1, ladder, i)
+                && fitsPartsIndex(dc, p2, y2, h2, ladder, i)) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
     // drawFit, budget vertical en plus. Ne dessine RIEN si rien ne tient.
     function drawBox(dc, y, maxH, text, ladder, color) {
-        return drawAt(dc, y, text, ladder, fitIndex(dc, text, y, maxH, ladder), color);
+        return drawAt(dc, y, maxH, text, ladder,
+                      fitIndex(dc, text, y, maxH, ladder), color);
     }
 
     // drawBest, budget vertical en plus.
@@ -191,8 +257,15 @@ module Layout {
 
     // Dessine avec la police d'indice idx (celui rendu par fitIndex), ou rien
     // si idx est negatif. Sert a imposer a deux lignes la MEME police.
-    function drawAt(dc, y, text, ladder, idx, color) {
-        if (idx < 0 || idx >= ladder.size()) { return false; }
+    //
+    // Le barreau est RE-VERIFIE ici, contre le budget maxH de CETTE ligne et
+    // contre la corde de SA hauteur : un indice venu d'ailleurs (commonIndex,
+    // pairIndex) a pu etre choisi pour une autre ligne. Sans cette
+    // verification, le module dessinait une police qu'il n'avait jamais
+    // mesuree pour l'endroit ou il la posait — exactement le genre de
+    // supposition qu'il existe pour supprimer.
+    function drawAt(dc, y, maxH, text, ladder, idx, color) {
+        if (!fitsIndex(dc, text, y, maxH, ladder, idx)) { return false; }
         dc.setColor(color, Graphics.COLOR_TRANSPARENT);
         dc.drawText(dc.getWidth() / 2, y, ladder[idx], text,
                     Graphics.TEXT_JUSTIFY_CENTER);
@@ -256,8 +329,9 @@ module Layout {
     }
 
     // Dessine les fragments avec la police d'indice idx, l'ensemble centre.
-    function drawPartsAt(dc, y, parts, ladder, idx, color) {
-        if (idx < 0 || idx >= ladder.size()) { return false; }
+    // Meme re-verification que drawAt, et pour la meme raison.
+    function drawPartsAt(dc, y, maxH, parts, ladder, idx, color) {
+        if (!fitsPartsIndex(dc, parts, y, maxH, ladder, idx)) { return false; }
         var font = ladder[idx];
         var gap = partGap(dc, font);
         var x = dc.getWidth() / 2 - partsWidth(dc, parts, font) / 2;
