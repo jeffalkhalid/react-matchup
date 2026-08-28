@@ -40,23 +40,54 @@ class PairingView extends WatchUi.View {
         dc.clear();
         var h = dc.getHeight();
 
-        Layout.drawFit(dc, h * 18 / 100, "Code affiche dans l app",
-                       Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+        // Memes deux regles que l'ecran de match, et pour les memes defauts vus
+        // a l'ecran : un BUDGET VERTICAL par ligne, et AUCUN separateur confie
+        // a une police FONT_NUMBER_*.
+        //
+        // Le code d'appairage etait le cas le plus grave de tout le parc : il
+        // etait dessine « 000 000 », espace compris, avec numberLadder. Sur
+        // vivoactive_hr le code sortait « 000[?]000 », l'espace remplace par
+        // l'image « caractere manquant » de Garmin, EN PLEIN MILIEU des six
+        // chiffres que l'utilisateur doit lire et recopier — sur le tout
+        // premier ecran de l'application.
+        var tl = Layout.textLadder();
+        var yHint  = h * 14 / 100;
+        var yCode  = h * 34 / 100;
+        var yPos   = h * 60 / 100;
+        var yHow   = h * 72 / 100;
+        var yStat  = h * 85 / 100;
+        var yEnd   = h * 96 / 100;
 
-        var s = "";
+        // Formulations de la plus riche a la plus pauvre, comme les noms
+        // d'equipe de l'ecran de match. Sans ce garde-fou, la consigne
+        // disparaissait purement et simplement des le fenix5s : mesuree a la
+        // corde de sa LIGNE DE BASE elle ne tenait plus, et la regle du module
+        // est de ne rien dessiner plutot que de rogner. Une consigne plus
+        // courte vaut mieux qu'aucune consigne.
+        Layout.drawBestBox(dc, yHint, yCode - yHint,
+                           ["Code affiche dans l app", "Code dans l app", "Code"],
+                           tl, Graphics.COLOR_LT_GRAY);
+
+        var g1 = "";
+        var g2 = "";
         for (var i = 0; i < 6; i = i + 1) {
-            s = s + _digits[i].toString();
-            if (i == 2) { s = s + " "; }
+            if (i < 3) { g1 = g1 + _digits[i].toString(); }
+            else       { g2 = g2 + _digits[i].toString(); }
         }
-        Layout.drawFit(dc, h * 40 / 100, s, Layout.numberLadder(), Graphics.COLOR_YELLOW);
+        var parts = [g1, g2];
+        var nl = Layout.numberLadder();
+        Layout.drawPartsAt(dc, yCode, parts, nl,
+                           Layout.fitPartsIndex(dc, parts, yCode, yPos - yCode, nl),
+                           Graphics.COLOR_YELLOW);
 
-        Layout.drawFit(dc, h * 62 / 100, "Chiffre " + (_pos + 1) + "/6",
-                       Layout.textLadder(), Graphics.COLOR_WHITE);
-        Layout.drawFit(dc, h * 74 / 100, "HAUT/BAS puis SELECT",
-                       Layout.textLadder(), Graphics.COLOR_WHITE);
+        Layout.drawBox(dc, yPos, yHow - yPos, "Chiffre " + (_pos + 1) + "/6",
+                       tl, Graphics.COLOR_WHITE);
+        Layout.drawBestBox(dc, yHow, yStat - yHow,
+                           ["HAUT/BAS puis SELECT", "HAUT/BAS + SELECT", "HAUT/BAS"],
+                           tl, Graphics.COLOR_WHITE);
 
         if (!_status.equals("")) {
-            Layout.drawFit(dc, h * 86 / 100, _status, Layout.textLadder(), Graphics.COLOR_RED);
+            Layout.drawBox(dc, yStat, yEnd - yStat, _status, tl, Graphics.COLOR_RED);
         }
     }
 }

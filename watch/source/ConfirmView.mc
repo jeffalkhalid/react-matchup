@@ -95,12 +95,25 @@ class ConfirmView extends WatchUi.View {
         dc.clear();
         var h = dc.getHeight();
 
-        Layout.drawFit(dc, h * 20 / 100, "Valider le score ?",
+        // BUDGET VERTICAL sur chaque ligne (Layout.drawBox) et non plus simple
+        // mesure horizontale. Deux raisons, toutes deux vues a l'ecran :
+        //   - drawFit ne mesurait la corde qu'au HAUT de l'encre ; sur fenix5s
+        //     le « n » final de « RETOUR = non » sortait du cadran, coupe par
+        //     la lunette. Layout.lineWidth prend desormais la plus etroite des
+        //     cordes du haut ET du bas de la ligne ;
+        //   - la ligne de score bornee a worstH n'etait qu'une HYPOTHESE, alors
+        //     que toute la bande de la cible est calculee dessous. Elle devient
+        //     une garantie.
+        var worstH = Graphics.getFontHeight(Graphics.FONT_LARGE);
+        var minH   = Graphics.getFontHeight(Graphics.FONT_XTINY);
+
+        var titleY = h * 20 / 100;
+        var scoreY = h * 38 / 100;
+        Layout.drawBox(dc, titleY, scoreY - titleY, "Valider le score ?",
                        Layout.textLadder(), Graphics.COLOR_YELLOW);
 
-        var scoreY = h * 38 / 100;
-        Layout.drawBest(dc, scoreY, _scoreVariants, Layout.textLadder(),
-                        Graphics.COLOR_WHITE);
+        Layout.drawBestBox(dc, scoreY, worstH, _scoreVariants,
+                           Layout.textLadder(), Graphics.COLOR_WHITE);
 
         // Le libelle du OUI decrit une cible et non plus l'ecran entier :
         // « ICI » designe le cadre dans lequel ce texte est ecrit. Les
@@ -115,7 +128,15 @@ class ConfirmView extends WatchUi.View {
         } else {
             yesVariants = ["START = oui", "OK"];
         }
-        var no = Layout.isTouch() ? "Vers droite = non" : "RETOUR = non";
+        // Comme le libelle du OUI : de la plus riche a la plus pauvre. La
+        // ligne du NON etait la seule du parc reellement ROGNEE par la lunette
+        // (le « n » final coupe sur fenix5s). Elle est desormais mesuree a la
+        // corde de sa ligne de base, ce qui la ferait DISPARAITRE sur les
+        // memes cadrans — or c'est le seul rappel du geste d'annulation. Une
+        // formulation courte reste donc toujours disponible.
+        var noVariants = Layout.isTouch()
+            ? ["Vers droite = non", "Droite = non", "NON"]
+            : ["RETOUR = non", "RETOUR", "NON"];
 
         var noY  = h * 74 / 100;
         var msgY = h * 86 / 100;
@@ -140,9 +161,6 @@ class ConfirmView extends WatchUi.View {
         // inclusions emboitees, vraies pour n'importe quelles metriques de
         // police.
         // ---------------------------------------------------------------
-        var worstH = Graphics.getFontHeight(Graphics.FONT_LARGE);
-        var minH   = Graphics.getFontHeight(Graphics.FONT_XTINY);
-
         // Bande utilisable : sous le pire cas d'encre de la ligne de score
         // (elle puise dans le meme textLadder), au-dessus du haut de la ligne
         // « non ». Bornes ABSOLUES.
@@ -226,10 +244,12 @@ class ConfirmView extends WatchUi.View {
                         Graphics.TEXT_JUSTIFY_CENTER);
         }
 
-        Layout.drawFit(dc, noY, no, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+        Layout.drawBestBox(dc, noY, msgY - noY, noVariants,
+                           Layout.textLadder(), Graphics.COLOR_LT_GRAY);
 
         if (!_msg.equals("")) {
-            Layout.drawFit(dc, msgY, _msg, Layout.textLadder(),
+            Layout.drawBox(dc, msgY, (h * 97 / 100) - msgY, _msg,
+                           Layout.textLadder(),
                            _done ? Graphics.COLOR_GREEN : Graphics.COLOR_ORANGE);
         }
     }

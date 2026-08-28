@@ -16,10 +16,35 @@ class SessionView extends WatchUi.View {
     // dessin : deux jeux de valeurs qui derivent l'un de l'autre, et un point
     // part a la mauvaise equipe.
     // L'ordre des equipes est fige : equipe 1 en haut, equipe 2 en bas.
-    const Y_NAME1_PCT  = 10;
-    const Y_SCORE1_PCT = 26;
-    const Y_NAME2_PCT  = 50;
-    const Y_SCORE2_PCT = 64;
+    //
+    // Chaque hauteur est aussi le PLANCHER de l'element precedent : l'ecart
+    // jusqu'a la suivante est le budget vertical dans lequel l'encre doit
+    // tenir (cf. Layout.fitIndex). C'est ce qui manquait — tout se dessinait a
+    // sa hauteur sans savoir ou s'arretait le voisin du dessus, et sur les 14
+    // familles capturees « 40 - AV » et le message s'ecrivaient PAR-DESSUS les
+    // chiffres du score.
+    //
+    // Les deux equipes recoivent des budgets IDENTIQUES (12 % pour le nom,
+    // 24 % pour le score) : ce qui les distingue doit etre leur POSITION, pas
+    // leur taille (spec §7).
+    // Rythme retenu, en % de la hauteur : 6 de marge haute, puis
+    // 12 / 22 / 12 / 22 / 12 / 12. Les deux equipes ont des budgets
+    // strictement egaux, et les deux lignes de pied en ont assez pour une
+    // ligne de la plus petite police MEME sur le plus petit cadran du parc.
+    // C'est ce dernier point qui a ete corrige apres une premiere capture :
+    // avec 9 %, le budget du point tombait sous la hauteur de FONT_XTINY sur
+    // le fenix5s (218 px) et « 40 - AV » disparaissait de l'ecran alors que la
+    // place horizontale ne manquait pas.
+    const Y_NAME1_PCT  = 6;
+    const Y_SCORE1_PCT = 18;
+    const Y_NAME2_PCT  = 40;
+    const Y_SCORE2_PCT = 52;
+    const Y_POINT_PCT  = 74;
+    const Y_MSG_PCT    = 86;
+    // Plancher de la derniere ligne. Pas le bas de l'ecran : sur un cadran
+    // rond la corde y est deja nulle, et sur un rectangle une ligne collee au
+    // bord se lit mal.
+    const Y_BOTTOM_PCT = 98;
 
     hidden var _sid = null;
     hidden var _team1 = "Equipe 1";
@@ -27,8 +52,15 @@ class SessionView extends WatchUi.View {
     hidden var _team1Short = "E1";
     hidden var _team2Short = "E2";
     // Score set par set, prêt à dessiner : « 6 4 1 ».
+    // _score1/_score2 gardent la forme CHAINE, qui part vers ConfirmView (ou
+    // elle est rendue avec une police texte, laquelle a bien un espace).
+    // _sets1/_sets2 portent les MEMES sets en FRAGMENTS, un par set : c'est
+    // cette forme-la qui est dessinee ici, parce que les polices FONT_NUMBER_*
+    // n'ont pas toutes de glyphe d'espace (cf. Layout.drawPartsAt).
     hidden var _score1 = "";
     hidden var _score2 = "";
+    hidden var _sets1 = [];
+    hidden var _sets2 = [];
     hidden var _setsWon1 = 0;
     hidden var _setsWon2 = 0;
     hidden var _games1 = 0;
@@ -143,12 +175,16 @@ class SessionView extends WatchUi.View {
         var sets = d["sets"];
         _score1 = "";
         _score2 = "";
+        _sets1 = [];
+        _sets2 = [];
         if (sets != null && sets.size() > 0) {
             for (var i = 0; i < sets.size(); i = i + 1) {
                 var s = sets[i];
                 if (i > 0) { _score1 = _score1 + " "; _score2 = _score2 + " "; }
                 _score1 = _score1 + s["t1"].toString();
                 _score2 = _score2 + s["t2"].toString();
+                _sets1.add(s["t1"].toString());
+                _sets2.add(s["t2"].toString());
             }
             var last = sets[sets.size() - 1];
             _games1 = last["t1"];
@@ -197,9 +233,13 @@ class SessionView extends WatchUi.View {
     // cible la plus naturelle.
     //
     // Regle, et non valeur reglee a l'oeil :
-    //   bas possible de l'equipe 1 = Y_SCORE1_PCT + hauteur de FONT_NUMBER_HOT
-    //     (la police la plus haute de numberLadder, donc le pire cas ; si
-    //     drawFit a du descendre l'echelle, le vrai bas est plus haut encore)
+    //   bas possible de l'equipe 1 = Y_NAME2_PCT.
+    //     Ce n'est plus une majoration prudente mais une GARANTIE : depuis la
+    //     passe visuelle, le score de l'equipe 1 est dessine dans le budget
+    //     vertical [Y_SCORE1_PCT, Y_NAME2_PCT] et aucune police plus haute
+    //     n'est retenue (Layout.fitPartsIndex). Auparavant on majorait par la
+    //     hauteur de FONT_NUMBER_HOT, qui pouvait depasser tres au-dela du
+    //     nom de l'equipe 2 et elargissait la bande morte pour rien.
     //   haut de l'equipe 2         = Y_NAME2_PCT (son nom, son premier element)
     // La bande morte va du plus petit au plus grand des deux : ils peuvent se
     // croiser sur un ecran ou FONT_NUMBER_HOT est tres haute, et la formule
@@ -222,7 +262,7 @@ class SessionView extends WatchUi.View {
         if (_screenH <= 0) { return 0; }
         var score1Top = _screenH * Y_SCORE1_PCT / 100;
         var score2Top = _screenH * Y_SCORE2_PCT / 100;
-        var bottom1 = score1Top + Graphics.getFontHeight(Graphics.FONT_NUMBER_HOT);
+        var bottom1 = _screenH * Y_NAME2_PCT / 100;
         var top2 = _screenH * Y_NAME2_PCT / 100;
         var guard = Graphics.getFontHeight(Graphics.FONT_XTINY) / 2;
         var bandTop    = (bottom1 < top2 ? bottom1 : top2) - guard;
@@ -388,29 +428,76 @@ class SessionView extends WatchUi.View {
         }
 
         // PRIORITE (spec §5) : le score survit toujours, le reste s'efface.
-        // Chaque element est tente a sa hauteur ; s'il ne tient pas, on ne
-        // dessine rien plutot qu'un texte rogne.
+        // Chaque element recoit en plus un BUDGET VERTICAL — l'ecart jusqu'a
+        // l'element suivant — et n'est dessine que dans une police dont l'encre
+        // tient dedans. Sans ce budget, tout se dessinait a sa hauteur sans
+        // savoir ou s'arretait le voisin du dessus : sur les 14 familles
+        // capturees, « 40 - AV » et le message s'ecrivaient PAR-DESSUS les
+        // chiffres du score, et le nom de l'equipe 2 mordait sur le score de
+        // l'equipe 1.
+        var tl = Layout.textLadder();
+        var nl = Layout.numberLadder();
+
+        var yName1  = h * Y_NAME1_PCT  / 100;
+        var yScore1 = h * Y_SCORE1_PCT / 100;
+        var yName2  = h * Y_NAME2_PCT  / 100;
+        var yScore2 = h * Y_SCORE2_PCT / 100;
+        var yPoint  = h * Y_POINT_PCT  / 100;
+        var yMsg    = h * Y_MSG_PCT    / 100;
+        var yEnd    = h * Y_BOTTOM_PCT / 100;
+
+        var hName1  = yScore1 - yName1;
+        var hScore1 = yName2  - yScore1;
+        var hName2  = yScore2 - yName2;
+        var hScore2 = yPoint  - yScore2;
 
         // 1. Le score, l'element consulte entre deux points.
-        Layout.drawFit(dc, h * Y_SCORE1_PCT / 100, _score1, Layout.numberLadder(), Graphics.COLOR_WHITE);
-        Layout.drawFit(dc, h * Y_SCORE2_PCT / 100, _score2, Layout.numberLadder(), Graphics.COLOR_WHITE);
+        //    LES DEUX EQUIPES A LA MEME TAILLE : on retient la plus petite des
+        //    deux polices. Un score deux fois plus gros d'un cote se lirait
+        //    comme une hierarchie entre les equipes, alors que seule leur
+        //    POSITION doit les distinguer (spec §7).
+        //    Le score part en fragments, un par set : cf. Layout.drawPartsAt,
+        //    les polices FONT_NUMBER_* n'ont pas toutes de glyphe d'espace.
+        var iScore = Layout.commonIndex(
+            Layout.fitPartsIndex(dc, _sets1, yScore1, hScore1, nl),
+            Layout.fitPartsIndex(dc, _sets2, yScore2, hScore2, nl));
+        Layout.drawPartsAt(dc, yScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE);
+        Layout.drawPartsAt(dc, yScore2, _sets2, nl, iScore, Graphics.COLOR_WHITE);
 
-        // 2. Le point en cours — la raison d'etre du mode points.
+        // 2. Les noms : complets, puis initiales, puis rien — MAIS LES DEUX AU
+        //    MEME NIVEAU DE DETAIL ET A LA MEME TAILLE. En essayant chaque nom
+        //    de son cote, un seul caractere d'ecart suffisait a afficher
+        //    « Alexandre & Christophe » en entier face a « B&D » (vu sur
+        //    venusq, fenix6, fenix6xpro) : la dissymetrie se lit comme une
+        //    difference de statut entre les equipes.
+        var iFull = Layout.commonIndex(
+            Layout.fitIndex(dc, _team1, yName1, hName1, tl),
+            Layout.fitIndex(dc, _team2, yName2, hName2, tl));
+        var n1 = _team1;
+        var n2 = _team2;
+        var iName = iFull;
+        if (iName < 0) {
+            n1 = _team1Short;
+            n2 = _team2Short;
+            iName = Layout.commonIndex(
+                Layout.fitIndex(dc, n1, yName1, hName1, tl),
+                Layout.fitIndex(dc, n2, yName2, hName2, tl));
+        }
+        Layout.drawAt(dc, yName1, n1, tl, iName, Graphics.COLOR_YELLOW);
+        Layout.drawAt(dc, yName2, n2, tl, iName, Graphics.COLOR_YELLOW);
+
+        // 3. Le point en cours — la raison d'etre du mode points.
         var hasPoint = false;
         if (_pointLabel != null) {
-            hasPoint = Layout.drawFit(dc, h * 75 / 100, _pointLabel,
-                                      Layout.textLadder(), Graphics.COLOR_YELLOW);
+            hasPoint = Layout.drawBox(dc, yPoint, yMsg - yPoint, _pointLabel,
+                                      tl, Graphics.COLOR_YELLOW);
         }
 
-        // 3. Les noms : complets, puis initiales, puis rien.
-        Layout.drawBest(dc, h * Y_NAME1_PCT / 100, [_team1, _team1Short],
-                        Layout.textLadder(), Graphics.COLOR_YELLOW);
-        Layout.drawBest(dc, h * Y_NAME2_PCT / 100, [_team2, _team2Short],
-                        Layout.textLadder(), Graphics.COLOR_YELLOW);
-
-        // 4. Le message, le moins critique. Remonte quand aucun point
-        //    n'occupe la place : la corde y est plus large.
-        var msgY = hasPoint ? (h * 84 / 100) : (h * 78 / 100);
+        // 4. Le message, le moins critique. Remonte a la place du point quand
+        //    aucun point ne l'occupe : la corde y est plus large et le budget
+        //    vertical double.
+        var msgY = hasPoint ? yMsg : yPoint;
+        var msgH = yEnd - msgY;
         if (_contests > 0 && !_msg.equals("")) {
             // Les DEUX faits comptent : une contestation ouverte, ET ce que _msg
             // a a dire. Cette branche montrait autrefois la contestation A LA
@@ -435,16 +522,16 @@ class SessionView extends WatchUi.View {
             // visible avant une validation irreversible, alors que
             // "Valider : appui long" ne fait que rappeler un geste que
             // l'utilisateur est de toute facon en train de faire.
-            Layout.drawBest(dc, msgY,
-                            [_msg + " +" + _contests.toString() + " cont",
-                             contestLabel(),
-                             _msg],
-                            Layout.textLadder(), Graphics.COLOR_ORANGE);
+            Layout.drawBestBox(dc, msgY, msgH,
+                               [_msg + " +" + _contests.toString() + " cont",
+                                contestLabel(),
+                                _msg],
+                               tl, Graphics.COLOR_ORANGE);
         } else if (_contests > 0) {
-            Layout.drawFit(dc, msgY, contestLabel(),
-                           Layout.textLadder(), Graphics.COLOR_ORANGE);
+            Layout.drawBox(dc, msgY, msgH, contestLabel(),
+                           tl, Graphics.COLOR_ORANGE);
         } else {
-            Layout.drawFit(dc, msgY, _msg, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
+            Layout.drawBox(dc, msgY, msgH, _msg, tl, Graphics.COLOR_LT_GRAY);
         }
     }
 }
