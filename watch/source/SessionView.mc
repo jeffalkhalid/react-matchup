@@ -13,6 +13,8 @@ class SessionView extends WatchUi.View {
     hidden var _sid = null;
     hidden var _team1 = "Equipe 1";
     hidden var _team2 = "Equipe 2";
+    hidden var _team1Short = "E1";
+    hidden var _team2Short = "E2";
     // Score set par set, prêt à dessiner : « 6 4 1 ».
     hidden var _score1 = "";
     hidden var _score2 = "";
@@ -35,6 +37,9 @@ class SessionView extends WatchUi.View {
     function initialize() { View.initialize(); }
 
     function onShow() {
+        // Passe de verification visuelle : le simulateur n'a ni jeton ni
+        // session, on injecte un match type au lieu d'interroger le serveur.
+        if (Demo.ENABLED) { apply(Demo.payload()); return; }
         refresh();
         _timer = new Timer.Timer();
         // Renvoi périodique de la file + rafraichissement de l'affichage.
@@ -103,6 +108,8 @@ class SessionView extends WatchUi.View {
         _sid      = d["session_id"];
         _team1    = d["team1"];
         _team2    = d["team2"];
+        _team1Short = d["team1_short"];
+        _team2Short = d["team2_short"];
         _mode     = d["scoring_mode"];
         _contests = d["contest_count"];
         _finished = d["finished"];
@@ -254,53 +261,42 @@ class SessionView extends WatchUi.View {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         dc.clear();
-        var w = dc.getWidth();
         var h = dc.getHeight();
 
         if (_sid == null) {
-            dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2, Graphics.FONT_SMALL, _msg, Graphics.TEXT_JUSTIFY_CENTER);
+            Layout.drawFit(dc, h / 2, _msg, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
             return;
         }
 
-        // Disposition verticale (416x416 sur epix2, cadran ROND) : les lignes
-        // preexistantes gardent leurs positions d'origine (le cadran retrecit
-        // vite en corde horizontale pres du bezel — ne jamais les en
-        // rapprocher). La ligne de point vif (mode points) est logee dans
-        // l'espace deja libre entre le score equipe 2 et le message, en
-        // FONT_SMALL (plus bas que FONT_NUMBER_MILD) pour ne pas mordre sur
-        // ses voisines.
-        dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 10 / 100, Graphics.FONT_XTINY, _team1, Graphics.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 26 / 100, Graphics.FONT_NUMBER_MILD,
-                    _score1, Graphics.TEXT_JUSTIFY_CENTER);
+        // PRIORITE (spec §5) : le score survit toujours, le reste s'efface.
+        // Chaque element est tente a sa hauteur ; s'il ne tient pas, on ne
+        // dessine rien plutot qu'un texte rogne.
 
-        dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 50 / 100, Graphics.FONT_XTINY, _team2, Graphics.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 64 / 100, Graphics.FONT_NUMBER_MILD,
-                    _score2, Graphics.TEXT_JUSTIFY_CENTER);
+        // 1. Le score, l'element consulte entre deux points.
+        Layout.drawFit(dc, h * 26 / 100, _score1, Layout.numberLadder(), Graphics.COLOR_WHITE);
+        Layout.drawFit(dc, h * 64 / 100, _score2, Layout.numberLadder(), Graphics.COLOR_WHITE);
 
+        // 2. Le point en cours — la raison d'etre du mode points.
+        var hasPoint = false;
         if (_pointLabel != null) {
-            dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h * 75 / 100, Graphics.FONT_SMALL, _pointLabel, Graphics.TEXT_JUSTIFY_CENTER);
+            hasPoint = Layout.drawFit(dc, h * 75 / 100, _pointLabel,
+                                      Layout.textLadder(), Graphics.COLOR_YELLOW);
         }
 
-        // Position REMONTEE quand il n'y a pas de score de point a afficher.
-        // Sur un ecran ROND, la largeur utile a la hauteur y vaut la corde
-        // 2*racine(r^2 - (y-r)^2) : a 84 % elle tombe a ~305 px, a 78 % elle
-        // remonte a ~345 px. Plus on descend, plus le bizeau rogne le texte
-        // AUX DEUX BOUTS - defaut constate au poignet le 2026-08-26.
-        var msgY = (_pointLabel != null) ? (h * 84 / 100) : (h * 78 / 100);
+        // 3. Les noms : complets, puis initiales, puis rien.
+        Layout.drawBest(dc, h * 10 / 100, [_team1, _team1Short],
+                        Layout.textLadder(), Graphics.COLOR_YELLOW);
+        Layout.drawBest(dc, h * 50 / 100, [_team2, _team2Short],
+                        Layout.textLadder(), Graphics.COLOR_YELLOW);
 
+        // 4. Le message, le moins critique. Remonte quand aucun point
+        //    n'occupe la place : la corde y est plus large.
+        var msgY = hasPoint ? (h * 84 / 100) : (h * 78 / 100);
         if (_contests > 0) {
-            dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, msgY, Graphics.FONT_XTINY,
-                        _contests.toString() + " contestation", Graphics.TEXT_JUSTIFY_CENTER);
-        } else if (!_msg.equals("")) {
-            dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, msgY, Graphics.FONT_XTINY, _msg, Graphics.TEXT_JUSTIFY_CENTER);
+            Layout.drawFit(dc, msgY, _contests.toString() + " contestation",
+                           Layout.textLadder(), Graphics.COLOR_ORANGE);
+        } else {
+            Layout.drawFit(dc, msgY, _msg, Layout.textLadder(), Graphics.COLOR_LT_GRAY);
         }
     }
 }
