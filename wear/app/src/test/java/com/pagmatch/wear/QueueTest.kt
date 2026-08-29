@@ -3,6 +3,10 @@ package com.pagmatch.wear
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class FakeStore : KeyValueStore {
     private val m = mutableMapOf<String, String>()
@@ -271,5 +275,61 @@ class QueueTest {
         val q = Queue(store)
         assertEquals(0, q.size())
         assertNull(q.head())
+    }
+
+    // Tue le mutant "retire toute synchronisation de Queue" (les
+    // synchronized(lock) autour de items()/push()/nextSeq()/enqueue()/
+    // popHead()/size()/clear()). 16 threads, une SEULE instance de Queue
+    // partagee (exactement le scenario redoute : thread UI + coroutine
+    // d'envoi sur la meme Queue), chacun fait 40 enqueue() -- 640 au total.
+    //
+    // Le CyclicBarrier force les 16 threads a demarrer au meme instant, pour
+    // maximiser la contention reelle plutot que de compter sur la chance
+    // d'un entrelacement defavorable.
+    //
+    // Pourquoi ce test ne peut PAS etre capricieux dans le sens PASSANT :
+    // avec le verrou en place, synchronized() serialise integralement
+    // chaque enqueue() (lecture + deux ecritures) avant que le suivant ne
+    // commence, quel que soit l'ordonnancement des threads -- c'est une
+    // garantie du langage (exclusion mutuelle + visibilite memoire via le
+    // moniteur JVM), pas un resultat probable. Le resultat attendu (640
+    // seq distincts, 640 evenements stockes) est donc deterministe, pas
+    // "generalement vrai". Le CyclicBarrier ne fait qu'augmenter les
+    // chances de tuer le mutant si jamais le verrou disparaissait ; il ne
+    // conditionne en rien la reussite du test quand le verrou est present.
+    // Le timeout (15s, trois ordres de grandeur au-dessus du temps reel
+    // d'execution) protege uniquement contre un blocage si quelqu'un
+    // reintroduit un bug de verrouillage plus tard -- il ne participe pas
+    // non plus a la reussite normale du test.
+    @Test(timeout = 15_000)
+    fun `enqueue concurrent depuis plusieurs threads ne perd et ne redouble aucun seq`() {
+        val store = FakeStore()
+        val q = Queue(store)
+        val threadCount = 16
+        val perThread = 40
+        val expectedTotal = threadCount * perThread
+
+        val barrier = CyclicBarrier(threadCount)
+        val pool = Executors.newFixedThreadPool(threadCount)
+        try {
+            val tasks = (0 until threadCount).map { t ->
+                Callable<List<Long>> {
+                    barrier.await() // tous les threads demarrent au meme instant
+                    (0 until perThread).map { q.enqueue("s1", "point_won", t) }
+                }
+            }
+            val allSeqs = pool.invokeAll(tasks).map { it.get() }.flatten()
+
+            assertEquals(expectedTotal, allSeqs.size)
+            assert(allSeqs.toSet().size == expectedTotal) {
+                "des client_seq ont ete reutilises sous contention : ${allSeqs.size} valeurs, ${allSeqs.toSet().size} distinctes"
+            }
+            assert(q.size() == expectedTotal) {
+                "des evenements ont disparu de la file sous contention : ${q.size()} au lieu de $expectedTotal"
+            }
+        } finally {
+            pool.shutdownNow()
+            pool.awaitTermination(5, TimeUnit.SECONDS)
+        }
     }
 }

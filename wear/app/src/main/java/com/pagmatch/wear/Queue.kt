@@ -45,10 +45,24 @@ class Queue(private val store: KeyValueStore) {
     // Ce que ce verrou NE GARANTIT PAS : il ne rend PAS le store sous-jacent
     // atomique. Il ne protege ni contre un kill du process au milieu d'un
     // appel (tout le raisonnement d'ordre d'ecriture documente plus bas reste
-    // necessaire), ni contre deux instances de Queue distinctes qui
-    // enveloppent le meme store (deux process, ou deux instances dans le
-    // meme process qui ne partagent pas cet objet), ni contre un acces au
-    // store en dehors de Queue.
+    // necessaire), ni contre un acces au store en dehors de Queue.
+    //
+    // Il ne protege SURTOUT PAS contre deux instances de Queue distinctes qui
+    // enveloppent le meme store : chaque instance a son PROPRE lock (voir
+    // ci-dessous), donc ce verrou n'offre alors aucune exclusion mutuelle
+    // entre elles -- exactement comme s'il n'existait pas. C'est pourquoi UNE
+    // SEULE instance de Queue doit servir a la fois le thread UI et la
+    // coroutine d'envoi ; ce n'est pas une preference de style, c'est ce qui
+    // fait fonctionner ce verrou. Mesure : 8 threads, chacun avec SA PROPRE
+    // instance de Queue sur le meme store, 40 enqueue() chacun (320 au
+    // total) -> entre 265 et 280 evenements perdus sur 320 selon
+    // l'execution (3 mesures locales : 40, 55 et 41 evenements survivants).
+    // Cette contrainte ne peut PAS etre verifiee par un test deterministe :
+    // la perte depend de l'entrelacement reel des threads (voir la
+    // variance ci-dessus), donc tout seuil fixe dans une assertion serait
+    // capricieux -- un test qui pourrait passer par chance sur une
+    // machine/CI qui serialise serait pire qu'aucun test. Elle est donc
+    // documentee ici en toutes lettres plutot que testee.
     private val lock = Any()
 
     fun items(): List<Pending> = synchronized(lock) {
