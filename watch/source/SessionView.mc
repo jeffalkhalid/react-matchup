@@ -95,6 +95,17 @@ class SessionView extends WatchUi.View {
         _msgShort = (short == null) ? text : short;
     }
 
+    // Le message d'un ETAT qui a deja un libelle dans Api.reasonPair. Trois
+    // etats de cette vue nommaient le meme fait qu'une raison serveur, avec
+    // leurs propres chaines recopiees a cote : « Fonction desactivee » /
+    // feature_disabled, « Match termine » / session_not_live, « Plus le
+    // scoreur » / not_the_scorer. Deux libelles pour un meme fait finissent
+    // toujours par diverger, et se lisent alors comme deux problemes
+    // differents. Une table, un fait, un libelle.
+    hidden function setMsgReason(reason) {
+        setMsg(Api.reasonText(reason), Api.reasonShort(reason));
+    }
+
     function onShow() {
         // Passe de verification visuelle : le simulateur n'a ni jeton ni
         // session, on injecte un match type au lieu d'interroger le serveur.
@@ -158,7 +169,7 @@ class SessionView extends WatchUi.View {
             // Interrupteur global coupe depuis le Panel Arbitre : on le dit,
             // au lieu de laisser croire qu'aucun match n'est en cours.
             if (data != null && !(data instanceof Lang.String) && data["disabled"] == true) {
-                setMsg("Fonction desactivee", "Desactivee");
+                setMsgReason("feature_disabled");
             } else {
                 setMsg("Aucun match en cours", "Aucun match");
             }
@@ -222,18 +233,17 @@ class SessionView extends WatchUi.View {
 
         if (_finished) {
             // Session close cote serveur : plus rien a faire au poignet.
-            setMsg("Match termine", "Termine");
+            setMsgReason("session_not_live");
         } else if (_decided) {
             // Match joue mais pas encore valide : on indique le geste, sinon
             // personne ne devine qu'un appui long ouvre la validation.
             setMsg(Layout.isTouch() ? "Valider : appui long" : "Valider : HAUT long",
                    "Valider");
         } else if (!_isScorer) {
-            // MEME formulation que Api.reasonText("not_the_scorer") : c'est le
-            // meme fait, dit par deux chemins (le champ is_scorer et le refus
-            // serveur). Deux libelles differents pour un meme etat se lisent
-            // comme deux problemes differents.
-            setMsg("Plus le scoreur", "Pas toi");
+            // MEME libelle que le refus serveur not_the_scorer : c'est le
+            // meme fait, dit par deux chemins (le champ is_scorer et le RAISE
+            // du serveur). Il vient donc du meme endroit.
+            setMsgReason("not_the_scorer");
         } else if (_hadControl && device != null && device.equals("phone") && Queue.size() == 0) {
             setMsg("Tel a la main", "Telephone");
         } else {
@@ -442,8 +452,8 @@ class SessionView extends WatchUi.View {
         // « reappairer » etait redondant — on vient precisement d'ouvrir
         // l'ecran d'appairage — et portait le message a 26 caracteres, si bien
         // qu'il ne s'affichait sur AUCUN petit cadran rond. Meme paire que
-        // Api.reasonText/reasonShort("token_revoked") : un seul libelle pour
-        // un seul fait, dit d'un seul endroit.
+        // Api.reasonPair("token_revoked") : un seul libelle pour un seul
+        // fait, dit d'un seul endroit.
         v.setStatus(Api.reasonText("token_revoked"),
                     Api.reasonShort("token_revoked"));
         // PairingDelegate PREND la vue en argument (cf. PagMatchApp).
@@ -512,8 +522,25 @@ class SessionView extends WatchUi.View {
         //    une.
         var iScore = Layout.pairPartsIndex(dc, _sets1, yScore1, hScore1,
                                                _sets2, yScore2, hScore2, nl);
-        Layout.drawPartsAt(dc, yScore1, hScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE);
-        Layout.drawPartsAt(dc, yScore2, hScore2, _sets2, nl, iScore, Graphics.COLOR_WHITE);
+        if (iScore >= 0) {
+            Layout.drawPartsAt(dc, yScore1, hScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE);
+            Layout.drawPartsAt(dc, yScore2, hScore2, _sets2, nl, iScore, Graphics.COLOR_WHITE);
+        } else {
+            // DERNIER RECOURS. Le score est le SEUL element que cet ecran ne
+            // doit jamais taire (spec §5, priorite 1). C'est aussi le seul
+            // endroit ou la re-verification du barreau peut transformer
+            // « quelque chose s'est dessine » en « rien ne s'est dessine » :
+            // auparavant, commonIndex les aurait au moins dessines hors budget.
+            // Si AUCUN barreau ne convient aux deux lignes, on prend le plus
+            // petit de l'echelle et on dessine quand meme, quitte a deborder.
+            // Un score un peu trop haut se rattrape a l'oeil ; un score absent
+            // laisse l'utilisateur sans rien a lire.
+            // Les deux equipes restent au MEME barreau : leur egalite de
+            // traitement (spec §7) ne se relache pas parce que la place manque.
+            var last = nl.size() - 1;
+            Layout.drawPartsRaw(dc, yScore1, _sets1, nl, last, Graphics.COLOR_WHITE);
+            Layout.drawPartsRaw(dc, yScore2, _sets2, nl, last, Graphics.COLOR_WHITE);
+        }
 
         // 2. Les noms : complets, puis initiales, puis rien — MAIS LES DEUX AU
         //    MEME NIVEAU DE DETAIL ET A LA MEME TAILLE. En essayant chaque nom

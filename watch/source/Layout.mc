@@ -332,6 +332,28 @@ module Layout {
     // Meme re-verification que drawAt, et pour la meme raison.
     function drawPartsAt(dc, y, maxH, parts, ladder, idx, color) {
         if (!fitsPartsIndex(dc, parts, y, maxH, ladder, idx)) { return false; }
+        return drawPartsRaw(dc, y, parts, ladder, idx, color);
+    }
+
+    // DERNIER RECOURS — dessine SANS aucune condition de place.
+    //
+    // Toute la mecanique de ce module repose sur « ne rien dessiner plutot que
+    // rogner ». C'est le bon arbitrage pour un nom, une consigne, un message :
+    // ils sont sacrifiables par definition. Il ne l'est PAS pour le score, que
+    // la spec place en priorite 1 et qui est la seule raison d'etre de l'ecran.
+    // Un score legerement trop haut se rattrape a l'oeil ; un score absent ne
+    // se rattrape pas — l'utilisateur n'a plus rien a lire au poignet.
+    //
+    // Cette fonction ne peut pas echouer autrement qu'en l'absence de contenu :
+    // l'indice est BORNE a l'echelle au lieu d'etre refuse, l'echelle n'est
+    // jamais vide, et drawText ne rend pas d'erreur. Elle ne doit servir que
+    // la ou l'omission est pire que le debordement.
+    function drawPartsRaw(dc, y, parts, ladder, idx, color) {
+        if (parts == null) { return false; }
+        if (parts.size() == 0) { return false; }
+        if (ladder.size() == 0) { return false; }
+        if (idx < 0) { idx = ladder.size() - 1; }
+        if (idx >= ladder.size()) { idx = ladder.size() - 1; }
         var font = ladder[idx];
         var gap = partGap(dc, font);
         var x = dc.getWidth() / 2 - partsWidth(dc, parts, font) / 2;
