@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icone de l'activite en cours : une balle pleine, monochrome, fond
+  transparent, comme l'exige la documentation Ongoing Activity ("Black and
+  white vector, transparent background").
+
+  Un disque plein et rien d'autre. Sur le cadran l'icone est reduite a une
+  pastille de quelques pixels et rendue en SILHOUETTE (seul le canal alpha est
+  lu, la couleur est remplacee par celle du systeme). Tout detail interieur,
+  coutures de balle ou lettres, disparait a cette taille ou, pire, troue la
+  silhouette. La regle du projet vaut ici comme ailleurs : la couleur decore,
+  elle n'informe jamais ; c'est le TEXTE de la notification qui porte le score.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2.5 A9.5,9.5 0 1,0 12,21.5 A9.5,9.5 0 1,0 12,2.5 Z" />
+</vector>

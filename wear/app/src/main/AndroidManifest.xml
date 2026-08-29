@@ -1,0 +1,66 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.type.watch" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Service de premier plan : c'est lui qui porte l'activite en cours, la
+         seule chose qui empeche Wear OS de revenir au cadran pendant le match
+         (voir l'en-tete de OngoingMatch.kt). FOREGROUND_SERVICE est exigee
+         depuis Android 9. -->
+    <!-- Permission de TYPE, exigee depuis Android 14 (API 34) : sans elle,
+         startForeground() leve SecurityException. Permission d'installation,
+         pas d'execution : rien a demander a l'utilisateur. Elle n'existe pas
+         avant l'API 34, ou elle est simplement ignoree ; notre minSdk 30 la
+         supporte donc sans garde. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Permission d'EXECUTION depuis Android 13 (API 33). Un service de
+         premier plan peut demarrer sans elle, mais sa notification reste alors
+         invisible, donc pas d'icone d'activite en cours sur le cadran, donc
+         pas de retour en un geste vers le score : la fonctionnalite entiere.
+         MainActivity la demande au premier lancement. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application
+        android:label="PAG MATCH"
+        android:supportsRtl="false"
+        android:theme="@android:style/Theme.DeviceDefault">
+        <!-- standalone=true : l'app parle directement au serveur, elle ne
+             depend d'aucune app telephone installee. -->
+        <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- foregroundServiceType : OBLIGATOIRE pour une application qui vise
+             l'API 34 ou plus (targetSdk 37 ici) ; a defaut le systeme leve
+             MissingForegroundServiceTypeException des startForeground().
+
+             Pourquoi "specialUse" et pas un type mieux nomme : aucun des
+             autres ne decrit ce service. "health" exige une permission de
+             capteur (BODY_SENSORS / HIGH_SAMPLING_RATE_SENSORS) que cette app
+             n'a pas et n'aura pas, car elle ne mesure rien, elle compte des
+             points ; le declarer sans la permission requise ferait echouer
+             startForeground(). "dataSync" decrit un transfert de donnees et
+             se voit imposer depuis Android 15 un quota quotidien de six
+             heures : ce service ne transfere rien (c'est la boucle d'envoi de
+             MatchStore qui parle au serveur), il maintient un affichage.
+             "shortService" est plafonne a trois minutes, un match en dure
+             quatre-vingt-dix. Restait "specialUse", explicitement prevu pour
+             "any valid foreground service use cases that aren't covered by
+             the other foreground service types", et sans quota.
+
+             exported="false" : personne d'autre n'a a demarrer ce service. -->
+        <service
+            android:name=".OngoingMatch"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <!-- Justification exigee par la documentation pour specialUse ;
+                 elle est relue lors d'une soumission au Play Console. La
+                 publication est hors du perimetre de ce chantier, mais la
+                 propriete est obligatoire des la declaration du type. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the live padel score visible on the watch for the duration of a match, so the player can score at the wrist without the system returning to the watch face." />
+        </service>
+    </application>
+</manifest>
