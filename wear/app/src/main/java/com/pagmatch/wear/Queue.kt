@@ -29,18 +29,37 @@ class Queue(private val store: KeyValueStore) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun items(): List<Pending> {
-        val raw = store.getString(KEY_ITEMS) ?: return emptyList()
-        return try {
+    // Verrou d'exclusion mutuelle entre les operations de CETTE instance de
+    // Queue. Chaque methode publique est un cycle lecture-modification-
+    // ecriture (items() puis save(), ou lecture de queue_seq puis ecriture) :
+    // sans verrou, un enqueue() sur le thread UI et un popHead() sur la
+    // coroutine d'envoi peuvent s'entrelacer, et le second a ecrire
+    // queue_items ecrase entierement le travail du premier -- perte
+    // silencieuse d'un evenement, "dernier ecrivain gagne", sans qu'aucun
+    // kill de process ne soit implique.
+    //
+    // Ce que ce verrou GARANTIT : les appels a push()/nextSeq()/enqueue()/
+    // popHead()/clear() sur CETTE instance, depuis des threads DIFFERENTS du
+    // MEME process, s'executent un a la fois et voient un etat coherent.
+    //
+    // Ce que ce verrou NE GARANTIT PAS : il ne rend PAS le store sous-jacent
+    // atomique. Il ne protege ni contre un kill du process au milieu d'un
+    // appel (tout le raisonnement d'ordre d'ecriture documente plus bas reste
+    // necessaire), ni contre deux instances de Queue distinctes qui
+    // enveloppent le meme store (deux process, ou deux instances dans le
+    // meme process qui ne partagent pas cet objet), ni contre un acces au
+    // store en dehors de Queue.
+    private val lock = Any()
+
+    fun items(): List<Pending> = synchronized(lock) {
+        val raw = store.getString(KEY_ITEMS) ?: return@synchronized emptyList()
+        try {
             json.decodeFromString(raw)
         } catch (e: Exception) {
             // Fail-open est voulu : mieux vaut une file vide qu'un crash. Mais
             // une file corrompue qui disparait sans un mot peut faire perdre
             // un rally entier sans que personne ne le sache jamais -- on logge
-            // donc avant de retomber sur emptyList(). android.util.Log n'est
-            // pas mocke dans les tests unitaires JVM (pas de runtime Android)
-            // et leve ; on avale cette erreur-la specifiquement pour ne pas
-            // casser les tests qui exercent ce chemin.
+            // donc avant de retomber sur emptyList().
             //
             // Ce catch est aussi, comme popHead()/clear(), un point ou de
             // l'evidence de seq est detruite : les items corrompus emportent
@@ -54,17 +73,24 @@ class Queue(private val store: KeyValueStore) {
             // lecture reussie qui aurait pu rattraper queue_seq) : aucun
             // ordonnancement d'ecritures sur ce store ne peut garantir contre
             // ça, donc on ne pretend pas le faire ici.
-            try {
-                Log.e(TAG, "File d'envoi corrompue, reinitialisee a vide (fail-open)", e)
-            } catch (loggingUnavailable: Throwable) {
-                // Pas de runtime Android (tests JVM) : rien a faire.
-            }
+            safeLog("File d'envoi corrompue, reinitialisee a vide (fail-open)", e)
             emptyList()
         }
     }
 
     private fun save(a: List<Pending>) {
         store.putString(KEY_ITEMS, json.encodeToString(a))
+    }
+
+    // android.util.Log n'est pas mocke dans les tests unitaires JVM (pas de
+    // runtime Android) et leve ; on avale cette erreur-la specifiquement pour
+    // ne pas casser les tests qui exercent les chemins qui journalisent.
+    private fun safeLog(message: String, e: Throwable? = null) {
+        try {
+            if (e != null) Log.e(TAG, message, e) else Log.e(TAG, message)
+        } catch (loggingUnavailable: Throwable) {
+            // Pas de runtime Android (tests JVM) : rien a faire.
+        }
     }
 
     // Plancher partage par nextSeq() et enqueue() : le prochain seq n'est
@@ -114,17 +140,33 @@ class Queue(private val store: KeyValueStore) {
         val persistedSeq = (store.getString(KEY_SEQ)?.toLongOrNull() ?: 0L).coerceAtLeast(0L)
         val maxQueuedSeq = existing.maxOfOrNull { it.seq.coerceAtLeast(0L) } ?: 0L
         val floor = maxOf(persistedSeq, maxQueuedSeq)
-        // Garde contre le debordement : si un seq stocke vaut deja
-        // Long.MAX_VALUE (donnee corrompue ou de test), floor + 1 deborderait
-        // silencieusement sur Long.MIN_VALUE (negatif) et provoquerait une
-        // collision totale et permanente sur tous les enqueue() suivants. On
-        // sature au lieu de deborder.
-        return if (floor == Long.MAX_VALUE) Long.MAX_VALUE else floor + 1L
+        // Garde contre le DEBORDEMENT ARITHMETIQUE, PAS contre la perte de
+        // points. Si un seq stocke atteint deja Long.MAX_VALUE (donnee
+        // corrompue ou de test), floor + 1 deborderait silencieusement sur
+        // Long.MIN_VALUE -- un client_seq negatif, encore pire a
+        // diagnostiquer. On sature donc a Long.MAX_VALUE au lieu de deborder.
+        //
+        // Mais saturer n'evite PAS la perte : une fois ce plafond atteint,
+        // TOUT appel suivant -- y compris apres un clear(), qui avance aussi
+        // le plancher jusqu'a MAX_VALUE -- renvoie de nouveau Long.MAX_VALUE,
+        // pour toujours. Chaque nouvel evenement entre alors en collision
+        // avec le precedent et disparait en silence cote serveur : un etat
+        // permanent, total, dont rien dans ce fichier ne peut sortir.
+        // Inatteignable en pratique (il faudrait des quintillions de points),
+        // mais on journalise bruyamment des qu'on l'atteint pour que l'etat
+        // soit au moins diagnosticable si ça arrive jamais.
+        val next = if (floor == Long.MAX_VALUE) Long.MAX_VALUE else floor + 1L
+        if (next == Long.MAX_VALUE) {
+            safeLog("Plafond de client_seq atteint (Long.MAX_VALUE) : tout nouvel evenement va desormais entrer en collision avec le precedent et etre perdu en silence cote serveur. Etat permanent, non recuperable.")
+        }
+        return next
     }
 
     // Avance queue_seq au moins jusqu'a `atLeast`, jamais en arriere. Utilise
     // par popHead()/clear() pour reporter l'evidence d'un seq sur le point
     // d'etre retire de la file, AVANT de le retirer (voir nextSeqGiven()).
+    // Helper prive, toujours appele depuis une methode publique deja
+    // synchronized(lock) -- pas besoin de son propre verrou.
     private fun advanceSeqFloor(atLeast: Long) {
         val current = (store.getString(KEY_SEQ)?.toLongOrNull() ?: 0L).coerceAtLeast(0L)
         if (atLeast > current) {
@@ -136,17 +178,17 @@ class Queue(private val store: KeyValueStore) {
     // Passe par le meme plancher que enqueue() (voir nextSeqGiven()) : un
     // push(seq = N) suivi d'un nextSeq() ne doit jamais renvoyer N, meme si
     // rien n'a encore ete ecrit dans queue_seq pour ce N.
-    fun nextSeq(): Long {
+    fun nextSeq(): Long = synchronized(lock) {
         val s = nextSeqGiven(items())
         store.putString(KEY_SEQ, s.toString())
-        return s
+        s
     }
 
     // Primitif bas niveau : stocke un evenement au seq DEJA DECIDE par
     // l'appelant. N'avance pas queue_seq lui-meme -- ce n'est pas necessaire
     // pour rester sur : nextSeq()/enqueue() relisent toujours la file
     // (nextSeqGiven) et voient donc ce que push() vient d'y deposer.
-    fun push(sessionId: String, eventType: String, team: Int, seq: Long) {
+    fun push(sessionId: String, eventType: String, team: Int, seq: Long) = synchronized(lock) {
         save(items() + Pending(sessionId, eventType, team, seq))
     }
 
@@ -161,21 +203,21 @@ class Queue(private val store: KeyValueStore) {
     // Le raisonnement complet sur l'ordre des deux ecritures et sur la
     // reutilisation de seq est documente au-dessus de nextSeqGiven() : lisez
     // ce commentaire-la avant de toucher a celui-ci.
-    fun enqueue(sessionId: String, eventType: String, team: Int): Long {
+    fun enqueue(sessionId: String, eventType: String, team: Int): Long = synchronized(lock) {
         val existing = items()
         val seq = nextSeqGiven(existing)
 
         save(existing + Pending(sessionId, eventType, team, seq)) // 1) evenement
         store.putString(KEY_SEQ, seq.toString())                   // 2) compteur
 
-        return seq
+        seq
     }
 
-    fun head(): Pending? = items().firstOrNull()
+    fun head(): Pending? = synchronized(lock) { items().firstOrNull() }
 
-    fun popHead() {
+    fun popHead() = synchronized(lock) {
         val a = items()
-        if (a.isEmpty()) return
+        if (a.isEmpty()) return@synchronized
         // Cet evenement va disparaitre de la file : on fixe son seq dans le
         // compteur persiste AVANT de le retirer, sinon enqueue()/nextSeq()
         // perdent leur seule trace de ce numero une fois la file videe (voir
@@ -184,9 +226,9 @@ class Queue(private val store: KeyValueStore) {
         save(a.drop(1))
     }
 
-    fun size(): Int = items().size
+    fun size(): Int = synchronized(lock) { items().size }
 
-    fun clear() {
+    fun clear() = synchronized(lock) {
         // Meme raisonnement que popHead() : la file entiere va disparaitre,
         // on reporte le plus grand seq qu'elle contenait sur le compteur
         // persiste avant de la vider.

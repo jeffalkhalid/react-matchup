@@ -165,10 +165,55 @@ class QueueTest {
         assertEquals(3L, q.enqueue("s1", "point_won", 1))
     }
 
+    // Tue le mutant "clear() sans advanceSeqFloor". Le test ci-dessus
+    // (`clear preserve le plancher de sequence`) ne le distingue PAS : ses
+    // deux enqueue() se terminent normalement, donc queue_seq vaut deja 2
+    // avant l'appel a clear(), et la reponse est 3 avec ou sans le report du
+    // plancher dans clear(). Ici, le second enqueue() (B) est tue avant
+    // d'ecrire son compteur -- queue_seq reste a 1 alors que B (seq 2) est
+    // deja dans la file -- puis clear() est appele normalement. Sans
+    // advanceSeqFloor dans clear(), le troisieme enqueue() (C) retomberait
+    // sur seq 2, le seq de B deja acquitte par le serveur.
+    @Test fun `clear apres un enqueue tue preserve quand meme le plancher`() {
+        val store = FakeStore()
+        val q1 = Queue(store)
+        assertEquals(1L, q1.enqueue("s1", "point_won", 1)) // A, ecriture complete
+
+        val killed = CrashAfterNWritesStore(store, crashAfter = 1)
+        assertEquals(2L, Queue(killed).enqueue("s1", "point_won", 2)) // B, compteur jamais ecrit
+
+        // clear() lui-meme n'est PAS tue : c'est bien l'absence du report du
+        // plancher dans son code, pas un kill supplementaire, qui est testee.
+        Queue(store).clear()
+
+        val seq = Queue(store).enqueue("s1", "point_won", 1) // C, un point different
+        assert(seq != 1L && seq != 2L) {
+            "clear() n'a pas preserve le plancher : enqueue a reutilise $seq"
+        }
+        assertEquals(3L, seq)
+    }
+
     @Test fun `un compteur persiste negatif est traite comme zero`() {
         val store = FakeStore()
         store.putString(Queue.KEY_SEQ, "-42")
         assertEquals(1L, Queue(store).nextSeq())
+    }
+
+    // Tue le mutant qui revient sur FIX B (nextSeq() qui relit queue_seq
+    // seul, sans regarder la file). C'est le test que le round 2 n'avait
+    // pas : `un compteur persiste negatif est traite comme zero` passe que
+    // le clamp existe ou non, car maxOf(-42, maxQueuedSeq=0) vaut deja 0
+    // dans les deux cas -- il ne peut PAS distinguer le clamp seul, qui est
+    // du code mathematiquement equivalent tant que maxQueuedSeq reste >= 0
+    // (verifie : appliquer UNIQUEMENT ce mutant fait passer les 17 tests).
+    // Le mecanisme qui compte reellement est celui-ci : un item deja en
+    // file avec un seq eleve doit faire remonter le plancher de nextSeq(),
+    // meme si queue_seq lui-meme n'a jamais ete mis a jour pour ce seq.
+    @Test fun `push d un seq eleve fait remonter le plancher de nextSeq`() {
+        val store = FakeStore()
+        val q = Queue(store)
+        q.push("s1", "point_won", 1, 5) // item seq=5, queue_seq jamais touche
+        assertEquals(6L, q.nextSeq())
     }
 
     @Test fun `enqueue sature au lieu de deborder si un seq deja stocke est au maximum`() {
@@ -182,6 +227,42 @@ class QueueTest {
         val seq = Queue(store).enqueue("s1", "point_won", 2)
         assert(seq >= 0) { "enqueue a produit un client_seq negatif (debordement) : $seq" }
         assertEquals(Long.MAX_VALUE, seq)
+    }
+
+    // Tue le mutant "popHead() ecrit le plancher APRES avoir retire l item"
+    // (l'ordre inverse de celui choisi). A(seq1) est enqueue normalement ;
+    // B(seq2) est enqueue mais tue avant l'ecriture de son compteur --
+    // queue_seq reste a 1. On popHead() A normalement (n'avance rien, le
+    // plancher est deja a 1), puis on popHead() B avec un kill entre les
+    // deux ecritures de popHead() lui-meme :
+    //  - ordre correct (plancher d'abord) : le kill tombe APRES l'ecriture
+    //    du plancher (queue_seq -> 2) et AVANT le retrait de B de la file --
+    //    B reste dans items, le plancher est deja a 2, rien n'est perdu ni
+    //    reutilisable.
+    //  - ordre inverse (retrait d'abord) : le kill tombe APRES le retrait de
+    //    B (items redevient []) et AVANT l'ecriture du plancher -- toute
+    //    trace du seq de B disparait, queue_seq reste bloque a 1.
+    // Dans les deux cas, un enqueue(C) ulterieur revele la difference : 3
+    // avec l'ordre correct, 2 (le seq de B, deja acquitte) avec l'ordre
+    // inverse.
+    @Test fun `un kill entre les deux ecritures de popHead ne fait pas reculer le plancher`() {
+        val store = FakeStore()
+        val q1 = Queue(store)
+        assertEquals(1L, q1.enqueue("s1", "point_won", 1)) // A
+
+        val killedEnqueue = CrashAfterNWritesStore(store, crashAfter = 1)
+        assertEquals(2L, Queue(killedEnqueue).enqueue("s1", "point_won", 2)) // B, compteur jamais ecrit
+
+        Queue(store).popHead() // retire A ; n'a rien a avancer (plancher deja a 1)
+
+        val killedPop = CrashAfterNWritesStore(store, crashAfter = 1)
+        Queue(killedPop).popHead() // retire B ; kill entre les deux ecritures
+
+        val seq = Queue(store).enqueue("s1", "point_won", 1) // C, un point different
+        assert(seq != 1L && seq != 2L) {
+            "popHead() n'a pas protege le plancher contre un kill : enqueue a reutilise $seq"
+        }
+        assertEquals(3L, seq)
     }
 
     @Test fun `une file corrompue degrade sans crash au lieu de faire disparaitre l app`() {
