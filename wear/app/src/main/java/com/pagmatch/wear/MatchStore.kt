@@ -54,7 +54,16 @@ sealed class FinalizeResult {
 // DONNEES (le disque), pas celle d'un ecran : ce store vit donc aussi
 // longtemps que le processus, et un envoi commence survit a l'activite qui
 // l'a declenche au lieu d'etre double par une seconde instance.
-class MatchStore(
+//
+// CONSTRUCTEUR INTERNAL, et ce n'est pas cosmetique : get() (companion, en bas)
+// est LE seul chemin legitime, et ce constructeur-ci s'offrait juste a cote de
+// lui dans l'autocompletion, comme une alternative -- alors qu'une seconde
+// instance construite a la main EST le defaut mesure ci-dessus. `internal` le
+// sort de l'API publique du module et le rend inutilisable de l'exterieur,
+// tandis que les tests, qui vivent dans le meme module, gardent leur point
+// d'injection reseau sans rien perdre. A l'interieur du module la regle reste
+// portee par ce commentaire ; `internal` la renforce, il ne la remplace pas.
+class MatchStore internal constructor(
     private val prefs: TokenStore,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
     // Point d'injection reseau. Toute la politique de retrait de la file vit
@@ -369,9 +378,34 @@ class MatchStore(
         }
     }
 
+    // Le tapotement ne peut pas compter : DIRE POURQUOI, jamais se taire.
+    //
+    // MatchScreen dessine les deux moities comme tapables en toutes
+    // circonstances, sans aucune distinction visuelle : un joueur qui n'est pas
+    // le scoreur voit le score en direct, tape sa moitie et n'obtenait
+    // RIEN -- pas un mot, pas un changement, indefiniment. C'est l'exact
+    // inverse de la regle de cet ecran ("aucun point ne s'ajoute en silence") :
+    // une NON-addition silencieuse trahit la meme promesse, puisque le joueur
+    // ne sait toujours pas ce que la montre a fait de son geste.
+    //
+    // Les libelles sont ceux d'Api.reasonPair, donc EXACTEMENT ceux que le
+    // serveur renverrait pour le meme refus s'il avait ete consulte : ce filtre
+    // client anticipe sa reponse, il ne doit pas parler une autre langue. Les
+    // deux variantes (riche + courte) sont posees ensemble, l'ecran choisit
+    // selon la place (voir _messageShort et fitLabel dans ui/Fit.kt).
+    //
+    // Le match TERMINE passe avant le scoreur : quand le score est valide,
+    // personne ne peut plus marquer, y compris le scoreur -- c'est le fait le
+    // plus utile a annoncer, et il merite ses propres mots.
+    private fun tapRefused(s: Session): Boolean {
+        if (s.finished) { setReasonMessage("session_not_live", "Match termine"); return true }
+        if (!s.isScorer) { setReasonMessage("not_the_scorer", "Plus le scoreur"); return true }
+        return false
+    }
+
     fun score(team: Int) {
         val s = _session.value ?: return
-        if (!s.isScorer || s.finished) return
+        if (tapRefused(s)) return
         val type = if (s.scoringMode == "points") "point_won" else "game_won"
         // enqueue() genere le client_seq ET stocke l'evenement en un seul
         // appel atomique (voir le commentaire d'enqueue() dans Queue.kt) :
@@ -394,7 +428,7 @@ class MatchStore(
 
     fun undo() {
         val s = _session.value ?: return
-        if (!s.isScorer || s.finished) return
+        if (tapRefused(s)) return
         queue.enqueue(s.sessionId, "undo", 0)
         setMessage("Annulation", "Annule")
         drain()
@@ -636,7 +670,20 @@ class MatchStore(
         queue.clear()
         clearStall()
         stopPolling()
-        _session.value = null
+        // PAR applySession, comme TOUT autre ecrit de session (voir son
+        // commentaire) : c'etait le seul ecrit direct de _session du fichier,
+        // et il laissait une porte ouverte. Un refresh() parti AVANT le
+        // deliage capture sa generation puis suspend sur un lien lent ; il
+        // atterrit apres unpair(), et comme unpair() ne faisait avancer
+        // appliedGen d'aucun cran, sa generation restait la plus recente : le
+        // match efface REVENAIT. Et plus rien ne pouvait l'effacer ensuite --
+        // tick(), refresh() et drain() sortent tous immediatement sur un jeton
+        // nul, donc la session ne changeait plus jamais, endIfOver() n'etait
+        // plus atteint et le service gardait sa pastille au poignet jusqu'a un
+        // reappairage ou un redemarrage. En prenant la generation SUIVANTE,
+        // l'effacement devient l'ecrit le plus recent et la vieille reponse est
+        // jetee par la garde qui existe deja.
+        applySession(null, reqGen.incrementAndGet())
         setReasonMessage("token_revoked", "Montre deliee")
         _unpaired.value = true
     }

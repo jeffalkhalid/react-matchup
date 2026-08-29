@@ -497,8 +497,6 @@ class MatchStoreTest {
         )
     }
 
-    // ---- Faux serveur : corps de reponse ----------------------------------
-
     // Attente BORNEE, pour observer un battement qui vit sur un vrai timer.
     // Elle rend la main des que la condition est vraie : en pratique quelques
     // dizaines de millisecondes, jamais les 2 s du plafond.
@@ -568,16 +566,102 @@ class MatchStoreTest {
         assertEquals(0L, s.sessionAgeMs)
     }
 
-    private fun ok(team1: String = "K&A") = Api.ApiResponse(200, payload(team1))
+    // ---- Passe finale, FIX 1 : le deliage est un ecrit comme un autre ------
+    //
+    // unpair() etait le SEUL ecrit de _session qui contournait le numero
+    // d'ordre. Il n'incrementait donc rien, et un refresh() parti AVANT lui
+    // gardait la generation la plus recente : sa reponse, atterrie apres,
+    // RESSUSCITAIT le match. Rien ne pouvait plus l'effacer ensuite -- jeton
+    // nul, donc tick()/refresh()/drain() sortent tous immediatement -- et la
+    // pastille d'activite en cours restait au poignet jusqu'a un reappairage
+    // ou un redemarrage. C'est le Critique de la tache 8 ("la pastille
+    // survivait au match"), atteint par une autre porte, et le commentaire de
+    // OngoingMatch affirmait le contraire.
+    @Test fun `un refresh en vol au moment du deliage ne ressuscite pas le match`() {
+        val s = startedStore()
+        val g = CompletableDeferred<Unit>()
+        fetchGate = g
+        fetch = { ok(team1 = "ZOMBIE") }
+
+        s.refresh()                       // parti en premier, suspendu en vol
+        // Pendant ce temps le proprietaire tape "Delier ma montre" sur son
+        // telephone : le prochain envoi se voit refuser sur token_revoked.
+        respond = { err(400, """{"code":"P0001","message":"token_revoked"}""") }
+        s.score(1)
+
+        assertNull("le deliage efface le match", s.session.value)
+        assertNull("et le jeton", prefs.token)
+
+        g.complete(Unit)                  // la vieille reponse atterrit enfin
+
+        assertNull(
+            "une reponse partie AVANT le deliage ne doit pas rendre le match",
+            s.session.value
+        )
+        // Ce qui rendait la resurrection definitive : plus rien ne bat.
+        assertTrue("le battement est bien arrete", !s.isPolling)
+    }
+
+    // ---- Passe finale, FIX 2 : un tapotement qui ne compte pas le dit ------
+    //
+    // MatchScreen dessine les deux moities comme tapables en toutes
+    // circonstances, sans distinction visuelle. Le joueur qui n'est pas le
+    // scoreur voit le score en direct, tape sa moitie, et n'obtenait
+    // ABSOLUMENT RIEN -- l'exact inverse de la regle "aucun point ne s'ajoute
+    // en silence", puisqu'il ne sait pas davantage ce que la montre a fait de
+    // son geste. Les libelles sont ceux du serveur (Api.reasonPair) : ce
+    // filtre client anticipe sa reponse, il ne parle pas une autre langue.
+    @Test fun `un tapotement du non scoreur le dit au lieu de se taire`() {
+        fetch = { ok(isScorer = false) }
+        val s = startedStore()
+
+        s.score(1)
+
+        assertEquals("Plus le scoreur", s.message.value)
+        assertEquals("Pas toi", s.messageShort.value)
+        assertEquals("rien ne doit entrer en file", 0, s.pending)
+        assertTrue("et rien ne doit partir", sent.isEmpty())
+    }
+
+    @Test fun `une annulation du non scoreur le dit aussi`() {
+        fetch = { ok(isScorer = false) }
+        val s = startedStore()
+
+        s.undo()
+
+        assertEquals("Plus le scoreur", s.message.value)
+        assertEquals("Pas toi", s.messageShort.value)
+        assertEquals(0, s.pending)
+    }
+
+    // Meme silence, autre raison : le score est valide, plus personne ne
+    // marque -- pas meme le scoreur. Elle merite ses propres mots, sans quoi
+    // "Plus le scoreur" mentirait a celui qui l'est encore.
+    @Test fun `un tapotement sur un match termine dit que le match est termine`() {
+        fetch = { ok(finished = true) }
+        val s = startedStore()
+
+        s.score(1)
+
+        assertEquals("Match termine", s.message.value)
+        assertEquals("Termine", s.messageShort.value)
+        assertEquals(0, s.pending)
+        assertTrue(sent.isEmpty())
+    }
+
+    // ---- Faux serveur : corps de reponse ----------------------------------
+
+    private fun ok(team1: String = "K&A", isScorer: Boolean = true, finished: Boolean = false) =
+        Api.ApiResponse(200, payload(team1, isScorer, finished))
     private fun err(status: Int, body: String) = Api.ApiResponse(status, body)
 
-    private fun payload(team1: String) = """
+    private fun payload(team1: String, isScorer: Boolean = true, finished: Boolean = false) = """
         {"has_session":true,"session_id":"s1","scoring_mode":"points",
-         "is_scorer":true,"input_device":"watch",
+         "is_scorer":$isScorer,"input_device":"watch",
          "team1":"$team1","team2":"B&C","team1_short":"K&A","team2_short":"B&C",
          "sets":[],"sets_won":{"t1":0,"t2":0},
          "game_label":{"t1":"0","t2":"0"},
-         "match_decided":false,"finished":false}
+         "match_decided":false,"finished":$finished}
     """.trimIndent()
 }
 

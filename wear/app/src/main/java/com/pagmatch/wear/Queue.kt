@@ -192,7 +192,16 @@ class Queue(private val store: KeyValueStore) {
     // Passe par le meme plancher que enqueue() (voir nextSeqGiven()) : un
     // push(seq = N) suivi d'un nextSeq() ne doit jamais renvoyer N, meme si
     // rien n'a encore ete ecrit dans queue_seq pour ce N.
-    fun nextSeq(): Long = synchronized(lock) {
+    // INTERNAL. Ces deux primitifs (nextSeq() et push()) n'ont AUCUN appelant
+    // dans main/ : seuls les tests, qui vivent dans le meme module, s'en
+    // servent pour fabriquer des etats de file precis. Les laisser publics
+    // offrait a qui cherche "comment mettre en file avec un seq choisi" une
+    // reponse toute faite -- trois lignes AVANT celle qu'il faut (voir
+    // enqueue()) -- et rouvrait le trou que enqueue() existe pour fermer.
+    // `internal` les sort de l'API publique du module sans rien couter aux
+    // tests. A l'interieur du module, la consigne d'enqueue() reste la garde :
+    // `internal` la renforce, il ne la remplace pas.
+    internal fun nextSeq(): Long = synchronized(lock) {
         val s = nextSeqGiven(items())
         store.putString(KEY_SEQ, s.toString())
         s
@@ -202,7 +211,8 @@ class Queue(private val store: KeyValueStore) {
     // l'appelant. N'avance pas queue_seq lui-meme -- ce n'est pas necessaire
     // pour rester sur : nextSeq()/enqueue() relisent toujours la file
     // (nextSeqGiven) et voient donc ce que push() vient d'y deposer.
-    fun push(sessionId: String, eventType: String, team: Int, seq: Long) = synchronized(lock) {
+    // INTERNAL pour la meme raison que nextSeq() ci-dessus.
+    internal fun push(sessionId: String, eventType: String, team: Int, seq: Long) = synchronized(lock) {
         save(items() + Pending(sessionId, eventType, team, seq))
     }
 

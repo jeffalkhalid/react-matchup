@@ -137,11 +137,20 @@ private fun ascii(text: String): String = text.filter { it.code in 0x20..0x7E }
 //     ou un corps illisible ne l'empruntent JAMAIS, cf. serverSaysNoSession
 //     dans Session.kt). Une panne de Bluetooth ne doit pas retirer le score du
 //     poignet, exactement comme elle ne l'efface pas de l'ecran ;
-//   - la montre est deliee : MatchStore.unpair() met _session a null (fige par
-//     MatchStoreTest, "token_revoked delie la montre et vide la file").
-//     L'etat en cours ne survit donc pas au deliage, sans qu'il faille
-//     observer `unpaired` en plus ici -- un seul chemin, pas deux qui
-//     pourraient diverger.
+//   - la montre est deliee : MatchStore.unpair() efface la session (fige par
+//     MatchStoreTest, "token_revoked delie la montre et vide la file"). Ce
+//     n'est vrai que parce que unpair() passe par applySession() avec la
+//     generation SUIVANTE, et cette precision-la n'est pas un detail : tant
+//     qu'il ecrivait _session directement, un refresh() parti avant le deliage
+//     et atterri apres le remettait, et plus rien ne pouvait l'effacer ensuite
+//     (jeton nul = tick(), refresh() et drain() sortent tous immediatement,
+//     donc plus aucune emission, donc endIfOver() inatteignable et la pastille
+//     restait au poignet). Fige par MatchStoreTest, "un refresh en vol au
+//     moment du deliage ne ressuscite pas le match". Si un jour ce chemin
+//     redevenait un ecrit direct, l'etat en cours SURVIVRAIT au deliage --
+//     cette clause depend de lui, elle ne le remplace pas.
+//     Rien a observer de plus ici (`unpaired`) tant que l'invariante tient :
+//     un seul chemin, pas deux qui pourraient diverger.
 // `finished` ferme le dernier cas : le serveur renvoie encore la session mais
 // le match est clos (score valide). L'etat en cours ne doit pas lui survivre.
 fun shouldShowOngoing(s: Session?): Boolean = s != null && !s.finished
