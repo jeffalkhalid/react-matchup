@@ -1,8 +1,16 @@
 package com.pagmatch.wear
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -30,11 +38,40 @@ class MainActivity : ComponentActivity() {
     // instances, et la mesure dit 265 a 280 evenements perdus sur 320.
     private lateinit var store: MatchStore
 
+    // Observation de la session pour le compte de l'activite en cours. Elle
+    // vit entre onStart et onStop, PAS plus : depuis Android 12 (API 31),
+    // demarrer un service de premier plan depuis l'arriere-plan leve
+    // ForegroundServiceStartNotAllowedException. Cette borne est aussi ce qui
+    // rend le redemarrage automatique : `session` est un StateFlow, donc
+    // chaque onStart reevalue immediatement l'etat courant, sans qu'on ait a
+    // memoriser si le service tourne deja (start/stop sont idempotents).
+    private var ongoingWatcher: Job? = null
+
+    // Reponse ignoree a dessein : refuser les notifications prive de l'icone
+    // d'activite en cours sur le cadran, mais n'empeche NI de compter les
+    // points NI de valider le score. On demande une fois, on n'insiste pas, et
+    // rien dans l'application ne depend de la reponse.
+    private val askNotifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(applicationContext)
         store = MatchStore.get(prefs)
+        requestNotificationsIfNeeded()
         setContent { App(prefs, store) }
+    }
+
+    // POST_NOTIFICATIONS est une permission d'EXECUTION depuis Android 13
+    // (API 33). En dessous, elle n'existe pas : la declarer au manifeste
+    // suffit, et la demander leverait sur certaines versions. minSdk vaut 30,
+    // la garde n'est donc pas decorative.
+    private fun requestNotificationsIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     // Le battement suit le CYCLE DE VIE, pas la composition : ecran eteint ou
@@ -45,11 +82,30 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         store.startPolling()
+        // C'est ICI, et nulle part ailleurs, que l'activite en cours commence
+        // et s'arrete : un match devient disponible, le service demarre ; le
+        // serveur dit qu'il n'y en a plus, ou le match est clos, ou la montre
+        // a ete deliee (unpair() met la session a null), le service s'arrete.
+        // Le predicat vit dans OngoingMatch.shouldShowOngoing pour etre
+        // teste hors Android -- une seule definition de "il y a un match a
+        // annoncer", pas une ici et une autre dans le service.
+        ongoingWatcher = lifecycleScope.launch {
+            store.session.collect { s ->
+                if (shouldShowOngoing(s)) OngoingMatch.start(this@MainActivity)
+                else OngoingMatch.stop(this@MainActivity)
+            }
+        }
     }
 
     override fun onStop() {
         super.onStop()
         store.stopPolling()
+        // On cesse d'OBSERVER, on n'arrete surtout pas le service : c'est
+        // precisement quand l'activite n'est plus au premier plan que
+        // l'activite en cours sert a quelque chose. Le service, lui, continue
+        // d'observer le meme MatchStore singleton pour son propre compte.
+        ongoingWatcher?.cancel()
+        ongoingWatcher = null
     }
 }
 
