@@ -166,6 +166,11 @@ class MatchStore(
 
     private var ticker: Job? = null
 
+    // Date de la derniere reponse serveur COMPRISE (voir applySession).
+    // @Volatile : ecrit sur le scope du store, lu par le service depuis sa
+    // propre boucle.
+    @Volatile private var sessionAt = 0L
+
     private fun setMessage(text: String?) {
         _message.value = text
         msgAt = now()
@@ -201,7 +206,28 @@ class MatchStore(
         if (gen < appliedGen) return
         appliedGen = gen
         _session.value = s
+        // Horodatage de la DERNIERE affirmation du serveur, pas de la derniere
+        // TENTATIVE : seul ce chemin est atteint quand une reponse a ete lue et
+        // comprise. Une requete qui part et n'aboutit pas ne rajeunit rien --
+        // c'est exactement ce que sessionAgeMs doit pouvoir dire.
+        sessionAt = now()
     }
+
+    // Depuis combien de temps le serveur n'a-t-il pas confirme ce qu'on
+    // affiche ? Lu par OngoingMatch, qui affiche le score a quelqu'un QUI
+    // N'EST PAS DANS L'APPLICATION : sur l'ecran, un score fige est entoure du
+    // message "Pas de reseau" et l'utilisateur voit qu'il regarde une photo ;
+    // sur le cadran, la pastille est lue d'un coup d'oeil, sans aucun indice
+    // qu'elle puisse dater. Passe un certain age, elle doit devenir plus
+    // grossiere plutot que rester precise et fausse.
+    // 0 tant que rien n'a jamais ete confirme : un age enorme au demarrage
+    // ferait degrader le tout premier affichage sans raison.
+    val sessionAgeMs: Long get() = if (sessionAt == 0L) 0L else now() - sessionAt
+
+    // Le battement tourne-t-il ? OngoingMatch s'en sert pour ne PAS doubler
+    // les requetes de l'activite quand elle est au premier plan : elle
+    // interroge deja toutes les 5 s, le service n'a rien a ajouter.
+    val isPolling: Boolean get() = ticker?.isActive == true
 
     // ---- Battement, cale sur le CYCLE DE VIE ------------------------------
     // Demarre par MainActivity.onStart, arrete par onStop : quand l'ecran
@@ -226,7 +252,16 @@ class MatchStore(
         ticker = null
     }
 
-    private fun tick() {
+    // PUBLIQUE, et c'est le correctif : le service de premier plan doit pouvoir
+    // provoquer un battement quand l'activite n'est plus au premier plan.
+    // Sans cela, `session` ne pouvait plus changer du tout une fois l'ecran
+    // quitte (seuls un battement ou unpair() la font bouger), donc le service
+    // ne pouvait plus voir has_session:false, donc son stopSelf() etait
+    // inatteignable : la pastille survivait au match pendant des heures.
+    // On expose tick() et non refresh() pour garder UNE seule definition de ce
+    // qu'est un battement -- vider la file d'abord, interroger ensuite --
+    // plutot qu'une regle au premier plan et une autre en arriere-plan.
+    fun tick() {
         if (prefs.token == null) return
         if (queue.size() > 0) drain() else refresh()
     }

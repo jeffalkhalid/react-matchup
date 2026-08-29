@@ -499,6 +499,63 @@ class MatchStoreTest {
         return cond()
     }
 
+    // ---- Le service de premier plan doit pouvoir battre tout seul ---------
+
+    // Correctif : MainActivity arrete le battement a onStop -- exactement
+    // quand la pastille d'activite en cours commence a servir. `session` ne
+    // pouvait alors plus changer (seuls un battement ou unpair() la font
+    // bouger), donc OngoingMatch observait un flux gele et son stopSelf()
+    // etait INATTEIGNABLE : la pastille survivait au match pendant des heures.
+    //
+    // Ce test epingle exactement ce qui debloque la situation : battement
+    // ARRETE, un seul tick() suffit a faire voir has_session:false au store et
+    // a vider la session -- c'est-a-dire a rendre la fin de match observable
+    // sans qu'aucun ecran ne soit allume.
+    @Test fun `tick() vide la session meme battement arrete`() {
+        val s = startedStore()
+        s.startPolling()
+        s.stopPolling()
+        assertTrue("le battement doit bien etre arrete", !s.isPolling)
+        fetch = { Api.ApiResponse(200, """{"has_session":false}""") }
+
+        s.tick()
+
+        assertNull("la fin de match doit etre visible sans battement", s.session.value)
+    }
+
+    // Le service s'efface quand l'activite est au premier plan : isPolling est
+    // la seule chose qui le lui dit, et un booleen qui repondrait toujours la
+    // meme chose ferait soit doubler les requetes, soit taire le service.
+    @Test fun `isPolling suit le battement`() {
+        val s = startedStore()
+        assertTrue("pas de battement avant startPolling", !s.isPolling)
+        s.startPolling()
+        assertTrue("battement en cours", s.isPolling)
+        s.stopPolling()
+        assertTrue("battement arrete", !s.isPolling)
+    }
+
+    // L'age sert a degrader le texte de la pastille quand le serveur se tait.
+    // Il doit compter depuis la derniere reponse COMPRISE, pas depuis la
+    // derniere tentative : sinon une requete qui part et n'aboutit pas
+    // rajeunirait un score qui, lui, n'a pas ete confirme.
+    @Test fun `sessionAgeMs compte depuis la derniere reponse comprise`() {
+        val s = startedStore()
+        assertEquals(0L, s.sessionAgeMs)
+        clock += 90_000L
+        assertEquals(90_000L, s.sessionAgeMs)
+
+        // Une tentative qui echoue (reseau) ne rajeunit rien.
+        fetch = { throw IOException("hors de portee") }
+        s.refresh()
+        assertEquals(90_000L, s.sessionAgeMs)
+
+        // Une reponse comprise, si.
+        fetch = { ok() }
+        s.refresh()
+        assertEquals(0L, s.sessionAgeMs)
+    }
+
     private fun ok(team1: String = "K&A") = Api.ApiResponse(200, payload(team1))
     private fun err(status: Int, body: String) = Api.ApiResponse(status, body)
 

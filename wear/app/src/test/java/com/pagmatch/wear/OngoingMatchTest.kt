@@ -41,13 +41,13 @@ class OngoingMatchTest {
         assertFalse(shouldShowOngoing(session(finished = true)))
     }
 
-    // MatchStore.unpair() met _session a null : le deliage passe donc par le
-    // MEME predicat que la fin de match, sans chemin separe. Ce test fige ce
-    // couplage -- si un jour unpair() cessait de vider la session, l'icone
-    // resterait sur le cadran d'une montre deliee.
-    @Test fun `une montre deliee vide la session, donc arrete l'activite`() {
-        assertFalse(shouldShowOngoing(null))
-    }
+    // Le deliage n'a PAS de test a lui ici, et c'est voulu : unpair() met
+    // _session a null, donc il emprunte exactement le predicat ci-dessus. Le
+    // maillon qui pourrait casser -- "unpair() vide bien la session" -- n'est
+    // pas dans ce fichier : il est fige par MatchStoreTest, "token_revoked
+    // delie la montre et vide la file" (assertNull(s.session.value)). Un test
+    // de plus ici n'aurait reaffirme que `shouldShowOngoing(null) == false`,
+    // deja couvert, en pretendant couvrir autre chose.
 
     // ---- Ce que l'activite en cours affiche ------------------------------
 
@@ -88,22 +88,68 @@ class OngoingMatchTest {
         assertEquals("Sets 0-0", ongoingText(session(gameLabel = GameLabel("", ""))))
     }
 
-    // La borne des 20 caracteres est APPLIQUEE, pas seulement esperee. Sans
-    // cela, un jeton serveur inattendu allongerait le texte et le systeme le
-    // couperait n'importe ou -- en plein soleil, une ligne coupee au hasard ne
-    // se lit pas.
-    @Test fun `le texte reste sous vingt caracteres, quoi que dise le serveur`() {
-        val t = ongoingText(session(SetScore(0, 0), GameLabel("BEAUCOUPTROPLONG", "PAREIL")))
-        assertTrue("longueur ${t.length} : $t", t.length < 20)
-        assertEquals(ONGOING_MAX_CHARS, t.length)
-    }
-
     // ASCII pur : la police du cadran, choisie par le systeme et non par nous,
     // n'a aucune obligation de porter les accents. Tout le reste de
     // l'application ecrit deja sans accent, une seule regle plutot que deux.
     @Test fun `les caracteres non ASCII sont retires`() {
         val t = ongoingText(session(SetScore(0, 0), GameLabel("4é0", "‰30")))
         assertTrue("non-ASCII dans : $t", t.all { it.code in 0x20..0x7E })
+    }
+
+    // ---- Debordement : on perd le jeu, jamais le score --------------------
+
+    // Tronquer l'assemblage rognait par la DROITE, donc dans le score
+    // ("Sets 10-10 Jeu 40-3"). La pastille se mettait a mentir sur la seule
+    // chose qu'elle existe pour dire.
+    @Test fun `un texte trop long perd la clause du jeu, pas des chiffres du score`() {
+        val t = ongoingText(session(SetScore(0, 0), GameLabel("BEAUCOUPTROPLONG", "PAREIL")))
+        assertEquals("Sets 0-0", t)
+        assertTrue(t.length < 20)
+    }
+
+    // ---- Un cote vide n'est pas un score ---------------------------------
+
+    // Le garde-fou testait la chaine assemblee (`!= "-"`), donc ne voyait que
+    // le cas ou les DEUX cotes manquaient. Un seul cote vide donnait "Jeu -5" :
+    // un texte qui ressemble a un score sans en etre un.
+    @Test fun `un game_label a moitie vide ne s'affiche pas`() {
+        assertEquals("Sets 0-0", ongoingText(session(gameLabel = GameLabel("", "5"))))
+        assertEquals("Sets 0-0", ongoingText(session(gameLabel = GameLabel("40", ""))))
+    }
+
+    // ---- Degradation honnete quand le serveur se tait ---------------------
+
+    // Le jeu en cours bouge toutes les 30 s : passe trois minutes sans
+    // confirmation, "40-30" est tres probablement faux. Les sets, eux,
+    // vieillissent bien. Grossier et vrai plutot que precis et faux.
+    @Test fun `apres le seuil de peremption on cesse d'annoncer le jeu`() {
+        val s = session(SetScore(1, 0), GameLabel("40", "30"))
+        assertEquals("Sets 1-0 Jeu 40-30", ongoingText(s, ONGOING_STALE_MS - 1))
+        assertEquals("Sets 1-0", ongoingText(s, ONGOING_STALE_MS))
+    }
+
+    // Une seule requete perdue ne doit rien degrader : le seuil vaut trois
+    // battements lents, pas un.
+    @Test fun `un age nul ou faible n'altere rien`() {
+        val s = session(SetScore(1, 0), GameLabel("40", "30"))
+        assertEquals("Sets 1-0 Jeu 40-30", ongoingText(s, 0L))
+        assertEquals("Sets 1-0 Jeu 40-30", ongoingText(s, OngoingMatch.SLOW_TICK_MS))
+    }
+
+    // ---- Echec de publication : on perd la pastille, jamais le match ------
+
+    // Un service qui ne rappelle pas startForeground() dans les cinq secondes
+    // est tue par le systeme AVEC son processus -- donc avec l'application qui
+    // compte les points. Jamais devenu premier plan, il doit se retirer lui-meme.
+    @Test fun `un refus avant tout affichage fait renoncer le service`() {
+        assertTrue(shouldGiveUpOnPostFailure(false))
+    }
+
+    // Deja au premier plan, l'echec ne concerne qu'une MISE A JOUR : la
+    // notification precedente est encore affichee et encore a peu pres vraie.
+    // La retirer echangerait une perte de fraicheur contre la panne complete.
+    @Test fun `un refus de mise a jour ne retire pas une pastille qui marche`() {
+        assertFalse(shouldGiveUpOnPostFailure(true))
     }
 
     // Une session absente ne devrait jamais atteindre ce chemin (le service ne
