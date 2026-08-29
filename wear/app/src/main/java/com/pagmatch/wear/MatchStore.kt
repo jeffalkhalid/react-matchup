@@ -13,6 +13,28 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
+// Verdict de finalize(), pour ConfirmScreen. Un String? unique (null = ok,
+// sinon un message) ne suffit PAS ici : contrairement a drain(), qui peut se
+// permettre de rejouer une panne d'infrastructure au battement suivant sans
+// que l'utilisateur ne fasse rien, cet ecran attend une decision de LUI --
+// "recommencer" n'a de sens que sur une panne, jamais sur un refus metier.
+// Trois issues, trois actions differentes :
+//   - Success   : le score est valide, l'ecran se ferme.
+//   - Refused   : le SERVEUR a tranche (400/403/409 -- no_winner, not_enough_sets,
+//                 not_the_scorer...). Rejouer buterait pour toujours sur le
+//                 meme refus : l'ecran reste ouvert, message affiche, mais
+//                 rien ne suggere de reessayer.
+//   - Unreachable : infrastructure (5xx, 401, 404 pendant un rechargement de
+//                 cache PostgREST...) OU exception reseau (Bluetooth hors de
+//                 portee). Le score n'a PAS ete juge -- on ne sait juste pas
+//                 encore. Rejouer peut marcher : le bouton "Oui" reste donc
+//                 utile, jamais a confondre avec un refus.
+sealed class FinalizeResult {
+    object Success : FinalizeResult()
+    data class Refused(val message: String) : FinalizeResult()
+    data class Unreachable(val message: String) : FinalizeResult()
+}
+
 // Un appui est enregistre dans la file (Queue.enqueue, ATOMIQUE) avant d'etre
 // envoye. drain() la vide en respectant l'ordre ; un evenement non acquitte
 // reste en tete et sera rejoue, ce que l'idempotence serveur (client_seq)
@@ -43,6 +65,12 @@ class MatchStore(
     private val fetchSession: suspend (String) -> Api.ApiResponse = { t -> Api.currentSession(t) },
     private val sendEvent: suspend (String, Pending) -> Api.ApiResponse =
         { t, e -> Api.applyEvent(t, e.sid, e.type, e.team, e.seq) },
+    // Meme seam que fetchSession/sendEvent, pour la meme raison : finalize()
+    // a sa propre politique de retrait (voir plus bas) et rien ne la testait
+    // avant ConfirmScreen. Signature volontairement identique a Api.finalize
+    // (token, sessionId) -> ApiResponse.
+    private val finalizeSession: suspend (String, String) -> Api.ApiResponse =
+        { t, sid -> Api.finalize(t, sid) },
     private val now: () -> Long = { System.currentTimeMillis() },
     // Periode du battement. Injectee pour que les tests puissent verifier que
     // le battement BAT VRAIMENT (et repart apres un reappairage) en
@@ -295,6 +323,66 @@ class MatchStore(
 
     private fun shortOf(s: Session, team: Int): String =
         (if (team == 1) s.team1Short else s.team2Short).take(8)
+
+    // Valide le score final. Action IRREVERSIBLE, appelee une seule fois par
+    // pression sur "Oui" (ConfirmScreen porte sa propre garde `busy`) -- donc
+    // pas de file, pas de retard tolere : on attend la reponse et on la
+    // qualifie pour l'ecran, qui doit pouvoir dire a l'utilisateur laquelle
+    // des trois choses vient de se passer (voir FinalizeResult).
+    //
+    // MEME GATE QUE drain()/refresh() : le corps seul ne dit jamais si un
+    // "message" est un refus metier ou une panne d'infrastructure, seul le
+    // statut HTTP le fait (voir isDefinitiveRefusal, Api.kt). Le brouillon
+    // initial de cette methode lisait errorReason(body) seul et traitait tout
+    // "message" non nul comme un refus -- un 500 "statement timeout" ou un
+    // 401 "JWT expired" pendant la finalisation se serait donc affiche
+    // exactement comme "Pas de vainqueur", et l'utilisateur aurait cru son
+    // score REJETE SUR LE FOND alors que le serveur n'a rien tranche du tout.
+    fun finalize(onDone: (FinalizeResult) -> Unit) {
+        val t = prefs.token
+            ?: return onDone(FinalizeResult.Refused(Api.reasonPair("token_revoked")?.first ?: "Montre deliee"))
+        val s = _session.value ?: return onDone(FinalizeResult.Refused("Aucun match"))
+        scope.launch {
+            val res = try {
+                finalizeSession(t, s.sessionId)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                // Panne reseau (Bluetooth hors de portee, telephone eteint) :
+                // le score n'a pas ete juge, seulement pas envoye.
+                onDone(FinalizeResult.Unreachable("Pas de reseau"))
+                return@launch
+            }
+
+            if (res.status == 200) {
+                onDone(FinalizeResult.Success)
+                return@launch
+            }
+
+            val reason = Api.errorReason(res.body)
+            // Meme raison que dans drain() : un refus "token_revoked" ne
+            // deliee la montre que sur un statut de refus definitif, jamais
+            // sur une panne d'infrastructure qui porterait le meme mot par
+            // coincidence.
+            if (reason == "token_revoked" && Api.isDefinitiveRefusal(res.status)) {
+                unpair()
+                onDone(FinalizeResult.Refused(Api.reasonPair(reason)?.first ?: "Montre deliee"))
+                return@launch
+            }
+
+            if (Api.isDefinitiveRefusal(res.status)) {
+                // Refus METIER definitif (no_winner, not_enough_sets,
+                // not_the_scorer...) : le serveur a tranche, rejouer buterait
+                // pour toujours sur le meme refus.
+                onDone(FinalizeResult.Refused(Api.reasonPair(reason)?.first ?: reason ?: "Refuse ${res.status}"))
+                return@launch
+            }
+
+            // TOUT LE RESTE est de l'infrastructure (5xx, 401, 404 pendant un
+            // rechargement de cache PostgREST...) : le score n'a pas ete
+            // juge, "Oui" reste une action valide a retenter.
+            onDone(FinalizeResult.Unreachable(Api.reasonPair(reason)?.first ?: "Hors ligne ${res.status}"))
+        }
+    }
 
     // Vide la file en respectant l'ordre, UN envoi a la fois. Ne retire un
     // evenement QUE sur un acquittement (200) ou un refus metier definitif

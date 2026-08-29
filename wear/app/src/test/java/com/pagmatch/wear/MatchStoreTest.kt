@@ -38,6 +38,8 @@ class MatchStoreTest {
     private val fetchCalls = AtomicInteger(0)
     @Volatile private var respond: (Pending) -> Api.ApiResponse = { ok() }
     @Volatile private var fetch: () -> Api.ApiResponse = { ok() }
+    @Volatile private var finalizeResponse: () -> Api.ApiResponse = { ok() }
+    private val finalizeCalls = AtomicInteger(0)
 
     private fun newStore(tickMs: Long = MatchStore.TICK_MS) = MatchStore(
         prefs = prefs,
@@ -53,6 +55,10 @@ class MatchStoreTest {
             val r = respond(e)
             if (r.status == 200) accepted += e
             r
+        },
+        finalizeSession = { _, _ ->
+            finalizeCalls.incrementAndGet()
+            finalizeResponse()
         },
         now = { clock },
         tickMs = tickMs,
@@ -383,6 +389,70 @@ class MatchStoreTest {
         assertNotNull("l ecran ne doit pas se vider sur une reponse perimee",
             s.session.value)
         assertEquals("EN COURS", s.session.value!!.team1)
+    }
+
+    // ---- Task 7 : le verdict de finalize() ---------------------------------
+    // Quatre issues, quatre lectures differentes pour l'utilisateur. Le
+    // brouillon initial de MatchStore.finalize (voir le brief) lisait
+    // errorReason(body) seul : un refus METIER et une panne
+    // d'INFRASTRUCTURE portent tous les deux un "message" et sont donc
+    // indistinguables sur le seul corps -- exactement le defaut que
+    // isDefinitiveRefusal() ferme ailleurs dans ce fichier (drain, refresh).
+    // Ces quatre tests epinglent que finalize() applique la MEME regle.
+
+    @Test fun `finalize reussi rapporte Success`() {
+        val s = startedStore()
+        finalizeResponse = { ok() }
+        var result: FinalizeResult? = null
+
+        s.finalize { result = it }
+
+        assertEquals(FinalizeResult.Success, result)
+    }
+
+    // Refus METIER definitif (400/403/409) : le serveur a tranche sur le fond
+    // (ici, moins de deux sets joues). Rejouer buterait pour toujours sur le
+    // meme refus -- l'ecran ne doit jamais suggerer de reessayer.
+    @Test fun `un refus metier definitif de finalize est un Refused`() {
+        val s = startedStore()
+        finalizeResponse = { err(400, """{"code":"P0001","message":"not_enough_sets"}""") }
+        var result: FinalizeResult? = null
+
+        s.finalize { result = it }
+
+        assertEquals(FinalizeResult.Refused("Moins de 2 sets"), result)
+    }
+
+    // Panne d'INFRASTRUCTURE (ici un 500, meme corps qu'un refus metier --
+    // "message" seul ne les distingue pas, cf. le commentaire de
+    // isDefinitiveRefusal dans Api.kt). Le score n'a pas ete juge : ce n'est
+    // JAMAIS un Refused, quoi que porte le corps.
+    @Test fun `une panne d infrastructure pendant finalize n est jamais un refus`() {
+        val s = startedStore()
+        finalizeResponse = { err(500, """{"code":"57014","message":"canceling statement due to statement timeout"}""") }
+        var result: FinalizeResult? = null
+
+        s.finalize { result = it }
+
+        assertTrue(
+            "le score n a pas ete juge sur le fond, donc pas un Refused",
+            result is FinalizeResult.Unreachable
+        )
+        assertEquals("Aucun refus metier a en tirer", "Hors ligne 500", (result as FinalizeResult.Unreachable).message)
+    }
+
+    // Exception RESEAU (Bluetooth hors de portee, telephone eteint) : la
+    // requete n'a meme pas abouti, donc a fortiori pas de verdict metier.
+    // Meme famille de resultat que la panne d'infrastructure ci-dessus :
+    // dans les deux cas "on ne sait pas", jamais "c'est refuse".
+    @Test fun `une exception reseau pendant finalize n est jamais un refus`() {
+        val s = startedStore()
+        finalizeResponse = { throw java.io.IOException("pas de reseau") }
+        var result: FinalizeResult? = null
+
+        s.finalize { result = it }
+
+        assertEquals(FinalizeResult.Unreachable("Pas de reseau"), result)
     }
 
     // ---- Faux serveur : corps de reponse ----------------------------------

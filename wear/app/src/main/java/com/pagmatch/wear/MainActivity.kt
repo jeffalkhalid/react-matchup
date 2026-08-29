@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.wear.compose.material.MaterialTheme
+import com.pagmatch.wear.ui.ConfirmScreen
 import com.pagmatch.wear.ui.MatchScreen
 import com.pagmatch.wear.ui.PairingScreen
 
@@ -57,11 +58,26 @@ fun App(prefs: Prefs, store: MatchStore) {
     // paired ne relit prefs.token qu'a la creation : une fois l'appairage
     // reussi, onPaired() bascule cet etat sans redemarrer l'activite.
     var paired by remember { mutableStateOf(prefs.token != null) }
-    // Le telephone a delie la montre (token_revoked) : retour a l'appairage.
-    // Sans ce chemin, fn_watch_link refuse tout pour toujours et l'app n'est
-    // plus bonne qu'a reinstaller.
+    // Ecran de validation du score, ouvert depuis le bouton "OK" de
+    // MatchScreen (lui-meme inactif tant que `s.matchDecided` est faux -- la
+    // montre ne peut donc pas y arriver sur un match non joue). Etat de
+    // navigation Compose, pas une activite separee : meme raison que `paired`
+    // juste au-dessus, MatchStore etant un singleton de PROCESSUS, une
+    // navigation par activite en recreerait un second (voir le commentaire de
+    // classe de MatchStore).
+    var confirming by remember { mutableStateOf(false) }
+    // Le telephone a delie la montre (token_revoked) : retour a l'appairage,
+    // depuis N'IMPORTE QUEL ecran -- y compris en pleine confirmation, un
+    // refus de finalize() peut tres bien porter token_revoked (meme gate que
+    // drain()/refresh() dans MatchStore.finalize). Sans ce chemin, fn_watch_link
+    // refuse tout pour toujours et l'app n'est plus bonne qu'a reinstaller.
     val unpaired by store.unpaired.collectAsState()
-    LaunchedEffect(unpaired) { if (unpaired) paired = false }
+    LaunchedEffect(unpaired) {
+        if (unpaired) {
+            paired = false
+            confirming = false
+        }
+    }
 
     MaterialTheme {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -70,8 +86,20 @@ fun App(prefs: Prefs, store: MatchStore) {
                     store.onPaired()
                     paired = true
                 })
+            } else if (confirming) {
+                ConfirmScreen(
+                    store = store,
+                    onCancel = { confirming = false },
+                    // Le score valide, on revient au match : son refresh()
+                    // (battement de 5 s, ou immediat au retour d'ecran via
+                    // startPolling) affichera l'etat final renvoye par le
+                    // serveur -- pas besoin d'un refresh() explicite ici, un
+                    // seul chemin de rafraichissement plutot que deux qui
+                    // pourraient diverger.
+                    onDone = { confirming = false }
+                )
             } else {
-                MatchScreen(store = store, onValidate = { /* Task suivante : ecran de validation. */ })
+                MatchScreen(store = store, onValidate = { confirming = true })
             }
         }
     }
