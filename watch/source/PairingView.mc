@@ -1,6 +1,9 @@
 // watch/source/PairingView.mc
-// Saisie du code à 6 chiffres. Un chiffre à la fois : HAUT/BAS changent le
-// chiffre courant, SELECT valide et passe au suivant, BACK revient en arrière.
+// Saisie du code à 6 chiffres, un chiffre à la fois. Les gestes passent par les
+// comportements (onPreviousPage / onNextPage / onSelect / onBack), donc chaque
+// modèle les reçoit par ses propres entrées : HAUT/BAS et SELECT sur une montre
+// à boutons, un balayage et un toucher sur une montre tactile. Voir le texte
+// d'aide dans onUpdate, qui s'adapte via Layout.isTouch().
 // Chaines AFFICHEES sans accents (polices Garmin).
 using Toybox.WatchUi;
 using Toybox.Graphics;
@@ -107,17 +110,21 @@ class PairingView extends WatchUi.View {
         // Or cinq d'entre eux n'ont pas ces boutons : les quatre variantes de
         // vivoactive3 n'ont qu'une touche `enter`, et etrextouch n'en a aucune.
         // L'ecran y EST manoeuvrable — PairingDelegate.onPreviousPage /
-        // onNextPage recoivent les balayages (SWIPE_DOWN / SWIPE_UP) et
-        // onSelect le toucher, exactement comme ils recevraient HAUT, BAS et
-        // SELECT — mais rien ne le disait. Sur ces cinq modeles, le tout
+        // onNextPage recoivent un balayage et onSelect le toucher, exactement
+        // comme ils recevraient HAUT, BAS et SELECT — mais rien ne le disait.
+        // Sur ces cinq modeles, le tout
         // premier ecran de l'application demandait donc d'appuyer sur des
         // boutons inexistants, et l'appairage ne pouvait pas aboutir.
         // SessionView et ConfirmView branchent deja sur Layout.isTouch() ;
         // c'est la meme branche, avec la meme echelle de formulations.
         //
         // Formulation tactile tracee sur le delegate de CET ecran, pas
-        // supposee : balayer (haut ou bas) change le chiffre courant, toucher
-        // valide et passe au suivant.
+        // supposee : un balayage change le chiffre courant, un toucher valide
+        // et passe au suivant. La DIRECTION du balayage n'est volontairement
+        // pas nommee, car elle differe d'un modele a l'autre : epix2 associe
+        // swipeDown/swipeUp aux deux comportements, etrextouch y associe
+        // swipeRight/swipeLeft. « Balayer » est donc vrai partout, la ou
+        // « balayer vers le haut » serait faux sur le seul modele sans boutons.
         var howVariants = Layout.isTouch()
             ? ["Balayer puis toucher", "Balayer + toucher", "Balayer"]
             : ["HAUT/BAS puis SELECT", "HAUT/BAS + SELECT", "HAUT/BAS"];

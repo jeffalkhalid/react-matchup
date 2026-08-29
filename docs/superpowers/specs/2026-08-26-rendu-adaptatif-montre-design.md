@@ -86,6 +86,15 @@ Un module unique, `Layout`, par lequel passent **toutes** les vues.
 - `drawFit(dc, y, texte, échelle, couleur)` — dessine avec la police retenue, ou ne dessine
   **rien** et le signale. Jamais de texte tronqué.
 
+> **Note d'implémentation (ajoutée après coup).** Ces deux noms ont vécu, puis ont été
+> **supprimés**. Ils ne mesuraient que l'horizontal, et la corde était échantillonnée au
+> *haut* de l'encre plutôt qu'à la ligne de base : la passe visuelle a montré que les lignes
+> se chevauchaient sur 13 des 14 familles. Le module expose désormais `drawBox` /
+> `drawBestBox` / `drawPartsAt`, qui prennent en plus un **budget vertical** et mesurent la
+> corde à la ligne de base. L'intention de cette section est intacte — mesurer au lieu de
+> supposer, ne jamais tronquer — seuls les noms et la signature ont changé. `Layout.mc` fait
+> foi.
+
 **Ce qu'il ne fait pas** : décider *quoi* afficher. Les vues déclarent leur contenu et son
 importance ; `Layout` décide seulement *comment*.
 
