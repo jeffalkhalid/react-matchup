@@ -50,4 +50,45 @@ class QueueTest {
         q.popHead()
         assertEquals(0, q.size())
     }
+
+    @Test fun `l ordre survit a un redemarrage avec plusieurs evenements`() {
+        val store = FakeStore()
+        val writer = Queue(store)
+        writer.push("s1", "point_won", 1, 1)
+        writer.push("s1", "point_won", 2, 2)
+        writer.push("s1", "undo", 0, 3)
+
+        // Nouvelle instance construite sur le meme store, comme apres un
+        // redemarrage du process suite a un crash.
+        val q = Queue(store)
+        assertEquals(3, q.size())
+        assertEquals(1L, q.head()!!.seq)
+        q.popHead()
+        assertEquals(2L, q.head()!!.seq)
+        q.popHead()
+        assertEquals(3L, q.head()!!.seq)
+        assertEquals("undo", q.head()!!.type)
+        q.popHead()
+        assertNull(q.head())
+    }
+
+    @Test fun `enqueue stocke l evenement et renvoie son numero de sequence`() {
+        val q = Queue(FakeStore())
+        val seq = q.enqueue("s1", "point_won", 1)
+        assertEquals(1L, seq)
+        assertEquals(1, q.size())
+        val stored = q.head()!!
+        assertEquals("s1", stored.sid)
+        assertEquals("point_won", stored.type)
+        assertEquals(1, stored.team)
+        assertEquals(1L, stored.seq)
+    }
+
+    @Test fun `deux enqueue successifs ne renvoient jamais le meme numero`() {
+        val q = Queue(FakeStore())
+        val first = q.enqueue("s1", "point_won", 1)
+        val second = q.enqueue("s1", "point_won", 2)
+        assert(first != second) { "enqueue a renvoye deux fois le meme client_seq : $first" }
+        assertEquals(2, q.size())
+    }
 }
