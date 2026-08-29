@@ -91,4 +91,13 @@ object Api {
 
     suspend fun finalize(token: String, sessionId: String): String =
         post("watch_finalize_session", """{"p_token":${q(token)},"p_session_id":${q(sessionId)}}""")
+
+    // redeem_watch_pairing_code repond 200 avec {"token":"..."} en cas de succes
+    // (voir errorReason ci-dessus pour le cas d'echec, {"ok":false,"reason":...}).
+    fun parseToken(body: String?): String? {
+        if (body == null) return null
+        return try {
+            lenient.parseToJsonElement(body).jsonObject["token"]?.jsonPrimitive?.content
+        } catch (e: Exception) { null }
+    }
 }
