@@ -31,4 +31,21 @@ class ApiTest {
         assertNull(Api.reasonPair("raison_jamais_vue"))
         assertNull(Api.reasonPair(null))
     }
+
+    @Test fun `lit le token d un appairage reussi`() {
+        assertEquals("abc123", Api.parseToken("""{"token":"abc123"}"""))
+    }
+
+    @Test fun `renvoie null sur un refus sans token`() {
+        assertNull(Api.parseToken("""{"ok":false,"reason":"invalid_code"}"""))
+    }
+
+    @Test fun `renvoie null sur un corps illisible`() {
+        assertNull(Api.parseToken("pas du json"))
+        assertNull(Api.parseToken(""))
+    }
+
+    @Test fun `renvoie null quand il n y a pas de corps`() {
+        assertNull(Api.parseToken(null))
+    }
 }
