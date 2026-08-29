@@ -107,9 +107,6 @@ class SessionView extends WatchUi.View {
     }
 
     function onShow() {
-        // Passe de verification visuelle : le simulateur n'a ni jeton ni
-        // session, on injecte un match type au lieu d'interroger le serveur.
-        if (Demo.ENABLED) { apply(Demo.payload()); return; }
         refresh();
         _timer = new Timer.Timer();
         // Renvoi périodique de la file + rafraichissement de l'affichage.
