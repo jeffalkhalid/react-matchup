@@ -3,7 +3,7 @@
   Application Connect IQ PagMatch.
   Cibles : tous les devices du SDK local dont l'API >= minSdkVersion (53/57).
   Exclus (API < 2.4.0, Application.Storage indisponible - cf. Api.mc/Queue.mc) :
-  epix (gen 1), vivoactive, fenix3, fenix3_hr. Voir task-6-report.md.
+  epix (gen 1), vivoactive, fenix3, fenix3_hr.
 -->
 <iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
     <iq:application

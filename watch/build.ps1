@@ -98,8 +98,8 @@ function Get-SdkDevices {
 }
 
 # ------------------------------------------------- Plancher d'API reel
-# Le plancher (aujourd'hui 2.4.0, cf. task-6-report.md : Application.Storage
-# dans Api.mc/Queue.mc est la premiere API utilisee au-dela de 1.x) vit en
+# Le plancher (aujourd'hui 2.4.0 : Application.Storage, dans Api.mc et
+# Queue.mc, est la premiere API utilisee au-dela de 1.x) vit en
 # UN SEUL endroit, l'attribut minSdkVersion de manifest.xml. Tout le reste
 # (le recalage -SyncProducts, le recap -ListDevices) LIT cette valeur au lieu
 # de la re-ecrire en dur : sans ca, les deux peuvent diverger silencieusement

@@ -86,6 +86,11 @@ class SessionView extends WatchUi.View {
     // decrit ce qui est reellement dessine ; le screenHeight de
     // getDeviceSettings decrit le materiel et peut en differer.
     hidden var _screenH = 0;
+    // Bas REEL de l'encre du score de l'equipe 1, releve au dernier onUpdate.
+    // 0 tant que rien n'a ete dessine. Cf. teamForTapY : c'est ce qui rend a
+    // nouveau VRAIE la garantie sur laquelle la bande morte s'appuie, depuis
+    // que le dernier recours dessine le score hors de tout budget vertical.
+    hidden var _score1Bottom = 0;
 
     function initialize() { View.initialize(); }
 
@@ -253,22 +258,42 @@ class SessionView extends WatchUi.View {
     // AUCUNE, on ignore le toucher.
     //
     // Pourquoi ce n'est pas « au-dessus de la moitie = equipe 1 » :
-    // Layout.drawFit appelle drawText avec TEXT_JUSTIFY_CENTER SEUL, sans
-    // TEXT_JUSTIFY_VCENTER. Le y qu'on lui donne est donc le HAUT de la boite
-    // de glyphe, pas son centre. Le score de l'equipe 1 est pose a
-    // Y_SCORE1_PCT et DESCEND de toute la hauteur de sa police ; rien ne
-    // garantit qu'il s'arrete avant la mi-hauteur. Couper a h/2 creditait
-    // l'equipe 2 quand on touchait le bas des chiffres de l'equipe 1 — la
-    // cible la plus naturelle.
+    // Layout.drawPartsAt (comme drawAt) appelle drawText avec
+    // TEXT_JUSTIFY_CENTER SEUL, sans TEXT_JUSTIFY_VCENTER. Le y qu'on lui
+    // donne est donc le HAUT de la boite de glyphe, pas son centre. Le score
+    // de l'equipe 1 est pose a Y_SCORE1_PCT et DESCEND de toute la hauteur de
+    // sa police ; rien ne garantit qu'il s'arrete avant la mi-hauteur. Couper
+    // a h/2 creditait l'equipe 2 quand on touchait le bas des chiffres de
+    // l'equipe 1 — la cible la plus naturelle.
     //
     // Regle, et non valeur reglee a l'oeil :
-    //   bas possible de l'equipe 1 = Y_NAME2_PCT.
-    //     Ce n'est plus une majoration prudente mais une GARANTIE : depuis la
-    //     passe visuelle, le score de l'equipe 1 est dessine dans le budget
-    //     vertical [Y_SCORE1_PCT, Y_NAME2_PCT] et aucune police plus haute
-    //     n'est retenue (Layout.fitPartsIndex). Auparavant on majorait par la
-    //     hauteur de FONT_NUMBER_HOT, qui pouvait depasser tres au-dela du
-    //     nom de l'equipe 2 et elargissait la bande morte pour rien.
+    //   bas possible de l'equipe 1 = le plus BAS A L'ECRAN (donc le plus
+    //   grand y) de deux nombres :
+    //     Y_NAME2_PCT, plancher de mise en page — le premier element de
+    //     l'equipe 2 commence la, donc tout ce qui est au-dessus appartient a
+    //     l'equipe 1, meme si son score s'arrete plus haut ; ET
+    //     _score1Bottom, le bas REELLEMENT dessine de son score, releve par
+    //     onUpdate.
+    //     Ce second terme n'est pas une precaution decorative. Le texte qui
+    //     precedait ici affirmait que Y_NAME2_PCT SUFFISAIT, « non plus une
+    //     majoration prudente mais une GARANTIE », parce que le score de
+    //     l'equipe 1 n'est dessine que dans une police dont l'encre tient dans
+    //     [Y_SCORE1_PCT, Y_NAME2_PCT] (Layout.fitPartsIndex / fitsPartsIndex).
+    //     C'etait vrai — jusqu'au DERNIER RECOURS ajoute depuis (cf. onUpdate,
+    //     branche iScore < 0) : quand aucun barreau ne convient aux deux
+    //     lignes, Layout.drawPartsRaw dessine SANS aucune verification de
+    //     place, c'est toute sa raison d'etre. Si ce recours se declenche sur
+    //     un echec de HAUTEUR, les chiffres de l'equipe 1 descendent sous
+    //     Y_NAME2_PCT et un toucher sur le bas de SES PROPRES chiffres part a
+    //     l'equipe 2, silencieusement, en plein match : exactement ce que la
+    //     bande morte existe pour empecher. Relever la hauteur reellement
+    //     dessinee rend la garantie vraie au lieu de la supposer.
+    //     Le max, et non le remplacement : sans lui, la bande morte
+    //     s'ouvrirait des Y_SCORE1_PCT + la hauteur du score sur les modeles
+    //     ou tout tient (l'epix2, entre autres), et l'espace vide au-dessus du
+    //     nom de l'equipe 2 cesserait de marquer pour l'equipe 1. Le
+    //     comportement de tous les ecrans ou rien ne deborde est donc
+    //     strictement inchange.
     //   haut de l'equipe 2         = Y_NAME2_PCT (son nom, son premier element)
     // La bande morte va du plus petit au plus grand des deux : ils peuvent se
     // croiser sur un ecran ou FONT_NUMBER_HOT est tres haute, et la formule
@@ -292,6 +317,7 @@ class SessionView extends WatchUi.View {
         var score1Top = _screenH * Y_SCORE1_PCT / 100;
         var score2Top = _screenH * Y_SCORE2_PCT / 100;
         var bottom1 = _screenH * Y_NAME2_PCT / 100;
+        if (_score1Bottom > bottom1) { bottom1 = _score1Bottom; }
         var top2 = _screenH * Y_NAME2_PCT / 100;
         var guard = Graphics.getFontHeight(Graphics.FONT_XTINY) / 2;
         var bandTop    = (bottom1 < top2 ? bottom1 : top2) - guard;
@@ -344,9 +370,10 @@ class SessionView extends WatchUi.View {
     // le match etait joue — inutile d'envoyer une demande vouee au refus.
     //
     // Le score part sur ConfirmView en PLUSIEURS formulations (riche -> pauvre) :
-    // ConfirmView.onUpdate les tente avec Layout.drawBest et dessine la premiere
-    // qui tient. Sans ca, un Layout.drawFit sur la version longue se serait
-    // contente de ne RIEN dessiner sur un petit ecran rond — l'utilisateur
+    // ConfirmView.onUpdate les tente avec Layout.drawBestBox et dessine la
+    // premiere qui tient. Sans ca, un Layout.drawBox sur la seule version
+    // longue se serait contente de ne RIEN dessiner sur un petit ecran rond —
+    // c'est la regle du module, on n'ecrit pas tronque — et l'utilisateur
     // validerait un score qu'il n'a jamais vu. La derniere variante ("647/465",
     // sans aucun espace) est volontairement compacte au point qu'il est
     // implausible qu'elle ne tienne nulle part.
@@ -462,15 +489,19 @@ class SessionView extends WatchUi.View {
         dc.clear();
         var h = dc.getHeight();
         _screenH = h;
+        // Repose a chaque dessin : la mise en page qui vient d'etre dessinee
+        // est la SEULE que teamForTapY ait le droit de lire. Un reliquat du
+        // dessin precedent decrirait un ecran qui n'est plus a l'ecran.
+        _score1Bottom = 0;
 
         if (_sid == null) {
-            // DERNIER APPELANT de l'ancien chemin de mesure (drawFit, corde
-            // prise au HAUT de l'encre) — le defaut meme corrige partout
-            // ailleurs. Inoffensif tant que la ligne est a h/2, ou la corde est
-            // maximale ; faux des que ce y bouge d'un pixel vers le bas. On le
-            // migre sur drawBestBox : corde a la ligne de base, budget vertical
-            // (tout l'espace jusqu'au plancher de derniere ligne) et echelle de
-            // formulations, comme partout ailleurs.
+            // DERNIER APPELANT de l'ancien chemin de mesure (corde prise au
+            // HAUT de l'encre, sans budget vertical) — le defaut meme corrige
+            // partout ailleurs. Inoffensif tant que la ligne est a h/2, ou la
+            // corde est maximale ; faux des que ce y bouge d'un pixel vers le
+            // bas. On l'a migre sur drawBestBox : corde a la ligne de base,
+            // budget vertical (tout l'espace jusqu'au plancher de derniere
+            // ligne) et echelle de formulations, comme partout ailleurs.
             var yFloor = h * Y_BOTTOM_PCT / 100;
             Layout.drawBestBox(dc, h / 2, yFloor - h / 2, [_msg, _msgShort],
                                Layout.textLadder(), Graphics.COLOR_LT_GRAY);
@@ -520,7 +551,9 @@ class SessionView extends WatchUi.View {
         var iScore = Layout.pairPartsIndex(dc, _sets1, yScore1, hScore1,
                                                _sets2, yScore2, hScore2, nl);
         if (iScore >= 0) {
-            Layout.drawPartsAt(dc, yScore1, hScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE);
+            if (Layout.drawPartsAt(dc, yScore1, hScore1, _sets1, nl, iScore, Graphics.COLOR_WHITE)) {
+                _score1Bottom = yScore1 + Graphics.getFontHeight(nl[iScore]);
+            }
             Layout.drawPartsAt(dc, yScore2, hScore2, _sets2, nl, iScore, Graphics.COLOR_WHITE);
         } else {
             // DERNIER RECOURS. Le score est le SEUL element que cet ecran ne
@@ -534,8 +567,24 @@ class SessionView extends WatchUi.View {
             // laisse l'utilisateur sans rien a lire.
             // Les deux equipes restent au MEME barreau : leur egalite de
             // traitement (spec §7) ne se relache pas parce que la place manque.
-            var last = nl.size() - 1;
-            Layout.drawPartsRaw(dc, yScore1, _sets1, nl, last, Graphics.COLOR_WHITE);
+            //
+            // Le barreau est le plus BAS de l'echelle, MESURE (
+            // Layout.shortestIndex) et non « le dernier de la liste ». Prendre
+            // nl.size()-1 revenait a supposer que l'echelle est triee par
+            // hauteur decroissante — precisement ce que Layout.fitsIndex
+            // explique ne PAS etre garanti (FONT_NUMBER_MILD contre
+            // FONT_LARGE). Deux endroits de la meme branche affirmaient le
+            // contraire l'un de l'autre ; c'est la mesure qui tranche.
+            //
+            // C'est aussi ici, et ici seulement, que le score peut descendre
+            // sous Y_NAME2_PCT : drawPartsRaw ne verifie AUCUN budget. On
+            // releve donc la hauteur reellement dessinee pour teamForTapY, qui
+            // sans elle couperait la bande tactile a un endroit ou l'equipe 1
+            // ecrit encore.
+            var last = Layout.shortestIndex(nl);
+            if (Layout.drawPartsRaw(dc, yScore1, _sets1, nl, last, Graphics.COLOR_WHITE)) {
+                _score1Bottom = yScore1 + Graphics.getFontHeight(nl[last]);
+            }
             Layout.drawPartsRaw(dc, yScore2, _sets2, nl, last, Graphics.COLOR_WHITE);
         }
 
@@ -583,7 +632,7 @@ class SessionView extends WatchUi.View {
             // transitoire. apply() le repose a chaque rafraichissement sur des
             // etats DURABLES ("Match termine", "Valider : appui long",
             // "Plus scoreur", "Tel a la main"...). Dans ces etats la forme
-            // composee depasse la largeur, drawBest retombait sur _msg seul, et
+            // composee depasse la largeur, drawBestBox retombait sur _msg seul, et
             // le compteur de contestations disparaissait POUR TOUJOURS : on
             // pouvait valider un score conteste sans que rien ne le signale.
             //

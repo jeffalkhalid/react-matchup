@@ -131,7 +131,7 @@ module Api {
     // Reponse : {"ok":true,"token":"..."} ou {"ok":false,"reason":"..."}.
     function redeem(code, cb) {
         post("redeem_watch_pairing_code",
-             { "p_code" => code, "p_device_label" => Config.DEVICE_LABEL }, cb);
+             { "p_code" => code, "p_device_label" => Config.deviceLabel() }, cb);
     }
 
     // Valide le score depuis la montre. Le serveur refuse un match non joué

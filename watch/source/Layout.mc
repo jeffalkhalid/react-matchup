@@ -69,38 +69,19 @@ module Layout {
         return usable > 0 ? usable : 0;
     }
 
-    // Premiere police de l'echelle dont le texte tient. null si aucune :
-    // l'appelant decide alors quoi abandonner.
-    function fitFont(dc, text, maxWidth, ladder) {
-        if (text == null) { return null; }
-        if (text.length() == 0) { return null; }
-        for (var i = 0; i < ladder.size(); i = i + 1) {
-            if (dc.getTextWidthInPixels(text, ladder[i]) <= maxWidth) {
-                return ladder[i];
-            }
-        }
-        return null;
-    }
-
-    // Dessine si ca tient, sinon ne dessine RIEN et renvoie false.
-    // Jamais de texte tronque : c'est precisement le defaut qu'on elimine.
-    function drawFit(dc, y, text, ladder, color) {
-        var f = fitFont(dc, text, usableWidth(dc, y), ladder);
-        if (f == null) { return false; }
-        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(dc.getWidth() / 2, y, f, text, Graphics.TEXT_JUSTIFY_CENTER);
-        return true;
-    }
-
-    // Essaie plusieurs formulations, de la plus riche a la plus pauvre, et
-    // dessine la premiere qui tient. C'est ainsi que « admin & Kay » devient
-    // « A&K » puis rien du tout quand l'ecran retrecit.
-    function drawBest(dc, y, variants, ladder, color) {
-        for (var i = 0; i < variants.size(); i = i + 1) {
-            if (drawFit(dc, y, variants[i], ladder, color)) { return true; }
-        }
-        return false;
-    }
+    // ------------------------------------------------------------------
+    // IL N'Y A PLUS DE CHEMIN SANS BUDGET VERTICAL.
+    //
+    // Ce module a longtemps exporte un trio fitFont / drawFit / drawBest qui
+    // ne mesurait QUE l'horizontale, et prenait la corde au HAUT de l'encre.
+    // C'est le defaut n°1 des trois qui ont motive ce module. Une fois tous
+    // les appelants migres sur drawBox / drawBestBox / drawAt, le trio est
+    // reste public sans plus aucun appelant : une API a trois arguments,
+    // visiblement plus simple que celle a cinq qui exige un budget, offerte a
+    // qui ajouterait une ligne l'an prochain. Le module aurait alors endosse
+    // lui-meme la regle qu'il existe pour abolir. Il est donc SUPPRIME : la
+    // seule facon de dessiner ici passe par un budget vertical.
+    // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
     // MESURE VERTICALE — ajoutee apres la passe visuelle des 14 familles.
@@ -241,13 +222,16 @@ module Layout {
         return -1;
     }
 
-    // drawFit, budget vertical en plus. Ne dessine RIEN si rien ne tient.
+    // Une ligne, mesuree en largeur ET dans le budget vertical maxH. Ne
+    // dessine RIEN si rien ne tient : jamais de texte tronque.
     function drawBox(dc, y, maxH, text, ladder, color) {
         return drawAt(dc, y, maxH, text, ladder,
                       fitIndex(dc, text, y, maxH, ladder), color);
     }
 
-    // drawBest, budget vertical en plus.
+    // drawBox, sur plusieurs formulations de la plus riche a la plus pauvre :
+    // la premiere qui tient est dessinee. C'est ainsi que « admin & Kay »
+    // devient « A&K » puis rien du tout quand l'ecran retrecit.
     function drawBestBox(dc, y, maxH, variants, ladder, color) {
         for (var i = 0; i < variants.size(); i = i + 1) {
             if (drawBox(dc, y, maxH, variants[i], ladder, color)) { return true; }
@@ -278,6 +262,32 @@ module Layout {
     function commonIndex(a, b) {
         if (a < 0 || b < 0) { return -1; }
         return a > b ? a : b;
+    }
+
+    // Indice du barreau REELLEMENT le plus bas de l'echelle. -1 si vide.
+    //
+    // « Le dernier barreau » n'est PAS « le plus petit ». Les echelles sont
+    // ecrites de la plus grande a la plus petite police, mais cet ordre est
+    // une intention, pas une garantie du SDK : entre FONT_NUMBER_MILD et
+    // FONT_LARGE, voisins dans numberLadder, aucun ordre de hauteur n'est
+    // impose et il varie d'un modele a l'autre (c'est deja l'argument de
+    // fitsIndex, plus haut). Un dernier recours qui prend nl.size()-1 « parce
+    // que c'est le plus petit » suppose donc exactement ce que ce module
+    // refuse de supposer. On MESURE, et on prend le plus bas.
+    //
+    // A hauteur egale on garde le premier trouve : l'ordre d'ecriture de
+    // l'echelle sert alors d'arbitre stable, donc le meme dessin d'un appel a
+    // l'autre.
+    function shortestIndex(ladder) {
+        if (ladder == null) { return -1; }
+        if (ladder.size() == 0) { return -1; }
+        var best = 0;
+        var bestH = Graphics.getFontHeight(ladder[0]);
+        for (var i = 1; i < ladder.size(); i = i + 1) {
+            var h = Graphics.getFontHeight(ladder[i]);
+            if (h < bestH) { bestH = h; best = i; }
+        }
+        return best;
     }
 
     // ------------------------------------------------------------------

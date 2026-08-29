@@ -122,7 +122,8 @@ class ConfirmView extends WatchUi.View {
 
         // BUDGET VERTICAL sur chaque ligne (Layout.drawBox) et non plus simple
         // mesure horizontale. Deux raisons, toutes deux vues a l'ecran :
-        //   - drawFit ne mesurait la corde qu'au HAUT de l'encre ; sur fenix5s
+        //   - l'ancien chemin de dessin ne mesurait la corde qu'au HAUT de
+        //     l'encre ; sur fenix5s
         //     le « n » final de « RETOUR = non » sortait du cadran, coupe par
         //     la lunette. Layout.lineWidth prend desormais la plus etroite des
         //     cordes du haut ET du bas de la ligne ;
@@ -261,7 +262,8 @@ class ConfirmView extends WatchUi.View {
             // Centre vertical DANS la boite : c'est ce qui garantit que le
             // libelle est contenu par sa propre cible, sans clamp a posteriori.
             // Dessine avec LA police qu'on vient de mesurer, et non via
-            // Layout.drawFit qui en rechoisirait une contre une autre largeur :
+            // Layout.drawBox / drawAt, qui en rechoisiraient une contre la
+            // corde de la ligne au lieu de la largeur REELLE de la boite :
             // ce serait re-creer les deux sources qu'on vient de fusionner.
             var yesY = top + (boxH - lineH) / 2;
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);

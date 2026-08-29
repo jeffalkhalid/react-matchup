@@ -13,8 +13,46 @@
 -- game_label, match_decided et le flag has_session) et n'y ajoute que
 -- team1_short / team2_short. Toutes les autres clés et tout leur calcul
 -- sont conservés à l'identique.
+--
+-- SANS ACCENT, ET LA REGLE S'ARRETAIT ICI.
+--
+-- Les polices système Garmin ne garantissent pas les accents : un caractère
+-- manquant est rendu par une image « glyphe absent » qui mange une cellule
+-- entière. C'est le défaut qui sortait « 000[?]000 » au milieu du code
+-- d'appairage, et toutes les chaînes ÉCRITES dans l'app montre sont depuis
+-- volontairement en ASCII pur. Mais team1/team2/team1_short/team2_short ne
+-- sont pas écrites dans l'app : elles sont fabriquées ICI, à partir des noms
+-- bruts des joueurs. Une équipe « Émilie » + « Karim » donnait donc « É&K »,
+-- soit une case sur deux perdue sur le barreau d'affichage — les initiales —
+-- qui n'existe QUE pour les petits cadrans ronds, le dernier avant que les
+-- noms ne disparaissent complètement. Des prénoms accentués ne sont pas un
+-- cas limite pour cette base d'utilisateurs.
+--
+-- On aplatit donc les accents ici, avec EXACTEMENT le motif déjà employé par
+-- public.frmt_normalize (frmt_auto_match_bonus.sql) : un translate() sur la
+-- table des accents FR, sans aucune extension (unaccent est indisponible).
+-- frmt_normalize elle-même ne peut pas être appelée telle quelle : elle passe
+-- en minuscules et TRIE les tokens du nom (« Jean-Pierre Dupont » y devient
+-- « dupont jean pierre »), ce qui rendrait l'initiale « D ». Il faut la même
+-- table, mais en préservant la casse et l'ordre — d'où watch_ascii ci-dessous,
+-- qui ajoute seulement les capitales accentuées à la même table.
 -- ============================================================
 BEGIN;
+
+-- Aplatissement d'accents PRÉSERVANT LA CASSE ET L'ORDRE, pour les seules
+-- chaînes lues par la montre. Même table que public.frmt_normalize, étendue
+-- aux capitales accentuées : sans elles, upper(left('Émilie',1)) rendrait
+-- « É », soit précisément le glyphe manquant qu'on élimine.
+-- NULL reste NULL : string_agg ignore les NULL, et ce comportement doit être
+-- conservé à l'identique.
+CREATE OR REPLACE FUNCTION public.watch_ascii(txt text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT translate(
+    txt,
+    'àâäáãåéèêëíìîïóòôöõúùûüçñÀÂÄÁÃÅÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÇÑ',
+    'aaaaaaeeeeiiiiooooouuuucnAAAAAAEEEEIIIIOOOOOUUUUCN'
+  );
+$$;
 
 CREATE OR REPLACE FUNCTION public.fn_watch_payload(p_session_id uuid, p_player uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -24,13 +62,15 @@ BEGIN
   IF s.id IS NULL THEN RETURN NULL; END IF;
   st := coalesce(s.current_state, public.fn_live_replay(p_session_id));
 
-  SELECT string_agg(split_part(p.name, ' ', 1), ' & ' ORDER BY ord),
-         string_agg(upper(left(p.name, 1)), '&' ORDER BY ord)
+  -- Les DEUX barreaux sont aplatis, pas seulement les initiales : le nom
+  -- complet court le même risque un cran plus tôt (« Émilie & Karim »).
+  SELECT string_agg(public.watch_ascii(split_part(p.name, ' ', 1)), ' & ' ORDER BY ord),
+         string_agg(upper(left(public.watch_ascii(p.name), 1)), '&' ORDER BY ord)
     INTO t1, t1s
     FROM unnest(s.team1_ids) WITH ORDINALITY AS u(pid, ord)
     JOIN public.players p ON p.id = u.pid;
-  SELECT string_agg(split_part(p.name, ' ', 1), ' & ' ORDER BY ord),
-         string_agg(upper(left(p.name, 1)), '&' ORDER BY ord)
+  SELECT string_agg(public.watch_ascii(split_part(p.name, ' ', 1)), ' & ' ORDER BY ord),
+         string_agg(upper(left(public.watch_ascii(p.name), 1)), '&' ORDER BY ord)
     INTO t2, t2s
     FROM unnest(s.team2_ids) WITH ORDINALITY AS u(pid, ord)
     JOIN public.players p ON p.id = u.pid;

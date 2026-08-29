@@ -101,8 +101,27 @@ class PairingView extends WatchUi.View {
 
         Layout.drawBox(dc, yPos, yHow - yPos, "Chiffre " + (_pos + 1) + "/6",
                        tl, Graphics.COLOR_WHITE);
-        Layout.drawBestBox(dc, yHow, yStat - yHow,
-                           ["HAUT/BAS puis SELECT", "HAUT/BAS + SELECT", "HAUT/BAS"],
+        // LA CONSIGNE NOMME LE GESTE QUE CETTE MONTRE-LA SAIT FAIRE.
+        //
+        // Cette ligne enoncait « HAUT/BAS puis SELECT » sur les 53 modeles.
+        // Or cinq d'entre eux n'ont pas ces boutons : les quatre variantes de
+        // vivoactive3 n'ont qu'une touche `enter`, et etrextouch n'en a aucune.
+        // L'ecran y EST manoeuvrable — PairingDelegate.onPreviousPage /
+        // onNextPage recoivent les balayages (SWIPE_DOWN / SWIPE_UP) et
+        // onSelect le toucher, exactement comme ils recevraient HAUT, BAS et
+        // SELECT — mais rien ne le disait. Sur ces cinq modeles, le tout
+        // premier ecran de l'application demandait donc d'appuyer sur des
+        // boutons inexistants, et l'appairage ne pouvait pas aboutir.
+        // SessionView et ConfirmView branchent deja sur Layout.isTouch() ;
+        // c'est la meme branche, avec la meme echelle de formulations.
+        //
+        // Formulation tactile tracee sur le delegate de CET ecran, pas
+        // supposee : balayer (haut ou bas) change le chiffre courant, toucher
+        // valide et passe au suivant.
+        var howVariants = Layout.isTouch()
+            ? ["Balayer puis toucher", "Balayer + toucher", "Balayer"]
+            : ["HAUT/BAS puis SELECT", "HAUT/BAS + SELECT", "HAUT/BAS"];
+        Layout.drawBestBox(dc, yHow, yStat - yHow, howVariants,
                            tl, Graphics.COLOR_WHITE);
 
         // ECHELLE DE FORMULATIONS, comme toutes les autres lignes de cet ecran.
