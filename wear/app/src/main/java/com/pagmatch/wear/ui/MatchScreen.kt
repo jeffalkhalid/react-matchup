@@ -27,6 +27,7 @@ import com.pagmatch.wear.Session
 fun MatchScreen(store: MatchStore, onValidate: () -> Unit) {
     val session by store.session.collectAsState()
     val message by store.message.collectAsState()
+    val messageShort by store.messageShort.collectAsState()
     val s = session
 
     if (s == null) {
@@ -60,12 +61,30 @@ fun MatchScreen(store: MatchStore, onValidate: () -> Unit) {
             // une capture (small_07_match_long_msg), pas devine. Contraint a
             // l'espace restant, il s'abrege proprement avec ses points de
             // suspension, qui n'ont jamais pu s'afficher jusqu'ici.
-            Text(
-                message ?: gameLabelText(s) ?: "",
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.caption2,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+            //
+            // Le libelle RICHE d'abord, sa variante courte seulement s'il ne
+            // tient pas (voir fitLabel dans Fit.kt). Ce n'est pas la meme
+            // chose que de couper : "Plus le scoreur" et "Plus dans ce match"
+            // deviennent tous les deux "Plus dan..."/"Plus le sc..." sur le
+            // carre, donc IMPOSSIBLES A DISTINGUER l'un de l'autre -- alors
+            // que ce sont exactement les deux messages qui expliquent pourquoi
+            // le point qu'on vient de taper n'a pas compte. "Pas toi" et
+            // "Hors match" tiennent, eux, et disent chacun sa chose.
+            // Pas de padding horizontal ICI : les deux CompactButton mesurent
+            // 48.dp (la cible tactile minimale de la plateforme) pour un
+            // cercle DESSINE de 32.dp, donc 8.dp de vide invisible separent
+            // deja le texte de chaque bouton -- 16 px de chaque cote sur les
+            // trois cadrans, mesures sur capture. Les 4.dp qu'on ajoutait
+            // par-dessus n'ecartaient rien de plus, ils prenaient 16 px sur
+            // les ~230 px de la rangee, assez pour faire basculer
+            // "Plus dans ce match" (218 px mesures) dans sa variante courte
+            // sur le GRAND rond, ou il tient. L'ecart visible reste le meme,
+            // la phrase entiere revient.
+            FittedLabel(
+                long = message ?: gameLabelText(s) ?: "",
+                short = if (message != null) messageShort else null,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.caption2
             )
             CompactButton(onClick = onValidate, enabled = s.matchDecided) { Text("OK") }
         }
@@ -82,28 +101,45 @@ private fun gameLabelText(s: Session): String? =
     s.gameLabel?.let { "${it.t1} - ${it.t2}" }
 
 // Largeur maximale accordee au NOM d'equipe, en fraction de la largeur utile
-// de la moitie.
+// de la moitie. DEUX fractions, pas une : les deux moities ne sont pas dans
+// la meme situation geometrique, et leur donner la meme valeur abimait celle
+// qui n'avait aucun probleme.
 //
 // Sur un cadran ROND, le systeme decoupe la fenetre au disque : tout ce qui
 // depasse la corde n'est pas abrege, il est TRANCHE EN PLEIN MILIEU D'UNE
-// LETTRE, sans le moindre point de suspension pour le signaler. Le nom de
-// l'equipe du HAUT est l'element le plus expose de l'ecran (il est en haut de
-// sa moitie, donc tout pres du bord, la ou la corde est la plus courte) :
-// "Abderrahmane & Jean-Philippe" s'affichait "errahmane & Jean" -- ni le
-// debut ni la fin, et rien a l'ecran pour dire qu'il manquait quelque chose.
-// Mesure sur l'emulateur rond 384 px : a la hauteur de cette ligne, un texte
-// de 218 px passe intact, 251 px est tranche. 0.56 de la largeur utile
-// (364 px) fait 204 px, sous le seuil mesure, avec de la marge.
+// LETTRE, sans le moindre point de suspension pour le signaler. Dans chaque
+// moitie le nom est AU-DESSUS du score : cela le place tout pres du bord dans
+// la moitie HAUTE (corde courte), et au contraire pres du centre dans la
+// moitie BASSE (corde longue). Mesure sur le 384 rond, sur la capture
+// `small_06_match_long.raw.png` :
 //
-// C'est une regle de FORME (rond contre carre), pas un cas particulier de
-// modele : elle vaut pour tout cadran rond, quelle que soit sa taille. Le
-// grand rond place cette ligne RELATIVEMENT plus bas (la rangee du milieu a
-// une hauteur fixe en dp, donc elle occupe une part plus petite d'un grand
-// ecran), donc la meme fraction y est encore plus prudente. Sur un cadran
-// carre, aucun bord ne mord : la largeur entiere est disponible.
+//   nom du HAUT  -- premiere ligne peinte a 166.5 px du centre : corde 191 px
+//   nom du BAS   -- premiere ligne peinte a  73.5 px du centre : corde 355 px
+//                   (et 334 px a la ligne des jambages, la plus basse)
+//
+// La ligne mesuree est celle des HAMPES (le haut des M, H, N, K, l, b, d),
+// PAS la ligne de base. C'est la correction du calcul precedent : la corde
+// vaut 251 px a la ligne de base mais seulement 191 px 21 px plus haut, la ou
+// vivent les hampes. Une fraction derivee de la ligne de base laissait donc
+// raboter jusqu'a 6 px du montant de la premiere lettre d'un nom commencant
+// par une majuscule pleine hauteur -- et "Abderrahma..." ne paraissait propre
+// que parce qu'un A capital est etroit en haut.
+//
+// Largeur utile d'une moitie sur le 384 rond : 384 - 2 x 10.dp = 344 px.
+//   HAUT : 0.50 x 344 = 172 px pour 191 px de corde -> ~10 px de marge/cote.
+//   BAS  : 0.85 x 344 = 292 px pour 334 px de corde -> ~21 px de marge/cote.
+// Sur le 454 rond (largeur utile 414 px) : 207 px pour 267 px de corde en
+// haut, 352 px pour 394 px en bas. Les deux fractions passent sur les deux
+// tailles rondes.
+//
+// C'est une regle de FORME (rond contre carre) et de POSITION (haut contre
+// bas), pas un cas particulier de modele : rien ici ne lit la marque, la
+// definition ni le nom de l'appareil. Sur un cadran carre, aucun bord ne
+// mord : la largeur entiere est disponible dans les deux moities.
 @Composable
-private fun nameWidthFraction(): Float =
-    if (LocalConfiguration.current.isScreenRound) 0.56f else 1f
+private fun nameWidthFraction(team: Int): Float =
+    if (!LocalConfiguration.current.isScreenRound) 1f
+    else if (team == 1) 0.50f else 0.85f
 
 // La couleur ne distingue jamais les equipes : seule leur POSITION le fait.
 @Composable
@@ -121,7 +157,7 @@ private fun TeamHalf(s: Session, team: Int, modifier: Modifier, onTap: () -> Uni
         verticalArrangement = Arrangement.Center
     ) {
         Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.fillMaxWidth(nameWidthFraction()),
+             modifier = Modifier.fillMaxWidth(nameWidthFraction(team)),
              textAlign = TextAlign.Center,
              style = MaterialTheme.typography.caption1)
         Text(if (line.isEmpty()) "$won" else line,

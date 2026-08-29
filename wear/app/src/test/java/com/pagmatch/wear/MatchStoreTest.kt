@@ -190,6 +190,13 @@ class MatchStoreTest {
 
         assertEquals("rejouer buterait pour toujours sur le meme refus", 0, s.pending)
         assertEquals("Plus le scoreur", s.message.value)
+        // Le store publie les DEUX libelles et ne choisit pas : seul l'ecran
+        // sait combien de pixels la rangee du milieu laisse reellement (voir
+        // fitLabel dans ui/Fit.kt). Sur le carre 180 dp "Plus le scoreur" et
+        // "Plus dans ce match" se tronquaient tous les deux en une bouillie
+        // identique, alors que ce sont precisement les deux messages qui
+        // disent POURQUOI le point qu'on vient de taper n'a pas compte.
+        assertEquals("Pas toi", s.messageShort.value)
     }
 
     // ---- I4 : le telephone a delie la montre ------------------------------
@@ -210,6 +217,7 @@ class MatchStoreTest {
         assertNull(s.session.value)
         assertTrue("l ecran doit revenir a l appairage", s.unpaired.value)
         assertEquals("Montre deliee", s.message.value)
+        assertEquals("Deliee", s.messageShort.value)
     }
 
     // ---- I1 : un corps illisible n'efface jamais le match ------------------
@@ -304,12 +312,16 @@ class MatchStoreTest {
 
         s.score(1)
         assertEquals("aucun point ne s ajoute en silence", "Point K&A", s.message.value)
+        // "Point " + 8 signes = 14 signes, plus large que la rangee du milieu
+        // du carre 180 dp : le "+" dit la meme chose et garde l'equipe entiere.
+        assertEquals("+ K&A", s.messageShort.value)
 
         clock += 3000                     // le temps de le lire
         g.complete(Unit)
 
         assertNull("la ligne du milieu doit rendre la main au score du jeu",
             s.message.value)
+        assertNull("les deux libelles s effacent ensemble", s.messageShort.value)
     }
 
     @Test fun `l accuse de point n est pas efface avant d avoir ete lu`() {

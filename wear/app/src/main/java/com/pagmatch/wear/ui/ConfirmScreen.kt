@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +53,44 @@ import com.pagmatch.wear.MatchStore
 // garder.
 fun sessionLostText(pendingError: String?): String = pendingError ?: "Match termine"
 
+// Largeur maximale accordee a la LIGNE DE STATUT ("Envoi...", refus, panne),
+// en fraction de la largeur utile de l'ecran.
+//
+// Cette ligne est la seule dont la PRESENCE est conditionnelle : elle
+// s'ajoute au bas d'une colonne centree verticalement, donc elle pousse tout
+// le reste vers le haut ET se place elle-meme tout en bas, la ou la corde du
+// cadran rond est courte. Sans contrainte de largeur elle se mesurait sur les
+// 344 px de la colonne, alors que le verre n'en offre que 322 a la hauteur ou
+// elle tombe : mesure sur le 384 rond, un motif serveur inconnu affiche tel
+// quel ("watch_session_already_finalized", 31 signes) se repliait sur deux
+// lignes dont la seconde ATTEIGNAIT le bord (marge -0.3 px, 5 pixels peints
+// hors du disque) -- exactement le defaut que PairingScreen dit avoir referme
+// pour de bon : une ligne conditionnelle qui pousse une colonne centree dans
+// le biseau.
+//
+// 0.70 x 344 = 241 px : assez pour que le PLUS LONG libelle de la table
+// Api.reasonPair ("Fonction desactivee", 19 signes, 224 px mesures) tienne
+// encore sur UNE seule ligne -- donc aucun message connu ne se replie, et
+// seul un motif inconnu peut encore prendre deux lignes, qui rentrent alors
+// toutes les deux dans le disque (marge minimale mesuree 12.8 px).
+// Regle de FORME, comme dans MatchScreen : sur un carre, aucun bord ne mord.
+@Composable
+private fun statusWidthFraction(): Float =
+    if (LocalConfiguration.current.isScreenRound) 0.70f else 1f
+
+// Meme raison pour le SCORE, une ligne plus haut. Il est deja centre
+// verticalement, mais la ligne de statut le POUSSE vers le haut quand elle
+// apparait, donc sa corde depend de ce qui s'affiche en dessous. Cas le pire
+// mesure sur le 384 rond : un match en cinq sets ("6 6 6 6 6 / 6 6 6 6 6")
+// PLUS un motif serveur inconnu sur deux lignes -- le score remontait a
+// 86 px du centre, ou le verre n'offre plus que 343 px, et ses 328 px de
+// chiffres laissaient 8.8 px au coin superieur gauche. 0.86 x 344 = 296 px
+// ramene ce coin a ~21 px. Un score de deux ou trois sets, lui, ne bouge pas
+// d'un pixel : il tient largement dans les 296 px et garde sa taille title1.
+@Composable
+private fun scoreWidthFraction(): Float =
+    if (LocalConfiguration.current.isScreenRound) 0.86f else 1f
+
 @Composable
 fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
     val session by store.session.collectAsState()
@@ -76,6 +115,7 @@ fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
         ) {
             Text(
                 sessionLostText(error), textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(statusWidthFraction()),
                 style = MaterialTheme.typography.caption1,
                 maxLines = 2, overflow = TextOverflow.Ellipsis
             )
@@ -101,11 +141,13 @@ fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
         // que de deux points -- la question pesait visuellement autant que ce
         // qu'elle demande de relire. La regle "le score est l'element le plus
         // gros" vaut ici aussi, pas seulement sur l'ecran de match.
-        Text(
-            "$score1  /  $score2", style = MaterialTheme.typography.title1,
-            textAlign = TextAlign.Center, maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        // FittedScore, pas un Text tronque : `maxLines = 1` + Ellipsis etait la
+        // MAUVAISE politique de debordement sur le seul element que cet ecran
+        // existe pour faire relire. Un score coupe ("6 6 6 6 6 / 6...") n'est
+        // pas une abreviation signalee, c'est un score FAUX presente comme
+        // celui qu'on s'apprete a valider irreversiblement. Il retrecit donc
+        // au lieu d'etre coupe (voir ui/Fit.kt).
+        FittedScore("$score1  /  $score2", Modifier.fillMaxWidth(scoreWidthFraction()))
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             // Facile, sans risque, toujours actif : annuler ne doit jamais
@@ -148,6 +190,7 @@ fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(
                 shown,
+                modifier = Modifier.fillMaxWidth(statusWidthFraction()),
                 color = if (busy) MaterialTheme.colors.onSurface else MaterialTheme.colors.error,
                 style = MaterialTheme.typography.caption2, textAlign = TextAlign.Center,
                 maxLines = 2, overflow = TextOverflow.Ellipsis

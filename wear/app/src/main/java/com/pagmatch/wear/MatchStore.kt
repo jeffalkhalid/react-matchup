@@ -94,6 +94,18 @@ class MatchStore(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
+    // Variante COURTE du meme message, quand il en existe une (Api.reasonPair
+    // en fournit une par motif). Le store ne choisit PAS : il publie les deux
+    // et laisse l'ecran trancher, parce que lui seul connait la place
+    // reellement disponible -- "Plus dans ce match" tient en entier sur un
+    // grand cadran rond et pas du tout sur le carre 180 dp. Choisir ici
+    // reviendrait a appauvrir le grand cadran pour sauver le petit ; choisir
+    // la-bas ne coute qu'une mesure (voir fitLabel dans ui/Fit.kt).
+    // Toujours ecrit et efface EN MEME TEMPS que _message : les deux ne
+    // peuvent pas se desynchroniser, il n'y a qu'un seul chemin d'ecriture.
+    private val _messageShort = MutableStateFlow<String?>(null)
+    val messageShort: StateFlow<String?> = _messageShort
+
     // Passe a VRAI quand le telephone a delie la montre (token_revoked) :
     // MainActivity y renvoie l'ecran d'appairage. Sans ce chemin de retour,
     // fn_watch_link leve token_revoked pour toujours et l'app n'est plus bonne
@@ -171,10 +183,19 @@ class MatchStore(
     // propre boucle.
     @Volatile private var sessionAt = 0L
 
-    private fun setMessage(text: String?) {
+    private fun setMessage(text: String?, short: String? = null) {
         _message.value = text
+        _messageShort.value = short
         msgAt = now()
         msgGen++
+    }
+
+    // Pose un refus/une panne dont le motif figure dans Api.reasonPair : le
+    // libelle riche ET sa variante courte, d'un seul geste. `fallback` sert
+    // quand le motif est inconnu de la table (aucune variante courte alors).
+    private fun setReasonMessage(reason: String?, fallback: String) {
+        val pair = Api.reasonPair(reason)
+        setMessage(pair?.first ?: fallback, pair?.second)
     }
 
     // Efface l'accuse UNE FOIS QU'IL A PU ETRE LU, et seulement si la file est
@@ -186,13 +207,16 @@ class MatchStore(
     private fun clearMessageWhenRead() {
         if (queue.size() > 0 || _message.value == null) return
         val remaining = MIN_MESSAGE_MS - (now() - msgAt)
-        if (remaining <= 0) { _message.value = null; return }
+        if (remaining <= 0) { _message.value = null; _messageShort.value = null; return }
         val gen = msgGen
         scope.launch {
             delay(remaining)
             // Un message plus recent est arrive entre-temps : ce n'est plus le
             // notre, on n'y touche pas.
-            if (msgGen == gen && queue.size() == 0) _message.value = null
+            if (msgGen == gen && queue.size() == 0) {
+                _message.value = null
+                _messageShort.value = null
+            }
         }
     }
 
@@ -312,7 +336,7 @@ class MatchStore(
                     // libelle ("En attente : N") dit deja la meme panne en
                     // disant EN PLUS combien de points sont en jeu : on ne
                     // l'ecrase pas.
-                    if (queue.size() == 0) setMessage("Pas de reseau")
+                    if (queue.size() == 0) setMessage("Pas de reseau", "Hors ligne")
                     return@launch
                 }
                 val reason = Api.errorReason(res.body)
@@ -322,7 +346,7 @@ class MatchStore(
                     if (reason == "token_revoked" && Api.isDefinitiveRefusal(res.status)) {
                         unpair(); return@launch
                     }
-                    setMessage(Api.reasonPair(reason)?.first ?: "Hors ligne ${res.status}")
+                    setReasonMessage(reason, "Hors ligne ${res.status}")
                     return@launch
                 }
                 val s = parseSession(res.body)
@@ -337,7 +361,7 @@ class MatchStore(
                     // Corps illisible : on ne sait pas, donc on ne touche a
                     // rien. Annoncer "Aucun match en cours" en plein match sur
                     // une page HTML 502 du edge etait le pire des deux choix.
-                    else -> if (queue.size() == 0) setMessage("Reponse illisible")
+                    else -> if (queue.size() == 0) setMessage("Reponse illisible", "Illisible")
                 }
             } finally {
                 refreshing.set(false)
@@ -357,7 +381,14 @@ class MatchStore(
         // Accuse de reception IMMEDIAT, avant tout aller-retour reseau : en
         // mode avion l'envoi peut prendre des minutes a aboutir, mais aucun
         // point ne doit jamais s'ajouter en silence (regle de cet ecran).
-        setMessage("Point ${shortOf(s, team)}")
+        // "Point " + jusqu'a 8 signes = 14 signes, soit ~145 px : plus que les
+        // ~128 px que la rangee du milieu laisse sur le carre 180 dp, ou
+        // l'accuse le PLUS FREQUENT de l'application devenait "Point Moh...".
+        // La variante courte remplace le mot par le signe "+", qui dit la meme
+        // chose (un point vient d'etre ajoute) en quatre signes de moins, et
+        // garde entiere la seule partie variable : l'equipe creditee.
+        val who = shortOf(s, team)
+        setMessage("Point $who", "+ $who")
         drain()
     }
 
@@ -365,7 +396,7 @@ class MatchStore(
         val s = _session.value ?: return
         if (!s.isScorer || s.finished) return
         queue.enqueue(s.sessionId, "undo", 0)
-        setMessage("Annulation")
+        setMessage("Annulation", "Annule")
         drain()
     }
 
@@ -561,7 +592,7 @@ class MatchStore(
                 queue.popHead()
                 progressed = true
                 clearStall()
-                setMessage(Api.reasonPair(reason)?.first ?: "Refuse ${res.status}")
+                setReasonMessage(reason, "Refuse ${res.status}")
                 continue
             }
 
@@ -582,7 +613,8 @@ class MatchStore(
         // de blocage DE CET EVENEMENT-LA qu'on mesure.
         if (seq != stallSeq) { stallSeq = seq; stallSince = now() }
         val n = queue.size()
-        setMessage(if (isStalled()) "Bloque : $n" else "En attente : $n")
+        if (isStalled()) setMessage("Bloque : $n", "Bloque $n")
+        else setMessage("En attente : $n", "Attente $n")
     }
 
     private fun isStalled(): Boolean =
@@ -605,7 +637,7 @@ class MatchStore(
         clearStall()
         stopPolling()
         _session.value = null
-        setMessage(Api.reasonPair("token_revoked")?.first ?: "Montre deliee")
+        setReasonMessage("token_revoked", "Montre deliee")
         _unpaired.value = true
     }
 
