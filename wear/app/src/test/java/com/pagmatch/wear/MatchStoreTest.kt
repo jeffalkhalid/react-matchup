@@ -33,6 +33,7 @@ class MatchStoreTest {
     private val accepted = mutableListOf<Pending>() // celles qui ont abouti
     @Volatile private var gate: CompletableDeferred<Unit>? = null       // bloque UN envoi
     @Volatile private var fetchGate: CompletableDeferred<Unit>? = null  // bloque UN refresh
+    @Volatile private var finalizeGate: CompletableDeferred<Unit>? = null // bloque UN finalize
     // Le battement reprend sur un autre thread apres son delay : ce compteur
     // se lit donc depuis le thread du test ET depuis celui du battement.
     private val fetchCalls = AtomicInteger(0)
@@ -58,6 +59,7 @@ class MatchStoreTest {
         },
         finalizeSession = { _, _ ->
             finalizeCalls.incrementAndGet()
+            finalizeGate?.let { g -> finalizeGate = null; g.await() }
             finalizeResponse()
         },
         now = { clock },
@@ -453,6 +455,34 @@ class MatchStoreTest {
         s.finalize { result = it }
 
         assertEquals(FinalizeResult.Unreachable("Pas de reseau"), result)
+    }
+
+    // Fix round 1 : finalize() n'avait pas l'equivalent du verrou `sending`
+    // de drain(). Ca ne causait rien d'observable AUJOURD'HUI -- le serveur
+    // (fn_finalize_live_session_as) prend un verrou de ligne et renvoie le
+    // meme match_id de facon idempotente sur un second appel -- mais cette
+    // garantie ne vit que cote serveur, et rien ne l'exprimait cote client.
+    @Test fun `un second appel de finalize pendant que le premier est en vol est ignore`() {
+        val s = startedStore()
+        val g = CompletableDeferred<Unit>()
+        finalizeGate = g
+
+        var firstResult: FinalizeResult? = null
+        var secondCalled = false
+
+        s.finalize { firstResult = it }           // part, reste en vol
+        assertEquals(1, finalizeCalls.get())
+
+        s.finalize { secondCalled = true }        // NE DOIT PAS relancer un appel
+        assertEquals("le second Oui ne doit pas doubler la requete", 1, finalizeCalls.get())
+
+        g.complete(Unit)                          // la reponse du premier arrive enfin
+
+        assertEquals(FinalizeResult.Success, firstResult)
+        assertTrue(
+            "le second appel est simplement ignore, jamais mis en file ni rejoue",
+            !secondCalled
+        )
     }
 
     // ---- Faux serveur : corps de reponse ----------------------------------

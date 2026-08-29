@@ -122,6 +122,19 @@ class MatchStore(
     private val sendAgain = AtomicBoolean(false)
     private val refreshing = AtomicBoolean(false)
 
+    // Garde de reentrance de finalize() : un seul appel en vol a la fois.
+    // fn_finalize_live_session_as (le RPC derriere Api.finalize) prend un
+    // verrou de ligne et renvoie le MEME match_id de facon idempotente sur un
+    // second appel -- deux "Oui" rapproches sur un lien lent sont donc deja
+    // sans danger cote SERVEUR aujourd'hui. Mais cette garantie ne vit que
+    // dans la RPC : rien ici ne l'exprime ni ne la verifie, et un futur
+    // changement de fn_finalize_live_session_as pourrait la retirer sans que
+    // ce fichier ne le sache. Le client ne doit pas dependre d'une invariante
+    // qu'il ne peut pas voir se rompre -- meme principe que `sending`
+    // ci-dessus pour drain(), en plus simple : pas de file a rejouer ici,
+    // juste un second appel a refuser tant que le premier n'est pas revenu.
+    private val finalizing = AtomicBoolean(false)
+
     // Numero d'ordre des requetes qui rapportent un etat de match. La reponse
     // d'une requete PARTIE AVANT une autre deja appliquee est ignoree : sur un
     // lien lent, un refresh parti avant un envoi pouvait atterrir apres lui et
@@ -339,48 +352,77 @@ class MatchStore(
     // exactement comme "Pas de vainqueur", et l'utilisateur aurait cru son
     // score REJETE SUR LE FOND alors que le serveur n'a rien tranche du tout.
     fun finalize(onDone: (FinalizeResult) -> Unit) {
+        // Voir le commentaire de `finalizing` : garde purement CLIENT, la
+        // dependance au serveur n'est pas ecrite ailleurs que dans ce
+        // commentaire-la. Posee AVANT tout return anticipe (jeton/session
+        // absents) : ces chemins-la aussi doivent liberer la garde, sinon un
+        // premier appel sans jeton bloquerait tous les suivants pour de bon.
+        if (!finalizing.compareAndSet(false, true)) return
         val t = prefs.token
-            ?: return onDone(FinalizeResult.Refused(Api.reasonPair("token_revoked")?.first ?: "Montre deliee"))
-        val s = _session.value ?: return onDone(FinalizeResult.Refused("Aucun match"))
+        if (t == null) {
+            finalizing.set(false)
+            return onDone(FinalizeResult.Refused(Api.reasonPair("token_revoked")?.first ?: "Montre deliee"))
+        }
+        val s = _session.value
+        if (s == null) {
+            finalizing.set(false)
+            return onDone(FinalizeResult.Refused("Aucun match"))
+        }
         scope.launch {
-            val res = try {
-                finalizeSession(t, s.sessionId)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                // Panne reseau (Bluetooth hors de portee, telephone eteint) :
-                // le score n'a pas ete juge, seulement pas envoye.
-                onDone(FinalizeResult.Unreachable("Pas de reseau"))
-                return@launch
-            }
+            try {
+                val res = try {
+                    finalizeSession(t, s.sessionId)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    // Panne reseau (Bluetooth hors de portee, telephone
+                    // eteint) : le score n'a pas ete juge, seulement pas
+                    // envoye.
+                    onDone(FinalizeResult.Unreachable("Pas de reseau"))
+                    return@launch
+                }
 
-            if (res.status == 200) {
-                onDone(FinalizeResult.Success)
-                return@launch
-            }
+                if (res.status == 200) {
+                    // Le match vient de sortir de l'etat "live" cote serveur :
+                    // watch_current_session ne le renverra plus au prochain
+                    // refresh (voir le commentaire de tete de cette methode et
+                    // sessionLostText dans ConfirmScreen.kt). On ne laisse PAS
+                    // le seul battement de 5 s s'en charger : sans ce refresh
+                    // immediat, MatchScreen ré-affichait le match DECIDE mis
+                    // en cache (donc son bouton "OK" toujours actif) pendant
+                    // jusqu'a 5 s apres un "Oui" reussi, invitant a une
+                    // seconde confirmation confuse d'un score deja valide.
+                    refresh()
+                    onDone(FinalizeResult.Success)
+                    return@launch
+                }
 
-            val reason = Api.errorReason(res.body)
-            // Meme raison que dans drain() : un refus "token_revoked" ne
-            // deliee la montre que sur un statut de refus definitif, jamais
-            // sur une panne d'infrastructure qui porterait le meme mot par
-            // coincidence.
-            if (reason == "token_revoked" && Api.isDefinitiveRefusal(res.status)) {
-                unpair()
-                onDone(FinalizeResult.Refused(Api.reasonPair(reason)?.first ?: "Montre deliee"))
-                return@launch
-            }
+                val reason = Api.errorReason(res.body)
+                // Meme raison que dans drain() : un refus "token_revoked" ne
+                // deliee la montre que sur un statut de refus definitif,
+                // jamais sur une panne d'infrastructure qui porterait le
+                // meme mot par coincidence.
+                if (reason == "token_revoked" && Api.isDefinitiveRefusal(res.status)) {
+                    unpair()
+                    onDone(FinalizeResult.Refused(Api.reasonPair(reason)?.first ?: "Montre deliee"))
+                    return@launch
+                }
 
-            if (Api.isDefinitiveRefusal(res.status)) {
-                // Refus METIER definitif (no_winner, not_enough_sets,
-                // not_the_scorer...) : le serveur a tranche, rejouer buterait
-                // pour toujours sur le meme refus.
-                onDone(FinalizeResult.Refused(Api.reasonPair(reason)?.first ?: reason ?: "Refuse ${res.status}"))
-                return@launch
-            }
+                if (Api.isDefinitiveRefusal(res.status)) {
+                    // Refus METIER definitif (no_winner, not_enough_sets,
+                    // not_the_scorer...) : le serveur a tranche, rejouer
+                    // buterait pour toujours sur le meme refus.
+                    onDone(FinalizeResult.Refused(Api.reasonPair(reason)?.first ?: reason ?: "Refuse ${res.status}"))
+                    return@launch
+                }
 
-            // TOUT LE RESTE est de l'infrastructure (5xx, 401, 404 pendant un
-            // rechargement de cache PostgREST...) : le score n'a pas ete
-            // juge, "Oui" reste une action valide a retenter.
-            onDone(FinalizeResult.Unreachable(Api.reasonPair(reason)?.first ?: "Hors ligne ${res.status}"))
+                // TOUT LE RESTE est de l'infrastructure (5xx, 401, 404
+                // pendant un rechargement de cache PostgREST...) : le score
+                // n'a pas ete juge, "Oui" reste une action valide a
+                // retenter.
+                onDone(FinalizeResult.Unreachable(Api.reasonPair(reason)?.first ?: "Hors ligne ${res.status}"))
+            } finally {
+                finalizing.set(false)
+            }
         }
     }
 

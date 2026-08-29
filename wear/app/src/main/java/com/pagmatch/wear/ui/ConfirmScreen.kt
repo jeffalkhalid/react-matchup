@@ -27,6 +27,31 @@ import com.pagmatch.wear.MatchStore
 // Aucun geste ne remplace "Non" : ni pointerInput, ni draggable, ni
 // BackHandler ne sont poses ici (voir PairingScreen, meme regle) --
 // le balayage vers la droite reste la propriete du systeme Wear OS.
+
+// Texte affiche quand la session s'est videe PENDANT que cet ecran etait
+// ouvert : le partenaire a valide depuis son telephone, ou un essai qui
+// semblait avoir echoue (panne reseau, timeout) a en realite abouti cote
+// serveur. watch_current_session ne renvoie une session que tant que le
+// match est "live" (voir le commentaire de tete de MatchStore.finalize) : le
+// battement de 5 s peut donc faire disparaitre la session A TOUT MOMENT,
+// y compris pendant que cet ecran est affiche, sans le moindre rapport avec
+// l'appel a finalize() lance depuis ICI.
+//
+// FONCTION PURE, testee hors Compose (ConfirmScreenTest) : c'est elle qui
+// garantit que l'ecran ne reste JAMAIS silencieux dans ce cas -- avant ce
+// correctif, `val s = session ?: return` faisait disparaitre le texte, les
+// boutons ET le message en attente d'un coup, sans le moindre mot ni le
+// moindre moyen de sortir autrement que par le balayage systeme. C'est
+// exactement le "ne doit jamais paraitre inerte" que la conception de cet
+// ecran interdit pour une reponse serveur, atteint ici par une perte de
+// session plutot que par une reponse.
+//
+// Un refus/une panne DEJA affiche (`pendingError`) reste prioritaire sur le
+// mot generique : il reste vrai (le dernier essai a bien echoue) meme si la
+// session a disparu depuis, et le perdre serait moins informatif que le
+// garder.
+fun sessionLostText(pendingError: String?): String = pendingError ?: "Match termine"
+
 @Composable
 fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
     val session by store.session.collectAsState()
@@ -36,7 +61,29 @@ fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
     // ne sont jamais confondus, sinon un ancien refus resterait visible,
     // colore comme une erreur, pendant qu'un DEUXIEME essai est en cours.
     var error by remember { mutableStateOf<String?>(null) }
-    val s = session ?: return
+    val s = session
+
+    if (s == null) {
+        // Voir sessionLostText ci-dessus : dire quelque chose de vrai, et
+        // laisser un moyen de sortir. "OK" plutot que "Non" -- il n'y a plus
+        // rien a annuler, seulement a quitter un ecran devenu sans objet.
+        // onCancel (jamais onDone) : on ne pretend pas avoir valide quoi que
+        // ce soit depuis CET ecran.
+        Column(
+            Modifier.fillMaxSize().padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                sessionLostText(error), textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.caption1,
+                maxLines = 2, overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onCancel) { Text("OK") }
+        }
+        return
+    }
 
     val score1 = s.sets.joinToString(" ") { "${it.t1}" }
     val score2 = s.sets.joinToString(" ") { "${it.t2}" }
