@@ -3,6 +3,9 @@ package com.pagmatch.wear
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 // Forme du payload verifiee contre trois sources : fn_watch_payload
 // (supabase/migrations/watch_team_initials.sql, qui redefinit la fonction de
@@ -51,6 +54,21 @@ data class Session(
 )
 
 private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+// VRAI uniquement quand le serveur a DIT qu'il n'y a pas de match
+// (has_session:false). Un corps illisible -- une page HTML 502 du edge, une
+// reponse tronquee par une coupure Bluetooth -- renvoie FAUX, pas VRAI.
+// parseSession() confond les deux (null dans les deux cas) et l'appelant qui
+// s'y fiait annoncait "Aucun match en cours" en plein match, sur un simple
+// hoquet du reseau. Le doute ne doit jamais effacer le score affiche : seule
+// une affirmation du serveur le peut.
+fun serverSaysNoSession(body: String?): Boolean {
+    if (body == null) return false
+    return try {
+        val v = json.parseToJsonElement(body).jsonObject["has_session"] ?: return false
+        v.jsonPrimitive.booleanOrNull == false
+    } catch (e: Exception) { false }
+}
 
 // Renvoie null quand il n'y a pas de match en cours. Le serveur signale ce cas
 // par has_session:false plutot que par un corps vide.

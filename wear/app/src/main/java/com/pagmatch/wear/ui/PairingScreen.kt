@@ -85,7 +85,7 @@ fun PairingScreen(prefs: Prefs, onPaired: () -> Unit) {
                 } else {
                     busy = true; status = "..."
                     scope.launch {
-                        val body = try {
+                        val res = try {
                             Api.redeem(digits.joinToString(""), Config.deviceLabel())
                         } catch (e: Exception) {
                             // Une montre Wear OS n'a le plus souvent pas de reseau
@@ -101,6 +101,11 @@ fun PairingScreen(prefs: Prefs, onPaired: () -> Unit) {
                             index = 0
                             return@launch
                         }
+                        // redeem_watch_pairing_code repond 200 meme pour un
+                        // refus ({"ok":false,"reason":...}) : c'est le corps,
+                        // pas le statut, qui porte le verdict ici. Le statut
+                        // n'est lu que par la boucle d'envoi (MatchStore).
+                        val body = res.body
                         val reason = Api.errorReason(body)
                         if (reason != null) {
                             status = Api.reasonPair(reason)?.first ?: reason

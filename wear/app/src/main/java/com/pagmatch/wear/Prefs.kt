@@ -11,7 +11,17 @@ import android.content.Context
 // suppose qu'un putString() qui retourne a deja atteint le disque, et que
 // deux ecritures successives s'appliquent dans l'ordre ou elles ont ete
 // emises -- ce que apply() (asynchrone) ne garantit pas.
-class Prefs(context: Context) : KeyValueStore {
+// Ce que MatchStore exige de son stockage : la file d'envoi (KeyValueStore)
+// ET le jeton d'appairage. En faire une interface est le point d'injection qui
+// rend la boucle d'envoi testable hors Android (Prefs a besoin d'un Context,
+// pas ceci) -- c'est ce qui permet aux tests JVM de MatchStoreTest d'exercer
+// la politique de retrait de drain(), la seule chose qui decide si un point
+// vit ou meurt.
+interface TokenStore : KeyValueStore {
+    var token: String?
+}
+
+class Prefs(context: Context) : TokenStore {
     private val sp = context.getSharedPreferences("pagmatch", Context.MODE_PRIVATE)
 
     override fun getString(k: String): String? = sp.getString(k, null)
@@ -19,7 +29,7 @@ class Prefs(context: Context) : KeyValueStore {
         sp.edit().putString(k, v).commit()
     }
 
-    var token: String?
+    override var token: String?
         get() = sp.getString(KEY_TOKEN, null)?.ifEmpty { null }
         set(v) {
             sp.edit().apply { if (v == null) remove(KEY_TOKEN) else putString(KEY_TOKEN, v) }.commit()

@@ -63,7 +63,28 @@ object Api {
         else -> null
     }
 
-    private suspend fun post(path: String, body: String): String = withContext(Dispatchers.IO) {
+    // Le STATUT HTTP fait partie de la reponse, il n'est plus jete. Sans lui,
+    // un refus METIER ({"code":"P0001","message":"not_the_scorer"}, 400) et une
+    // panne d'INFRASTRUCTURE ({"code":"57014","message":"canceling statement
+    // due to statement timeout"}, 500 ; {"message":"JWT expired"}, 401 ; un 404
+    // pendant un rechargement du cache de schema PostgREST, que nos propres
+    // NOTIFY pgrst provoquent) sont litteralement indistinguables : les deux
+    // portent un "message". La boucle d'envoi jetait donc les seconds comme les
+    // premiers -- un vrai point efface par une temporisation du edge. C'est le
+    // statut, et lui seul, qui separe les deux (voir drain() dans MatchStore).
+    data class ApiResponse(val status: Int, val body: String?)
+
+    // SEULS ces statuts sont un refus DEFINITIF, qu'il faut retirer de la file
+    // parce que le rejouer rebuterait pour toujours sur le meme refus. Copie de
+    // la regle Garmin en production (watch/source/SessionView.mc, onSent) :
+    // tout le reste de la bande 4xx est de l'INFRASTRUCTURE et le rejeu
+    // marchera -- 404 = cache de schema PostgREST en cours de rechargement,
+    // 408/429 = temporisation du edge, 401 = jeton d'API a renouveler, 5xx =
+    // panne serveur. Les y jeter effacerait un vrai point, en silence.
+    fun isDefinitiveRefusal(status: Int): Boolean =
+        status == 400 || status == 403 || status == 409
+
+    private suspend fun post(path: String, body: String): ApiResponse = withContext(Dispatchers.IO) {
         val req = Request.Builder()
             .url("${Config.SUPABASE_URL}/rest/v1/rpc/$path")
             .addHeader("Content-Type", "application/json")
@@ -73,23 +94,23 @@ object Api {
             .build()
         // OkHttp 5.x : Response.body n'est plus nullable (contrairement a la 4.x
         // que la plupart des exemples ciblent) ; plus besoin de l'appel securise.
-        client.newCall(req).execute().use { it.body.string() }
+        client.newCall(req).execute().use { ApiResponse(it.code, it.body.string()) }
     }
 
     private fun q(s: String) = Json.encodeToString(JsonPrimitive(s))
 
-    suspend fun redeem(code: String, label: String): String =
+    suspend fun redeem(code: String, label: String): ApiResponse =
         post("redeem_watch_pairing_code", """{"p_code":${q(code)},"p_device_label":${q(label)}}""")
 
-    suspend fun currentSession(token: String): String =
+    suspend fun currentSession(token: String): ApiResponse =
         post("watch_current_session", """{"p_token":${q(token)}}""")
 
     suspend fun applyEvent(
         token: String, sessionId: String, eventType: String, team: Int, clientSeq: Long
-    ): String = post("watch_apply_event",
+    ): ApiResponse = post("watch_apply_event",
         """{"p_token":${q(token)},"p_session_id":${q(sessionId)},"p_event_type":${q(eventType)},"p_payload":{"team":$team},"p_client_seq":$clientSeq}""")
 
-    suspend fun finalize(token: String, sessionId: String): String =
+    suspend fun finalize(token: String, sessionId: String): ApiResponse =
         post("watch_finalize_session", """{"p_token":${q(token)},"p_session_id":${q(sessionId)}}""")
 
     // redeem_watch_pairing_code repond 200 avec {"token":"..."} en cas de succes

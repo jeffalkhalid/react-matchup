@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -16,47 +17,60 @@ import androidx.compose.ui.Modifier
 import androidx.wear.compose.material.MaterialTheme
 import com.pagmatch.wear.ui.MatchScreen
 import com.pagmatch.wear.ui.PairingScreen
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
+    // MatchStore.get : UNE instance par PROCESSUS, jamais une par activite.
+    // Wear OS termine l'activite au balayage vers la droite (et le manifeste ne
+    // declare aucun configChanges), donc rouvrir l'app construisait auparavant
+    // une seconde MatchStore -- donc une seconde Queue sur le meme
+    // SharedPreferences, pendant qu'un envoi de la premiere etait encore en
+    // vol. Voir le commentaire de classe de MatchStore et celui d'enqueue()
+    // dans Queue.kt : le verrou de Queue n'offre AUCUNE exclusion entre deux
+    // instances, et la mesure dit 265 a 280 evenements perdus sur 320.
+    private lateinit var store: MatchStore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(applicationContext)
-        setContent { App(prefs) }
+        store = MatchStore.get(prefs)
+        setContent { App(prefs, store) }
+    }
+
+    // Le battement suit le CYCLE DE VIE, pas la composition : ecran eteint ou
+    // app en arriere-plan, on cesse d'interroger le serveur (batterie de
+    // montre). Un envoi deja en vol n'est PAS annule pour autant : il vit sur
+    // le scope du store, qui survit a cette activite -- un point tape juste
+    // avant l'extinction part quand meme.
+    override fun onStart() {
+        super.onStart()
+        store.startPolling()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        store.stopPolling()
     }
 }
 
 @Composable
-fun App(prefs: Prefs) {
+fun App(prefs: Prefs, store: MatchStore) {
     // paired ne relit prefs.token qu'a la creation : une fois l'appairage
     // reussi, onPaired() bascule cet etat sans redemarrer l'activite.
     var paired by remember { mutableStateOf(prefs.token != null) }
-    // Cree UNE SEULE FOIS pour toute la duree de vie de l'ecran de match :
-    // MatchStore ouvre sa propre Queue (voir MatchStore.kt), et une seconde
-    // instance ouvrirait une seconde Queue sur le meme store -- exactement
-    // le scenario qui a fait perdre 265 a 280 evenements sur 320 en mesure
-    // (cf. le commentaire d'enqueue() dans Queue.kt). `remember` garantit
-    // que cette instance survit aux recompositions.
-    val store = remember { MatchStore(prefs) }
+    // Le telephone a delie la montre (token_revoked) : retour a l'appairage.
+    // Sans ce chemin, fn_watch_link refuse tout pour toujours et l'app n'est
+    // plus bonne qu'a reinstaller.
+    val unpaired by store.unpaired.collectAsState()
+    LaunchedEffect(unpaired) { if (unpaired) paired = false }
 
     MaterialTheme {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (!paired) {
-                PairingScreen(prefs = prefs, onPaired = { paired = true })
+                PairingScreen(prefs = prefs, onPaired = {
+                    store.onPaired()
+                    paired = true
+                })
             } else {
-                // Rafraichissement au premier affichage puis toutes les 5 s
-                // tant que l'ecran de match est visible, meme rythme que la
-                // Garmin (SessionView.mc, onTick) : si des evenements
-                // attendent encore en file, on tente de les vider en
-                // priorite (c'est ce qui vide la file des le retour du
-                // reseau, sans attendre un nouveau tapotement) ; sinon on
-                // rafraichit simplement l'etat du match.
-                LaunchedEffect(store) {
-                    while (true) {
-                        if (store.pending > 0) store.drain() else store.refresh()
-                        delay(5000)
-                    }
-                }
                 MatchScreen(store = store, onValidate = { /* Task suivante : ecran de validation. */ })
             }
         }
