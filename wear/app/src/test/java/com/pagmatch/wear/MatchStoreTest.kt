@@ -9,6 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
 // La politique de RETRAIT de la file (quand un evenement quitte la file, et
 // lequel) vivait dans une fonction de 30 lignes que rien ne testait. C'est
@@ -25,22 +26,24 @@ import java.io.IOException
 class MatchStoreTest {
 
     private val prefs = FakeTokenStore()
-    private var clock = 100_000L
+    @Volatile private var clock = 100_000L
 
     // Faux serveur -------------------------------------------------------
     private val sent = mutableListOf<Long>()      // toute tentative d'envoi
     private val accepted = mutableListOf<Pending>() // celles qui ont abouti
-    private var gate: CompletableDeferred<Unit>? = null       // bloque UN envoi
-    private var fetchGate: CompletableDeferred<Unit>? = null  // bloque UN refresh
-    private var fetchCalls = 0
-    private var respond: (Pending) -> Api.ApiResponse = { ok() }
-    private var fetch: () -> Api.ApiResponse = { ok() }
+    @Volatile private var gate: CompletableDeferred<Unit>? = null       // bloque UN envoi
+    @Volatile private var fetchGate: CompletableDeferred<Unit>? = null  // bloque UN refresh
+    // Le battement reprend sur un autre thread apres son delay : ce compteur
+    // se lit donc depuis le thread du test ET depuis celui du battement.
+    private val fetchCalls = AtomicInteger(0)
+    @Volatile private var respond: (Pending) -> Api.ApiResponse = { ok() }
+    @Volatile private var fetch: () -> Api.ApiResponse = { ok() }
 
-    private fun newStore() = MatchStore(
+    private fun newStore(tickMs: Long = MatchStore.TICK_MS) = MatchStore(
         prefs = prefs,
         scope = CoroutineScope(Dispatchers.Unconfined),
         fetchSession = {
-            fetchCalls++
+            fetchCalls.incrementAndGet()
             fetchGate?.let { g -> fetchGate = null; g.await() }
             fetch()
         },
@@ -52,12 +55,13 @@ class MatchStoreTest {
             r
         },
         now = { clock },
+        tickMs = tickMs,
     )
 
     // Un store deja "en match" : la session est chargee, sinon score() et
     // undo() ne font rien (garde is_scorer/finished).
-    private fun startedStore(): MatchStore {
-        val s = newStore()
+    private fun startedStore(tickMs: Long = MatchStore.TICK_MS): MatchStore {
+        val s = newStore(tickMs)
         s.refresh()
         assertNotNull("la session de depart doit etre chargee", s.session.value)
         return s
@@ -182,10 +186,14 @@ class MatchStoreTest {
 
     // ---- I4 : le telephone a delie la montre ------------------------------
 
+    // 400 et non 403 : fn_watch_link (watch_rpcs.sql:20) fait un RAISE
+    // EXCEPTION nu, donc SQLSTATE P0001, que PostgREST rend en 400. Le test
+    // doit epingler le statut REEL, sinon il passe aussi bien contre une
+    // version qui ne regarde pas le statut du tout.
     @Test fun `token_revoked delie la montre et vide la file`() {
         val s = startedStore()
         s.startPolling()
-        respond = { err(403, """{"code":"P0001","message":"token_revoked"}""") }
+        respond = { err(400, """{"code":"P0001","message":"token_revoked"}""") }
 
         s.score(1); s.score(2)
 
@@ -244,7 +252,7 @@ class MatchStoreTest {
         s.refresh()
         s.refresh()
 
-        assertEquals(1, fetchCalls)
+        assertEquals(1, fetchCalls.get())
         g.complete(Unit)
     }
 
@@ -252,18 +260,31 @@ class MatchStoreTest {
 
     @Test fun `une file bloquee finit par le dire`() {
         val s = startedStore()
-        val before = fetchCalls
+        val before = fetchCalls.get()
         respond = { throw IOException("lien coupe") }
 
         s.score(1)
         assertEquals("En attente : 1", s.message.value)
-        s.drain()
-        assertEquals("En attente : 1", s.message.value)
+
+        clock += MatchStore.STALL_MS      // le lien reste coupe 15 s
         s.drain()
 
         assertEquals("Bloque : 1", s.message.value)
         assertTrue("le score doit continuer d etre rafraichi malgre le blocage",
-            fetchCalls > before)
+            fetchCalls.get() > before)
+    }
+
+    // FIX 4 : le seuil est du TEMPS, pas un compte de tentatives. drain() est
+    // appele par chaque tapotement autant que par le battement, donc trois
+    // appuis en une seconde suffisaient a afficher "Bloque" -- pendant qu'un
+    // hoquet Bluetooth de deux secondes n'est rien.
+    @Test fun `trois tapotements rapides ne crient pas au blocage`() {
+        val s = startedStore()
+        respond = { throw IOException("hoquet bluetooth") }
+
+        s.score(1); s.score(2); s.undo()   // trois appuis, meme seconde
+
+        assertEquals("En attente : 3", s.message.value)
     }
 
     // ---- I5 : l'accuse laisse revenir le score du jeu ----------------------
@@ -302,7 +323,81 @@ class MatchStoreTest {
         assertTrue("deux instances = deux Queue sur le meme store", a === b)
     }
 
+
+    // ---- FIX 1 : le battement repart apres un reappairage ------------------
+
+    @Test fun `le battement repart apres un reappairage`() {
+        val s = startedStore(tickMs = 5)
+        s.startPolling()
+        respond = { err(400, """{"code":"P0001","message":"token_revoked"}""") }
+        s.score(1)                        // le telephone a delie la montre
+        assertTrue(s.unpaired.value)
+
+        // L'utilisateur ressaisit un code : PairingScreen pose le jeton puis
+        // appelle onPaired(). L'activite n'est PAS redemarree -- se reappairer
+        // est une bascule d'etat Compose -- donc onStart() ne repassera pas.
+        // Si onPaired() ne relance pas le battement, plus rien n'interroge le
+        // serveur : l'ecran de match reste fige sur un vieux score jusqu'a ce
+        // que l'utilisateur eteigne et rallume l'ecran.
+        prefs.token = "nouveau-jeton"
+        val before = fetchCalls.get()
+        s.onPaired()
+
+        assertTrue("le battement doit BATTRE, pas faire un seul coup",
+            waitUntil { fetchCalls.get() >= before + 3 })
+        s.stopPolling()
+    }
+
+    // ---- FIX 2 : delier la montre se decide aussi sur le statut ------------
+
+    @Test fun `un token_revoked sur un statut d infrastructure ne delie pas`() {
+        val s = startedStore()
+        // Meme corps qu'un vrai refus, mais sur un 500 : c'est le mode de
+        // panne de C2, sur l'action la plus destructrice du fichier, puisque
+        // unpair() VIDE la file.
+        respond = { err(500, """{"message":"token_revoked"}""") }
+
+        s.score(1); s.score(2); s.undo()
+
+        assertEquals("les trois evenements restent en file", 3, s.pending)
+        assertNotNull("le jeton reste valable", prefs.token)
+        assertTrue("la montre reste appairee", !s.unpaired.value)
+        assertNotNull(s.session.value)
+    }
+
+    // ---- FIX 3 : effacer le match passe par le meme numero d'ordre ---------
+
+    @Test fun `un has_session false en retard n efface pas le match en cours`() {
+        val s = startedStore()
+        val g = CompletableDeferred<Unit>()
+        fetchGate = g
+        fetch = { Api.ApiResponse(200, """{"has_session":false}""") }
+
+        s.refresh()                       // parti en premier (generation G)
+        respond = { ok(team1 = "EN COURS") }
+        s.score(1)                        // parti apres (G+1), arrive avant
+        assertEquals("EN COURS", s.session.value!!.team1)
+
+        g.complete(Unit)                  // la vieille reponse atterrit enfin
+
+        assertNotNull("l ecran ne doit pas se vider sur une reponse perimee",
+            s.session.value)
+        assertEquals("EN COURS", s.session.value!!.team1)
+    }
+
     // ---- Faux serveur : corps de reponse ----------------------------------
+
+    // Attente BORNEE, pour observer un battement qui vit sur un vrai timer.
+    // Elle rend la main des que la condition est vraie : en pratique quelques
+    // dizaines de millisecondes, jamais les 2 s du plafond.
+    private fun waitUntil(timeoutMs: Long = 2000, cond: () -> Boolean): Boolean {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            if (cond()) return true
+            Thread.sleep(2)
+        }
+        return cond()
+    }
 
     private fun ok(team1: String = "K&A") = Api.ApiResponse(200, payload(team1))
     private fun err(status: Int, body: String) = Api.ApiResponse(status, body)

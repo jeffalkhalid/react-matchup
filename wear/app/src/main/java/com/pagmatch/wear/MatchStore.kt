@@ -44,6 +44,10 @@ class MatchStore(
     private val sendEvent: suspend (String, Pending) -> Api.ApiResponse =
         { t, e -> Api.applyEvent(t, e.sid, e.type, e.team, e.seq) },
     private val now: () -> Long = { System.currentTimeMillis() },
+    // Periode du battement. Injectee pour que les tests puissent verifier que
+    // le battement BAT VRAIMENT (et repart apres un reappairage) en
+    // millisecondes plutot qu'en secondes d'horloge murale.
+    private val tickMs: Long = TICK_MS,
 ) {
     private val queue = Queue(prefs)
 
@@ -97,13 +101,19 @@ class MatchStore(
     private val reqGen = AtomicLong(0)
     private var appliedGen = 0L
 
-    // Chien de garde d'affichage : combien de tentatives d'affilee ont echoue
-    // sur LA MEME tete de file. Au-dela de STALL_ATTEMPTS le libelle change
-    // pour dire que la file est bloquee et non simplement en retard -- sans
-    // quoi une tete coincee figeait le score affiche indefiniment, sans que
-    // rien a l'ecran n'indique qu'il etait perime.
+    // Chien de garde d'affichage : DEPUIS QUAND la meme tete de file echoue.
+    // Au-dela de STALL_MS le libelle change pour dire que la file est bloquee
+    // et non simplement en retard -- sans quoi une tete coincee figeait le
+    // score affiche indefiniment, sans que rien a l'ecran n'indique qu'il
+    // etait perime.
+    //
+    // Le seuil est du TEMPS, pas un nombre de tentatives : drain() est appele
+    // par score() et undo() autant que par le battement, donc trois
+    // tapotements en une seconde avec le lien coupe suffisaient a afficher le
+    // mot alarmant "Bloque" -- alors qu'un hoquet Bluetooth de deux secondes
+    // en plein echange n'est rien. "Bloque" doit vouloir dire ce qu'il dit.
     private var stallSeq = -1L
-    private var stallCount = 0
+    private var stallSince = 0L
 
     // ---- Message : lisible avant d'etre efface ----------------------------
     // Quand le message a ete pose. Un accuse ("Point K&A") efface par le
@@ -140,7 +150,13 @@ class MatchStore(
         }
     }
 
-    private fun applySession(s: Session, gen: Long) {
+    // Prend un Session NULLABLE a dessein : effacer le match est un ecrit
+    // comme un autre, et il doit passer par le MEME numero d'ordre. La branche
+    // has_session:false l'ecrivait directement et faisait en plus RECULER
+    // appliedGen -- une reponse "pas de match" partie avant un envoi qui, lui,
+    // avait deja rapporte un match en cours, atterrissait apres lui et vidait
+    // l'ecran. Le symptome de I1, atteint par une autre porte.
+    private fun applySession(s: Session?, gen: Long) {
         if (gen < appliedGen) return
         appliedGen = gen
         _session.value = s
@@ -151,12 +167,15 @@ class MatchStore(
     // s'eteint on cesse d'interroger le serveur. Un envoi deja en vol, lui,
     // n'est pas annule -- il vit sur le scope du store, pas sur ce Job : un
     // point tape juste avant l'extinction part quand meme.
+    // Le premier battement est IMMEDIAT (tick() avant le premier delay) : a
+    // l'ouverture de l'ecran comme au retour d'un reappairage, on ne fait pas
+    // attendre 5 s pour afficher le score.
     fun startPolling() {
         if (ticker?.isActive == true) return
         ticker = scope.launch {
             while (isActive) {
                 tick()
-                delay(TICK_MS)
+                delay(tickMs)
             }
         }
     }
@@ -173,10 +192,20 @@ class MatchStore(
 
     // Appele quand l'appairage vient de reussir : le store est un singleton de
     // processus, il doit oublier l'etat "deliee" de l'appairage precedent.
+    //
+    // Et il doit RELANCER LE BATTEMENT. unpair() l'arrete (le jeton est mort,
+    // continuer a interroger le serveur n'a pas de sens), mais rien ne le
+    // redemarrait : MainActivity ne le lance que depuis onStart(), qui ne
+    // repasse pas -- se reappairer est une bascule d'etat Compose, pas un
+    // redemarrage d'activite. L'ecran de match restait donc muet cote serveur
+    // jusqu'a ce que l'utilisateur eteigne et rallume l'ecran, et cela pile
+    // sur le chemin que unpair() existe pour ouvrir. Le premier battement
+    // rafraichit immediatement (voir startPolling), donc il n'y a pas de
+    // refresh() separe a faire ici : un seul chemin, pas deux.
     fun onPaired() {
         _unpaired.value = false
         setMessage(null)
-        refresh()
+        startPolling()
     }
 
     fun refresh() {
@@ -212,7 +241,11 @@ class MatchStore(
                 }
                 val reason = Api.errorReason(res.body)
                 if (res.status != 200) {
-                    if (reason == "token_revoked") { unpair(); return@launch }
+                    // Meme gate que dans drain() : le corps seul ne suffit pas
+                    // a delier la montre (voir le commentaire la-bas).
+                    if (reason == "token_revoked" && Api.isDefinitiveRefusal(res.status)) {
+                        unpair(); return@launch
+                    }
                     setMessage(Api.reasonPair(reason)?.first ?: "Hors ligne ${res.status}")
                     return@launch
                 }
@@ -224,10 +257,7 @@ class MatchStore(
                     }
                     // SEULE affirmation du serveur qui autorise a effacer le
                     // match affiche (voir serverSaysNoSession dans Session.kt).
-                    serverSaysNoSession(res.body) -> {
-                        appliedGen = gen
-                        _session.value = null
-                    }
+                    serverSaysNoSession(res.body) -> applySession(null, gen)
                     // Corps illisible : on ne sait pas, donc on ne touche a
                     // rien. Annoncer "Aucun match en cours" en plein match sur
                     // une page HTML 502 du edge etait le pire des deux choix.
@@ -291,7 +321,7 @@ class MatchStore(
             // charge.
             if (sendAgain.getAndSet(false) && progressed && queue.head() != null) {
                 drain()
-            } else if (!progressed && stallCount >= STALL_ATTEMPTS) {
+            } else if (!progressed && isStalled()) {
                 // File bloquee : le battement n'appelle que drain() tant qu'il
                 // reste des evenements, donc plus rien ne rafraichirait le
                 // score. On va le chercher quand meme, pour que l'ecran ne soit
@@ -342,7 +372,23 @@ class MatchStore(
 
             val reason = Api.errorReason(res.body)
             // Lien revoque depuis le telephone : le jeton ne vaut plus rien.
-            if (reason == "token_revoked") { unpair(); return progressed }
+            // GATE SUR LE STATUT, comme tout le reste de cette boucle. La
+            // Garmin decide sur le seul corps (SessionView.mc:441) et c'est
+            // precisement le mode de panne que ce commit ferme partout
+            // ailleurs : un corps d'infrastructure porteur d'un "message" est
+            // indistinguable d'un refus metier. Ici la sanction est la pire de
+            // toutes -- unpair() VIDE LA FILE -- donc un 500 portant
+            // "token_revoked" effacerait tout le retard accumule d'un coup.
+            // fn_watch_link (supabase/migrations/watch_rpcs.sql:20) fait un
+            // RAISE EXCEPTION nu, sans ERRCODE : SQLSTATE P0001, que PostgREST
+            // rend en 400. Le vrai token_revoked passe donc toujours ce gate ;
+            // s'il arrivait un jour sur un autre statut, on le rejouerait au
+            // lieu de delier -- on garderait les points, l'ecran dirait
+            // "Bloque : N", et c'est le bon sens de l'echec.
+            if (reason == "token_revoked" && Api.isDefinitiveRefusal(res.status)) {
+                unpair()
+                return progressed
+            }
 
             if (Api.isDefinitiveRefusal(res.status)) {
                 // Refus METIER definitif : le rejouer buterait pour toujours
@@ -367,15 +413,19 @@ class MatchStore(
     }
 
     private fun noteStall(seq: Long) {
-        if (seq != stallSeq) { stallSeq = seq; stallCount = 0 }
-        stallCount++
+        // Nouvelle tete : le chronometre repart de zero. C'est bien la duree
+        // de blocage DE CET EVENEMENT-LA qu'on mesure.
+        if (seq != stallSeq) { stallSeq = seq; stallSince = now() }
         val n = queue.size()
-        setMessage(if (stallCount >= STALL_ATTEMPTS) "Bloque : $n" else "En attente : $n")
+        setMessage(if (isStalled()) "Bloque : $n" else "En attente : $n")
     }
+
+    private fun isStalled(): Boolean =
+        stallSeq != -1L && now() - stallSince >= STALL_MS
 
     private fun clearStall() {
         stallSeq = -1L
-        stallCount = 0
+        stallSince = 0L
     }
 
     // Retour a l'ecran d'appairage. SEUL chemin de retour apres un
@@ -396,10 +446,10 @@ class MatchStore(
 
     companion object {
         const val TICK_MS = 5000L
-        // Trois tentatives d'affilee sans progres, soit ~15 s au rythme du
-        // battement : meme seuil que le chien de garde de la Garmin
-        // (SessionView.mc, onTick).
-        const val STALL_ATTEMPTS = 3
+        // 15 s sans qu'une seule tete de file passe : la meme duree que le
+        // chien de garde de la Garmin (SessionView.mc, onTick : 3 ticks de
+        // 5 s), mais mesuree en temps et non en tentatives.
+        const val STALL_MS = 15_000L
         const val MIN_MESSAGE_MS = 2000L
 
         @Volatile private var instance: MatchStore? = null
