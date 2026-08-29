@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,7 +30,11 @@ fun MatchScreen(store: MatchStore, onValidate: () -> Unit) {
     val s = session
 
     if (s == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // padding : sans lui ce texte touchait les deux bords. Il est au
+        // CENTRE vertical, donc sur la corde la plus large d'un cadran rond --
+        // le cas le moins expose de l'ecran, mais un message plus long
+        // (Api.reasonPair) n'avait aucune marge pour grandir.
+        Box(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
             Text(message ?: "Aucun match en cours", textAlign = TextAlign.Center)
         }
         return
@@ -46,8 +51,19 @@ fun MatchScreen(store: MatchStore, onValidate: () -> Unit) {
             CompactButton(onClick = { store.undo() }) { Text("<-") }
             // Priorite au message transitoire (accuse de point, refus, panne
             // reseau) ; a defaut, le score du jeu en cours en mode points.
+            //
+            // weight(1f) N'EST PAS DECORATIF. Sans lui ce Text se mesurait a sa
+            // largeur INTRINSEQUE : un message long ("Plus dans ce match",
+            // "Fonction desactivee") depassait la place laissee par les deux
+            // boutons, SpaceBetween n'avait plus d'espace a distribuer, et le
+            // texte passait litteralement PAR-DESSUS le bouton "OK" -- vu sur
+            // une capture (small_07_match_long_msg), pas devine. Contraint a
+            // l'espace restant, il s'abrege proprement avec ses points de
+            // suspension, qui n'ont jamais pu s'afficher jusqu'ici.
             Text(
                 message ?: gameLabelText(s) ?: "",
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.caption2,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
@@ -65,6 +81,30 @@ fun MatchScreen(store: MatchStore, onValidate: () -> Unit) {
 private fun gameLabelText(s: Session): String? =
     s.gameLabel?.let { "${it.t1} - ${it.t2}" }
 
+// Largeur maximale accordee au NOM d'equipe, en fraction de la largeur utile
+// de la moitie.
+//
+// Sur un cadran ROND, le systeme decoupe la fenetre au disque : tout ce qui
+// depasse la corde n'est pas abrege, il est TRANCHE EN PLEIN MILIEU D'UNE
+// LETTRE, sans le moindre point de suspension pour le signaler. Le nom de
+// l'equipe du HAUT est l'element le plus expose de l'ecran (il est en haut de
+// sa moitie, donc tout pres du bord, la ou la corde est la plus courte) :
+// "Abderrahmane & Jean-Philippe" s'affichait "errahmane & Jean" -- ni le
+// debut ni la fin, et rien a l'ecran pour dire qu'il manquait quelque chose.
+// Mesure sur l'emulateur rond 384 px : a la hauteur de cette ligne, un texte
+// de 218 px passe intact, 251 px est tranche. 0.56 de la largeur utile
+// (364 px) fait 204 px, sous le seuil mesure, avec de la marge.
+//
+// C'est une regle de FORME (rond contre carre), pas un cas particulier de
+// modele : elle vaut pour tout cadran rond, quelle que soit sa taille. Le
+// grand rond place cette ligne RELATIVEMENT plus bas (la rangee du milieu a
+// une hauteur fixe en dp, donc elle occupe une part plus petite d'un grand
+// ecran), donc la meme fraction y est encore plus prudente. Sur un cadran
+// carre, aucun bord ne mord : la largeur entiere est disponible.
+@Composable
+private fun nameWidthFraction(): Float =
+    if (LocalConfiguration.current.isScreenRound) 0.56f else 1f
+
 // La couleur ne distingue jamais les equipes : seule leur POSITION le fait.
 @Composable
 private fun TeamHalf(s: Session, team: Int, modifier: Modifier, onTap: () -> Unit) {
@@ -81,6 +121,8 @@ private fun TeamHalf(s: Session, team: Int, modifier: Modifier, onTap: () -> Uni
         verticalArrangement = Arrangement.Center
     ) {
         Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.fillMaxWidth(nameWidthFraction()),
+             textAlign = TextAlign.Center,
              style = MaterialTheme.typography.caption1)
         Text(if (line.isEmpty()) "$won" else line,
              style = MaterialTheme.typography.display3, maxLines = 1)

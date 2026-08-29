@@ -5,6 +5,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.*
 import com.pagmatch.wear.*
@@ -42,17 +44,44 @@ fun PairingScreen(prefs: Prefs, onPaired: () -> Unit) {
         // ligne du haut jusque dans la zone que le verre rond rogne --
         // repere avec une vraie capture ecran, pas en theorie. Hauteur fixe
         // du coup, que le message soit affiche ou non.
+        //
+        // La consigne par defaut etait "Code affiche dans l app" (23 signes).
+        // Sur le petit cadran rond, le systeme decoupe la fenetre au disque a
+        // cette hauteur : le "C" et le dernier "p" etaient RABOTES a la
+        // verticale, en plein milieu de la lettre (mesure : 254 px de texte
+        // pour 206 px de corde). Un decoupage franc, sans point de suspension,
+        // exactement comme pour le nom d'equipe de MatchScreen. La consigne
+        // est donc raccourcie a "Code dans l app" (15 signes, ~172 px) : elle
+        // dit la meme chose et rentre avec de la marge. Le plus long message
+        // d'echec de la table Api.reasonPair, "Fonction desactivee"
+        // (19 signes, 218 px mesures), passe intact -- verifie par capture,
+        // pas suppose. maxLines/Ellipsis empechent en plus qu'un message
+        // futur plus long ne se replie sur une DEUXIEME ligne, ce qui
+        // ferait remonter tout l'ecran dans la zone rognee (le defaut deja
+        // corrige en Task 5, ici referme pour de bon).
         val isFailure = status != null && status != "..."
-        Text(status ?: "Code affiche dans l app", textAlign = TextAlign.Center,
+        Text(status ?: "Code dans l app", textAlign = TextAlign.Center,
              color = if (isFailure) MaterialTheme.colors.error else MaterialTheme.colors.onSurface,
+             maxLines = 1, overflow = TextOverflow.Ellipsis,
              style = MaterialTheme.typography.caption2)
         Spacer(Modifier.height(2.dp))
-        // Le chiffre en cours d'edition est colore plutot que signale par une
+        // Le chiffre en cours d'edition est SOULIGNE plutot que signale par une
         // ligne "Chiffre X/6" separee : meme information, une ligne de texte
         // en moins.
+        //
+        // Le soulignement, pas la couleur, est ce qui PORTE l'information.
+        // Le chiffre actif etait auparavant distingue par sa seule couleur --
+        // regle du projet : la couleur decore, elle n'informe jamais (soleil
+        // de plein midi, daltonisme, mode ambiant en niveaux de gris : la
+        // couleur peut disparaitre, la position du curseur non). Le
+        // soulignement se dessine DANS la hauteur de ligne existante : aucune
+        // hauteur ajoutee, donc aucun risque de faire remonter la ligne du
+        // haut dans la zone que le verre rond rogne. La couleur reste, en
+        // renfort.
         Row {
             digits.forEachIndexed { i, d ->
                 Text(d.toString(), style = MaterialTheme.typography.display2,
+                     textDecoration = if (i == index) TextDecoration.Underline else null,
                      color = if (i == index) MaterialTheme.colors.primary
                              else MaterialTheme.colors.onSurface)
             }

@@ -95,9 +95,16 @@ fun ConfirmScreen(store: MatchStore, onCancel: () -> Unit, onDone: () -> Unit) {
     ) {
         Text("Valider le score ?", style = MaterialTheme.typography.caption1)
         Spacer(Modifier.height(4.dp))
+        // title1 plutot que title3 : sur l'ecran d'une action IRREVERSIBLE,
+        // la chose a verifier avant d'appuyer est le score, pas la question.
+        // En title3 (16sp) il ne depassait la question (caption1, 14sp gras)
+        // que de deux points -- la question pesait visuellement autant que ce
+        // qu'elle demande de relire. La regle "le score est l'element le plus
+        // gros" vaut ici aussi, pas seulement sur l'ecran de match.
         Text(
-            "$score1  /  $score2", style = MaterialTheme.typography.title3,
-            textAlign = TextAlign.Center
+            "$score1  /  $score2", style = MaterialTheme.typography.title1,
+            textAlign = TextAlign.Center, maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
