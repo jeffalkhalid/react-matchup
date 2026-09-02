@@ -136,8 +136,9 @@ export function lastCompleteRound(matches: Match[]): number {
   return reels.reduce((acc, m) => Math.max(acc, m.round), 0);
 }
 
-/** Classement au palier. Departages successifs : nombre de victoires,
- *  difference de jeux, jeux gagnes, puis confrontation directe, puis l id.
+/** Classement au palier. Departages successifs : le palier (`bestCourt`),
+ *  le nombre de victoires, la difference de jeux, les jeux gagnes, puis la
+ *  confrontation directe, puis l id.
  *
  *  Le palier (`bestCourt`) prime sur tout le reste : le Terrain 1 etant le
  *  plus fort, un binome qui l a atteint devance TOUJOURS un binome qui ne l a
@@ -147,7 +148,12 @@ export function lastCompleteRound(matches: Match[]): number {
  *  binome, les jeux pris aux AUTRES binomes de son groupe d ex aequo moins
  *  les jeux qu il leur a concedes, sur TOUTES leurs rencontres. Le groupe
  *  d ex aequo est l ensemble des binomes que les cles precedentes n ont pas
- *  departages (memes victoires, meme difference, memes jeux gagnes).
+ *  departages (meme palier, memes victoires, meme difference, memes jeux
+ *  gagnes) : un troisieme binome qui ne partagerait que la difference et les
+ *  jeux gagnes, sans etre au meme palier ni avoir le meme nombre de
+ *  victoires, n en fait PAS partie -- sinon un de ses matchs, sans rapport
+ *  avec le duel des deux binomes reellement lies, polluerait leur agregat et
+ *  pourrait inverser leur ordre (cf. le test de non-regression correspondant).
  *
  *  Pourquoi un scalaire. La version precedente comparait deux a deux, ce qui
  *  coincide avec le scalaire pour un groupe de DEUX mais diverge des trois :
@@ -228,7 +234,16 @@ export function standings(
  *  deux rangs sont des CRENEAUX FIXES par terrain, pas un compteur qui
  *  avance au fil des resultats : ainsi un terrain sans adversaire (bye) ne
  *  decale jamais les rangs des terrains suivants, il laisse seulement son
- *  propre creneau de perdant vacant.
+ *  propre creneau de perdant vacant. Un terrain absent de `matches` (aucun
+ *  match genere ou joue) laisse ses DEUX creneaux vacants, meme traitement.
+ *
+ *  Un match reel (deux binomes) NON confirme laisse egalement ses deux
+ *  creneaux vacants, comme `standings` l exclut de `joues` : sans ce garde,
+ *  un match en cours au moment de l appel (`confirmed: false`, `gamesA: 0`,
+ *  `gamesB: 0` -- l etat par defaut d un match pas encore joue dans ce code)
+ *  ferait `0 > 0` = faux, et declarerait le binome B gagnant en silence,
+ *  avant meme la fin du match. Un bye n a rien a confirmer (cf.
+ *  `lastCompleteRound`) : lui seul ignore `confirmed`.
  *
  *  Ne regarde que le DERNIER tour present dans `matches` (le maximum de
  *  `round`) : c est a l appelant de fournir les matchs de la rotation finale,
@@ -246,6 +261,7 @@ export function finalRanking(matches: Match[], courtCount: number): FinalRankEnt
     if (!m) continue;
     const base = (court - 1) * 2;
     if (m.teamA != null && m.teamB != null) {
+      if (!m.confirmed) continue;   // encore en cours : les deux rangs restent vacants
       const aGagne = m.gamesA > m.gamesB;
       out.push({ rank: base + 1, teamId: aGagne ? m.teamA : m.teamB });
       out.push({ rank: base + 2, teamId: aGagne ? m.teamB : m.teamA });

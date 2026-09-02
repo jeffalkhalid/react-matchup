@@ -269,6 +269,48 @@ describe('classement', () => {
     expect(ordreNormal[1]).toBe('b');
   });
 
+  // Le groupe d ex aequo doit se former sur le PALIER et les VICTOIRES aussi,
+  // pas seulement sur la difference et les jeux gagnes -- sinon un troisieme
+  // binome qui partage juste ces deux-la, sans etre reellement a egalite,
+  // s invite dans le groupe et pollue l agregat de deux binomes qui, eux,
+  // sont vraiment lies.
+  //
+  // x (2 victoires) et y/z (1 victoire chacun) finissent tous les trois a
+  // -2 de difference et 8 jeux gagnes. y bat z en confrontation directe
+  // (5-4, h2h +1/-1) : sans x dans l equation, y doit rester devant z. x a
+  // separement battu y (6-3) -- un match sans rapport avec le duel y/z, qui
+  // ne devrait JAMAIS entrer dans leur confrontation directe.
+  //
+  // Avec la cle ETROITE (difference|jeux gagnes seuls, l ancienne version),
+  // x partage ce couple avec y et z et s invite dans leur groupe : son 6-3
+  // contre y s ajoute a l agregat de y (qui devient -2 : 3-4 de son cote
+  // MOINS 6 concedes a x), sans rien ajouter a celui de z -- z (-1) passe
+  // alors DEVANT y (-2), une inversion pure, entre deux binomes qui restent
+  // pourtant strictement egaux ailleurs (palier, victoires, jeux, difference).
+  // Avec la cle LARGE (qui inclut aussi le palier et les victoires), x en
+  // est exclu (2 victoires contre 1), le groupe se limite a y et z, et
+  // l ordre correct (y devant z) est preserve.
+  it('le groupe d ex aequo doit aussi tenir compte du palier et des victoires, pas seulement diff/jeux', () => {
+    const teams = [T('x', 6), T('y', 5), T('z', 4)];
+    const ms = [
+      M(1, 'y', 'z', 5, 4),          // y bat z, de peu : leur seule confrontation directe
+      M(2, 'x', 'y', 6, 3),          // x bat y, sans rapport avec le duel y/z
+      M(3, 'z', 'p', 1, 0),          // remplissage : z decroche sa victoire
+      M(4, 'z', 'q', 3, 5),          // remplissage : z rejoint diff -2 / 8 jeux gagnes
+      M(3, 'x', 'r', 1, 0),          // remplissage : la 2e victoire de x
+      M(4, 'x', 's', 1, 7),          // remplissage : x rejoint diff -2 / 8 jeux gagnes
+    ];
+    const s = standings(teams, ms);
+    expect(s.every(t => t.diff === -2 && t.gamesWon === 8)).toBe(true);   // egalite diff/jeux sur les trois
+    const x = s.find(t => t.teamId === 'x')!;
+    const y = s.find(t => t.teamId === 'y')!;
+    const z = s.find(t => t.teamId === 'z')!;
+    expect(x.wins).toBe(2);
+    expect(y.wins).toBe(1);
+    expect(z.wins).toBe(1);
+    expect(y.rank).toBeLessThan(z.rank);   // y a bat z en direct : y doit rester devant
+  });
+
   // La regle "un forfait compte ses matchs restants comme des defaites 0-6" ne
   // se joue PAS dans standings : standings ne connait pas le nombre de tours
   // restants et ne peut rien synthetiser. C'est au moment du retrait (cote
@@ -472,5 +514,38 @@ describe('rotation de classement', () => {
   it('un terrain sans match ne decale pas les rangs suivants', () => {
     const r = finalRanking(FINAL_MATCHES_AVEC_BYE, 4);
     expect(r.map(x => x.rank)).toEqual([1, 2, 3, 5, 6, 7, 8]);
+  });
+
+  // Un terrain totalement ABSENT de `matches` (aucun match genere, ni joue
+  // ni en cours -- distinct du bye ci-dessus, qui EST present avec un seul
+  // binome) laisse ses deux creneaux vacants, comme un tour qui n a pas
+  // encore ete apparie pour ce terrain.
+  it('un terrain absent de matches laisse ses deux rangs vacants', () => {
+    const sansTerrain4: Match[] = [
+      M(1, 'a', 'c', 6, 2),
+      M(2, 'b', 'd', 6, 3),
+      M(3, 'e', 'g', 6, 4),
+    ];
+    const r = finalRanking(sansTerrain4, 4);
+    expect(r.map(x => x.rank)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  // Un match reel du DERNIER tour encore en cours (`confirmed: false`) doit
+  // laisser SES DEUX rangs vacants -- pas seulement s abstenir de designer un
+  // gagnant. Le defaut `gamesA: 0, gamesB: 0` d un match pas encore joue rend
+  // `gamesA > gamesB` faux, ce qui designerait B gagnant en silence si le
+  // garde de confirmation manquait : c est exactement ce que ce test verifie
+  // en verifiant l ABSENCE de 'd' (qui serait le "gagnant" par defaut) autant
+  // que celle de 'c'.
+  it('un match du dernier tour non confirme laisse ses deux rangs vacants', () => {
+    const enCours: Match[] = [
+      M(1, 'a', 'e', 6, 2),
+      { round: 5, court: 2, teamA: 'c', teamB: 'd', gamesA: 0, gamesB: 0, confirmed: false },
+      M(3, 'f', 'g', 6, 1),
+      M(4, 'h', 'i', 6, 0),
+    ];
+    const r = finalRanking(enCours, 4);
+    expect(r.map(x => x.rank)).toEqual([1, 2, 5, 6, 7, 8]);
+    expect(r.some(x => x.teamId === 'c' || x.teamId === 'd')).toBe(false);
   });
 });
