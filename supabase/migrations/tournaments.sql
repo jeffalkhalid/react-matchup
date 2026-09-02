@@ -24,9 +24,11 @@ CREATE TABLE IF NOT EXISTS public.tournaments (
                 -- jsonb_path_exists est un simple appel de fonction (IMMUTABLE),
                 -- pas une sous-requete : autorise dans une CHECK.
                 CHECK (NOT jsonb_path_exists(points_scale, '$.* ? (@ < 0)')),
-  -- Score credite a CHAQUE camp en cas de forfait (walkover) pendant un match.
-  -- 0 pour les deux camps par defaut : un match forfait ne credite aucun jeu.
-  -- Parametrable si l'organisateur veut un score de courtoisie (ex. 4-0).
+  -- Score credite a CHAQUE camp quand tournament_matches.forfeited_team est
+  -- renseigne (c'est ce marqueur, pas ce nombre, qui distingue un forfait
+  -- d'un vrai resultat nul -- interdit ailleurs). 0 pour les deux camps par
+  -- defaut : un forfait ne credite aucun jeu. Parametrable si l'organisateur
+  -- veut un score de courtoisie (ex. 4-0).
   forfeit_games int  NOT NULL DEFAULT 0 CHECK (forfeit_games >= 0),
   status        text NOT NULL DEFAULT 'BROUILLON'
                 CHECK (status IN (
@@ -59,8 +61,22 @@ CREATE TABLE IF NOT EXISTS public.tournament_teams (
 -- PRIMARY KEY (tournament_id, player_id) le garantit. C'est distinct de la
 -- regle #2 (portee par tournament_participants plus bas) : un joueur n'est
 -- que dans UN binome par tournoi. Un joueur peut respecter la regle #1 sans
--- encore respecter/violer la regle #2 : il est inscrit, team_id est NULL,
--- il attend un appariement.
+-- encore respecter/violer la regle #2 : il est inscrit, pas encore apparie.
+--
+-- PAS de team_id ici. L'equipe d'un joueur est un fait qui a deja un domicile
+-- unique : tournament_participants, derivee et maintenue par le declencheur
+-- sur tournament_teams. Une colonne "equipe" ici en serait une deuxieme copie,
+-- sans rien pour la garder synchronisee -- une fonction pourrait pointer une
+-- inscription vers un binome auquel le joueur n'appartient meme pas, et
+-- aucune contrainte ne le verrait. Un lecteur qui veut l'equipe d'un inscrit
+-- fait un JOIN vers tournament_participants (tournament_id, player_id) :
+-- c'est le cout de la normalisation, moindre qu'un trigger dont le seul
+-- metier serait de garder deux verites egales.
+--
+-- Jetons de check-in (a reprendre a l'identique cote client / Task 3) :
+-- 'pending' (par defaut, pas encore enregistre le jour J),
+-- 'checked_in' (present, confirme sur place),
+-- 'no_show' (absent, ne s'est jamais presente).
 CREATE TABLE IF NOT EXISTS public.tournament_registrations (
   tournament_id     uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
   player_id         uuid NOT NULL REFERENCES public.players(id),
@@ -68,20 +84,12 @@ CREATE TABLE IF NOT EXISTS public.tournament_registrations (
   -- true : n'importe qui peut me choisir comme partenaire directement.
   -- false : appariement seulement sur accord explicite (Task 3).
   open_to_join      boolean NOT NULL DEFAULT true,
-  team_id           uuid,
   waitlist_position int CHECK (waitlist_position IS NULL OR waitlist_position > 0),
   check_in_status   text NOT NULL DEFAULT 'pending'
                     CHECK (check_in_status IN ('pending','checked_in','no_show')),
   registered_at     timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (tournament_id, player_id),
-  -- Le binome eventuel doit appartenir au MEME tournoi que l'inscription.
-  -- ON DELETE SET NULL : si un binome disparaissait, l'inscription du joueur
-  -- redevient "en attente d'appariement" plutot que d'etre supprimee.
-  FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE SET NULL
+  PRIMARY KEY (tournament_id, player_id)
 );
-
-CREATE INDEX IF NOT EXISTS tournament_registrations_team
-  ON public.tournament_registrations (tournament_id, team_id) WHERE team_id IS NOT NULL;
 
 -- Normalize: one player, one team per tournament. This table is maintained by a
 -- trigger on tournament_teams (fn_tournament_teams_sync_participants), not written
@@ -114,6 +122,14 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
   -- personne n'a saisi, ou que les deux camps ne concordent pas encore.
   games_a       int  CHECK (games_a >= 0),
   games_b       int  CHECK (games_b >= 0),
+  -- L'equipe qui a declare forfait sur CE match ; NULL = resultat joue
+  -- normalement. C'est le SEUL cas ou une egalite de score est licite -- la
+  -- spec interdit le nul partout ailleurs (sans vainqueur, la logique de
+  -- mouvement ne saurait quelle equipe descend). forfeited_team est donc a
+  -- la fois ce qui AUTORISE le score egal, ce qui dit a la logique de
+  -- mouvement quelle equipe descend (l'autre monte automatiquement), et ce
+  -- qui permet a tout ecran d'afficher "forfait" plutot qu'un 0-0 muet.
+  forfeited_team uuid,
   confirmed_at  timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
   -- PAS de UNIQUE (tournament_id, round_no, court_no) ici : un palier peut
@@ -127,6 +143,15 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
   -- NULL team (bye) passes the FK check because any NULL in a FK is unchecked.
   FOREIGN KEY (tournament_id, team_a) REFERENCES public.tournament_teams(tournament_id, id),
   FOREIGN KEY (tournament_id, team_b) REFERENCES public.tournament_teams(tournament_id, id),
+  -- L'equipe forfait doit etre l'un des deux camps de CE match, et il doit y
+  -- avoir un adversaire reel en face : on ne "forfait" pas un bye, il n'y a
+  -- personne a qui attribuer la victoire.
+  CHECK (forfeited_team IS NULL OR (team_b IS NOT NULL AND forfeited_team IN (team_a, team_b))),
+  -- Jamais de match nul, SAUF un forfait -- l'unique exception prevue par la
+  -- spec (tournaments.forfeit_games credite le meme score, 0-0 par defaut,
+  -- aux deux camps). En dehors de ce cas, un score final egal est rejete par
+  -- la contrainte elle-meme, avant toute logique applicative.
+  CHECK (forfeited_team IS NOT NULL OR games_a IS NULL OR games_b IS NULL OR games_a <> games_b),
   UNIQUE (tournament_id, id)  -- Enables composite FK from tournament_match_entries
 );
 
