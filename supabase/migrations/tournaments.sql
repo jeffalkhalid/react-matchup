@@ -117,21 +117,19 @@ BEGIN
       (NEW.tournament_id, NEW.player2_id, NEW.id);
     RETURN NEW;
   ELSIF TG_OP = 'UPDATE' THEN
-    -- UPDATE: if players changed, delete old participant rows and insert new ones.
-    -- A swap (e.g., player1 → old player2, player2 → old player1) will fail
-    -- when trying to insert the second player, because the first player already
-    -- occupies that tournament slot.
-    IF OLD.player1_id <> NEW.player1_id THEN
+    -- UPDATE: if the pair changed, atomically delete both old rows and insert both new ones.
+    -- This granularity (the pair, not individual columns) prevents false collisions.
+    -- Example: (A, B) → (B, A) (swap) is valid and must succeed.
+    -- The old rows for the swap are deleted first, so the reinserted rows never collide
+    -- with themselves. But if a new player is already in the tournament (different team_id),
+    -- the PK constraint on (tournament_id, player_id) still catches it.
+    IF (OLD.player1_id, OLD.player2_id) <> (NEW.player1_id, NEW.player2_id) THEN
       DELETE FROM public.tournament_participants
-      WHERE tournament_id = OLD.tournament_id AND player_id = OLD.player1_id AND team_id = OLD.id;
+      WHERE tournament_id = OLD.tournament_id AND team_id = OLD.id;
       INSERT INTO public.tournament_participants (tournament_id, player_id, team_id)
-      VALUES (NEW.tournament_id, NEW.player1_id, NEW.id);
-    END IF;
-    IF OLD.player2_id <> NEW.player2_id THEN
-      DELETE FROM public.tournament_participants
-      WHERE tournament_id = OLD.tournament_id AND player_id = OLD.player2_id AND team_id = OLD.id;
-      INSERT INTO public.tournament_participants (tournament_id, player_id, team_id)
-      VALUES (NEW.tournament_id, NEW.player2_id, NEW.id);
+      VALUES
+        (NEW.tournament_id, NEW.player1_id, NEW.id),
+        (NEW.tournament_id, NEW.player2_id, NEW.id);
     END IF;
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
