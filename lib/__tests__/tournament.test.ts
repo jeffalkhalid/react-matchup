@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { initialCourts, pairUp, nextCourts, standings, type TeamState, type Match } from '../tournament';
+import { initialCourts, pairUp, nextCourts, standings, lastCompleteRound,
+         type TeamState, type Match } from '../tournament';
 
 const T = (id: string, level: number): TeamState => ({ id, level, withdrawn: false });
 
@@ -72,20 +73,32 @@ describe('appariement', () => {
     expect([...places].sort()).toEqual(['p', 'q', 'r']);   // les trois, une fois chacune
   });
 
-  it('sur un palier impair, le bye va a l equipe qui en a eu le moins', () => {
+  // Les byes sont deliberement A CONTRE-COURANT de l ordre alphabetique :
+  // p a le plus de byes et le plus petit id, q en a le moins et un id du
+  // milieu. Un jeu de donnees ou byes et id sont alignes (p:0, q:1, r:2)
+  // passerait aussi bien avec une implementation qui choisit le bye PAR L ID
+  // SEUL, et ne prouverait donc rien de la rotation — qui est justement la
+  // regle en jeu ici.
+  it('sur un palier impair, le bye va a l equipe qui en a eu le moins, pas au plus petit id', () => {
     const courts = new Map([['p', 2], ['q', 2], ['r', 2]]);
-    const byeCount = new Map([['p', 0], ['q', 1], ['r', 2]]);
+    const byeCount = new Map([['p', 2], ['q', 0], ['r', 1]]);
     const ms = pairUp(courts, byeCount);
     const bye = ms.find(m => m.teamB === null)!;
-    expect(bye.teamA).toBe('p');        // 0 bye jusqu ici : c est son tour
+    expect(bye.teamA).toBe('q');        // 0 bye : c est son tour, malgre l id
     const match = ms.find(m => m.teamB !== null)!;
-    expect(match.teamA).toBe('q');      // les deux autres se rencontrent,
-    expect(match.teamB).toBe('r');      // toujours dans l ordre byes puis id
+    expect(match.teamA).toBe('r');      // 1 bye
+    expect(match.teamB).toBe('p');      // 2 byes
   });
 
   it('le bye et le match d un meme palier portent le meme numero de terrain', () => {
     const ms = pairUp(new Map([['p', 7], ['q', 7], ['r', 7]]), new Map());
-    expect(ms.every(m => m.court === 7)).toBe(true);
+    expect(ms).toHaveLength(2);         // sans ca, le test passait aussi sur
+    expect(ms.every(m => m.court === 7)).toBe(true);   // l abandon silencieux
+  });
+
+  it('hurle si un palier porte plus de trois equipes', () => {
+    const courts = new Map([['p', 1], ['q', 1], ['r', 1], ['s', 1]]);
+    expect(() => pairUp(courts, new Map())).toThrow(/corrompue/);
   });
 });
 
@@ -250,9 +263,107 @@ describe('classement', () => {
     expect(c.rank).toBe(s.length);   // derniere place : les forfaits ne l epargnent pas
   });
 
+  // Trois binomes a egalite parfaite qui se sont battus EN ROND : m bat n,
+  // n bat a, a bat m, tous 6-2. Chacun finit a 8 jeux gagnes, 8 perdus,
+  // difference 0, meme palier. Le departage a la confrontation directe etait
+  // un COMPARATEUR deux a deux : sur un cycle il n est pas un ordre total, et
+  // Array.prototype.sort n a alors aucun resultat defini. Le TypeScript
+  // rendait m, n, a la ou le SQL rendait a, m, n — sur la meme soiree.
+  // Le departage est desormais un SCALAIRE des deux cotes : les jeux pris aux
+  // AUTRES membres du groupe d ex aequo, moins ceux concedes. Ici il vaut 0
+  // pour les trois (chacun prend 8 et concede 8 dans le groupe), donc c est
+  // l id qui tranche, et les deux implementations disent a, m, n.
+  const CYCLE = [
+    M(1, 'm', 'n', 6, 2),
+    M(1, 'n', 'a', 6, 2),
+    M(1, 'a', 'm', 6, 2),
+  ];
+
+  it('un cycle a trois se departage par un scalaire, jamais par un comparateur circulaire', () => {
+    const teams = [T('m', 6), T('n', 5), T('a', 4)];
+    const s = standings(teams, CYCLE);
+    expect(s.every(x => x.gamesWon === 8 && x.diff === 0)).toBe(true);   // egalite parfaite
+    expect(s.every(x => x.h2h === 0)).toBe(true);                        // et cycle parfait
+    expect(s.map(x => x.teamId)).toEqual(['a', 'm', 'n']);               // l id tranche
+  });
+
+  it('le classement d un cycle a trois ne depend pas de l ordre des matchs', () => {
+    const teams = [T('m', 6), T('n', 5), T('a', 4)];
+    const normal = standings(teams, CYCLE).map(x => x.teamId);
+    const inverse = standings(teams, [...CYCLE].reverse()).map(x => x.teamId);
+    expect(inverse).toEqual(normal);
+  });
+
+  // Le scalaire n est pas vide de sens hors cycle parfait. Trois binomes a
+  // egalite STRICTE (12 jeux gagnes, 12 perdus, difference 0 chacun) mais
+  // avec des confrontations internes tres inegales : zeta prend 12 jeux au
+  // groupe sans en concede aucun, mu en est a -4, alpha a -8.
+  // Les identifiants sont choisis a CONTRE-SENS du resultat attendu : par id
+  // seul l ordre serait alpha, mu, zeta — exactement l inverse. Seul le
+  // scalaire peut produire l ordre attendu.
+  it('dans un groupe de trois, le scalaire departage sur les jeux pris au groupe', () => {
+    const teams = [T('zeta', 6), T('mu', 5), T('alpha', 4), T('f1', 3), T('f2', 2)];
+    const ms = [
+      // les trois rencontres INTERNES au groupe
+      M(1, 'zeta', 'mu', 6, 0), M(1, 'zeta', 'alpha', 6, 0), M(1, 'mu', 'alpha', 6, 4),
+      // remplissage hors groupe, calibre pour ramener les trois a 12-12
+      M(1, 'zeta', 'f1', 0, 6), M(1, 'zeta', 'f2', 0, 6),
+      M(1, 'mu', 'f1', 6, 2),
+      M(1, 'alpha', 'f2', 8, 0),
+    ];
+    const s = standings(teams, ms);
+    const trois = s.slice(0, 3);
+    expect(trois.every(x => x.gamesWon === 12 && x.diff === 0)).toBe(true);
+    expect(trois.map(x => x.h2h)).toEqual([12, -4, -8]);
+    expect(trois.map(x => x.teamId)).toEqual(['zeta', 'mu', 'alpha']);
+  });
+
+  it('le plafond de tour exclut les matchs des tours posterieurs', () => {
+    const teams = [T('a', 6), T('b', 5)];
+    const ms = [
+      { ...M(1, 'a', 'b', 6, 0), round: 1 },
+      { ...M(1, 'a', 'b', 0, 6), round: 2 },
+    ];
+    expect(standings(teams, ms).find(x => x.teamId === 'a')!.played).toBe(2);
+    expect(standings(teams, ms, 1).find(x => x.teamId === 'a')!.played).toBe(1);
+    expect(standings(teams, ms, 1).find(x => x.teamId === 'a')!.gamesWon).toBe(6);
+  });
+
   it('un match non confirme ne compte pas', () => {
     const ms = [{ ...M(2, 'a', 'b', 6, 1), confirmed: false }];
     const s = standings(EIGHT.slice(0, 2), ms);
     expect(s[0].played).toBe(0);
+  });
+});
+
+describe('dernier tour complet', () => {
+  const R = (round: number, a: string | null, b: string | null, confirmed: boolean): Match =>
+    ({ round, court: 1, teamA: a, teamB: b, gamesA: 0, gamesB: 0, confirmed });
+
+  it('rend le dernier tour dont tous les matchs reels sont confirmes', () => {
+    expect(lastCompleteRound([
+      R(1, 'a', 'b', true), R(1, 'c', 'd', true),
+      R(2, 'a', 'c', true), R(2, 'b', 'd', false),   // tour 2 entame, pas fini
+    ])).toBe(1);
+  });
+
+  it('rend le dernier tour joue quand tout est confirme', () => {
+    expect(lastCompleteRound([
+      R(1, 'a', 'b', true), R(2, 'a', 'b', true), R(3, 'a', 'b', true),
+    ])).toBe(3);
+  });
+
+  it('ignore les byes, que personne ne peut confirmer', () => {
+    expect(lastCompleteRound([
+      R(1, 'a', 'b', true), R(1, 'c', null, false),   // le bye reste non confirme
+    ])).toBe(1);
+  });
+
+  it('rend 0 quand le tour 1 lui meme est inacheve', () => {
+    expect(lastCompleteRound([R(1, 'a', 'b', false), R(1, 'c', 'd', true)])).toBe(0);
+  });
+
+  it('rend 0 sur une soiree sans aucun match', () => {
+    expect(lastCompleteRound([])).toBe(0);
   });
 });

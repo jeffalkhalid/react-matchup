@@ -62,7 +62,13 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
   entered_by    uuid REFERENCES public.players(id),
   confirmed_by  uuid REFERENCES public.players(id),
   confirmed_at  timestamptz,
-  UNIQUE (tournament_id, round_no, court_no),
+  -- PAS de UNIQUE (tournament_id, round_no, court_no) ici : un palier peut
+  -- porter DEUX lignes au meme tour, un bye ET un match. Le cas apparait des
+  -- qu un binome declare forfait au milieu de l echelle : le survivant reste
+  -- sur son palier apres son bye, et y recoit le perdant du dessus et le
+  -- gagnant du dessous -- trois equipes, donc un bye plus un match. Les deux
+  -- garanties utiles sont posees juste apres la table, en index PARTIELS :
+  -- au plus un match reel et au plus un bye par (tournoi, tour, palier).
   -- Composite FKs ensure teams belong to this match's tournament, not another.
   -- NULL team (bye) passes the FK check because any NULL in a FK is unchecked.
   FOREIGN KEY (tournament_id, team_a) REFERENCES public.tournament_teams(tournament_id, id),
@@ -70,6 +76,18 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
 );
 
 CREATE INDEX IF NOT EXISTS tournament_matches_tour ON public.tournament_matches (tournament_id, round_no);
+
+-- Unicite par palier, en deux moities : un palier porte au plus UN match reel
+-- et au plus UN bye au meme tour. Un seul index sur les trois colonnes
+-- interdirait la coexistence des deux, qui est precisement ce que le format
+-- exige apres un forfait en milieu d echelle.
+CREATE UNIQUE INDEX IF NOT EXISTS tournament_matches_one_match_per_court
+  ON public.tournament_matches (tournament_id, round_no, court_no)
+  WHERE team_b IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS tournament_matches_one_bye_per_court
+  ON public.tournament_matches (tournament_id, round_no, court_no)
+  WHERE team_b IS NULL;
 
 CREATE TABLE IF NOT EXISTS public.tournament_results (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,

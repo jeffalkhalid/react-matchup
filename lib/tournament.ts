@@ -25,6 +25,10 @@ export type Standing = {
   gamesLost: number;
   diff: number;
   highestCourt: number;
+  /** Departage a la confrontation directe : jeux pris aux AUTRES binomes du
+   *  meme groupe d ex aequo, moins les jeux concedes a ces memes binomes.
+   *  Scalaire, donc ordre total. 0 quand le binome est seul dans son groupe. */
+  h2h: number;
   rank: number;
 };
 
@@ -66,6 +70,14 @@ export function pairUp(courts: Map<string, number>, byeCount: Map<string, number
     // version precedente appariait tri[0]/tri[1] et abandonnait tri[2] en
     // SILENCE — une paire plantee sur un terrain sans adversaire, absente du
     // tableau du tour. C etait un bug de classement autant que de terrain.
+    // Un palier a plus de 3 equipes est IMPOSSIBLE (cf. la demonstration
+    // ci-dessus). Si ca arrive quand meme, c est que l echelle est corrompue
+    // en amont : on hurle. La version d avant en aurait abandonne une en
+    // silence, ce qui est la facon la plus sure de ne jamais trouver le bug.
+    if (tri.length > 3) {
+      throw new Error(
+        `Echelle corrompue : le palier ${court} porte ${tri.length} equipes (max 3)`);
+    }
     const impair = tri.length % 2 === 1;
     if (impair) {
       out.push({ round: 0, court, teamA: tri[0], teamB: null, gamesA: 0, gamesB: 0, confirmed: false });
@@ -98,19 +110,52 @@ export function nextCourts(
   return out;
 }
 
-/** Classement aux jeux gagnes. Departages : difference de jeux, puis
- *  confrontation directe (agregee sur TOUTES les rencontres, pas seulement
- *  la premiere — deux equipes peuvent se recroiser plusieurs fois en une
- *  soiree), puis palier le plus haut atteint. */
-export function standings(teams: TeamState[], matches: Match[]): Standing[] {
+/** Le dernier tour dont TOUS les matchs reels sont confirmes ; 0 si meme le
+ *  tour 1 est inacheve. Les byes ne comptent pas : personne ne peut les
+ *  confirmer.
+ *
+ *  Sert a arreter une soiree qui deborde SANS rien detruire : on borne le
+ *  classement a ce tour au lieu de compter un tour a moitie joue, ce qui
+ *  egalise les nombres de matchs. `tournament_close` fait exactement pareil
+ *  cote serveur, en prenant le PREMIER tour incomplet moins un. */
+export function lastCompleteRound(matches: Match[]): number {
+  const reels = matches.filter(m => m.teamA != null && m.teamB != null);
+  const inacheves = reels.filter(m => !m.confirmed).map(m => m.round);
+  if (inacheves.length > 0) return Math.min(...inacheves) - 1;
+  return reels.reduce((acc, m) => Math.max(acc, m.round), 0);
+}
+
+/** Classement aux jeux gagnes. Departages successifs : difference de jeux,
+ *  puis confrontation directe, puis palier le plus haut atteint, puis l id.
+ *
+ *  La confrontation directe est un SCALAIRE, pas un comparateur : pour chaque
+ *  binome, les jeux pris aux AUTRES binomes de son groupe d ex aequo moins
+ *  les jeux qu il leur a concedes, sur TOUTES leurs rencontres. Le groupe
+ *  d ex aequo est l ensemble des binomes que les deux premieres cles n ont
+ *  pas departages (memes jeux gagnes ET meme difference).
+ *
+ *  Pourquoi un scalaire. La version precedente comparait deux a deux, ce qui
+ *  coincide avec le scalaire pour un groupe de DEUX mais diverge des trois :
+ *  m bat n, n bat a, a bat m, tous 6-2, laisse un cycle. Un comparateur
+ *  circulaire n est pas un ordre total, et `Array.prototype.sort` n a alors
+ *  aucun resultat defini — le SQL et le TypeScript rendaient deux classements
+ *  differents sur la meme soiree. Le scalaire est transitif par construction.
+ *
+ *  `maxRound` borne le classement aux tours <= a cette valeur (cf.
+ *  `lastCompleteRound`). Sans lui, tous les matchs confirmes comptent. */
+export function standings(
+  teams: TeamState[], matches: Match[], maxRound?: number,
+): Standing[] {
   const base = new Map<string, Standing>();
   for (const t of teams) {
     base.set(t.id, {
       teamId: t.id, played: 0, gamesWon: 0, gamesLost: 0,
-      diff: 0, highestCourt: 0, rank: 0,
+      diff: 0, highestCourt: 0, h2h: 0, rank: 0,
     });
   }
-  const joues = matches.filter(m => m.confirmed && m.teamA != null && m.teamB != null);
+  const joues = matches.filter(m =>
+    m.confirmed && m.teamA != null && m.teamB != null &&
+    (maxRound === undefined || m.round <= maxRound));
   for (const m of joues) {
     const a = base.get(m.teamA!); const b = base.get(m.teamB!);
     if (a) {
@@ -124,24 +169,27 @@ export function standings(teams: TeamState[], matches: Match[]): Standing[] {
   }
   for (const s of base.values()) s.diff = s.gamesWon - s.gamesLost;
 
-  const directe = (x: string, y: string): number => {
-    // Somme sur TOUTES les rencontres x/y, pas seulement la premiere trouvee :
-    // .find() dependrait de l ordre d insertion de `matches`, ce que l appelant
-    // (et plus tard le SQL, sans ORDER BY explicite) ne garantit pas. Sommer
-    // rend le resultat une fonction pure des VALEURS des matchs, jamais de
-    // leur ordre.
-    let jx = 0, jy = 0;
-    for (const k of joues) {
-      if (k.teamA === x && k.teamB === y) { jx += k.gamesA; jy += k.gamesB; }
-      else if (k.teamA === y && k.teamB === x) { jx += k.gamesB; jy += k.gamesA; }
-    }
-    return jy - jx;   // negatif = x devant
-  };
+  // Le groupe d ex aequo : memes jeux gagnes ET meme difference. C est
+  // exactement ce que le SQL isole avec dense_rank() sur ces deux cles.
+  const groupe = new Map<string, string>();
+  for (const s of base.values()) groupe.set(s.teamId, `${s.gamesWon}|${s.diff}`);
+
+  // Le scalaire de confrontation directe. Somme sur TOUTES les rencontres
+  // internes au groupe : jamais la premiere trouvee, sinon le resultat
+  // dependrait de l ordre d arrivee des matchs, que rien ne garantit — ni
+  // cote TypeScript, ni cote SQL sans ORDER BY.
+  for (const m of joues) {
+    const a = base.get(m.teamA!); const b = base.get(m.teamB!);
+    if (!a || !b) continue;
+    if (groupe.get(a.teamId) !== groupe.get(b.teamId)) continue;
+    a.h2h += m.gamesA - m.gamesB;
+    b.h2h += m.gamesB - m.gamesA;
+  }
 
   const out = [...base.values()].sort((x, y) =>
     y.gamesWon - x.gamesWon ||
     y.diff - x.diff ||
-    directe(x.teamId, y.teamId) ||
+    y.h2h - x.h2h ||
     y.highestCourt - x.highestCourt ||
     x.teamId.localeCompare(y.teamId));
   out.forEach((s, i) => { s.rank = i + 1; });
