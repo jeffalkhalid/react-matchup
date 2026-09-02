@@ -56,6 +56,37 @@ describe('appariement', () => {
     expect(ms[0].teamA).toBe('y');   // 0 bye : priorite
     expect(ms[0].teamB).toBe('x');   // 2 byes
   });
+
+  // Un palier a TROIS equipes n est pas une curiosite : il apparait des qu un
+  // binome declare forfait au milieu de l echelle (le survivant reste sur
+  // place apres son bye, et recoit le perdant du dessus ET le gagnant du
+  // dessous). La version precedente appariait les deux premieres et
+  // abandonnait la troisieme SANS RIEN produire : une paire plantee sur un
+  // terrain sans adversaire, absente du tableau, et privee des jeux qui font
+  // le classement.
+  it('un palier a trois equipes ne laisse personne de cote', () => {
+    const courts = new Map([['p', 2], ['q', 2], ['r', 2]]);
+    const ms = pairUp(courts, new Map());
+    expect(ms).toHaveLength(2);                       // un bye + un match
+    const places = ms.flatMap(m => [m.teamA, m.teamB]).filter(x => x !== null);
+    expect([...places].sort()).toEqual(['p', 'q', 'r']);   // les trois, une fois chacune
+  });
+
+  it('sur un palier impair, le bye va a l equipe qui en a eu le moins', () => {
+    const courts = new Map([['p', 2], ['q', 2], ['r', 2]]);
+    const byeCount = new Map([['p', 0], ['q', 1], ['r', 2]]);
+    const ms = pairUp(courts, byeCount);
+    const bye = ms.find(m => m.teamB === null)!;
+    expect(bye.teamA).toBe('p');        // 0 bye jusqu ici : c est son tour
+    const match = ms.find(m => m.teamB !== null)!;
+    expect(match.teamA).toBe('q');      // les deux autres se rencontrent,
+    expect(match.teamB).toBe('r');      // toujours dans l ordre byes puis id
+  });
+
+  it('le bye et le match d un meme palier portent le meme numero de terrain', () => {
+    const ms = pairUp(new Map([['p', 7], ['q', 7], ['r', 7]]), new Map());
+    expect(ms.every(m => m.court === 7)).toBe(true);
+  });
 });
 
 describe('mouvement entre les tours', () => {
@@ -96,6 +127,40 @@ describe('mouvement entre les tours', () => {
       for (const t of c.values()) parTerrain.set(t, (parTerrain.get(t) ?? 0) + 1);
       expect([...parTerrain.values()].sort()).toEqual([2, 2, 2, 2]);
     }
+  });
+
+  // Le cas qui a motive la correction de pairUp, joue de bout en bout : on
+  // retire une equipe d un terrain du MILIEU (le 2) apres le tour 1. Le
+  // terrain 2 tombe a 1 equipe (bye), puis remonte a 3 au tour suivant
+  // (le bye reste sur place, le perdant du 3 et le gagnant du 1 arrivent).
+  // L invariant verifie n est plus "deux par terrain" -- il ne tient plus
+  // apres un forfait -- mais le seul qui compte pour un joueur : CHAQUE
+  // equipe encore en lice apparait dans EXACTEMENT un match du tour, bye
+  // compris.
+  it('INVARIANT : apres un forfait au milieu de l echelle, aucune equipe ne disparait du tableau', () => {
+    let c = initialCourts(EIGHT);
+    const vivantes = new Set(EIGHT.map(t => t.id));
+    const byes = new Map<string, number>();
+    for (let tour = 1; tour <= 5; tour++) {
+      const pairs = pairUp(c, byes);
+      const vues = pairs.flatMap(m => [m.teamA, m.teamB]).filter((x): x is string => x !== null);
+      expect(vues.slice().sort()).toEqual([...vivantes].sort());
+      expect(new Set(vues).size).toBe(vues.length);   // et une seule fois chacune
+
+      for (const m of pairs) {
+        if (m.teamB === null) byes.set(m.teamA!, (byes.get(m.teamA!) ?? 0) + 1);
+      }
+      const reels = pairs.filter(m => m.teamB !== null);
+      const gagnants = Object.fromEntries(reels.map(m => [m.court, m.teamA!]));
+      c = nextCourts(c, joue(reels, gagnants), 4);
+
+      if (tour === 1) {
+        const victime = [...c.entries()].find(([, court]) => court === 2)![0];
+        vivantes.delete(victime);
+        c.delete(victime);        // le forfait quitte l echelle
+      }
+    }
+    expect(vivantes.size).toBe(7);
   });
 });
 

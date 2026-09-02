@@ -40,8 +40,16 @@ export function initialCourts(teams: TeamState[]): Map<string, number> {
   return out;
 }
 
-/** Oppose les deux equipes d un meme terrain. Un terrain a une seule equipe
- *  (forfait de l adversaire) donne un bye. */
+/** Oppose les equipes d un meme terrain.
+ *
+ *  Un terrain porte 1, 2 ou 3 equipes -- jamais plus. Preuve : un terrain
+ *  recoit au plus le perdant du terrain du dessus, au plus le gagnant du
+ *  terrain du dessous, et garde au plus une equipe qui vient d y faire un bye.
+ *  Un forfait (ou un nombre impair d equipes) cree les paliers a 1 et a 3.
+ *
+ *  Regle du bye : si le terrain porte un nombre IMPAIR d equipes, le bye va a
+ *  celle qui en a eu le MOINS jusqu ici, l id departageant a egalite ; les
+ *  autres se rencontrent. AUCUNE equipe n est jamais laissee de cote. */
 export function pairUp(courts: Map<string, number>, byeCount: Map<string, number>): Match[] {
   const parTerrain = new Map<number, string[]>();
   for (const [id, c] of courts) {
@@ -54,10 +62,17 @@ export function pairUp(courts: Map<string, number>, byeCount: Map<string, number
     // pour que TypeScript et SQL produisent le meme appariement.
     const tri = [...ids].sort((x, y) =>
       (byeCount.get(x) ?? 0) - (byeCount.get(y) ?? 0) || x.localeCompare(y));
-    if (tri.length === 1) {
+    // Nombre impair : le bye d abord, a l equipe qui en a eu le moins. Une
+    // version precedente appariait tri[0]/tri[1] et abandonnait tri[2] en
+    // SILENCE — une paire plantee sur un terrain sans adversaire, absente du
+    // tableau du tour. C etait un bug de classement autant que de terrain.
+    const impair = tri.length % 2 === 1;
+    if (impair) {
       out.push({ round: 0, court, teamA: tri[0], teamB: null, gamesA: 0, gamesB: 0, confirmed: false });
-    } else {
-      out.push({ round: 0, court, teamA: tri[0], teamB: tri[1], gamesA: 0, gamesB: 0, confirmed: false });
+    }
+    const reste = impair ? tri.slice(1) : tri;
+    if (reste.length >= 2) {
+      out.push({ round: 0, court, teamA: reste[0], teamB: reste[1], gamesA: 0, gamesB: 0, confirmed: false });
     }
   }
   return out;

@@ -32,6 +32,52 @@
 BEGIN;
 
 -- ----------------------------------------------------------------------------
+-- AMENDEMENT DE SCHEMA : un palier peut porter un bye ET un match.
+--
+-- La Task 2 pose `UNIQUE (tournament_id, round_no, court_no)` sur
+-- `tournament_matches`, ce qui interdit deux lignes sur le meme palier au meme
+-- tour. Cette contrainte etait juste tant qu un palier portait toujours deux
+-- equipes. Elle ne l est plus : un palier a TROIS equipes -- ce qui arrive des
+-- qu un binome declare forfait au milieu de l echelle -- doit produire un bye
+-- ET un match, tous deux sur ce palier. Sans cet amendement, la troisieme
+-- equipe serait de nouveau abandonnee, cette fois par la base.
+--
+-- Le remplacement conserve les deux garanties utiles, en deux index partiels :
+-- au plus UN match reel et au plus UN bye par (tournoi, tour, palier).
+-- Le fichier de la Task 2 n est PAS modifie : l amendement vit ici, dans une
+-- migration additive, et le DO ci-dessous retrouve la contrainte par ses
+-- COLONNES plutot que par son nom genere.
+-- ----------------------------------------------------------------------------
+DO $mig$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT con.conname
+      FROM pg_constraint con
+      JOIN pg_class     rel ON rel.oid = con.conrelid
+      JOIN pg_namespace ns  ON ns.oid  = rel.relnamespace
+     WHERE ns.nspname = 'public'
+       AND rel.relname = 'tournament_matches'
+       AND con.contype = 'u'
+       AND (SELECT array_agg(att.attname ORDER BY att.attname)
+              FROM unnest(con.conkey) AS k
+              JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k)
+           = ARRAY['court_no','round_no','tournament_id']
+  LOOP
+    EXECUTE format('ALTER TABLE public.tournament_matches DROP CONSTRAINT %I', r.conname);
+  END LOOP;
+END
+$mig$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS tournament_matches_one_match_per_court
+  ON public.tournament_matches (tournament_id, round_no, court_no)
+  WHERE team_b IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS tournament_matches_one_bye_per_court
+  ON public.tournament_matches (tournament_id, round_no, court_no)
+  WHERE team_b IS NULL;
+
+-- ----------------------------------------------------------------------------
 -- Helper interne : le bareme de points.
 --
 -- `points_scale` est un objet {rang: points} A RANGS PARTIELS, par exemple
@@ -503,6 +549,13 @@ GRANT EXECUTE ON FUNCTION public.tournament_withdraw(uuid) TO authenticated;
 -- `lib/tournament.ts`. Le mouvement entre deux tours est porte par
 -- `fn_tournament_ladder`, port de `nextCourts`.
 --
+-- Regle du bye, identique a `pairUp` : un palier a un nombre IMPAIR d equipes
+-- donne un bye a celle qui en a eu le MOINS jusqu ici (l id departage), et les
+-- autres se rencontrent. Un palier porte 1, 2 ou 3 equipes -- jamais plus :
+-- il recoit au plus le perdant du palier du dessus, au plus le gagnant du
+-- palier du dessous, et garde au plus une equipe qui vient d y faire un bye.
+-- AUCUNE equipe n est jamais laissee sans ligne.
+--
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
 --         not_the_organizer, tournament_over, tournament_cancelled,
 --         not_enough_teams, round_incomplete (avec la liste des matchs
@@ -520,9 +573,11 @@ DECLARE
   v_t       public.tournaments%ROWTYPE;
   v_round   int;
   v_teams   int;
+  v_placed  int;
   v_cc      int;
   v_missing jsonb;
   v_created int;
+  v_byes    int;
 BEGIN
   IF NOT public.fn_tournaments_enabled() THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
@@ -622,33 +677,50 @@ BEGIN
     v_cc := v_t.court_count;
   END IF;
 
+  -- Garde AVANT toute ecriture de matchs : sans deux equipes en lice, il n y a
+  -- plus de tour a generer. Ce controle etait fait APRES l insertion dans la
+  -- version precedente, ce qui laissait une ligne posee derriere un refus.
+  SELECT count(*)::int INTO v_placed
+    FROM public.fn_tournament_ladder(p_tournament, v_round);
+  IF v_placed < 2 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_enough_teams');
+  END IF;
+
   -- pairUp : sur chaque palier, les equipes sont triees par nombre de byes
   -- deja recus CROISSANT puis par id CROISSANT -- jamais par ordre
-  -- d'insertion, pour que SQL et TypeScript apparient a l'identique. La
-  -- premiere devient team_a, la seconde team_b. Un palier a une seule equipe
-  -- donne un bye (team_b NULL).
+  -- d insertion, pour que SQL et TypeScript apparient a l identique.
   WITH st AS (
     SELECT * FROM public.fn_tournament_ladder(p_tournament, v_round)
   ),
   ranked AS (
     SELECT st.team_id, st.court,
            row_number() OVER (PARTITION BY st.court
-                              ORDER BY st.bye_count ASC, st.team_id ASC) AS pos
+                              ORDER BY st.bye_count ASC, st.team_id ASC) AS pos,
+           count(*)     OVER (PARTITION BY st.court)                     AS n
       FROM st
   ),
   ins AS (
     INSERT INTO public.tournament_matches (tournament_id, round_no, court_no, team_a, team_b)
-    SELECT p_tournament, v_round, r1.court, r1.team_id, r2.team_id
-      FROM ranked r1
-      LEFT JOIN ranked r2 ON r2.court = r1.court AND r2.pos = 2
-     WHERE r1.pos = 1
-    RETURNING 1
+    -- 1. Le bye des paliers IMPAIRS. pos = 1, c est-a-dire l equipe qui a recu
+    --    le MOINS de byes jusqu ici, l id departageant : le bye tournant de la
+    --    spec. Un palier a 1 equipe et un palier a 3 passent tous deux par ici.
+    SELECT p_tournament, v_round, r.court, r.team_id, NULL::uuid
+      FROM ranked r
+     WHERE r.n % 2 = 1 AND r.pos = 1
+    UNION ALL
+    -- 2. Le match, entre les deux equipes qui suivent : pos 2 contre pos 3 sur
+    --    un palier impair, pos 1 contre pos 2 sur un palier pair. Rien n est
+    --    jamais abandonne, puisqu un palier ne porte jamais plus de 3 equipes.
+    SELECT p_tournament, v_round, a.court, a.team_id, b.team_id
+      FROM ranked a
+      JOIN ranked b ON b.court = a.court AND b.pos = a.pos + 1
+     WHERE a.pos = CASE WHEN a.n % 2 = 1 THEN 2 ELSE 1 END
+    RETURNING (team_b IS NULL) AS is_bye
   )
-  SELECT count(*)::int INTO v_created FROM ins;
-
-  IF v_created = 0 THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_enough_teams');
-  END IF;
+  SELECT (count(*) FILTER (WHERE NOT ins.is_bye))::int,
+         (count(*) FILTER (WHERE     ins.is_bye))::int
+    INTO v_created, v_byes
+    FROM ins;
 
   UPDATE public.tournaments
      SET current_round = v_round,
@@ -656,7 +728,8 @@ BEGIN
    WHERE id = p_tournament;
 
   RETURN jsonb_build_object('ok', true, 'round', v_round,
-                            'matches', v_created, 'court_count', v_cc);
+                            'matches', v_created, 'byes', v_byes,
+                            'court_count', v_cc);
 END;
 $$;
 
@@ -846,10 +919,13 @@ BEGIN
            'played',        f.played,
            'games_won',     f.games_won,
            'games_lost',    f.games_lost,
-           -- Moyenne de jeux gagnes par match joue. EXPOSEE, PAS UTILISEE AU
-           -- TRI : `lib/tournament.ts` trie sur le TOTAL, et la parite
-           -- l'emporte tant que le miroir TypeScript n'a pas ete change.
-           -- Voir le rapport de la Task 3, section "contradiction du plan".
+           -- Moyenne de jeux gagnes par match joue. EXPOSEE POUR L AFFICHAGE,
+           -- JAMAIS UTILISEE AU TRI : le classement se fait au TOTAL de jeux
+           -- gagnes, des deux cotes. Arbitrage rendu : une moyenne
+           -- recompenserait un binome qui abandonne apres deux beaux matchs,
+           -- et le cas qui la motivait -- la soiree qui deborde -- est reglee
+           -- a la source par `tournament_close`, qui cloture au dernier tour
+           -- COMPLET.
            'games_avg',     CASE WHEN f.played > 0
                                  THEN round(f.games_won::numeric / f.played, 3)
                                  ELSE 0 END,
@@ -876,9 +952,18 @@ GRANT EXECUTE ON FUNCTION public.tournament_standings(uuid) TO authenticated;
 -- `finished`. C'est cette table que lit "Mon parcours" ; tant que le tournoi
 -- tourne, le classement se CALCULE et ne se stocke pas.
 --
+-- ON NE CLOTURE JAMAIS AU MILIEU D UN TOUR. La cloture se fait au DERNIER
+-- TOUR COMPLET : les matchs des tours posterieurs -- un tour entame que la
+-- soiree n a pas eu le temps de finir -- sont SUPPRIMES avant le calcul, et
+-- `current_round` revient a ce dernier tour complet. C est ce qui egalise les
+-- nombres de matchs joues par construction, plutot que de corriger apres coup
+-- par une moyenne. Un tour a moitie joue compte pour rien : les binomes qui
+-- avaient fini leur match y perdent ces jeux, ce qui est le prix d un
+-- classement lisible.
+--
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
 --         not_the_organizer, already_finished, tournament_cancelled,
---         tournament_not_started.
+--         tournament_not_started, no_complete_round.
 -- Appelable par : le createur du tournoi, et lui seul.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_close(p_tournament uuid)
@@ -888,10 +973,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_me    uuid := public.current_player_id();
-  v_t     public.tournaments%ROWTYPE;
-  v_st    jsonb;
-  v_rows  int;
+  v_me      uuid := public.current_player_id();
+  v_t       public.tournaments%ROWTYPE;
+  v_st      jsonb;
+  v_rows    int;
+  v_partiel int;   -- premier tour ou un match reel n est pas confirme
+  v_dernier int;   -- dernier tour COMPLET, sur lequel on cloture
+  v_purges  int;
 BEGIN
   IF NOT public.fn_tournaments_enabled() THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
@@ -917,9 +1005,37 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_started');
   END IF;
 
-  -- Une seule source pour le classement : la fonction que l'ecran affiche est
+  -- Le dernier tour COMPLET. Un tour est complet quand tous ses matchs REELS
+  -- sont confirmes ; les byes ne se confirment pas et n entrent pas dans le
+  -- controle. `tournament_generate_round` interdisant deja d avancer sur un
+  -- tour incomplet, seul le dernier tour peut etre partiel -- mais on prend le
+  -- PREMIER tour incomplet plutot que le dernier, ce qui reste juste meme si
+  -- une reouverture a laisse un trou plus haut.
+  SELECT min(x.round_no) INTO v_partiel
+    FROM public.tournament_matches x
+   WHERE x.tournament_id = p_tournament
+     AND x.team_b IS NOT NULL
+     AND x.confirmed_at IS NULL;
+
+  v_dernier := COALESCE(v_partiel - 1, v_t.current_round);
+
+  IF v_dernier < 1 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'no_complete_round');
+  END IF;
+
+  DELETE FROM public.tournament_matches
+   WHERE tournament_id = p_tournament
+     AND round_no > v_dernier;
+  GET DIAGNOSTICS v_purges = ROW_COUNT;
+
+  IF v_purges > 0 THEN
+    UPDATE public.tournaments SET current_round = v_dernier WHERE id = p_tournament;
+  END IF;
+
+  -- Une seule source pour le classement : la fonction que l ecran affiche est
   -- celle qui fige les resultats. Deux calculs, meme tres proches, finiraient
-  -- par diverger.
+  -- par diverger. Elle est appelee APRES la purge, donc elle ne voit que des
+  -- tours complets.
   v_st := public.tournament_standings(p_tournament);
   IF NOT COALESCE((v_st->>'ok')::boolean, false) THEN
     RETURN v_st;
@@ -953,6 +1069,8 @@ BEGIN
    WHERE id = p_tournament;
 
   RETURN jsonb_build_object('ok', true, 'results', v_rows,
+                            'closed_at_round', v_dernier,
+                            'dropped_matches', v_purges,
                             'standings', v_st->'standings');
 END;
 $$;
