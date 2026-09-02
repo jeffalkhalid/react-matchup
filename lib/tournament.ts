@@ -70,6 +70,10 @@ export function nextCourts(
   const out = new Map(courts);
   for (const m of matches) {
     if (m.teamA == null || m.teamB == null) continue;      // bye : sur place
+    // Un match de padel ne peut pas etre nul. gamesA === gamesB est un etat
+    // qui ne devrait jamais arriver (valide en amont, pas ici) ; si il
+    // survenait quand meme, ce test le traite comme une victoire de B —
+    // choix explicite, pas un oubli.
     const aGagne = m.gamesA > m.gamesB;
     const gagnant = aGagne ? m.teamA : m.teamB;
     const perdant = aGagne ? m.teamB : m.teamA;
@@ -80,7 +84,9 @@ export function nextCourts(
 }
 
 /** Classement aux jeux gagnes. Departages : difference de jeux, puis
- *  confrontation directe si elle a eu lieu, puis palier le plus haut atteint. */
+ *  confrontation directe (agregee sur TOUTES les rencontres, pas seulement
+ *  la premiere — deux equipes peuvent se recroiser plusieurs fois en une
+ *  soiree), puis palier le plus haut atteint. */
 export function standings(teams: TeamState[], matches: Match[]): Standing[] {
   const base = new Map<string, Standing>();
   for (const t of teams) {
@@ -104,12 +110,16 @@ export function standings(teams: TeamState[], matches: Match[]): Standing[] {
   for (const s of base.values()) s.diff = s.gamesWon - s.gamesLost;
 
   const directe = (x: string, y: string): number => {
-    const m = joues.find(k =>
-      (k.teamA === x && k.teamB === y) || (k.teamA === y && k.teamB === x));
-    if (!m) return 0;
-    const xEstA = m.teamA === x;
-    const jx = xEstA ? m.gamesA : m.gamesB;
-    const jy = xEstA ? m.gamesB : m.gamesA;
+    // Somme sur TOUTES les rencontres x/y, pas seulement la premiere trouvee :
+    // .find() dependrait de l ordre d insertion de `matches`, ce que l appelant
+    // (et plus tard le SQL, sans ORDER BY explicite) ne garantit pas. Sommer
+    // rend le resultat une fonction pure des VALEURS des matchs, jamais de
+    // leur ordre.
+    let jx = 0, jy = 0;
+    for (const k of joues) {
+      if (k.teamA === x && k.teamB === y) { jx += k.gamesA; jy += k.gamesB; }
+      else if (k.teamA === y && k.teamB === x) { jx += k.gamesB; jy += k.gamesA; }
+    }
     return jy - jx;   // negatif = x devant
   };
 
