@@ -4,6 +4,10 @@
 -- ±2h, qui saboterait un format ou le meme binome joue cinq fois en une soiree.
 BEGIN;
 
+-- Les places d'un tournoi se comptent en JOUEURS, pas en binomes : un binome
+-- se forme parfois tard (inscription solo puis appariement). On ne stocke que
+-- le parametre de base (court_count) ; binomes = court_count x 2, places =
+-- court_count x 4 se derivent a la lecture (app / requetes), jamais stockes.
 CREATE TABLE IF NOT EXISTS public.tournaments (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name          text NOT NULL,
@@ -14,11 +18,21 @@ CREATE TABLE IF NOT EXISTS public.tournaments (
   level_max     numeric(3,1),
   court_count   int  NOT NULL CHECK (court_count > 0),
   round_count   int  NOT NULL CHECK (round_count > 0),
-  max_teams     int  NOT NULL CHECK (max_teams > 0 AND max_teams % 2 = 0),
   price_mad     int  NOT NULL DEFAULT 0,      -- AFFICHE, jamais encaisse
-  points_scale  jsonb NOT NULL DEFAULT '{"1":20,"2":15,"3":10,"5":5,"7":-2}'::jsonb,
-  status        text NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft','open','live','finished','cancelled')),
+  points_scale  jsonb NOT NULL DEFAULT '{"1":100,"2":80,"3":65,"4":55,"5":45,"6":35,"7":25,"8":15}'::jsonb
+                -- Aucune valeur negative : un tournoi ne punit pas, il classe.
+                -- jsonb_path_exists est un simple appel de fonction (IMMUTABLE),
+                -- pas une sous-requete : autorise dans une CHECK.
+                CHECK (NOT jsonb_path_exists(points_scale, '$.* ? (@ < 0)')),
+  -- Score credite a CHAQUE camp en cas de forfait (walkover) pendant un match.
+  -- 0 pour les deux camps par defaut : un match forfait ne credite aucun jeu.
+  -- Parametrable si l'organisateur veut un score de courtoisie (ex. 4-0).
+  forfeit_games int  NOT NULL DEFAULT 0 CHECK (forfeit_games >= 0),
+  status        text NOT NULL DEFAULT 'BROUILLON'
+                CHECK (status IN (
+                  'BROUILLON','INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN',
+                  'PRET','EN_COURS','TERMINE','CLASSEMENT_VALIDE'
+                )),
   current_round int  NOT NULL DEFAULT 0,
   created_by    uuid NOT NULL REFERENCES public.players(id),
   created_at    timestamptz NOT NULL DEFAULT now()
@@ -33,8 +47,41 @@ CREATE TABLE IF NOT EXISTS public.tournament_teams (
   withdrawn     boolean NOT NULL DEFAULT false,
   created_at    timestamptz NOT NULL DEFAULT now(),
   CHECK (player1_id <> player2_id),
-  UNIQUE (tournament_id, id)  -- Enables composite FK from matches/results
+  UNIQUE (tournament_id, id)  -- Enables composite FK from registrations/matches/results
 );
+
+-- Inscription INDIVIDUELLE : un joueur s'inscrit seul (ou en duo, mais chacun
+-- a sa propre ligne) ; un binome se forme ensuite via tournament_teams (Task 3).
+-- C'est cette table, pas tournament_teams, qui porte la capacite du tournoi :
+-- les places se comptent en joueurs (tournaments.court_count x 4).
+--
+-- Regle #1 (portee ici) : un joueur n'a qu'UNE inscription par tournoi — la
+-- PRIMARY KEY (tournament_id, player_id) le garantit. C'est distinct de la
+-- regle #2 (portee par tournament_participants plus bas) : un joueur n'est
+-- que dans UN binome par tournoi. Un joueur peut respecter la regle #1 sans
+-- encore respecter/violer la regle #2 : il est inscrit, team_id est NULL,
+-- il attend un appariement.
+CREATE TABLE IF NOT EXISTS public.tournament_registrations (
+  tournament_id     uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
+  player_id         uuid NOT NULL REFERENCES public.players(id),
+  side              text NOT NULL CHECK (side IN ('left','right','both')),
+  -- true : n'importe qui peut me choisir comme partenaire directement.
+  -- false : appariement seulement sur accord explicite (Task 3).
+  open_to_join      boolean NOT NULL DEFAULT true,
+  team_id           uuid,
+  waitlist_position int CHECK (waitlist_position IS NULL OR waitlist_position > 0),
+  check_in_status   text NOT NULL DEFAULT 'pending'
+                    CHECK (check_in_status IN ('pending','checked_in','no_show')),
+  registered_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tournament_id, player_id),
+  -- Le binome eventuel doit appartenir au MEME tournoi que l'inscription.
+  -- ON DELETE SET NULL : si un binome disparaissait, l'inscription du joueur
+  -- redevient "en attente d'appariement" plutot que d'etre supprimee.
+  FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS tournament_registrations_team
+  ON public.tournament_registrations (tournament_id, team_id) WHERE team_id IS NOT NULL;
 
 -- Normalize: one player, one team per tournament. This table is maintained by a
 -- trigger on tournament_teams (fn_tournament_teams_sync_participants), not written
@@ -42,6 +89,11 @@ CREATE TABLE IF NOT EXISTS public.tournament_teams (
 -- at the database level, rejecting any duplicate on INSERT or UPDATE.
 -- Withdrawal is final: once a player record exists here (as part of a team),
 -- that (tournament_id, player_id) slot cannot be reused.
+--
+-- Regle #2 (distincte de la regle #1 portee par tournament_registrations
+-- ci-dessus) : un joueur n'appartient qu'a UN binome par tournoi. Cette table
+-- ne connait rien de l'inscription (side, open_to_join, check-in...) — elle
+-- ne fait qu'une chose : rendre "un joueur, un binome" inviolable.
 CREATE TABLE IF NOT EXISTS public.tournament_participants (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
   player_id     uuid NOT NULL REFERENCES public.players(id),
@@ -57,11 +109,13 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
   court_no      int  NOT NULL CHECK (court_no > 0),
   team_a        uuid,
   team_b        uuid,   -- NULL = bye
-  games_a       int  NOT NULL DEFAULT 0 CHECK (games_a >= 0),
-  games_b       int  NOT NULL DEFAULT 0 CHECK (games_b >= 0),
-  entered_by    uuid REFERENCES public.players(id),
-  confirmed_by  uuid REFERENCES public.players(id),
+  -- Score final, une fois l'accord entre camps atteint (tournament_match_entries
+  -- porte les saisies individuelles qui menent a cet accord). NULL tant que
+  -- personne n'a saisi, ou que les deux camps ne concordent pas encore.
+  games_a       int  CHECK (games_a >= 0),
+  games_b       int  CHECK (games_b >= 0),
   confirmed_at  timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now(),
   -- PAS de UNIQUE (tournament_id, round_no, court_no) ici : un palier peut
   -- porter DEUX lignes au meme tour, un bye ET un match. Le cas apparait des
   -- qu un binome declare forfait au milieu de l echelle : le survivant reste
@@ -72,7 +126,8 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
   -- Composite FKs ensure teams belong to this match's tournament, not another.
   -- NULL team (bye) passes the FK check because any NULL in a FK is unchecked.
   FOREIGN KEY (tournament_id, team_a) REFERENCES public.tournament_teams(tournament_id, id),
-  FOREIGN KEY (tournament_id, team_b) REFERENCES public.tournament_teams(tournament_id, id)
+  FOREIGN KEY (tournament_id, team_b) REFERENCES public.tournament_teams(tournament_id, id),
+  UNIQUE (tournament_id, id)  -- Enables composite FK from tournament_match_entries
 );
 
 CREATE INDEX IF NOT EXISTS tournament_matches_tour ON public.tournament_matches (tournament_id, round_no);
@@ -89,6 +144,46 @@ CREATE UNIQUE INDEX IF NOT EXISTS tournament_matches_one_bye_per_court
   ON public.tournament_matches (tournament_id, round_no, court_no)
   WHERE team_b IS NULL;
 
+-- Une ligne par SAISIE DE JOUEUR (pas par match) : chaque camp declare son
+-- score independamment, et c'est la concordance des saisies qui vaut accord
+-- (calculee par les fonctions de la Task 3, pas par ce schema). Une saisie
+-- peut etre corrigee : UNIQUE (match_id, player_id) fait de chaque nouvelle
+-- saisie une mise a jour de la meme ligne, jamais un empilement.
+CREATE TABLE IF NOT EXISTS public.tournament_match_entries (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
+  match_id      uuid NOT NULL,
+  player_id     uuid NOT NULL REFERENCES public.players(id),
+  games_a       int  NOT NULL CHECK (games_a >= 0),
+  games_b       int  NOT NULL CHECK (games_b >= 0),
+  entered_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (match_id, player_id),
+  -- Le match doit appartenir au MEME tournoi que la saisie.
+  FOREIGN KEY (tournament_id, match_id) REFERENCES public.tournament_matches(tournament_id, id) ON DELETE CASCADE,
+  -- Une saisie ne peut venir que d'un joueur INSCRIT a ce tournoi : la cle
+  -- composite pointe vers tournament_registrations (regle #1), pas vers
+  -- players seul, qui ne saurait rien du tournoi.
+  FOREIGN KEY (tournament_id, player_id) REFERENCES public.tournament_registrations(tournament_id, player_id)
+);
+
+CREATE INDEX IF NOT EXISTS tournament_match_entries_match ON public.tournament_match_entries (match_id);
+
+-- Parcours d'un binome, tour par tour : c'est ce qui permet d'afficher
+-- "T4 -> T3 (monte) -> T2 (monte)" sans recalculer l'historique a la volee.
+CREATE TABLE IF NOT EXISTS public.tournament_movements (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
+  team_id       uuid NOT NULL,
+  round_no      int  NOT NULL CHECK (round_no > 0),
+  court_before  int  NOT NULL CHECK (court_before > 0),
+  court_after   int  NOT NULL CHECK (court_after > 0),
+  movement      text NOT NULL CHECK (movement IN ('UP','DOWN','STAY')),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tournament_id, team_id, round_no),
+  -- Le binome doit appartenir au MEME tournoi que le mouvement.
+  FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS public.tournament_results (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
   team_id       uuid NOT NULL,
@@ -103,19 +198,25 @@ CREATE TABLE IF NOT EXISTS public.tournament_results (
   FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE CASCADE
 );
 
-ALTER TABLE public.tournaments        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tournament_teams   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tournament_participants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tournament_matches ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tournament_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournaments               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_teams          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_registrations  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_participants   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_matches        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_match_entries  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_movements      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_results        ENABLE ROW LEVEL SECURITY;
 
 -- Lecture ouverte a tout utilisateur connecte : un tournoi est un evenement
 -- public. Toute ECRITURE passe par les RPC de la Task 3, jamais en direct.
-CREATE POLICY tournaments_read        ON public.tournaments        FOR SELECT TO authenticated USING (true);
-CREATE POLICY tournament_teams_read   ON public.tournament_teams   FOR SELECT TO authenticated USING (true);
-CREATE POLICY tournament_participants_read ON public.tournament_participants FOR SELECT TO authenticated USING (true);
-CREATE POLICY tournament_matches_read ON public.tournament_matches FOR SELECT TO authenticated USING (true);
-CREATE POLICY tournament_results_read ON public.tournament_results FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournaments_read              ON public.tournaments              FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_teams_read         ON public.tournament_teams         FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_registrations_read ON public.tournament_registrations FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_participants_read  ON public.tournament_participants  FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_matches_read       ON public.tournament_matches       FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_match_entries_read ON public.tournament_match_entries FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_movements_read     ON public.tournament_movements     FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_results_read       ON public.tournament_results       FOR SELECT TO authenticated USING (true);
 
 -- Trigger: maintain tournament_participants as a derived table from tournament_teams.
 -- The PK (tournament_id, player_id) enforces "one player per tournament", preventing
@@ -162,6 +263,8 @@ END;
 $$;
 
 -- Restrict function access: only the trigger (via SECURITY DEFINER) can call it.
+-- REVOKE ... FROM PUBLIC ne retire PAS les droits directs de anon et
+-- authenticated : il faut les nommer tous les trois.
 REVOKE ALL ON FUNCTION public.fn_tournament_teams_sync_participants() FROM PUBLIC, anon, authenticated;
 
 CREATE TRIGGER tournament_teams_sync_participants
