@@ -3,8 +3,9 @@
 // aucun composant. Le SQL fait autorite en production (cf. la spec) ; ce module
 // en est le miroir d'affichage, et le test de parite interdit la divergence.
 //
-// Convention : le palier le plus ELEVE est le terrain le plus fort. On monte
-// vers le palier N.
+// Convention : le Terrain 1 est le terrain le plus fort. On monte vers le
+// Terrain 1 (numero qui DIMINUE) en gagnant, on descend (numero qui augmente)
+// en perdant.
 
 export type TeamState = { id: string; level: number; withdrawn: boolean };
 
@@ -21,10 +22,15 @@ export type Match = {
 export type Standing = {
   teamId: string;
   played: number;
+  wins: number;
   gamesWon: number;
   gamesLost: number;
   diff: number;
-  highestCourt: number;
+  /** Meilleur terrain jamais atteint, min sur tous les matchs reels joues :
+   *  le Terrain 1 etant le plus fort, PLUS PETIT est MEILLEUR. Sentinelle
+   *  Infinity pour un binome qui n a joue aucun match reel -- il ne doit pas
+   *  se retrouver artificiellement premier faute d avoir jamais ete note. */
+  bestCourt: number;
   /** Departage a la confrontation directe : jeux pris aux AUTRES binomes du
    *  meme groupe d ex aequo, moins les jeux concedes a ces memes binomes.
    *  Scalaire, donc ordre total. 0 quand le binome est seul dans son groupe. */
@@ -32,15 +38,19 @@ export type Standing = {
   rank: number;
 };
 
-/** Deux equipes par terrain, la paire la plus forte au terrain le plus haut. */
+/** Une entree du classement final (derniere rotation), qui ne fait plus
+ *  monter ni descendre mais classe directement d apres le resultat du
+ *  dernier tour joue. */
+export type FinalRankEntry = { rank: number; teamId: string };
+
+/** Deux equipes par terrain, la paire la plus forte au Terrain 1. */
 export function initialCourts(teams: TeamState[]): Map<string, number> {
   if (teams.length % 2 !== 0) {
     throw new Error('Un tournoi demarre avec un nombre PAIR d equipes');
   }
-  const courtCount = teams.length / 2;
   const tri = [...teams].sort((x, y) => y.level - x.level || x.id.localeCompare(y.id));
   const out = new Map<string, number>();
-  tri.forEach((t, i) => out.set(t.id, courtCount - Math.floor(i / 2)));
+  tri.forEach((t, i) => out.set(t.id, Math.floor(i / 2) + 1));
   return out;
 }
 
@@ -90,7 +100,8 @@ export function pairUp(courts: Map<string, number>, byeCount: Map<string, number
   return out;
 }
 
-/** Gagnant +1, perdant -1, borne aux extremites. Un bye ne bouge pas. */
+/** Gagnant -1 (vers le Terrain 1), perdant +1 (vers le dernier terrain),
+ *  borne aux extremites. Un bye ne bouge pas. */
 export function nextCourts(
   courts: Map<string, number>, matches: Match[], courtCount: number,
 ): Map<string, number> {
@@ -104,8 +115,8 @@ export function nextCourts(
     const aGagne = m.gamesA > m.gamesB;
     const gagnant = aGagne ? m.teamA : m.teamB;
     const perdant = aGagne ? m.teamB : m.teamA;
-    out.set(gagnant, Math.min(courtCount, m.court + 1));
-    out.set(perdant, Math.max(1, m.court - 1));
+    out.set(gagnant, Math.max(1, m.court - 1));
+    out.set(perdant, Math.min(courtCount, m.court + 1));
   }
   return out;
 }
@@ -125,14 +136,18 @@ export function lastCompleteRound(matches: Match[]): number {
   return reels.reduce((acc, m) => Math.max(acc, m.round), 0);
 }
 
-/** Classement aux jeux gagnes. Departages successifs : difference de jeux,
- *  puis confrontation directe, puis palier le plus haut atteint, puis l id.
+/** Classement au palier. Departages successifs : nombre de victoires,
+ *  difference de jeux, jeux gagnes, puis confrontation directe, puis l id.
+ *
+ *  Le palier (`bestCourt`) prime sur tout le reste : le Terrain 1 etant le
+ *  plus fort, un binome qui l a atteint devance TOUJOURS un binome qui ne l a
+ *  pas atteint, quels que soient ses jeux ou ses victoires ailleurs.
  *
  *  La confrontation directe est un SCALAIRE, pas un comparateur : pour chaque
  *  binome, les jeux pris aux AUTRES binomes de son groupe d ex aequo moins
  *  les jeux qu il leur a concedes, sur TOUTES leurs rencontres. Le groupe
- *  d ex aequo est l ensemble des binomes que les deux premieres cles n ont
- *  pas departages (memes jeux gagnes ET meme difference).
+ *  d ex aequo est l ensemble des binomes que les cles precedentes n ont pas
+ *  departages (memes victoires, meme difference, memes jeux gagnes).
  *
  *  Pourquoi un scalaire. La version precedente comparait deux a deux, ce qui
  *  coincide avec le scalaire pour un groupe de DEUX mais diverge des trois :
@@ -140,6 +155,10 @@ export function lastCompleteRound(matches: Match[]): number {
  *  circulaire n est pas un ordre total, et `Array.prototype.sort` n a alors
  *  aucun resultat defini — le SQL et le TypeScript rendaient deux classements
  *  differents sur la meme soiree. Le scalaire est transitif par construction.
+ *
+ *  Un bye (`teamA` ou `teamB` null) n est ni une victoire ni une defaite, ne
+ *  rapporte aucun jeu et ne compte pas comme un match joue : il est exclu de
+ *  `joues` au meme titre qu un match non confirme.
  *
  *  `maxRound` borne le classement aux tours <= a cette valeur (cf.
  *  `lastCompleteRound`). Sans lui, tous les matchs confirmes comptent. */
@@ -149,30 +168,36 @@ export function standings(
   const base = new Map<string, Standing>();
   for (const t of teams) {
     base.set(t.id, {
-      teamId: t.id, played: 0, gamesWon: 0, gamesLost: 0,
-      diff: 0, highestCourt: 0, h2h: 0, rank: 0,
+      teamId: t.id, played: 0, wins: 0, gamesWon: 0, gamesLost: 0,
+      diff: 0, bestCourt: Infinity, h2h: 0, rank: 0,
     });
   }
   const joues = matches.filter(m =>
     m.confirmed && m.teamA != null && m.teamB != null &&
     (maxRound === undefined || m.round <= maxRound));
   for (const m of joues) {
+    const aGagne = m.gamesA > m.gamesB;
     const a = base.get(m.teamA!); const b = base.get(m.teamB!);
     if (a) {
       a.played++; a.gamesWon += m.gamesA; a.gamesLost += m.gamesB;
-      a.highestCourt = Math.max(a.highestCourt, m.court);
+      a.bestCourt = Math.min(a.bestCourt, m.court);
+      if (aGagne) a.wins++;
     }
     if (b) {
       b.played++; b.gamesWon += m.gamesB; b.gamesLost += m.gamesA;
-      b.highestCourt = Math.max(b.highestCourt, m.court);
+      b.bestCourt = Math.min(b.bestCourt, m.court);
+      if (!aGagne) b.wins++;
     }
   }
   for (const s of base.values()) s.diff = s.gamesWon - s.gamesLost;
 
-  // Le groupe d ex aequo : memes jeux gagnes ET meme difference. C est
-  // exactement ce que le SQL isole avec dense_rank() sur ces deux cles.
+  // Le groupe d ex aequo : meme palier, memes victoires, meme difference ET
+  // memes jeux gagnes -- exactement les quatre cles qui precedent la h2h
+  // dans la hierarchie. C est ce que le SQL isole avec dense_rank() sur ces
+  // quatre cles.
   const groupe = new Map<string, string>();
-  for (const s of base.values()) groupe.set(s.teamId, `${s.gamesWon}|${s.diff}`);
+  for (const s of base.values())
+    groupe.set(s.teamId, `${s.bestCourt}|${s.wins}|${s.diff}|${s.gamesWon}`);
 
   // Le scalaire de confrontation directe. Somme sur TOUTES les rencontres
   // internes au groupe : jamais la premiere trouvee, sinon le resultat
@@ -187,11 +212,48 @@ export function standings(
   }
 
   const out = [...base.values()].sort((x, y) =>
-    y.gamesWon - x.gamesWon ||
+    x.bestCourt - y.bestCourt ||
+    y.wins - x.wins ||
     y.diff - x.diff ||
+    y.gamesWon - x.gamesWon ||
     y.h2h - x.h2h ||
-    y.highestCourt - x.highestCourt ||
     x.teamId.localeCompare(y.teamId));
   out.forEach((s, i) => { s.rank = i + 1; });
+  return out;
+}
+
+/** Classement direct de la derniere rotation : elle ne fait plus monter ni
+ *  descendre, elle classe. Pour chaque terrain, du Terrain 1 au dernier : le
+ *  gagnant prend le rang (terrain-1)*2+1, son perdant (terrain-1)*2+2. Ces
+ *  deux rangs sont des CRENEAUX FIXES par terrain, pas un compteur qui
+ *  avance au fil des resultats : ainsi un terrain sans adversaire (bye) ne
+ *  decale jamais les rangs des terrains suivants, il laisse seulement son
+ *  propre creneau de perdant vacant.
+ *
+ *  Ne regarde que le DERNIER tour present dans `matches` (le maximum de
+ *  `round`) : c est a l appelant de fournir les matchs de la rotation finale,
+ *  mais filtrer ici plutot que de supposer un tableau deja propre evite
+ *  qu un historique complet, passe par erreur, ne fausse le resultat. */
+export function finalRanking(matches: Match[], courtCount: number): FinalRankEntry[] {
+  const maxRound = matches.reduce((acc, m) => Math.max(acc, m.round), 0);
+  const parTerrain = new Map<number, Match>();
+  for (const m of matches) {
+    if (m.round === maxRound) parTerrain.set(m.court, m);
+  }
+  const out: FinalRankEntry[] = [];
+  for (let court = 1; court <= courtCount; court++) {
+    const m = parTerrain.get(court);
+    if (!m) continue;
+    const base = (court - 1) * 2;
+    if (m.teamA != null && m.teamB != null) {
+      const aGagne = m.gamesA > m.gamesB;
+      out.push({ rank: base + 1, teamId: aGagne ? m.teamA : m.teamB });
+      out.push({ rank: base + 2, teamId: aGagne ? m.teamB : m.teamA });
+    } else if (m.teamA != null) {
+      out.push({ rank: base + 1, teamId: m.teamA });
+    } else if (m.teamB != null) {
+      out.push({ rank: base + 1, teamId: m.teamB });
+    }
+  }
   return out;
 }

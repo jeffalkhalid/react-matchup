@@ -1,22 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { initialCourts, pairUp, nextCourts, standings, lastCompleteRound,
+import { initialCourts, pairUp, nextCourts, standings, lastCompleteRound, finalRanking,
          type TeamState, type Match } from '../tournament';
 
 const T = (id: string, level: number): TeamState => ({ id, level, withdrawn: false });
 
-// 8 equipes -> 4 terrains, la plus forte au terrain 4.
+// 8 equipes -> 4 terrains, la plus forte au Terrain 1.
 const EIGHT: TeamState[] = [
   T('a', 6.0), T('b', 5.8), T('c', 5.5), T('d', 5.2),
   T('e', 4.9), T('f', 4.5), T('g', 4.1), T('h', 3.8),
 ];
 
 describe('placement du premier tour', () => {
-  it('met les deux meilleures au terrain le plus haut', () => {
+  it('met les deux meilleures au Terrain 1', () => {
     const c = initialCourts(EIGHT);
-    expect(c.get('a')).toBe(4);
-    expect(c.get('b')).toBe(4);
-    expect(c.get('g')).toBe(1);
-    expect(c.get('h')).toBe(1);
+    expect(c.get('a')).toBe(1);
+    expect(c.get('b')).toBe(1);
+    expect(c.get('g')).toBe(4);
+    expect(c.get('h')).toBe(4);
   });
 
   it('place exactement deux equipes par terrain', () => {
@@ -31,15 +31,47 @@ describe('placement du premier tour', () => {
   });
 });
 
+describe('sens des paliers', () => {
+  const joue = (ms: Match[], gagnants: Record<number, string>): Match[] =>
+    ms.map(m => {
+      const g = gagnants[m.court];
+      const aGagne = m.teamA === g;
+      return { ...m, gamesA: aGagne ? 6 : 2, gamesB: aGagne ? 2 : 6, confirmed: true };
+    });
+
+  it('place les plus forts au Terrain 1', () => {
+    const c = initialCourts(EIGHT);
+    expect(c.get('a')).toBe(1);
+    expect(c.get('b')).toBe(1);
+    expect(c.get('h')).toBe(4);
+  });
+
+  it('le gagnant descend d indice, le perdant monte', () => {
+    const c0 = initialCourts(EIGHT);
+    const ms = joue(pairUp(c0, new Map()), { 1: 'a', 2: 'c', 3: 'e', 4: 'g' });
+    const c1 = nextCourts(c0, ms, 4);
+    expect(c1.get('c')).toBe(1);   // gagnant du 2 monte vers 1
+    expect(c1.get('d')).toBe(3);   // perdant du 2 descend vers 3
+  });
+
+  it('aux extremites, on ne bouge pas', () => {
+    const c0 = initialCourts(EIGHT);
+    const ms = joue(pairUp(c0, new Map()), { 1: 'a', 2: 'c', 3: 'e', 4: 'g' });
+    const c1 = nextCourts(c0, ms, 4);
+    expect(c1.get('a')).toBe(1);   // gagne au Terrain 1 : reste
+    expect(c1.get('h')).toBe(4);   // perd au dernier : reste
+  });
+});
+
 describe('appariement', () => {
   it('oppose les deux equipes d un meme terrain, sur tous les terrains', () => {
     const ms = pairUp(initialCourts(EIGHT), new Map());
     expect(ms).toHaveLength(4);
     const byCourt = new Map(ms.map(m => [m.court, m]));
-    expect([byCourt.get(4)!.teamA, byCourt.get(4)!.teamB].sort()).toEqual(['a', 'b']);
-    expect([byCourt.get(3)!.teamA, byCourt.get(3)!.teamB].sort()).toEqual(['c', 'd']);
-    expect([byCourt.get(2)!.teamA, byCourt.get(2)!.teamB].sort()).toEqual(['e', 'f']);
-    expect([byCourt.get(1)!.teamA, byCourt.get(1)!.teamB].sort()).toEqual(['g', 'h']);
+    expect([byCourt.get(1)!.teamA, byCourt.get(1)!.teamB].sort()).toEqual(['a', 'b']);
+    expect([byCourt.get(2)!.teamA, byCourt.get(2)!.teamB].sort()).toEqual(['c', 'd']);
+    expect([byCourt.get(3)!.teamA, byCourt.get(3)!.teamB].sort()).toEqual(['e', 'f']);
+    expect([byCourt.get(4)!.teamA, byCourt.get(4)!.teamB].sort()).toEqual(['g', 'h']);
   });
 
   it('un terrain a une seule equipe donne un bye', () => {
@@ -112,18 +144,10 @@ describe('mouvement entre les tours', () => {
 
   it('le gagnant monte, le perdant descend', () => {
     const c0 = initialCourts(EIGHT);
-    const ms = joue(pairUp(c0, new Map()), { 4: 'a', 3: 'c', 2: 'e', 1: 'g' });
+    const ms = joue(pairUp(c0, new Map()), { 1: 'a', 2: 'c', 3: 'e', 4: 'g' });
     const c1 = nextCourts(c0, ms, 4);
-    expect(c1.get('c')).toBe(4);   // gagnant du 3 monte
-    expect(c1.get('d')).toBe(2);   // perdant du 3 descend
-  });
-
-  it('aux extremites, on ne bouge pas', () => {
-    const c0 = initialCourts(EIGHT);
-    const ms = joue(pairUp(c0, new Map()), { 4: 'a', 3: 'c', 2: 'e', 1: 'g' });
-    const c1 = nextCourts(c0, ms, 4);
-    expect(c1.get('a')).toBe(4);   // gagne en haut : reste
-    expect(c1.get('h')).toBe(1);   // perd en bas : reste
+    expect(c1.get('e')).toBe(2);   // gagnant du 3 monte
+    expect(c1.get('f')).toBe(4);   // perdant du 3 descend
   });
 
   it('INVARIANT : chaque terrain garde exactement deux equipes, tour apres tour', () => {
@@ -181,16 +205,22 @@ describe('classement', () => {
   const M = (court: number, a: string, b: string, ga: number, gb: number): Match =>
     ({ round: 1, court, teamA: a, teamB: b, gamesA: ga, gamesB: gb, confirmed: true });
 
-  it('classe aux jeux gagnes', () => {
-    const s = standings(EIGHT.slice(0, 4), [M(2, 'a', 'b', 6, 1), M(1, 'c', 'd', 6, 5)]);
+  // a et c sont au meme palier (Terrain 1), avec le meme nombre de victoires
+  // et la meme difference : seuls les jeux gagnes les separent.
+  it('a palier, victoires et difference egaux, les jeux gagnes departagent', () => {
+    const teams = [T('a', 6), T('c', 4)];
+    const ms = [M(1, 'a', 'x', 6, 1), { ...M(1, 'c', 'y', 5, 0), round: 2 }];
+    const s = standings(teams, ms);
     expect(s[0].teamId).toBe('a');
     expect(s[0].gamesWon).toBe(6);
     expect(s[0].rank).toBe(1);
   });
 
   it('departage a la difference de jeux', () => {
-    const s = standings(EIGHT.slice(0, 4), [M(2, 'a', 'b', 6, 5), M(1, 'c', 'd', 6, 0)]);
-    expect(s[0].teamId).toBe('c');   // meme 6 jeux gagnes, meilleure difference
+    const teams = [T('a', 6), T('c', 4)];
+    const ms = [M(1, 'a', 'x', 6, 5), { ...M(1, 'c', 'y', 6, 0), round: 2 }];
+    const s = standings(teams, ms);
+    expect(s[0].teamId).toBe('c');   // meme terrain, memes victoires, meilleure difference
   });
 
   // La ligne teamB (b.gamesWon += m.gamesB, b.gamesLost += m.gamesA) n etait
@@ -199,7 +229,7 @@ describe('classement', () => {
   // ligne, ~la moitie des equipes (celles en slot B) auraient des stats
   // fausses sans qu aucun test ne le remarque.
   it('les stats de l equipe en position B ne sont pas inversees (gamesA/gamesB)', () => {
-    const s = standings(EIGHT.slice(0, 4), [M(2, 'a', 'b', 6, 1), M(1, 'c', 'd', 6, 5)]);
+    const s = standings(EIGHT.slice(0, 4), [M(1, 'a', 'b', 6, 1), { ...M(1, 'c', 'd', 6, 5), round: 2 }]);
     const d = s.find(x => x.teamId === 'd')!;   // d est teamB du match (c, d)
     expect(d.gamesWon).toBe(5);
     expect(d.gamesLost).toBe(6);
@@ -208,30 +238,30 @@ describe('classement', () => {
 
   // La confrontation directe doit s agreger sur TOUTES les rencontres entre
   // deux equipes, pas seulement la premiere trouvee dans le tableau — deux
-  // paires peuvent se recroiser plusieurs fois pendant la soiree (l invariant
-  // le montre : a et b se rencontrent 3 fois en 5 tours). a et b sont
-  // construits pour etre a egalite parfaite (12 jeux gagnes, diff 0 chacun)
-  // une fois les matchs de a contre c et de b contre d comptes ; seule la
-  // confrontation directe (a mene 12-4 sur les deux manches jouees entre eux)
-  // les depart.
+  // paires peuvent se recroiser plusieurs fois pendant la soiree. a et b sont
+  // construits pour etre a egalite parfaite au meme palier (memes victoires,
+  // meme difference, memes jeux gagnes) une fois les manches directes et les
+  // manches de remplissage comptees ; seule la confrontation directe (a mene
+  // 4 a -4 sur l ensemble de leurs deux manches) les depart.
   const H2H = [
-    M(2, 'a', 'b', 4, 6),   // 1re manche : b devant sur CE match
-    M(3, 'b', 'a', 0, 6),   // 2e manche : a ecrase, teamA/teamB inverses
-    M(1, 'a', 'c', 0, 4),   // remplissage : ramene a et b a egalite globale
-    M(1, 'b', 'd', 4, 0),   // remplissage symetrique pour b
+    M(1, 'a', 'b', 4, 6),                        // 1re manche directe : b devant
+    { ...M(1, 'b', 'a', 0, 6), round: 2 },        // 2e manche directe : a ecrase, slots inverses
+    { ...M(1, 'a', 'p', 6, 4), round: 3 },        // remplissage : a l emporte de justesse
+    { ...M(1, 'b', 'q', 10, 0), round: 4 },       // remplissage symetrique : b ecrase pour recoller
   ];
 
   it('departage a la confrontation directe agregee sur toutes les rencontres', () => {
-    const teams = [T('a', 6), T('b', 5), T('c', 4), T('d', 3)];
+    const teams = [T('a', 6), T('b', 5)];
     const a = standings(teams, H2H).find(x => x.teamId === 'a')!;
     const b = standings(teams, H2H).find(x => x.teamId === 'b')!;
-    expect(a.gamesWon).toBe(b.gamesWon);   // 10 chacun : egalite globale...
+    expect(a.gamesWon).toBe(b.gamesWon);   // 16 chacun : egalite globale...
     expect(a.diff).toBe(b.diff);           // ...et meme diff : la h2h doit trancher
-    expect(a.rank).toBeLessThan(b.rank);   // a mene l ensemble des confrontations directes (10-6)
+    expect(a.wins).toBe(b.wins);           // ...et memes victoires
+    expect(a.rank).toBeLessThan(b.rank);   // a mene l ensemble des confrontations directes (4 contre -4)
   });
 
   it('le departage direct ne depend pas de l ordre des matchs dans le tableau', () => {
-    const teams = [T('a', 6), T('b', 5), T('c', 4), T('d', 3)];
+    const teams = [T('a', 6), T('b', 5)];
     const ordreNormal = standings(teams, H2H).map(x => x.teamId);
     const ordreInverse = standings(teams, [...H2H].reverse()).map(x => x.teamId);
     expect(ordreInverse).toEqual(ordreNormal);
@@ -246,11 +276,12 @@ describe('classement', () => {
   // l'equipe forfait sont enregistres 0-6. Ce que standings doit prouver ici,
   // c'est qu'une fois ENREGISTRES, ces matchs comptent exactement comme
   // n'importe quel autre match confirme : dans played, dans gamesLost, et
-  // dans le classement final.
+  // dans le classement final -- MEME au meme palier que tout le monde, un
+  // forfait qui n a plus de victoires finit dernier.
   it('les matchs 0-6 enregistres au forfait comptent comme n importe quel autre match', () => {
     const teams = [T('a', 6), T('b', 5), { ...T('c', 4), withdrawn: true }, T('d', 3)];
     const ms = [
-      M(2, 'a', 'b', 6, 3),
+      M(1, 'a', 'b', 6, 3),
       M(1, 'c', 'd', 2, 6),   // dernier match joue par c avant son retrait
       M(1, 'c', 'd', 0, 6),   // tour restant, enregistre 0-6 au forfait
       M(1, 'c', 'd', 0, 6),   // idem
@@ -265,10 +296,11 @@ describe('classement', () => {
 
   // Trois binomes a egalite parfaite qui se sont battus EN ROND : m bat n,
   // n bat a, a bat m, tous 6-2. Chacun finit a 8 jeux gagnes, 8 perdus,
-  // difference 0, meme palier. Le departage a la confrontation directe etait
-  // un COMPARATEUR deux a deux : sur un cycle il n est pas un ordre total, et
-  // Array.prototype.sort n a alors aucun resultat defini. Le TypeScript
-  // rendait m, n, a la ou le SQL rendait a, m, n — sur la meme soiree.
+  // difference 0, meme palier, meme nombre de victoires (chacun 1). Le
+  // departage a la confrontation directe etait un COMPARATEUR deux a deux :
+  // sur un cycle il n est pas un ordre total, et Array.prototype.sort n a
+  // alors aucun resultat defini. Le TypeScript rendait m, n, a la ou le SQL
+  // rendait a, m, n — sur la meme soiree.
   // Le departage est desormais un SCALAIRE des deux cotes : les jeux pris aux
   // AUTRES membres du groupe d ex aequo, moins ceux concedes. Ici il vaut 0
   // pour les trois (chacun prend 8 et concede 8 dans le groupe), donc c est
@@ -295,9 +327,9 @@ describe('classement', () => {
   });
 
   // Le scalaire n est pas vide de sens hors cycle parfait. Trois binomes a
-  // egalite STRICTE (12 jeux gagnes, 12 perdus, difference 0 chacun) mais
-  // avec des confrontations internes tres inegales : zeta prend 12 jeux au
-  // groupe sans en concede aucun, mu en est a -4, alpha a -8.
+  // egalite STRICTE (12 jeux gagnes, 12 perdus, difference 0, 2 victoires
+  // chacun) mais avec des confrontations internes tres inegales : zeta prend
+  // 12 jeux au groupe sans en concede aucun, mu en est a -4, alpha a -8.
   // Les identifiants sont choisis a CONTRE-SENS du resultat attendu : par id
   // seul l ordre serait alpha, mu, zeta — exactement l inverse. Seul le
   // scalaire peut produire l ordre attendu.
@@ -306,14 +338,16 @@ describe('classement', () => {
     const ms = [
       // les trois rencontres INTERNES au groupe
       M(1, 'zeta', 'mu', 6, 0), M(1, 'zeta', 'alpha', 6, 0), M(1, 'mu', 'alpha', 6, 4),
-      // remplissage hors groupe, calibre pour ramener les trois a 12-12
+      // remplissage hors groupe, calibre pour ramener les trois a 12-12 avec
+      // 2 victoires chacun (alpha en deux petites victoires plutot qu une
+      // seule, pour egaler zeta et mu sur ce critere aussi)
       M(1, 'zeta', 'f1', 0, 6), M(1, 'zeta', 'f2', 0, 6),
       M(1, 'mu', 'f1', 6, 2),
-      M(1, 'alpha', 'f2', 8, 0),
+      M(1, 'alpha', 'f2', 4, 0), { ...M(1, 'alpha', 'f2', 4, 0), round: 2 },
     ];
     const s = standings(teams, ms);
     const trois = s.slice(0, 3);
-    expect(trois.every(x => x.gamesWon === 12 && x.diff === 0)).toBe(true);
+    expect(trois.every(x => x.gamesWon === 12 && x.diff === 0 && x.wins === 2)).toBe(true);
     expect(trois.map(x => x.h2h)).toEqual([12, -4, -8]);
     expect(trois.map(x => x.teamId)).toEqual(['zeta', 'mu', 'alpha']);
   });
@@ -333,6 +367,45 @@ describe('classement', () => {
     const ms = [{ ...M(2, 'a', 'b', 6, 1), confirmed: false }];
     const s = standings(EIGHT.slice(0, 2), ms);
     expect(s[0].played).toBe(0);
+  });
+
+  // Le palier prime desormais sur tout : a s est maintenu au Terrain 1 (peu
+  // de jeux, victoire courte), b a ecrase au Terrain 3 (beaucoup de jeux,
+  // beaucoup de victoires). a doit rester devant malgre ca -- sinon le
+  // classement ignore le palier et retombe sur l ancienne hierarchie.
+  it('le palier prime sur les jeux gagnes', () => {
+    const teams = [T('a', 6), T('b', 5)];
+    const matchesPalier = [
+      M(1, 'a', 'x', 6, 5),
+      M(3, 'b', 'y', 6, 0),
+      { ...M(3, 'b', 'y', 6, 0), round: 2 },
+      { ...M(3, 'b', 'y', 6, 0), round: 3 },
+    ];
+    const s = standings(teams, matchesPalier);
+    expect(s[0].teamId).toBe('a');
+    expect(s[0].gamesWon).toBeLessThan(s[1].gamesWon);   // et pourtant devant
+  });
+
+  it('a palier egal, les victoires priment sur la difference', () => {
+    const teams = [T('a', 6), T('b', 5)];
+    const matchesVictoires = [
+      M(2, 'a', 'x', 6, 5),
+      { ...M(2, 'a', 'x', 6, 5), round: 2 },
+      { ...M(2, 'b', 'y', 6, 0), round: 3 },
+    ];
+    const s = standings(teams, matchesVictoires);
+    expect(s[0].wins).toBeGreaterThan(s[1].wins);
+    expect(s[0].diff).toBeLessThan(s[1].diff);           // et pourtant devant
+  });
+
+  it('un bye n est ni victoire ni defaite et ne rapporte aucun jeu', () => {
+    const teams = [T('a', 6)];
+    const byeMatch: Match = { round: 1, court: 1, teamA: 'a', teamB: null, gamesA: 0, gamesB: 0, confirmed: true };
+    const s = standings(teams, [byeMatch]);
+    const t = s.find(x => x.teamId === 'a')!;
+    expect(t.played).toBe(0);
+    expect(t.wins).toBe(0);
+    expect(t.gamesWon).toBe(0);
   });
 });
 
@@ -365,5 +438,39 @@ describe('dernier tour complet', () => {
 
   it('rend 0 sur une soiree sans aucun match', () => {
     expect(lastCompleteRound([])).toBe(0);
+  });
+});
+
+describe('rotation de classement', () => {
+  const M = (court: number, a: string, b: string, ga: number, gb: number): Match =>
+    ({ round: 5, court, teamA: a, teamB: b, gamesA: ga, gamesB: gb, confirmed: true });
+
+  const FINAL_MATCHES: Match[] = [
+    M(1, 'a', 'c', 6, 2),   // Terrain 1 : a gagne
+    M(2, 'b', 'd', 6, 3),   // Terrain 2 : b gagne
+    M(3, 'e', 'g', 6, 4),   // Terrain 3 : e gagne
+    M(4, 'f', 'h', 6, 1),   // Terrain 4 : f gagne
+  ];
+
+  it('le gagnant du Terrain 1 est premier, son perdant deuxieme', () => {
+    const r = finalRanking(FINAL_MATCHES, 4);
+    expect(r[0]).toEqual({ rank: 1, teamId: 'a' });
+    expect(r[1]).toEqual({ rank: 2, teamId: 'c' });
+    expect(r[2]).toEqual({ rank: 3, teamId: 'b' });   // gagnant du Terrain 2
+  });
+
+  // Le Terrain 2 n a qu une equipe (bye) : elle prend le rang 3, et le rang 4
+  // (celui de son adversaire absent) reste vacant -- il n est PAS recycle
+  // pour decaler les terrains suivants, qui gardent leurs rangs fixes.
+  const FINAL_MATCHES_AVEC_BYE: Match[] = [
+    M(1, 'a', 'c', 6, 2),
+    { round: 5, court: 2, teamA: 'b', teamB: null, gamesA: 0, gamesB: 0, confirmed: false },
+    M(3, 'e', 'g', 6, 4),
+    M(4, 'f', 'h', 6, 1),
+  ];
+
+  it('un terrain sans match ne decale pas les rangs suivants', () => {
+    const r = finalRanking(FINAL_MATCHES_AVEC_BYE, 4);
+    expect(r.map(x => x.rank)).toEqual([1, 2, 3, 5, 6, 7, 8]);
   });
 });
