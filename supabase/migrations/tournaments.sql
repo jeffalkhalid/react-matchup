@@ -32,14 +32,22 @@ CREATE TABLE IF NOT EXISTS public.tournament_teams (
   start_court   int,
   withdrawn     boolean NOT NULL DEFAULT false,
   created_at    timestamptz NOT NULL DEFAULT now(),
-  CHECK (player1_id <> player2_id)
+  CHECK (player1_id <> player2_id),
+  UNIQUE (tournament_id, id)  -- Enables composite FK from matches/results
 );
 
--- Un joueur n appartient qu a UN binome par tournoi. L index couvre les deux
--- colonnes separement : sans lui, un joueur pourrait s inscrire deux fois en
--- inversant les roles.
-CREATE UNIQUE INDEX IF NOT EXISTS tournament_teams_p1 ON public.tournament_teams (tournament_id, player1_id);
-CREATE UNIQUE INDEX IF NOT EXISTS tournament_teams_p2 ON public.tournament_teams (tournament_id, player2_id);
+-- Normalize: one player, one team per tournament. The PK enforces this at the
+-- database level. Without this table, a player could appear in player1_id of
+-- one team and player2_id of another (the old indexes only prevented within-column
+-- duplication, not across). Withdrawal prevents re-registration since the PK
+-- (tournament_id, player_id) already exists.
+CREATE TABLE IF NOT EXISTS public.tournament_participants (
+  tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
+  player_id     uuid NOT NULL REFERENCES public.players(id),
+  team_id       uuid NOT NULL,
+  PRIMARY KEY (tournament_id, player_id),
+  FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS public.tournament_matches (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,25 +61,32 @@ CREATE TABLE IF NOT EXISTS public.tournament_matches (
   entered_by    uuid REFERENCES public.players(id),
   confirmed_by  uuid REFERENCES public.players(id),
   confirmed_at  timestamptz,
-  UNIQUE (tournament_id, round_no, court_no)
+  UNIQUE (tournament_id, round_no, court_no),
+  -- Composite FKs ensure teams belong to this match's tournament, not another.
+  -- NULL team (bye) passes the FK check.
+  FOREIGN KEY (tournament_id, team_a) REFERENCES public.tournament_teams(tournament_id, id),
+  FOREIGN KEY (tournament_id, team_b) REFERENCES public.tournament_teams(tournament_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS tournament_matches_tour ON public.tournament_matches (tournament_id, round_no);
 
 CREATE TABLE IF NOT EXISTS public.tournament_results (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
-  team_id       uuid NOT NULL REFERENCES public.tournament_teams(id) ON DELETE CASCADE,
+  team_id       uuid NOT NULL,
   player_id     uuid NOT NULL REFERENCES public.players(id),
   final_rank    int  NOT NULL,
   played        int  NOT NULL,
   games_won     int  NOT NULL,
   games_lost    int  NOT NULL,
   points        int  NOT NULL,
-  PRIMARY KEY (tournament_id, player_id)
+  PRIMARY KEY (tournament_id, player_id),
+  -- Composite FK ensures team_id belongs to this result's tournament.
+  FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE CASCADE
 );
 
 ALTER TABLE public.tournaments        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_teams   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_results ENABLE ROW LEVEL SECURITY;
 
@@ -79,6 +94,7 @@ ALTER TABLE public.tournament_results ENABLE ROW LEVEL SECURITY;
 -- public. Toute ECRITURE passe par les RPC de la Task 3, jamais en direct.
 CREATE POLICY tournaments_read        ON public.tournaments        FOR SELECT TO authenticated USING (true);
 CREATE POLICY tournament_teams_read   ON public.tournament_teams   FOR SELECT TO authenticated USING (true);
+CREATE POLICY tournament_participants_read ON public.tournament_participants FOR SELECT TO authenticated USING (true);
 CREATE POLICY tournament_matches_read ON public.tournament_matches FOR SELECT TO authenticated USING (true);
 CREATE POLICY tournament_results_read ON public.tournament_results FOR SELECT TO authenticated USING (true);
 
