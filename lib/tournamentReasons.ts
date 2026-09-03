@@ -33,7 +33,7 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   already_validated:             'Le classement de ce tournoi est déjà validé.',
   already_withdrawn:             'Ce binôme a déjà quitté le tournoi.',
   bye_match:                     'Ce tour est un repos : il n’y a pas de score à saisir.',
-  draw_not_allowed:              'Un match ne peut pas finir à égalité : il faut un vainqueur.',
+  draw_not_allowed:              'Un match ne peut pas finir à égalité : le point décisif s’inscrit comme un jeu, il faut un vainqueur.',
   feature_disabled:              'Les tournois ne sont pas encore ouverts.',
   final_round_already_generated: 'La rotation de classement a déjà été lancée.',
   forfeited_match:               'Ce match a été soldé par un forfait.',

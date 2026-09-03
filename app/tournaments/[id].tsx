@@ -226,6 +226,10 @@ export default function TournamentDetailScreen() {
   const [movements, setMovements] = useState<TournamentMovement[]>([]);
   const [matchEntries, setMatchEntries] = useState<TournamentMatchEntry[]>([]);
   const [standings, setStandings] = useState<TournamentStanding[]>([]);
+  // Distinct d'un classement simplement VIDE (rien acquis pour l'instant) :
+  // un refus serveur (feature_disabled, tournament_not_found) ou un aléa
+  // réseau ne doit jamais se lire comme « rien n'a encore été joué ».
+  const [standingsError, setStandingsError] = useState<string | null>(null);
   const [liveTab, setLiveTab] = useState<'tableau' | 'classement'>('tableau');
   const [scoreSheetMatchId, setScoreSheetMatchId] = useState<string | null>(null);
   const [scoreBusy, setScoreBusy] = useState(false);
@@ -245,13 +249,23 @@ export default function TournamentDetailScreen() {
           fetchRoundMatches(id, t.current_round),
           fetchRoundMovements(id, t.current_round),
         ]);
-        const [en, st] = await Promise.all([
+        const [en, stRes] = await Promise.all([
           fetchMatchEntries(m.map(x => x.id)),
           fetchStandings(id),
         ]);
-        setMatches(m); setMovements(mv); setMatchEntries(en); setStandings(st);
+        setMatches(m); setMovements(mv); setMatchEntries(en);
+        // Le classement est un refus serveur comme un autre : jamais avalé
+        // en `[]` silencieux (cf. l'en-tête de `fetchStandings`).
+        if (isFeatureDisabled(stRes)) { setEnabled(false); return; }
+        if (stRes.ok) {
+          setStandings((stRes.standings as TournamentStanding[] | undefined) ?? []);
+          setStandingsError(null);
+        } else {
+          setStandings([]);
+          setStandingsError(resultMessage(stRes));
+        }
       } else {
-        setMatches([]); setMovements([]); setMatchEntries([]); setStandings([]);
+        setMatches([]); setMovements([]); setMatchEntries([]); setStandings([]); setStandingsError(null);
       }
     } catch (e) {
       console.warn('[tournois] fiche indisponible', e);
@@ -478,7 +492,11 @@ export default function TournamentDetailScreen() {
                 </View>
               )
             ) : standings.length === 0 ? (
-              <Notice tone="info">Le classement apparaîtra dès le premier match acquis.</Notice>
+              standingsError ? (
+                <Notice tone="warning">{standingsError}</Notice>
+              ) : (
+                <Notice tone="info">Le classement apparaîtra dès le premier match acquis.</Notice>
+              )
             ) : (
               <StandingsTable rows={standings.map((s): StandingRowData => ({
                 standing: s,
@@ -805,6 +823,14 @@ export default function TournamentDetailScreen() {
         const teamBEntries = entriesForMatch.filter(e => teamBData.playerIds.includes(e.player_id));
         const status = matchLiveStatus(true, m.forfeited_team, m.confirmed_at, teamAEntries, teamBEntries);
         const iAmIn = !!player && (teamAData.playerIds.includes(player.id) || teamBData.playerIds.includes(player.id));
+        // 'disputed' N'EST PAS EXCLU ICI, volontairement : c'est ainsi qu'un
+        // litige se referme SANS déranger l'organisateur. Exemple réel : a1
+        // saisit 6-3, b1 saisit 4-6 → litige ; b1 se ravise et resaisit 6-3
+        // → les jeux concordent avec l'entrée de a1, `tournament_enter_score`
+        // confirme le match dans la foulée. Retirer la saisie dès qu'un
+        // litige est détecté forcerait CHAQUE désaccord — même une simple
+        // faute de frappe — à attendre l'organisateur (Task 10). Ne pas
+        // « corriger » ce comportement.
         const canEnter = t.status === 'EN_COURS' && iAmIn && status !== 'confirmed' && status !== 'forfeited';
         return (
           <ScoreSheet

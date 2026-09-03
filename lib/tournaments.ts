@@ -626,7 +626,23 @@ export function enterTournamentScore(
  *  forfait ni confirmé regarde les saisies individuelles — et seulement pour
  *  distinguer « personne n'a encore rien dit » de « les deux camps se
  *  contredisent », jamais pour décider qui gagne (ça, c'est `forfeited_team`
- *  ou la concordance des jeux, et c'est le SERVEUR qui tranche). */
+ *  ou la concordance des jeux, et c'est le SERVEUR qui tranche).
+ *
+ *  ⚠️ INVARIANT QUI REND CETTE FONCTION CORRECTE (relu dans
+ *  `tournament_enter_score`, tournaments_rpcs.sql) : la confirmation s'y
+ *  déclenche de façon SYNCHRONE, dans la même transaction que l'INSERT de la
+ *  saisie — dès qu'une saisie concorde avec une saisie déjà enregistrée d'un
+ *  binôme OPPOSÉ, `confirmed_at` est posé avant que la fonction ne rende la
+ *  main. Il ne peut donc JAMAIS exister, lu depuis le client, un couple de
+ *  saisies concordantes de deux camps opposés pendant que `confirmedAt` est
+ *  encore nul — l'écran qui les lirait serait en train de lire un état déjà
+ *  périmé, pas un état réel. Sous cet invariant, le calcul ci-dessous
+ *  (`bothEntered && !anyAgree` ⇒ litige) est l'exact équivalent logique de ce
+ *  que lit `fn_tournament_match_dispute` côté serveur — ce n'est pas une
+ *  coïncidence, ni une approximation à corriger : NE PAS EN DÉDUIRE qu'il
+ *  faudrait retirer le garde `anyAgree`, qui protège seulement contre un
+ *  état CLIENT en retard (un rechargement pas encore arrivé), jamais contre
+ *  un état serveur réel. */
 export type MatchLiveStatus = 'bye' | 'forfeited' | 'confirmed' | 'disputed' | 'awaiting';
 
 export function matchLiveStatus(
@@ -684,12 +700,19 @@ export interface TournamentStanding {
   rank: number;
 }
 
-export async function fetchStandings(
+/** Rend le `TournamentResult` BRUT — comme toute RPC, PAS un tableau tout
+ *  fait. `ok:true` porte `standings` ; `ok:false` porte `reason`
+ *  (`feature_disabled`, `tournament_not_found`, ou aucune raison sur un aléa
+ *  réseau). Cette fonction n'avale JAMAIS un refus en `[]` : un échec — flag
+ *  coupé en pleine soirée, réseau perdu — n'est PAS la même information
+ *  qu'« aucun match acquis pour l'instant », et les confondre ferait lire à
+ *  un joueur « rien n'a encore été joué » pendant une panne. L'appelant
+ *  traite ce refus comme n'importe quel autre : `isFeatureDisabled(res)`,
+ *  puis `resultMessage(res)` (donc `lib/tournamentReasons.ts`) si `!res.ok`. */
+export function fetchStandings(
   tournamentId: string, maxRound?: number | null,
-): Promise<TournamentStanding[]> {
-  const res = await callTournamentRpc('tournament_standings', {
+): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_standings', {
     p_tournament: tournamentId, p_max_round: maxRound ?? null,
   });
-  if (!res.ok) return [];
-  return ((res as { standings?: TournamentStanding[] }).standings ?? []);
 }
