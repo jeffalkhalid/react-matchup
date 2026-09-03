@@ -2705,7 +2705,10 @@ BEGIN
   -- dont un qui ment par omission : on nomme le refus et on renvoie a la
   -- bonne fonction. `tournament_final_round` passe `p_final_round => true` et
   -- traverse ce garde -- il n'y a toujours qu'UNE fonction qui apparie.
-  IF v_round = v_t.round_count AND NOT p_final_round THEN
+  -- COALESCE et non `NOT p_final_round` seul : un client qui envoie
+  -- `p_final_round: null` rendrait `NOT NULL` = NULL, le IF ne serait pas
+  -- pris, et la rotation de classement se tirerait sans ses `stakes`.
+  IF v_round = v_t.round_count AND NOT COALESCE(p_final_round, false) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_the_final_round',
                               'round', v_round,
                               'round_count', v_t.round_count,
@@ -3042,6 +3045,9 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 -- LA HIERARCHIE DE CLASSEMENT, une fois pour toutes (spec §8, et
 -- `standings()` de `lib/tournament.ts` qui en est le miroir) :
 --
+--     0. l'ABANDON               -- `withdrawn`, croissant : un binome qui a
+--                                   quitte la soiree passe DERRIERE tous ceux
+--                                   qui l'ont finie ;
 --     1. le PALIER atteint       -- le plus PETIT terrain jamais atteint,
 --                                   croissant : le Terrain 1 est le meilleur ;
 --     2. les VICTOIRES           -- decroissant ;
@@ -3050,8 +3056,18 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 --     5. la CONFRONTATION DIRECTE agregee -- decroissant ;
 --     6. l'identifiant           -- croissant, pour que l'ordre soit TOTAL.
 --
--- Le palier prime sur tout : un binome qui s'est maintenu en haut devance un
--- binome qui a accumule des jeux en bas. C'est le sens meme du format.
+-- Le palier prime sur tout le reste : un binome qui s'est maintenu en haut
+-- devance un binome qui a accumule des jeux en bas. C'est le sens meme du
+-- format.
+--
+-- ⚠️ L'ABANDON PASSE AVANT LE PALIER, et c'est la seule cle au-dessus de lui.
+-- Un binome parti garde `best_court` -- le meilleur palier de son passage --
+-- donc un tres bon rang s'il est parti de haut : sans cette cle, il devancait
+-- des binomes qui ont joue toute la soiree, a l'ecran ET a la remise des
+-- points. Il DESCEND donc en bas du classement IMMEDIATEMENT, pendant la
+-- soiree, a l'ecran que tout le monde regarde -- pas seulement a la cloture.
+-- C'est ce qui garde UNE SEULE source de verite : le classement affiche et le
+-- classement fige sont le meme, dans le meme ordre.
 --
 -- LE SENS DU PALIER. Le Terrain 1 est le MEILLEUR, donc le palier d'un binome
 -- est le MINIMUM des terrains ou il a joue, et il se trie CROISSANT. La
@@ -3201,12 +3217,17 @@ BEGIN
       FROM agg a
   ),
   grp AS (
-    -- Le groupe d'ex aequo : exactement les binomes que les quatre premieres
-    -- cles n'ont pas departages. `dense_rank()` traite les NULL comme pairs,
-    -- donc les binomes sans palier se groupent entre eux -- comme le moteur,
-    -- ou `Infinity` est une valeur comme une autre.
+    -- Le groupe d'ex aequo : exactement les binomes que les cles precedant la
+    -- confrontation directe n'ont pas departages -- `withdrawn` COMPRIS, qui
+    -- est desormais la premiere. Un binome parti et un binome present ne sont
+    -- donc JAMAIS dans le meme groupe, meme a statistiques identiques : leur
+    -- eventuelle rencontre n'a plus a les departager, l'abandon l'a fait.
+    -- `dense_rank()` traite les NULL comme pairs, donc les binomes sans palier
+    -- se groupent entre eux -- comme le moteur, ou `Infinity` est une valeur
+    -- comme une autre.
     SELECT s.*,
-           dense_rank() OVER (ORDER BY s.best_court ASC NULLS LAST,
+           dense_rank() OVER (ORDER BY s.withdrawn  ASC,
+                                       s.best_court ASC NULLS LAST,
                                        s.wins       DESC,
                                        s.diff       DESC,
                                        s.games_won  DESC) AS tie_grp
@@ -3227,7 +3248,8 @@ BEGIN
   ),
   final AS (
     SELECT g.*, h.h2h,
-           row_number() OVER (ORDER BY g.best_court ASC NULLS LAST,
+           row_number() OVER (ORDER BY g.withdrawn  ASC,
+                                       g.best_court ASC NULLS LAST,
                                        g.wins       DESC,
                                        g.diff       DESC,
                                        g.games_won  DESC,
@@ -3270,6 +3292,151 @@ $$;
 REVOKE ALL ON FUNCTION public.tournament_standings(uuid, int) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_standings(uuid, int) TO authenticated;
 
+-- ----------------------------------------------------------------------------
+-- Helper interne : LE CLASSEMENT FINAL, CRENEAU PAR CRENEAU.
+--
+-- UNE SEULE REGLE, UN SEUL ENDROIT. Deux fonctions ont besoin du meme calcul :
+-- `tournament_close`, pour ecrire le rang de chacun, et
+-- `tournament_final_round`, pour annoncer a l'ecran l'enjeu de chaque terrain.
+-- Elles le faisaient chacune de leur cote, et elles ont diverge des que la
+-- renumerotation contigue est apparue : la cloture ecrivait 2 et 3 la ou
+-- l'ecran avait promis 3 et 4. Le creneau brut `(terrain-1)*2+1` N'EST PLUS le
+-- rang final -- il ne l'est que quand tous les terrains portent un match.
+--
+-- CE QU'ELLE REND, une ligne par place a distribuer :
+--   * `court_no`   : le terrain d'ou vient le creneau, NULL pour un non-place ;
+--   * `role`       : 'winner' | 'loser' (terrain a match), 'bye' (terrain a bye
+--                    SEUL), 'unplaced' (binome que le tour ne place pas) ;
+--   * `team_id`    : le binome, des qu'il est connu. NULL pour 'winner' et
+--                    'loser' tant que le match n'est pas acquis -- c'est l'etat
+--                    normal a la GENERATION du tour, ou l'enjeu est connu mais
+--                    pas le vainqueur. La cloture, elle, n'appelle cette
+--                    fonction que sur un tour COMPLET : aucun NULL n'y survit ;
+--   * `final_rank` : le rang CONTIGU, de 1 a N.
+--
+-- LA RENUMEROTATION CONTIGUE. Les creneaux bruts ont des trous (un terrain a
+-- bye n'en remplit qu'un) et il y en a deux par terrain meme quand il reste
+-- moins de deux binomes par terrain. Un bareme qui va du rang 1 au rang 8 ne
+-- peut pas sauter le rang 4 : ces points-la ne seraient jamais attribues, et
+-- tous les rangs suivants recevraient moins que leur du. Les creneaux bruts ne
+-- servent donc qu'a ORDONNER ; le rang se COMPTE.
+--
+-- CE QUI DEPEND DU RESULTAT, ET CE QUI N'EN DEPEND PAS. Le rang attache a un
+-- creneau ne depend que de la FORME du tour -- quels terrains portent un
+-- match, lesquels un bye, combien de binomes ne sont pas places. Seul le NOM
+-- du binome qui prend ce rang depend du resultat. C'est ce qui permet a la
+-- meme fonction de servir avant et apres les matchs.
+--
+--   `p_max_round`   : la borne du classement provisoire, qui ordonne les
+--                     non-places entre eux (le dernier tour COMPLET).
+--   `p_final_round` : le tour de CLASSEMENT dont on lit les creneaux. NULL =
+--                     il n'y en a pas eu : personne n'est place, tout le monde
+--                     passe par le classement provisoire, et le rang final est
+--                     le rang provisoire. Le cas se traite tout seul, sans
+--                     branche.
+--
+-- L'ordre relatif des non-places NE BOUGE PAS entre la generation du tour et
+-- la cloture : par definition ils ne jouent aucun match dans ce tour, donc
+-- aucune de leurs statistiques ne change. Seul leur rang absolu bouge, et il
+-- est recalcule ici de toute facon.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_tournament_final_slots(
+  p_tournament  uuid,
+  p_max_round   int,
+  p_final_round int DEFAULT NULL
+)
+RETURNS TABLE (court_no int, role text, team_id uuid, final_rank int)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH st AS (
+    SELECT (e->>'team_id')::uuid AS s_team,
+           (e->>'rank')::int     AS prov_rank
+      FROM jsonb_array_elements(
+             COALESCE(public.tournament_standings(p_tournament, p_max_round)
+                        -> 'standings', '[]'::jsonb)) AS e
+  ),
+  fr AS (
+    -- Les lignes du tour de classement. Sur un palier qui porte un match ET un
+    -- bye (trois equipes, ce que le format autorise apres un forfait),
+    -- `pref = 1` retient le MATCH : c'est lui qui dispute les deux creneaux du
+    -- terrain. Le binome du bye ne dispute AUCUNE place et repart en
+    -- 'unplaced'.
+    SELECT m.court_no, m.team_a, m.team_b, m.confirmed_at,
+           public.fn_tournament_a_won(m.forfeited_team, m.team_a,
+                                      m.games_a, m.games_b) AS a_won,
+           row_number() OVER (PARTITION BY m.court_no
+                              ORDER BY (m.team_b IS NOT NULL) DESC) AS pref
+      FROM public.tournament_matches m
+     WHERE p_final_round IS NOT NULL
+       AND m.tournament_id = p_tournament
+       AND m.round_no      = p_final_round
+  ),
+  places AS (
+    SELECT f.court_no, 'winner'::text AS role,
+           CASE WHEN f.confirmed_at IS NULL THEN NULL
+                WHEN f.a_won             THEN f.team_a
+                ELSE                          f.team_b END AS team_id,
+           ((f.court_no - 1) * 2 + 1)::int AS slot
+      FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
+    UNION ALL
+    SELECT f.court_no, 'loser',
+           CASE WHEN f.confirmed_at IS NULL THEN NULL
+                WHEN f.a_won             THEN f.team_b
+                ELSE                          f.team_a END,
+           ((f.court_no - 1) * 2 + 2)::int
+      FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
+    UNION ALL
+    -- Un bye SEUL sur son palier dispute bien une place : la meilleure des
+    -- deux du terrain. L'autre creneau reste vacant, et la renumerotation le
+    -- refermera.
+    SELECT f.court_no, 'bye', f.team_a, ((f.court_no - 1) * 2 + 1)::int
+      FROM fr f WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
+  ),
+  engages AS (
+    -- Les binomes que le tour PLACE, que le resultat soit connu ou non. C'est
+    -- ce filtre -- et non `places.team_id` -- qui evite de compter deux fois un
+    -- binome dont le match n'est pas encore acquis : il a son creneau, il n'est
+    -- donc pas 'unplaced', meme si on ignore encore s'il sera gagnant.
+    SELECT f.team_a AS e_team FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
+    UNION ALL
+    SELECT f.team_b            FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
+    UNION ALL
+    SELECT f.team_a            FROM fr f
+     WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
+  ),
+  plafond AS (
+    -- Le plus grand creneau attribue : le PLANCHER de tout ce qui suit. Aucun
+    -- binome non place ne passe devant un binome que le tour a departage sur le
+    -- terrain -- un terrain reduit a un bye libere un creneau BAS, et c'est
+    -- exactement la forme d'echelle que produit un forfait.
+    SELECT COALESCE(max(p.slot), 0)::int AS top FROM places p
+  ),
+  reste AS (
+    -- Les non-places, dans l'ordre du classement provisoire. Celui-ci trie
+    -- deja les binomes partis (`withdrawn`) en DERNIER, sur sa premiere cle :
+    -- inutile de le refaire ici, et le refaire serait une deuxieme regle a
+    -- garder synchronisee de la premiere.
+    SELECT NULL::int AS court_no, 'unplaced'::text AS role, s.s_team AS team_id,
+           ((SELECT top FROM plafond)
+             + row_number() OVER (ORDER BY s.prov_rank))::int AS slot
+      FROM st s
+     WHERE NOT EXISTS (SELECT 1 FROM engages g WHERE g.e_team = s.s_team)
+  ),
+  attribue AS (
+    SELECT p.court_no, p.role, p.team_id, p.slot FROM places p
+    UNION ALL
+    SELECT r.court_no, r.role, r.team_id, r.slot FROM reste r
+  )
+  SELECT a.court_no, a.role, a.team_id,
+         row_number() OVER (ORDER BY a.slot)::int
+    FROM attribue a;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_final_slots(uuid, int, int) FROM PUBLIC, anon, authenticated;
+
 -- ============================================================================
 -- tournament_final_round(p_tournament)
 --
@@ -3287,9 +3454,25 @@ GRANT EXECUTE ON FUNCTION public.tournament_standings(uuid, int) TO authenticate
 -- Ce sont des CRENEAUX FIXES par terrain, pas un compteur qui avance au fil
 -- des resultats : un terrain sans adversaire (bye) ne decale jamais les places
 -- des terrains suivants, il laisse seulement son propre creneau de perdant
--- vacant. C'est `finalRanking()` de `lib/tournament.ts`, au mot pres, et c'est
--- `tournament_close` qui lit ces creneaux -- pas cette fonction, qui ne fait
--- que TIRER la rotation.
+-- vacant.
+--
+-- ⚠️ MAIS LE CRENEAU N'EST PAS LE RANG. Les creneaux vacants sont REFERMES par
+-- une renumerotation contigue 1..N (`fn_tournament_final_slots`) : un bareme
+-- qui va du rang 1 au rang 8 ne peut pas sauter le rang 4, ces points ne
+-- seraient jamais attribues et tous les rangs suivants recevraient moins que
+-- leur du. Sur une echelle ou le Terrain 1 ne porte qu'un bye, le Terrain 2 ne
+-- joue donc PAS pour les places 3 et 4, mais pour les places 2 et 3.
+--
+-- ⚠️ CE POINT DIVERGE DE `finalRanking()` de `lib/tournament.ts`, qui rend
+-- encore les creneaux BRUTS (`lib/tournament.ts:252`), et de son test
+-- (`lib/__tests__/tournament.test.ts:517`), qui affirme `[1,2,3,5,6,7,8]` avec
+-- un commentaire disant que le rang 4 n'est pas recycle. LE SQL FAIT AUTORITE
+-- et la regle contigue est la bonne ; c'est la TACHE 6 qui alignera le moteur
+-- et son test. Ne pas « corriger » le SQL vers le TypeScript.
+--
+-- C'est `tournament_close` qui ECRIT ces rangs, et cette fonction qui les
+-- ANNONCE -- toutes deux par le meme helper, pour qu'elles ne puissent plus
+-- diverger.
 --
 -- ELLE N'APPARIE PAS ELLE-MEME. L'appariement d'un tour a UN seul domicile
 -- dans ce fichier -- `tournament_generate_round` -- et le dupliquer ici serait
@@ -3297,11 +3480,13 @@ GRANT EXECUTE ON FUNCTION public.tournament_standings(uuid, int) TO authenticate
 -- personne ne relirait. Elle l'appelle donc, avec `p_final_round => true` :
 -- c'est le SEUL appel qui passe ce drapeau, et `tournament_generate_round`
 -- refuse la derniere rotation a tous les autres (`not_the_final_round`). Un
--- seul appariement, un seul chemin vers la rotation de classement. La rotation de classement se TIRE exactement comme les
--- autres : les binomes entrent sur le palier ou les resultats de la rotation
--- precedente les ont laisses, et s'y rencontrent. Ce qui la distingue n'est
--- pas son tirage, c'est ce qu'on en FAIT ensuite -- aucun tour apres elle, et
--- un classement lu aux creneaux.
+-- seul appariement, un seul chemin vers la rotation de classement.
+--
+-- La rotation de classement se TIRE exactement comme les autres : les binomes
+-- entrent sur le palier ou les resultats de la rotation precedente les ont
+-- laisses, et s'y rencontrent. Ce qui la distingue n'est pas son tirage, c'est
+-- ce qu'on en FAIT ensuite -- aucun tour apres elle, et un classement lu aux
+-- creneaux.
 --
 -- CE QU'ELLE AJOUTE A `tournament_generate_round`, et qui justifie qu'elle
 -- existe :
@@ -3404,33 +3589,37 @@ BEGIN
     RETURN v_gen;
   END IF;
 
-  -- L'enjeu de chaque terrain. Sur un palier qui porte a la fois un match et
-  -- un bye (trois equipes -- possible apres un forfait), c'est le MATCH qui
-  -- dispute les deux creneaux : le bye, lui, ne joue AUCUNE place, il sera
-  -- classe apres tous les creneaux par `tournament_close`. Son `rank_win` est
-  -- donc NUL, et non le creneau du terrain -- sans quoi l'ecran annoncerait a
-  -- trois binomes qu'ils jouent pour deux places, dont une promise deux fois.
-  -- L'ordre des lignes ne suffisait pas : un ecran qui lit une liste n'a
-  -- aucune raison de deviner que la deuxieme ligne annule la premiere.
+  -- L'enjeu de chaque terrain, LU AU MEME ENDROIT QUE LA CLOTURE
+  -- (`fn_tournament_final_slots`). Le creneau brut `(terrain-1)*2+1` n'est PAS
+  -- le rang final des qu'un terrain ne porte qu'un bye : l'annoncer ici ferait
+  -- promettre « places 3 et 4 » a un terrain que la cloture classera 2e et 3e.
+  -- La borne du classement provisoire est le tour PRECEDENT : le tour qu'on
+  -- vient de tirer n'a evidemment aucun resultat.
+  --
+  -- Un bye qui PARTAGE son palier avec un match ne dispute aucune place : le
+  -- helper ne lui donne ni 'bye' ni 'winner', donc `rank_win` reste NUL et
+  -- l'ecran n'annonce rien -- au lieu de promettre a trois binomes deux places
+  -- dont une deux fois.
+  WITH slots AS (
+    SELECT * FROM public.fn_tournament_final_slots(
+                     p_tournament, v_round - 1, v_round)
+  )
   SELECT jsonb_agg(jsonb_build_object(
            'match_id',  m.id,
            'court_no',  m.court_no,
            'team_a',    m.team_a,
            'team_b',    m.team_b,
-           'rank_win',  CASE WHEN m.team_b IS NULL
-                              AND EXISTS (SELECT 1
-                                            FROM public.tournament_matches x
-                                           WHERE x.tournament_id = m.tournament_id
-                                             AND x.round_no      = m.round_no
-                                             AND x.court_no      = m.court_no
-                                             AND x.team_b       IS NOT NULL)
-                             THEN NULL
-                             ELSE (m.court_no - 1) * 2 + 1 END,
-           'rank_lose', CASE WHEN m.team_b IS NULL THEN NULL
-                             ELSE (m.court_no - 1) * 2 + 2 END
+           'rank_win',  w.final_rank,
+           'rank_lose', l.final_rank
          ) ORDER BY m.court_no ASC, (m.team_b IS NULL) ASC)
     INTO v_stakes
     FROM public.tournament_matches m
+    LEFT JOIN slots w ON w.court_no = m.court_no
+                     AND w.role     = CASE WHEN m.team_b IS NULL THEN 'bye'
+                                           ELSE 'winner' END
+    LEFT JOIN slots l ON l.court_no = m.court_no
+                     AND l.role     = 'loser'
+                     AND m.team_b  IS NOT NULL
    WHERE m.tournament_id = p_tournament
      AND m.round_no      = v_round;
 
@@ -3468,8 +3657,9 @@ GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
 --
 --   2. ELLE N'A PAS EU LIEU -- soiree qui deborde, terrain repris, binome
 --      parti. Le rang final est LE CLASSEMENT PROVISOIRE de la derniere
---      rotation COMPLETE, selon la hierarchie du §8, et les points sont
---      attribues NORMALEMENT. Un tournoi ecourte compte.
+--      rotation COMPLETE -- exactement celui que l'ecran affiche, rang pour
+--      rang, `withdrawn` en bas compris -- et les points sont attribues
+--      NORMALEMENT. Un tournoi ecourte compte.
 --
 -- LES CRENEAUX VACANTS, ET CE QU'ON N'EN FAIT PAS. Un terrain qui n'a joue
 -- qu'un bye ne remplit que son creneau de gagnant ; un terrain absent du tour
@@ -3478,11 +3668,11 @@ GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
 -- SUPERIEURS au plus grand creneau attribue, dans l'ordre du classement
 -- provisoire.
 --
--- LES ABANDONS PASSENT DERNIERS parmi ces non-places : un binome parti garde
--- le meilleur palier de son passage, donc un bon rang provisoire, et il
--- repasserait sinon devant un binome qui a joue toutes les rotations et fini
--- par un bye. Le classement provisoire ordonne les presents entre eux, puis
--- les partis entre eux.
+-- LES ABANDONS PASSENT DERNIERS parmi ces non-places, mais ce n'est PAS ecrit
+-- ici : `tournament_standings` trie deja `withdrawn` en PREMIERE cle, donc le
+-- classement provisoire les met en bas de lui-meme. Une deuxieme regle a cet
+-- endroit serait une deuxieme verite a garder synchronisee de la premiere --
+-- et c'est exactement ce qui a fait diverger l'ecran de la cloture.
 --
 -- ⚠️ ILS NE COMBLENT PAS LES TROUS. La premiere version leur donnait les plus
 -- petits numeros libres, et c'etait un defaut GRAVE : un terrain reduit a un
@@ -3505,6 +3695,13 @@ GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
 -- tableau a personne. Personne ne sort du classement, deux binomes n'ont
 -- jamais le meme rang -- sans quoi `points_scale` recompenserait deux fois la
 -- meme place -- et le dernier rang est toujours le nombre de binomes.
+--
+-- ⚠️ TOUT CE QUI PRECEDE EST CALCULE PAR `fn_tournament_final_slots`, PAS ICI.
+-- C'est le meme helper qui a annonce ces rangs a l'ecran au moment de tirer la
+-- rotation de classement (`tournament_final_round.stakes`). Les deux
+-- fonctions le calculaient chacune de son cote, et elles ont diverge des que
+-- la renumerotation contigue est apparue : l'ecran promettait « places 3 et
+-- 4 », la cloture ecrivait 2 et 3.
 --
 -- ON NE CLOTURE JAMAIS AU MILIEU D'UN TOUR. La cloture se fait au DERNIER TOUR
 -- COMPLET : le classement est BORNE a ce tour, ce qui egalise les nombres de
@@ -3641,101 +3838,22 @@ BEGIN
   ---------------------------------------------------------------------------
   WITH st AS (
     SELECT (e->>'team_id')::uuid AS team_id,
-           (e->>'rank')::int       AS prov_rank,
-           (e->>'withdrawn')::boolean AS withdrawn,
            (e->>'played')::int     AS played,
            (e->>'wins')::int       AS wins,
            (e->>'games_won')::int  AS games_won,
            (e->>'games_lost')::int AS games_lost
       FROM jsonb_array_elements(v_st->'standings') AS e
   ),
-  fr AS (
-    -- Les lignes de la rotation de classement. Sur un palier qui porte un
-    -- match ET un bye, `pref = 1` retient le MATCH.
-    SELECT m.court_no, m.team_a, m.team_b, m.confirmed_at,
-           public.fn_tournament_a_won(m.forfeited_team, m.team_a,
-                                      m.games_a, m.games_b) AS a_won,
-           row_number() OVER (PARTITION BY m.court_no
-                              ORDER BY (m.team_b IS NOT NULL) DESC) AS pref
-      FROM public.tournament_matches m
-     WHERE v_final
-       AND m.tournament_id = p_tournament
-       AND m.round_no      = v_dernier
-  ),
-  places AS (
-    -- Les creneaux fixes : (terrain - 1) * 2 + 1 au gagnant, + 2 au perdant.
-    SELECT (f.court_no - 1) * 2 + 1 AS slot,
-           CASE WHEN f.a_won THEN f.team_a ELSE f.team_b END AS team_id
-      FROM fr f
-     WHERE f.pref = 1 AND f.team_b IS NOT NULL AND f.confirmed_at IS NOT NULL
-    UNION ALL
-    SELECT (f.court_no - 1) * 2 + 2,
-           CASE WHEN f.a_won THEN f.team_b ELSE f.team_a END
-      FROM fr f
-     WHERE f.pref = 1 AND f.team_b IS NOT NULL AND f.confirmed_at IS NOT NULL
-    UNION ALL
-    -- Un bye ne dispute qu'une place : la meilleure des deux. L'autre creneau
-    -- du terrain reste VACANT et le reste -- personne ne vient le prendre, et
-    -- la renumerotation finale le refermera sans laisser de trou dans les
-    -- rangs.
-    SELECT (f.court_no - 1) * 2 + 1, f.team_a
-      FROM fr f
-     WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
-  ),
-  plafond AS (
-    -- Le plus grand creneau attribue par la rotation de classement. C'est le
-    -- PLANCHER de tout ce qui suit : aucun binome non place ne peut passer
-    -- devant un binome que la rotation de classement a departage sur le
-    -- terrain.
-    SELECT COALESCE(max(p.slot), 0)::int AS top FROM places p
-  ),
-  reste AS (
-    -- Ceux que la rotation de classement n'a pas places : le binome parti en
-    -- forfait, celui qui a fait un bye sur un palier a trois, celui qui n'a
-    -- jamais ete place. Ils prennent des numeros STRICTEMENT SUPERIEURS au
-    -- plus grand creneau attribue -- les abandons derriere les presents, et
-    -- chaque groupe dans l'ordre du classement provisoire.
-    --
-    -- ILS NE PRENNENT PAS LES CRENEAUX LAISSES VACANTS -- c'etait le defaut de
-    -- la premiere version, et il etait grave : un terrain qui n'a porte qu'un
-    -- bye libere un creneau BAS (le 4 d'une echelle 2-1-3-1, le 2 d'une
-    -- echelle 1-2-2-2), et c'est exactement la forme d'echelle que produit un
-    -- forfait. Le binome parti a la mi-soiree, qui garde le meilleur palier de
-    -- son passage, ressortait alors 4e -- ou 2e -- DEVANT des binomes qui ont
-    -- joue et gagne la rotation de classement.
-    --
-    -- Quand la rotation de classement n'a PAS eu lieu, `places` est vide, le
-    -- plafond vaut 0, et tout le monde repart de 1 dans l'ordre provisoire :
-    -- le cas se traite tout seul, sans branche.
-    --
-    -- LES ABANDONS EN DERNIER, avant toute autre consideration. Un binome qui
-    -- a declare forfait garde le meilleur palier de son passage, donc un bon
-    -- rang provisoire : sans cette cle il repassait devant un binome qui a
-    -- joue les SIX rotations et fini par un bye. C'est l'injustice du defaut
-    -- critique, en plus petit, et elle se voit a la remise des points. Le
-    -- classement provisoire garde tout son sens ENTRE binomes comparables :
-    -- il ordonne les presents entre eux, puis les partis entre eux.
-    SELECT s.team_id,
-           (SELECT top FROM plafond)
-             + row_number() OVER (ORDER BY s.withdrawn ASC, s.prov_rank) AS slot
-      FROM st s
-     WHERE NOT EXISTS (SELECT 1 FROM places p WHERE p.team_id = s.team_id)
-  ),
-  attribue AS (
-    SELECT p.team_id, p.slot FROM places p
-    UNION ALL
-    SELECT r.team_id, r.slot FROM reste r
-  ),
   finale AS (
-    -- RENUMEROTATION CONTIGUE 1..N, l'ordre preserve. Les creneaux peuvent
-    -- avoir des trous (un bye ne dispute qu'une place) et depasser le nombre
-    -- de binomes (quatre terrains font huit creneaux, meme a six binomes) : un
-    -- rang 8 sur un tournoi a six binomes se lirait comme deux places
-    -- manquantes, et `points_scale` distribuerait des points de bas de tableau
-    -- a personne. Les numeros ci-dessus ne servent qu'a ORDONNER ; le rang
-    -- final se compte.
-    SELECT a.team_id, row_number() OVER (ORDER BY a.slot)::int AS final_rank
-      FROM attribue a
+    -- LE RANG FINAL VIENT DU HELPER, pas d'un calcul local : c'est le meme que
+    -- `tournament_final_round` a annonce a l'ecran. `p_final_round` vaut NULL
+    -- quand la rotation de classement n'a pas eu lieu -- personne n'est alors
+    -- place, et le rang final EST le rang provisoire, sans branche ici.
+    SELECT f.team_id, f.final_rank
+      FROM public.fn_tournament_final_slots(
+             p_tournament, v_dernier,
+             CASE WHEN v_final THEN v_dernier END) f
+     WHERE f.team_id IS NOT NULL
   )
   INSERT INTO public.tournament_results
     (tournament_id, team_id, player_id, final_rank, played, wins,

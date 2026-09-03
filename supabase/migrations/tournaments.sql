@@ -213,6 +213,12 @@ CREATE TABLE IF NOT EXISTS public.tournament_movements (
   FOREIGN KEY (tournament_id, team_id) REFERENCES public.tournament_teams(tournament_id, id) ON DELETE CASCADE
 );
 
+-- ⚠️ `wins` A ETE AJOUTEE TARDIVEMENT (fonctions de classement). `CREATE TABLE
+-- IF NOT EXISTS` est un NO-OP sur une base ou la table existe deja : elle n'y
+-- apparaitra donc PAS, et « Mon parcours » lira une colonne absente. Sur une
+-- telle base, jouer a la main, une fois :
+--   ALTER TABLE public.tournament_results
+--     ADD COLUMN IF NOT EXISTS wins int NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS public.tournament_results (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
   team_id       uuid NOT NULL,
