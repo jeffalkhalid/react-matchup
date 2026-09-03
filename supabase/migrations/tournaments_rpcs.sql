@@ -3109,16 +3109,26 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 -- DELIBERE, pas un appel : le SQL fait autorite, le TypeScript est le miroir
 -- d'affichage, et le test de parite de la Task 6 interdit la divergence.
 --
--- ⚠️ UNE SEULE DIVERGENCE CONNUE, ET ELLE EST VOULUE : `withdrawn`, PREMIERE
--- CLE DE TRI ICI, N'EXISTE PAS DANS LE MOTEUR. `lib/tournament.ts:171`
--- (`standings()`) ne lit pas `TeamState.withdrawn` -- le champ existe, il n'est
--- jamais consulte -- et trie donc un binome parti au milieu des autres, sur le
--- palier qu'il avait atteint avant de s'en aller. LE SQL FAIT AUTORITE : un
--- binome qui abandonne passe derriere tous ceux qui ont fini la soiree, a
--- l'ecran comme a la cloture. C'est la TACHE 6 qui alignera le moteur et son
--- test de parite. NE PAS « corriger » le SQL vers le TypeScript -- exactement
--- le meme arbitrage que pour la renumerotation contigue, note au-dessus de
--- `tournament_final_round`.
+-- ⚠️ `withdrawn` EST LA PREMIERE CLE DE TRI, ET LE MOTEUR LA PARTAGE. Ce bloc
+-- a longtemps annonce une divergence VOULUE : le moteur declarait
+-- `TeamState.withdrawn` sans jamais le consulter, et triait donc un binome
+-- parti au milieu des autres, sur le palier qu'il avait atteint avant de s'en
+-- aller. LA TACHE 6 A FAIT L'ALIGNEMENT, dans ce sens-la et pas l'autre :
+-- `standings()` (`lib/tournament.ts:210`) lit desormais le champ
+-- (`lib/tournament.ts:216`) et le trie en tete (`lib/tournament.ts:264`),
+-- exactement comme le `row_number()` ci-dessous. La cle entre aussi dans le
+-- `dense_rank()` du GROUPE d'ex aequo des deux cotes : un binome parti et un
+-- binome present ne partagent jamais un groupe, meme a statistiques
+-- identiques.
+--
+-- CE QUI INTERDIT DESORMAIS LA DIVERGENCE, c'est
+-- `lib/__tests__/tournamentParite.test.ts` : un corpus fige de 8 binomes sur
+-- 6 rotations, dont les valeurs attendues sont celles de CETTE fonction, et
+-- ou un binome parti a la MEILLEURE difference de jeux de la soiree au
+-- MEILLEUR palier -- sans cette cle il serait premier, il est septieme. Si le
+-- moteur reperd la cle, ce test tombe. LE SQL RESTE L'AUTORITE : on ne
+-- « corrige » jamais ce fichier vers le TypeScript, on ramene le TypeScript
+-- ici, et on met le corpus a jour.
 --
 --   * UNE LIGNE PAR BINOME ASSIS, forfaits (`withdrawn`) COMPRIS ; un binome
 --     sans aucun match dans la borne y figure avec des compteurs a zero. Le
@@ -3515,12 +3525,22 @@ REVOKE ALL ON FUNCTION public.fn_tournament_final_slots(uuid, int, int) FROM PUB
 -- leur du. Sur une echelle ou le Terrain 1 ne porte qu'un bye, le Terrain 2 ne
 -- joue donc PAS pour les places 3 et 4, mais pour les places 2 et 3.
 --
--- ⚠️ CE POINT DIVERGE DE `finalRanking()` de `lib/tournament.ts`, qui rend
--- encore les creneaux BRUTS (`lib/tournament.ts:252`), et de son test
--- (`lib/__tests__/tournament.test.ts:517`), qui affirme `[1,2,3,5,6,7,8]` avec
--- un commentaire disant que le rang 4 n'est pas recycle. LE SQL FAIT AUTORITE
--- et la regle contigue est la bonne ; c'est la TACHE 6 qui alignera le moteur
--- et son test. Ne pas « corriger » le SQL vers le TypeScript.
+-- ⚠️ LE MOTEUR SUIT CETTE REGLE DEPUIS LA TACHE 6. Ce bloc a longtemps
+-- annonce une divergence : `finalRanking()` rendait les creneaux BRUTS et son
+-- test affirmait `[1,2,3,5,6,7,8]`, avec un commentaire disant que le rang 4
+-- n'etait pas recycle. C'etait la regle d'avant, et elle etait fausse.
+-- `finalRanking()` (`lib/tournament.ts:328`) est desormais un port de
+-- `fn_tournament_final_slots`, CTE par CTE : elle renumerote de facon contigue
+-- (`lib/tournament.ts:389`), ecarte des creneaux les binomes partis
+-- (`lib/tournament.ts:351`), et laisse le MATCH prendre les deux creneaux d'un
+-- palier a trois. Le test qui affirmait les creneaux bruts a ete reecrit.
+--
+-- CE QUI INTERDIT DESORMAIS LA DIVERGENCE, c'est
+-- `lib/__tests__/tournamentParite.test.ts`, dont le corpus produit justement
+-- une echelle a creneaux troues -- deux terrains reduits a un bye, un palier a
+-- trois, un binome parti dans le tableau du dernier tour -- et compare le
+-- resultat aux rangs que CETTE fonction calcule. Ne pas « corriger » ce
+-- fichier vers le TypeScript : c'est le TypeScript qu'on ramene ici.
 --
 -- C'est `tournament_close` qui ECRIT ces rangs, et cette fonction qui les
 -- ANNONCE -- toutes deux par le meme helper, pour qu'elles ne puissent plus

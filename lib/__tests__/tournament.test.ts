@@ -583,6 +583,24 @@ describe('rotation de classement', () => {
   // garde de confirmation manquait : c est exactement ce que ce test verifie
   // en verifiant l ABSENCE de 'd' (qui serait le "gagnant" par defaut) autant
   // que celle de 'c'.
+  // `fn_tournament_final_slots` lit le tour de classement par
+  // `m.round_no = p_final_round` : un match d'un tour ANTERIEUR n'y entre pas.
+  // Le moteur filtre pareil (`m.round !== maxRound`), et ce filtre n'etait
+  // exerce par aucun test -- aucun ne passait plus d'un tour a la fonction.
+  // Ici le Terrain 1 porte les memes deux binomes a deux tours de suite, avec
+  // des vainqueurs OPPOSES : sans le filtre, c'est le tour 1 qui parlerait et
+  // l'ordre s'inverserait.
+  it('ne lit que le dernier tour present, pas l historique qui le precede', () => {
+    const deuxTours: Match[] = [
+      { round: 1, court: 1, teamA: 'a', teamB: 'b', gamesA: 6, gamesB: 2, confirmed: true },
+      { round: 2, court: 1, teamA: 'a', teamB: 'b', gamesA: 2, gamesB: 6, confirmed: true },
+    ];
+    expect(finalRanking(deuxTours, 1)).toEqual([
+      { rank: 1, teamId: 'b' },     // b gagne le tour 2, le seul qui classe
+      { rank: 2, teamId: 'a' },
+    ]);
+  });
+
   it('un match du dernier tour non confirme laisse ses deux rangs vacants', () => {
     const enCours: Match[] = [
       M(1, 'a', 'e', 6, 2),

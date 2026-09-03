@@ -303,6 +303,18 @@ describe('parite avec fn_tournament_final_slots -- la rotation de classement', (
     expect(finalRanking(FINAL_ROUND, 4, standings(TEAMS, MATCHES))).toEqual(SERVEUR);
   });
 
+  // LE TOUR DE CLASSEMENT SE LIT SEUL. Le SQL borne son CTE `fr` a
+  // `m.round_no = p_final_round` : les cinq tours precedents n'y entrent pas.
+  // Passer l'HISTORIQUE COMPLET a la fonction doit donc donner exactement le
+  // meme classement que lui passer la seule rotation de classement -- c'est le
+  // garde-fou que promet son docblock, et sans lui les matchs du tour 1
+  // reprendraient les creneaux (T7 devant T8 au Terrain 4, T3 au Terrain 2...)
+  // et le classement changerait de fond en comble.
+  it('un historique complet passe par erreur donne le meme classement', () => {
+    const s = standings(TEAMS, MATCHES);
+    expect(finalRanking(MATCHES, 4, s)).toEqual(finalRanking(FINAL_ROUND, 4, s));
+  });
+
   // La renumerotation contigue, isolee. Les creneaux bruts sont 1, 3, 4, 5, 7
   // (et 8, 9, 10 pour les non-places) : les rangs rendus sont 1..8 sans trou.
   // Un bareme qui va du rang 1 au rang 8 ne peut pas sauter un rang -- ces
