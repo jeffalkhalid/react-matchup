@@ -9,6 +9,7 @@ import {
   seatedTeams, tournamentPhase, sameSideWarning, levelRangeLabel, priceLabel,
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
   acceptsCheckIn, isFeatureDisabled, matchLiveStatus, validateTournamentScore,
+  computeCareerTotals,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
 } from '../tournaments';
 
@@ -234,5 +235,59 @@ describe('validateTournamentScore — refuse l’égalité CÔTÉ ÉCRAN, avant 
 
   it('20 jeux reste dans les bornes', () => {
     expect(validateTournamentScore(20, 3)).toBeNull();
+  });
+});
+
+// « Mon parcours » (Task 9) : les cumuls, sur des lignes déjà filtrées
+// CLASSEMENT_VALIDE par `fetchMyTournamentResults` — cette fonction ne
+// revérifie aucun statut, elle ne fait que sommer.
+
+const res = (final_rank: number, played: number, wins: number, games_won: number, games_lost: number, points: number) =>
+  ({ final_rank, played, wins, games_won, games_lost, points });
+
+describe('computeCareerTotals — les cumuls de « Mon parcours »', () => {
+  it('aucun tournoi validé : tout à zéro, pas de division par zéro', () => {
+    const t = computeCareerTotals([]);
+    expect(t).toEqual({
+      tournamentsPlayed: 0, matchesPlayed: 0, wins: 0, losses: 0, winPct: 0,
+      gamesWon: 0, gamesLost: 0, gamesDiff: 0, tournamentWins: 0, podiums: 0, points: 0,
+    });
+  });
+
+  it('les défaites se DÉDUISENT (played - wins), il n’y a pas de colonne pour ça', () => {
+    // 6 matchs joués, 4 gagnés : 2 défaites, jamais lues nulle part.
+    const t = computeCareerTotals([res(2, 6, 4, 24, 14, 80)]);
+    expect(t.losses).toBe(2);
+  });
+
+  it('somme sur plusieurs tournois, et arrondit le pourcentage de victoires', () => {
+    const rows = [
+      res(1, 6, 5, 30, 12, 100), // 1er : victoire de tournoi ET podium
+      res(4, 6, 3, 20, 20, 65),  // podium raté (4e)
+      res(3, 6, 4, 22, 15, 65),  // podium (3e)
+    ];
+    const t = computeCareerTotals(rows);
+    expect(t.tournamentsPlayed).toBe(3);
+    expect(t.matchesPlayed).toBe(18);
+    expect(t.wins).toBe(12);
+    expect(t.losses).toBe(6);
+    expect(t.winPct).toBe(67); // 12/18 = 66.66… → 67
+    expect(t.gamesWon).toBe(72);
+    expect(t.gamesLost).toBe(47);
+    expect(t.gamesDiff).toBe(25);
+    expect(t.tournamentWins).toBe(1);
+    expect(t.podiums).toBe(2);
+    expect(t.points).toBe(230);
+  });
+
+  it('podium = rang 1, 2 OU 3 — pas seulement la victoire', () => {
+    const rows = [res(1, 6, 6, 36, 6, 100), res(2, 6, 5, 30, 12, 80), res(3, 6, 4, 24, 18, 65)];
+    expect(computeCareerTotals(rows).podiums).toBe(3);
+    expect(computeCareerTotals(rows).tournamentWins).toBe(1);
+  });
+
+  it('la différence de jeux peut être négative', () => {
+    const t = computeCareerTotals([res(8, 6, 1, 10, 30, 20)]);
+    expect(t.gamesDiff).toBe(-20);
   });
 });

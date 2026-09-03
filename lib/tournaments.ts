@@ -716,3 +716,110 @@ export function fetchStandings(
     p_tournament: tournamentId, p_max_round: maxRound ?? null,
   });
 }
+
+// ─── « Mon parcours » (Task 9) : l'historique et les cumuls d'UN joueur ──────
+//
+// ⚠️ `tournament_results` — une ligne PAR JOUEUR (PK `(tournament_id,
+// player_id)`), les deux joueurs d'un binôme reçoivent LES MÊMES chiffres
+// (en-tête de la table, tournaments.sql). Aucune déduplication par binôme à
+// faire ici, contrairement au classement de la soirée (`seatedTeams`).
+//
+// ⚠️ IL N'Y A PAS DE COLONNE POUR LES DÉFAITES — le schéma le dit
+// explicitement : elles se déduisent, `played - wins`, jamais stockées ni
+// redemandées au serveur.
+//
+// ⚠️ QUAND UNE LIGNE COMPTE. `tournament_close` écrit `tournament_results` dès
+// la clôture (statut TERMINE), mais les points ne sont crédités — et le
+// tournoi n'entre dans « Mon parcours » — qu'au passage à CLASSEMENT_VALIDE
+// par `tournament_validate` (en-têtes des deux fonctions, tournaments_rpcs.sql ;
+// spec §14 : « Les points ne sont crédités et le tournoi n'apparaît dans Mon
+// parcours qu'au passage à CLASSEMENT_VALIDE »). Un tournoi TERMINE mais pas
+// encore validé ne compte donc PAS : le filtre se fait sur `tournament.status`,
+// jamais en supposant qu'une ligne présente veut dire un tournoi validé.
+
+/** Une ligne de `tournament_results`, avec le tournoi qui l'explique. Le
+ *  filtre `tournament.status = CLASSEMENT_VALIDE` est un `!inner` join
+ *  PostgREST (motif de `lib/notifications.ts`), pas un filtre appliqué après
+ *  coup : une ligne dont le tournoi n'est pas validé n'est jamais rendue. */
+export interface TournamentResultRow {
+  tournament_id: string;
+  team_id: string;
+  final_rank: number;
+  played: number;
+  wins: number;
+  games_won: number;
+  games_lost: number;
+  points: number;
+  tournament: {
+    id: string;
+    name: string;
+    starts_at: string;
+    status: TournamentStatus;
+    club: TournamentClub | null;
+  };
+}
+
+/** L'historique COMPLET d'un joueur pour « Mon parcours » — RLS ouverte à
+ *  tout authentifié (`tournament_results_read`, tournaments.sql), lue en
+ *  direct : aucune RPC n'est dédiée à cet écran. Trié du plus récent au plus
+ *  ancien, CÔTÉ CLIENT — l'ordre PostgREST sur une colonne de table jointe
+ *  n'est pas un contrat assez sûr pour s'y fier sans pouvoir l'exécuter ici. */
+export async function fetchMyTournamentResults(playerId: string): Promise<TournamentResultRow[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_results')
+    .select(
+      'tournament_id, team_id, final_rank, played, wins, games_won, games_lost, points, ' +
+      'tournament:tournament_id!inner(id, name, starts_at, status, club:club_id(id, name, city))',
+    )
+    .eq('player_id', playerId)
+    .eq('tournament.status', 'CLASSEMENT_VALIDE');
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as TournamentResultRow[];
+  return [...rows].sort((a, b) => b.tournament.starts_at.localeCompare(a.tournament.starts_at));
+}
+
+/** Les cumuls affichés en tête de « Mon parcours ». Pure : une simple somme
+ *  des lignes déjà filtrées CLASSEMENT_VALIDE par `fetchMyTournamentResults` —
+ *  rien ici ne revérifie le statut. */
+export interface TournamentCareerTotals {
+  tournamentsPlayed: number;
+  matchesPlayed: number;
+  wins: number;
+  /** Déduites, jamais lues : `tournament_results` n'a pas de colonne pour ça. */
+  losses: number;
+  /** Arrondi à l'entier le plus proche ; 0 si aucun match joué (pas de division par zéro). */
+  winPct: number;
+  gamesWon: number;
+  gamesLost: number;
+  gamesDiff: number;
+  /** `final_rank === 1`. */
+  tournamentWins: number;
+  /** `final_rank <= 3`. */
+  podiums: number;
+  /** La somme des points montante/descente crédités. */
+  points: number;
+}
+
+export function computeCareerTotals(
+  rows: Pick<TournamentResultRow, 'played' | 'wins' | 'games_won' | 'games_lost' | 'final_rank' | 'points'>[],
+): TournamentCareerTotals {
+  const matchesPlayed = rows.reduce((s, r) => s + r.played, 0);
+  const wins = rows.reduce((s, r) => s + r.wins, 0);
+  const gamesWon = rows.reduce((s, r) => s + r.games_won, 0);
+  const gamesLost = rows.reduce((s, r) => s + r.games_lost, 0);
+  const points = rows.reduce((s, r) => s + r.points, 0);
+  return {
+    tournamentsPlayed: rows.length,
+    matchesPlayed,
+    wins,
+    losses: matchesPlayed - wins,
+    winPct: matchesPlayed > 0 ? Math.round((wins / matchesPlayed) * 100) : 0,
+    gamesWon,
+    gamesLost,
+    gamesDiff: gamesWon - gamesLost,
+    tournamentWins: rows.filter(r => r.final_rank === 1).length,
+    podiums: rows.filter(r => r.final_rank <= 3).length,
+    points,
+  };
+}

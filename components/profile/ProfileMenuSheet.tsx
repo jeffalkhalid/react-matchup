@@ -76,6 +76,7 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Group title="Raccourcis" />
           <Row icon="trophy" label="Classement" onPress={() => nav('/ranking')} />
           {tournamentsOn && <Row icon="medal" label="Tournois" onPress={() => nav('/tournaments')} />}
+          {tournamentsOn && <Row icon="trendingUp" label="Mon parcours" onPress={() => nav('/tournaments/parcours')} />}
           <Row icon="bell" label="Notifications" onPress={() => nav('/notifications')} />
 
           {isAdmin && (
