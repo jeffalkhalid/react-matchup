@@ -2174,7 +2174,7 @@ const TOURNAMENT_AUTOPAIR_OK = ['COMPLET', 'CHECK_IN', 'PRET'];
 
 function AdminMatchCard({
   match, teamA, teamB, status, entriesCount, isOrganizer, busy, laterCount, forfeitGames,
-  onResolve, onForfeit, onReopen,
+  onResolve, onReopen,
 }: {
   match: TournamentMatch;
   teamA: CourtTeamInfo;
@@ -2186,7 +2186,6 @@ function AdminMatchCard({
   laterCount: number;
   forfeitGames: number;
   onResolve: (matchId: string, gamesA: number, gamesB: number) => void;
-  onForfeit: (teamId: string, teamLabel: string) => void;
   onReopen: (match: TournamentMatch, laterCount: number) => void;
 }) {
   const [inputA, setInputA] = useState('');
@@ -2237,28 +2236,19 @@ function AdminMatchCard({
         </View>
       )}
 
-      {isOrganizer && teamB && status !== 'disputed' && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {status === 'forfeited' ? (
-            <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontStyle: 'italic' }}>
-              Forfait — score {forfeitGames}-{forfeitGames}, non réouvrable.
-            </Text>
-          ) : (
-            <>
-              {status === 'confirmed' && (
-                <TouchableOpacity onPress={() => onReopen(match, laterCount)} disabled={busy} style={sty.btnOutline}>
-                  <Text style={sty.btnOutlineText}>↺ Rouvrir</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={() => onForfeit(teamA.id, teamA.names.join(' · '))} disabled={busy} style={sty.btnCancel}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.danger }}>Forfait {teamA.names[0]}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => onForfeit(teamB.id, teamB.names.join(' · '))} disabled={busy} style={sty.btnCancel}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.danger }}>Forfait {teamB.names[0]}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+      {/* Forfait : PAS ici, par ligne de match — un binôme au repos (`!teamB`)
+          ou avant même le premier tirage (aucun match encore affiché) doit
+          pouvoir être forfaité tout autant qu'un binôme qui joue ce tour-ci.
+          Le geste vit dans la liste des binômes, plus bas dans `TournamentManage`. */}
+      {isOrganizer && teamB && status === 'confirmed' && (
+        <TouchableOpacity onPress={() => onReopen(match, laterCount)} disabled={busy} style={[sty.btnOutline, { alignSelf: 'flex-start' }]}>
+          <Text style={sty.btnOutlineText}>↺ Rouvrir</Text>
+        </TouchableOpacity>
+      )}
+      {status === 'forfeited' && (
+        <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontStyle: 'italic' }}>
+          Forfait — score {forfeitGames}-{forfeitGames}, non réouvrable.
+        </Text>
       )}
 
       {!teamB && (
@@ -2391,8 +2381,13 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
   );
 
   const handleReopen = (match: TournamentMatch, laterCount: number) => {
+    // ⚠️ La borne haute annoncée est `t.current_round` (le DERNIER TOUR
+    // RÉELLEMENT TIRÉ), jamais `t.round_count` (le nombre de rotations
+    // PRÉVUES) : entre les deux, des tours n'existent tout simplement pas
+    // encore, et les annoncer comme « supprimés » serait un mensonge par
+    // exagération — `laterCount`, lui, reste le compte exact.
     const msg = laterCount > 0
-      ? `Cela supprime ${laterCount} match${laterCount > 1 ? 's' : ''} des rotations suivantes (tour ${match.round_no + 1} à ${t.round_count}) et leurs saisies, et ramène la soirée au tour ${match.round_no}. Action irréversible.`
+      ? `Cela supprime ${laterCount} match${laterCount > 1 ? 's' : ''} des rotations déjà tirées après ce tour (tour ${match.round_no + 1} à ${t.current_round}) et leurs saisies, et ramène la soirée au tour ${match.round_no}. Action irréversible.`
       : 'Aucune rotation postérieure n’existe encore : seul ce match sera rouvert. Action irréversible.';
     Alert.alert('Rouvrir ce score ?', msg, [
       { text: 'Annuler', style: 'cancel' },
@@ -2437,6 +2432,22 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
     movement: movementByTeam.get(s.team_id) ?? null,
   }));
 
+  // `soloRegistrations` (lib/tournaments.ts) répond « cherche un partenaire »
+  // pour un inscrit ASSIS comme pour un inscrit en LISTE D'ATTENTE — vrai en
+  // soi, mais `tournament_autopair` (en-tête) N'APPARIE JAMAIS la liste
+  // d'attente. Séparer les deux évite qu'un chiffre unique, affiché juste
+  // au-dessus du bouton « Apparier », laisse croire qu'il les couvre tous.
+  const solo = soloRegistrations(regs, teams);
+  const soloSeatedCount = solo.filter(r => r.waitlist_position == null).length;
+  const soloWaitlistedCount = solo.filter(r => r.waitlist_position != null).length;
+
+  // Les binômes qu'un forfait peut encore toucher : assis (l'invariant de
+  // lecture de `tournament_teams`, porté par `seatedTeams`) et pas déjà
+  // partis. `tournament_forfeit` (en-tête) n'exige RIEN d'autre — ni un match
+  // ce tour-ci, ni même qu'une rotation ait été tirée — donc cette liste ne
+  // dépend d'AUCUN état de match, contrairement au tableau du tour courant.
+  const activeTeams = seatedTeams(teams, regs).filter(tm => !tm.withdrawn);
+
   if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
 
   return (
@@ -2475,8 +2486,9 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
         <View style={sty.orgCard}>
           <Text style={sty.orgCardTitle}>Check-in & appariement</Text>
           <Text style={sty.orgCardDesc}>
-            {seatsTaken(regs)} joueur(s) sur {seatCount(t.court_count)} places · {waitlistCount(regs)} en liste d’attente ·{' '}
-            {soloRegistrations(regs, teams).length} cherchent encore un partenaire.
+            {seatsTaken(regs)} joueur(s) sur {seatCount(t.court_count)} places · {waitlistCount(regs)} en liste d’attente.{'\n'}
+            {soloSeatedCount} joueur(s) assis {soloSeatedCount > 1 ? 'cherchent' : 'cherche'} encore un partenaire — c’est ce que « Apparier les joueurs seuls » couvrira.
+            {soloWaitlistedCount > 0 ? ` ${soloWaitlistedCount} de plus en liste d’attente : l’appariement automatique ne les concerne jamais.` : ''}
           </Text>
 
           <View style={{ gap: 6 }}>
@@ -2553,7 +2565,7 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                     isOrganizer={isOrganizer} busy={!!busy}
                     laterCount={countLaterRoundMatches(allMatches, m.round_no)}
                     forfeitGames={t.forfeit_games}
-                    onResolve={handleResolveDispute} onForfeit={handleForfeit} onReopen={handleReopen}
+                    onResolve={handleResolveDispute} onReopen={handleReopen}
                   />
                 );
               })}
@@ -2585,6 +2597,38 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
             <View style={{ gap: 8, marginTop: 8 }}>
               <Text style={sty.orgCardTitle}>Classement provisoire</Text>
               <StandingsTable rows={standingRows} />
+            </View>
+          )}
+
+          {/* Forfait — PAR BINÔME, pas par ligne de match : `tournament_forfeit`
+              (en-tête) n'exige qu'un tournoi EN_COURS et un binôme assis, non
+              retiré — ni un match ce tour-ci, ni même une rotation déjà
+              tirée. Cette liste doit donc rester joignable même à
+              `current_round === 0` et pour un binôme au repos (`!teamB`
+              dans le tableau ci-dessus), qu'aucune ligne de match ne
+              représente. */}
+          {isOrganizer && activeTeams.length > 0 && (
+            <View style={{ gap: 8, marginTop: 10 }}>
+              <Text style={sty.orgCardTitle}>Forfait d’un binôme</Text>
+              <Text style={sty.orgCardDesc}>
+                Sort le binôme du tournoi immédiatement — qu’il ait un match ce tour-ci, qu’il soit au repos, ou
+                qu’aucune rotation n’ait encore été tirée.
+              </Text>
+              <View style={{ gap: 6 }}>
+                {activeTeams.map(tm => {
+                  const label = namesOf(tm.player1_id, tm.player2_id).join(' · ');
+                  return (
+                    <View key={tm.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text numberOfLines={1} style={{ flex: 1, fontSize: 12, fontWeight: '700', color: Colors.textPrimary }}>
+                        {label}
+                      </Text>
+                      <TouchableOpacity onPress={() => handleForfeit(tm.id, label)} disabled={!!busy} style={sty.btnCancel}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.danger }}>Forfait</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           )}
         </View>
