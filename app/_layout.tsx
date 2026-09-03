@@ -57,6 +57,7 @@ function RootNavigator() {
             alors d'eux-mêmes si on y arrive par un lien direct. */}
         <Stack.Screen name="tournaments/index" options={{ presentation: 'card' }} />
         <Stack.Screen name="tournaments/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="tournaments/parcours" options={{ presentation: 'card' }} />
         <Stack.Screen name="community" />
         <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="dm/[conversationId]" options={{ presentation: 'card' }} />

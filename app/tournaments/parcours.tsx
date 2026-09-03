@@ -18,6 +18,13 @@
 // tout le monde verra en premier. Il explique ce que sont ces tournois et
 // comment y entrer, ce n'est pas une liste vide avec un titre.
 //
+// ⚠️ UN REFUS N'EST PAS UN VIDE. `fetchMyTournamentResults` n'a pas de
+// `{ok,reason}` à lire (ce n'est pas une RPC) : elle LÈVE. `loadError` est
+// donc un état À PART de `rows.length === 0`, jamais avalé en silence — même
+// motif que `standingsError` dans [id].tsx, corrigé au commit précédent
+// (12a60d8) sur `fetchStandings`. Un joueur qui a des points ne doit jamais
+// lire « aucun parcours » à cause d'un aléa réseau.
+//
 // Conventions : en-tête sombre + cartes blanches rayon 18 du Lobby / des
 // autres écrans de tournoi (app/tournaments/index.tsx, [id].tsx) ; grille de
 // cumuls dans l'esprit des cartes de statistiques du profil
@@ -43,6 +50,7 @@ import {
   formatTournamentDate,
   type TournamentResultRow, type TournamentCareerTotals,
 } from '../../lib/tournaments';
+import { GENERIC_REASON } from '../../lib/tournamentReasons';
 
 // ─── Briques d'affichage (mêmes conventions que index.tsx / [id].tsx) ───────
 
@@ -112,6 +120,26 @@ function RankBadge({ rank }: { rank: number }) {
       <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: podium ? Colors.textOnBrand : (tone ?? Colors.textPrimary) }}>
         {rank}
       </Text>
+    </View>
+  );
+}
+
+/** Un refus, distinct du cas vide — même motif que `Notice` de [id].tsx
+ *  (repris localement, une seule tonalité utile ici). Un aléa réseau ou une
+ *  erreur PostgREST ne doit JAMAIS se lire comme « tu n'as joué aucun
+ *  tournoi » : c'est exactement la confusion corrigée dans `fetchStandings`
+ *  au commit précédent (12a60d8), portée ici à `fetchMyTournamentResults`,
+ *  qui n'a pas de `{ok,reason}` à distinguer — elle LÈVE — donc rien ici ne
+ *  prétend citer un refus serveur précis : le message reste générique
+ *  (`GENERIC_REASON`, lib/tournamentReasons.ts), jamais une chaîne locale ni
+ *  une trace technique. */
+function ErrorNotice({ message }: { message: string }) {
+  return (
+    <View style={{
+      backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.50)',
+      borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    }}>
+      <Text style={{ color: '#B45309', fontSize: 12.5, fontFamily: Fonts.uiBold, lineHeight: 17 }}>{message}</Text>
     </View>
   );
 }
@@ -222,6 +250,11 @@ export default function CareerScreen() {
   // un écran vide qui se referme serait déjà une entrée visible.
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [rows, setRows] = useState<TournamentResultRow[]>([]);
+  // Distinct d'un historique simplement VIDE (aucun tournoi validé pour
+  // l'instant) : un aléa réseau ou une erreur PostgREST ne doit jamais se
+  // lire comme « tu n'as joué aucun tournoi » — cf. `fetchStandings` /
+  // `standingsError` dans app/tournaments/[id].tsx, même distinction.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -235,8 +268,13 @@ export default function CareerScreen() {
     if (!player) { setLoading(false); return; }
     try {
       setRows(await fetchMyTournamentResults(player.id));
+      setLoadError(null);
     } catch (e) {
       console.warn('[tournois] parcours indisponible', e);
+      // On NE VIDE PAS `rows` : un refus pendant un rafraîchissement garde
+      // l'historique déjà affiché plutôt que de le remplacer par un message
+      // d'erreur qui ferait disparaître ce qui était déjà connu.
+      setLoadError(GENERIC_REASON);
     } finally {
       setLoading(false);
     }
@@ -297,6 +335,15 @@ export default function CareerScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={Colors.primary} size="large" />
         </View>
+      ) : loadError && rows.length === 0 ? (
+        // Un refus (réseau, PostgREST) SANS rien de connu à montrer : on le
+        // dit, on ne prétend jamais que c'est un historique vide.
+        <ScrollView
+          contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 28 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        >
+          <ErrorNotice message={loadError} />
+        </ScrollView>
       ) : rows.length === 0 ? (
         <ScrollView
           contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 28 }}
@@ -309,6 +356,10 @@ export default function CareerScreen() {
           contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 28, gap: 14 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
         >
+          {/* Un rafraîchissement en échec garde l'historique déjà connu à
+              l'écran, avec ce bandeau au-dessus plutôt qu'à sa place. */}
+          {loadError && <ErrorNotice message={loadError} />}
+
           <View>
             <SectionTitle>Mes cumuls</SectionTitle>
             <CumulsCard totals={totals} />
