@@ -1403,3 +1403,51 @@ export function homeTournamentPick(
   if (!t) return null;
   return { tournament: t, free: freePlaces(regsByTournament.get(t.id) ?? [], t.court_count) };
 }
+
+// ── Sélection de la date et de l'heure (formulaire de création) ─────────────
+//
+// Deux fonctions pures, ici plutôt que dans le composant : ce sont elles qui
+// peuvent se tromper en silence (un décalage d'un jour, un mois de 28 jours,
+// un changement d'heure), et une erreur de calendrier ne se voit pas à l'œil.
+// Le rendu, lui, se voit.
+
+/**
+ * La grille d'un mois, semaines commençant le LUNDI (convention française) :
+ * six lignes de sept cases, `null` pour les cases hors du mois.
+ *
+ * `month0` est l'indice JavaScript du mois — 0 = janvier.
+ */
+export function monthMatrix(year: number, month0: number): (number | null)[][] {
+  const premier = new Date(year, month0, 1);
+  // getDay() rend 0 pour dimanche ; on décale pour que lundi vaille 0.
+  const decalage = (premier.getDay() + 6) % 7;
+  const joursDuMois = new Date(year, month0 + 1, 0).getDate();
+
+  const cases: (number | null)[] = [
+    ...Array<null>(decalage).fill(null),
+    ...Array.from({ length: joursDuMois }, (_, i) => i + 1),
+  ];
+  while (cases.length % 7 !== 0) cases.push(null);
+
+  const lignes: (number | null)[][] = [];
+  for (let i = 0; i < cases.length; i += 7) lignes.push(cases.slice(i, i + 7));
+  return lignes;
+}
+
+/** `2026-09-04` — le format que le formulaire assemble avec l'heure. */
+export function isoDay(year: number, month0: number, day: number): string {
+  return `${year}-${String(month0 + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * Les créneaux horaires proposés, du plus tôt au plus tard, par pas fixe.
+ * Une liste plutôt qu'une saisie libre : personne ne joue à 19h07, et un
+ * champ texte laisse passer « 25:00 » ou « 7h ».
+ */
+export function timeSlots(fromHour = 8, toHour = 23, stepMin = 30): string[] {
+  const out: string[] = [];
+  for (let m = fromHour * 60; m <= toHour * 60 + (60 - stepMin); m += stepMin) {
+    out.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  }
+  return out;
+}

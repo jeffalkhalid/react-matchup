@@ -38,6 +38,7 @@ import {
 } from '../../lib/tournaments';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
+import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { Pill } from '../../components/Pill';
@@ -2000,6 +2001,16 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
 }
 
 // ─── Créer ──────────────────────────────────────────────────────────────────
+// « 2026-09-04 » -> « jeu. 4 sept. 2026 » : ce que l organisateur lit dans le
+// champ, pendant que l etat garde le format que le serveur attend.
+function dateLisible(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('fr-FR', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+  });
+}
+
 function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
   myPlayerId: string;
   onCancel: () => void;
@@ -2013,6 +2024,8 @@ function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
   const [name, setName] = useState('');
   const [clubs, setClubs] = useState<{ id: string; name: string; city: string | null }[]>([]);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
+  const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [club, setClub] = useState<{ id: string; name: string; city: string | null } | null>(null);
   const [date, setDate] = useState(todayStr());
   const [time, setTime] = useState('19:00');
@@ -2117,18 +2130,27 @@ function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
             </Text>
           </TouchableOpacity>
         </View>
+        {/* Date et heure se CHOISISSENT : un champ libre laissait passer
+            « 25:00 », « 7h » ou un mois a 31 fevrier, et l erreur n apparaissait
+            qu au moment de creer. */}
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={sty.fieldLabel}>Date</Text>
-            <TextInput value={date} onChangeText={setDate} placeholder="AAAA-MM-JJ"
-              placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+            <TouchableOpacity onPress={() => setDateSheetOpen(true)} style={sty.scoreInput}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}>
+                {dateLisible(date)}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={sty.fieldLabel}>Heure</Text>
-            <TextInput value={time} onChangeText={setTime} placeholder="HH:MM"
-              placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+            <TouchableOpacity onPress={() => setTimeSheetOpen(true)} style={sty.scoreInput}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}>{time}</Text>
+            </TouchableOpacity>
           </View>
         </View>
+        <DateSheet visible={dateSheetOpen} value={date} onPick={setDate} onClose={() => setDateSheetOpen(false)} />
+        <TimeSheet visible={timeSheetOpen} value={time} onPick={setTime} onClose={() => setTimeSheetOpen(false)} />
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={sty.fieldLabel}>Niveau min (optionnel)</Text>

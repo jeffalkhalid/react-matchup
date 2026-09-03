@@ -13,6 +13,7 @@ import {
   nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, pointsScaleValid,
   DEFAULT_POINTS_SCALE, statusLabel, statusTone, canOpenCheckIn, stakeLabel,
   groupResultsByTeam, dateBucket, formatTournamentDate, homeTournamentPick,
+  monthMatrix, isoDay, timeSlots,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
   type TournamentMissingMatch, type TournamentResultTeamRow, type Tournament,
 } from '../tournaments';
@@ -558,5 +559,54 @@ describe("carte d'accueil — n'apparaît que s'il y a quelque chose à faire", 
 
   it('rend null quand il n y a aucun tournoi', () => {
     expect(homeTournamentPick([], new Map(), 'moi')).toBeNull();
+  });
+});
+
+// ── Calendrier et créneaux horaires ────────────────────────────────────────
+describe('grille du mois — semaines commençant le lundi', () => {
+  it('septembre 2026 commence un mardi : une seule case vide avant le 1er', () => {
+    // 2026-09-01 est un mardi -> lundi = 0, mardi = 1, donc un décalage de 1.
+    const g = monthMatrix(2026, 8);
+    expect(g[0][0]).toBeNull();
+    expect(g[0][1]).toBe(1);
+  });
+
+  it('ne perd aucun jour et n en invente aucun', () => {
+    for (const [y, m, n] of [[2026, 8, 30], [2026, 0, 31], [2026, 1, 28], [2024, 1, 29]] as const) {
+      const jours = monthMatrix(y, m).flat().filter(d => d !== null);
+      expect(jours.length).toBe(n);
+      expect(jours[0]).toBe(1);
+      expect(jours[jours.length - 1]).toBe(n);
+    }
+  });
+
+  it('rend toujours des lignes completes de sept cases', () => {
+    for (const m of [0, 1, 5, 8, 11]) {
+      for (const l of monthMatrix(2026, m)) expect(l.length).toBe(7);
+    }
+  });
+
+  it('fevrier 2024 est bissextile — 29 jours, pas 28', () => {
+    expect(monthMatrix(2024, 1).flat().filter(d => d !== null).length).toBe(29);
+  });
+});
+
+describe('date et heure du formulaire', () => {
+  it('isoDay complete les zeros', () => {
+    expect(isoDay(2026, 8, 4)).toBe('2026-09-04');
+    expect(isoDay(2026, 11, 25)).toBe('2026-12-25');
+  });
+
+  it('les creneaux vont du premier au dernier, par pas de 30 min', () => {
+    const s = timeSlots();
+    expect(s[0]).toBe('08:00');
+    expect(s[1]).toBe('08:30');
+    expect(s[s.length - 1]).toBe('23:30');
+  });
+
+  it('la date et l heure se recollent en un instant valide', () => {
+    const d = new Date(`${isoDay(2026, 8, 4)}T${timeSlots()[22]}`);
+    expect(isNaN(d.getTime())).toBe(false);
+    expect(d.getHours()).toBe(19);
   });
 });
