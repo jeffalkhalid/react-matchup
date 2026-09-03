@@ -12,8 +12,8 @@ import { Pill } from '../Pill';
 import { Icon } from '../community/icons';
 import {
   type Tournament, type TournamentRegistration,
-  seatsLabel, seatsTaken, seatCount, waitlistCount,
-  levelRangeLabel, priceLabel, statusLabel, tournamentPhase,
+  seatsLabel, waitlistCount,
+  levelRangeLabel, priceLabel, statusLabel, tournamentPhase, freePlaces,
 } from '../../lib/tournaments';
 
 // Décompose la date en label (« AUJOURD'HUI » / « DEMAIN » / date courte) +
@@ -60,11 +60,13 @@ export function TournamentCard({ tournament, registrations, mine, onPress }: {
 }) {
   const t = tournament;
   const date = splitDate(t.starts_at);
-  const taken = seatsTaken(registrations);
-  const total = seatCount(t.court_count);
   const waiting = waitlistCount(registrations);
   const phase = tournamentPhase(t.status);
-  const full = taken >= total;
+  // Une seule source pour « plus de place » : freePlaces(), la même que la
+  // fiche. `taken >= total` mentait dès qu'une file existait — un binôme trop
+  // grand pour les derniers sièges est dépassé par la file (règle du serveur),
+  // donc taken < total alors que plus personne n'entre directement.
+  const full = freePlaces(registrations, t.court_count) === 0;
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={cs.card}>
