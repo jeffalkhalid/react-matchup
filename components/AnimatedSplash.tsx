@@ -168,7 +168,7 @@ export default function AnimatedSplash({ onFinish, holdDuration = 700 }: Props) 
   return (
     <Animated.View
       pointerEvents="none"
-      style={[StyleSheet.absoluteFillObject, styles.overlay, { opacity: overlayOp }]}
+      style={[StyleSheet.absoluteFill, styles.overlay, { opacity: overlayOp }]}
     >
       {/* Conteneur logo centré, animé par float (translateY) */}
       <Animated.View style={[styles.logoWrap, {

@@ -88,7 +88,9 @@ export default function RootLayout() {
     <PlayerProvider>
       <NotificationProvider>
         <BadgeDefsProvider>
-          <StatusBar style="auto" backgroundColor="transparent" translucent />
+          {/* Bord a bord depuis la SDK 55 : la barre est transparente et traversee
+              par defaut, `backgroundColor` et `translucent` ont ete retires. */}
+          <StatusBar style="auto" />
           <RootNavigator />
           {/* Bannière notif in-app — par-dessus la navigation, sous les providers. */}
           <InAppBanner />

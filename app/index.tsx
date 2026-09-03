@@ -50,7 +50,7 @@ export default function IndexScreen() {
         {/* Fallback (le temps que la vidéo démarre) : fond sombre + logo de
             l'app, au lieu de l'ancienne image padel.png (raquette violette
             off-brand qui flashait au démarrage). */}
-        <View style={[StyleSheet.absoluteFillObject, {
+        <View style={[StyleSheet.absoluteFill, {
           backgroundColor: Colors.bgDark,
           alignItems: 'center', justifyContent: 'center',
         }]}>
@@ -63,12 +63,12 @@ export default function IndexScreen() {
         {/* Vidéo de fond */}
         <VideoView
           player={videoPlayer}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           contentFit="cover"
           nativeControls={false}
           fullscreenOptions={{ enable: false }}
         />
-        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.60)' }]} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.60)' }]} />
 
         {/* Header — logo + wordmark (aligné sur le splash) */}
         <View style={{

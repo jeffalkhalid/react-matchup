@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { TouchableOpacity, Text, View } from 'react-native';
+import { TouchableOpacity, Text, View, type ColorValue } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,7 @@ export const unstable_settings = {
   initialRouteName: 'index',
 };
 
-const IconHome = ({ color, size = 22 }: { color: string; size?: number }) => (
+const IconHome = ({ color, size = 22 }: { color: ColorValue; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -30,7 +30,7 @@ const IconHome = ({ color, size = 22 }: { color: string; size?: number }) => (
   </Svg>
 );
 
-const IconSwords = ({ color, size = 22 }: { color: string; size?: number }) => (
+const IconSwords = ({ color, size = 22 }: { color: ColorValue; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" />
@@ -44,14 +44,14 @@ const IconSwords = ({ color, size = 22 }: { color: string; size?: number }) => (
   </Svg>
 );
 
-const IconMessage = ({ color, size = 22 }: { color: string; size?: number }) => (
+const IconMessage = ({ color, size = 22 }: { color: ColorValue; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
   </Svg>
 );
 
-const IconActivity = ({ color, size = 22 }: { color: string; size?: number }) => (
+const IconActivity = ({ color, size = 22 }: { color: ColorValue; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />

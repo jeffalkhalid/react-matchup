@@ -69,9 +69,9 @@ function Background({ mode, theme }: { mode: BgMode; theme: typeof THEMES[ThemeK
   if (typeof mode === 'object') {
     return (
       <>
-        <Image source={{ uri: mode.photo }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)' }]} />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.bg1 + '99' }]} />
+        <Image source={{ uri: mode.photo }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)' }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg1 + '99' }]} />
       </>
     );
   }
@@ -85,8 +85,8 @@ function Background({ mode, theme }: { mode: BgMode; theme: typeof THEMES[ThemeK
   const p = palette[mode];
   return (
     <>
-      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: p.topColor }]} />
-      <View style={[StyleSheet.absoluteFillObject, { top: '50%', backgroundColor: p.bottomColor }]} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: p.topColor }]} />
+      <View style={[StyleSheet.absoluteFill, { top: '50%', backgroundColor: p.bottomColor }]} />
       {/* Glow décoratif accent */}
       <View style={{
         position: 'absolute', top: -120, right: -120,
