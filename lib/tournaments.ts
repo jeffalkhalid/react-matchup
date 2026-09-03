@@ -1364,3 +1364,42 @@ export async function fetchTournamentMatches(tournamentId: string): Promise<Tour
   if (error) throw error;
   return (data ?? []) as unknown as TournamentMatch[];
 }
+
+// ── Accueil : quel tournoi mérite une place sur l'écran d'accueil ───────────
+//
+// La carte d'accueil n'apparaît QUE quand il y a quelque chose à faire : une
+// soirée à venir à laquelle je ne suis pas inscrit. Dès que je m'inscris, elle
+// disparaît. C'est un choix délibéré contre l'idée d'un bandeau permanent qui
+// clignote : un tournoi annoncé trois semaines à l'avance clignoterait trois
+// semaines. La rareté d'apparition attire mieux l'œil qu'une animation, et
+// elle se limite toute seule.
+//
+// Un tournoi complet reste affiché : il y a encore quelque chose à faire —
+// entrer en liste d'attente. C'est le libellé qui le dit, pas la disparition.
+
+export interface HomeTournamentPick {
+  tournament: Tournament;
+  /** Places libres au sens du serveur : zéro dès qu'une file existe. */
+  free: number;
+}
+
+/**
+ * Le prochain tournoi à venir auquel `myId` n'est PAS inscrit, ou `null`.
+ *
+ * « À venir » au sens de `tournamentPhase` : inscriptions ouvertes, complet,
+ * pointage ou prêt — pas un tournoi en cours, terminé ou annulé.
+ */
+export function homeTournamentPick(
+  tournaments: Tournament[],
+  regsByTournament: Map<string, TournamentRegistration[]>,
+  myId: string,
+): HomeTournamentPick | null {
+  const candidats = tournaments
+    .filter(t => tournamentPhase(t.status) === 'upcoming')
+    .filter(t => !(regsByTournament.get(t.id) ?? []).some(r => r.player_id === myId))
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+
+  const t = candidats[0];
+  if (!t) return null;
+  return { tournament: t, free: freePlaces(regsByTournament.get(t.id) ?? [], t.court_count) };
+}

@@ -21,6 +21,11 @@ import { HomeProfileCard } from '../../components/home/HomeProfileCard';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
+import { HomeTournamentCard } from '../../components/home/HomeTournamentCard';
+import {
+  getTournamentsEnabled, fetchTournaments, fetchRegistrationsFor, homeTournamentPick,
+  type HomeTournamentPick,
+} from '../../lib/tournaments';
 import { registerTourAnchor } from '../../lib/tourAnchors';
 import type { OpenGame } from '../../types';
 
@@ -149,6 +154,27 @@ export default function HomeScreen() {
     fetchData();
     reloadNotifs();
   }, [fetchData, reloadNotifs]));
+
+  // Tournois — chargement séparé de fetchData : l'interrupteur peut être éteint,
+  // auquel cas on ne lit rien du tout et la carte n'existe pas. Une panne ici ne
+  // doit jamais abîmer le reste de l'accueil, d'où le catch qui se contente de
+  // ne rien proposer.
+  const [tourPick, setTourPick] = useState<HomeTournamentPick | null>(null);
+  useFocusEffect(useCallback(() => {
+    let annule = false;
+    (async () => {
+      if (!player) return;
+      try {
+        if (!(await getTournamentsEnabled())) { if (!annule) setTourPick(null); return; }
+        const tournois = await fetchTournaments();
+        const regs = await fetchRegistrationsFor(tournois.map(t => t.id));
+        if (!annule) setTourPick(homeTournamentPick(tournois, regs, player.id));
+      } catch {
+        if (!annule) setTourPick(null);
+      }
+    })();
+    return () => { annule = true; };
+  }, [player]));
 
   useEffect(() => {
     // Le param est remis à undefined dès l'ouverture ; on relâche alors le verrou
@@ -436,6 +462,21 @@ export default function HomeScreen() {
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
                 />
               </View>
+
+              {/* C bis. Tournoi à venir — ~0,9/7,6, et SEULEMENT s'il y en a un
+                  auquel je ne suis pas inscrit. Les hauteurs étant relatives,
+                  cette part se prend sur l'ensemble : rien n'est rogné au hero
+                  en particulier, et l'accueil retrouve exactement ses
+                  proportions d'origine dès que la carte disparaît. */}
+              {tourPick && (
+                <View style={{ flex: 0.9, minHeight: compact ? 56 : 60 }}>
+                  <HomeTournamentCard
+                    tournament={tourPick.tournament}
+                    free={tourPick.free}
+                    onPress={() => router.push(`/tournaments/${tourPick.tournament.id}` as any)}
+                  />
+                </View>
+              )}
 
               {/* D. Prochain match — ~2,2/7,6 (plancher relevé : slots joueurs 40 px) */}
               <View style={{ flex: 2.2, minHeight: compact ? 162 : 180 }}>
