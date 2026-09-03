@@ -3133,11 +3133,11 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 --     CYCLE des trois (m bat n, n bat a, a bat m) : ce n'est plus un ordre
 --     total, et SQL et TypeScript rendraient alors deux classements differents
 --     sur la meme soiree. Le scalaire est transitif par construction ;
---   * le GROUPE d'ex aequo porte sur les QUATRE cles qui precedent la
---     confrontation -- palier, victoires, difference, jeux gagnes -- et pas
---     une de moins : un groupe trop large ferait entrer dans l'agregat des
---     matchs sans rapport avec le duel reellement lie, et pourrait inverser
---     l'ordre des deux binomes concernes.
+--   * le GROUPE d'ex aequo porte sur les CINQ cles qui precedent la
+--     confrontation -- abandon, palier, victoires, difference, jeux gagnes --
+--     et pas une de moins : un groupe trop large ferait entrer dans l'agregat
+--     des matchs sans rapport avec le duel reellement lie, et pourrait
+--     inverser l'ordre des deux binomes concernes.
 --
 -- `p_max_round` BORNE le calcul aux tours <= a cette valeur ; NULL (le defaut)
 -- compte tous les matchs confirmes. IL NE SUPPRIME JAMAIS DE LIGNE : un binome

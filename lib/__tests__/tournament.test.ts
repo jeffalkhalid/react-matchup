@@ -61,6 +61,39 @@ describe('sens des paliers', () => {
     expect(c1.get('a')).toBe(1);   // gagne au Terrain 1 : reste
     expect(c1.get('h')).toBe(4);   // perd au dernier : reste
   });
+
+  // `fn_tournament_ladder` exige `confirmed_at IS NOT NULL` avant de bouger
+  // qui que ce soit. Sans ce garde, le defaut `gamesA: 0, gamesB: 0` d un
+  // match pas encore joue rendrait `0 > 0` faux, declarerait B vainqueur en
+  // silence, et ferait DESCENDRE teamA sur un match qui n a pas eu lieu.
+  // Tous les autres tests de ce fichier passent par `joue()`, qui force
+  // `confirmed: true` : ce cas n etait couvert nulle part.
+  it('un match non confirme ne deplace personne', () => {
+    const c0 = new Map([['a', 2], ['b', 2]]);
+    const enCours: Match = { round: 1, court: 2, teamA: 'a', teamB: 'b',
+                             gamesA: 0, gamesB: 0, confirmed: false };
+    const c1 = nextCourts(c0, [enCours], 4);
+    expect(c1.get('a')).toBe(2);   // personne ne bouge...
+    expect(c1.get('b')).toBe(2);   // ...tant que le match n est pas acquis
+  });
+
+  // Le forfait se lit au MARQUEUR (`fn_tournament_a_won`), jamais au score :
+  // il s inscrit 0-0 des deux cotes, donc `gamesA > gamesB` designerait B a
+  // tous les coups -- et ferait MONTER le forfaitaire quand c est lui qui est
+  // en teamB. Les deux orientations sont verifiees, parce que l une des deux
+  // coincide par accident avec la lecture fausse.
+  it('un forfait fait monter l adversaire, jamais le forfaitaire', () => {
+    const c0 = new Map([['a', 2], ['b', 2]]);
+    const ff = (parti: string): Match => ({ round: 1, court: 2, teamA: 'a', teamB: 'b',
+                                            gamesA: 0, gamesB: 0, confirmed: true,
+                                            forfeitedTeam: parti });
+    const bParti = nextCourts(c0, [ff('b')], 4);
+    expect(bParti.get('a')).toBe(1);   // a gagne par forfait : il monte
+    expect(bParti.get('b')).toBe(3);   // b a declare forfait : il descend
+    const aParti = nextCourts(c0, [ff('a')], 4);
+    expect(aParti.get('a')).toBe(3);
+    expect(aParti.get('b')).toBe(1);
+  });
 });
 
 describe('appariement', () => {
