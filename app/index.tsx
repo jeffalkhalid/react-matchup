@@ -66,7 +66,7 @@ export default function IndexScreen() {
           style={StyleSheet.absoluteFillObject}
           contentFit="cover"
           nativeControls={false}
-          allowsFullscreen={false}
+          fullscreenOptions={{ enable: false }}
         />
         <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.60)' }]} />
 
