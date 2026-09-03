@@ -512,3 +512,184 @@ export function acceptsPairing(status: TournamentStatus): boolean {
 export function acceptsCheckIn(status: TournamentStatus): boolean {
   return status === 'CHECK_IN' || status === 'PRET';
 }
+
+// ─── La soirée : tableau, classement, saisie (Task 8) ────────────────────────
+//
+// LE TERRAIN 1 EST LE PALIER LE PLUS FORT, on monte vers lui (numéro qui
+// DIMINUE). `tournaments.current_round` est le tour EN COURS (celui que
+// `tournament_generate_round` vient d'écrire) : c'est lui qu'on lit pour le
+// tableau de la soirée, pas un calcul de « round suivant ».
+
+/** Une ligne de `tournament_matches` — un terrain, un tour. `team_b` est
+ *  `null` pour un bye. Le score et le forfait sont EXACTEMENT ce que le
+ *  serveur a écrit ; rien ici ne les redérive. */
+export interface TournamentMatch {
+  id: string;
+  tournament_id: string;
+  round_no: number;
+  court_no: number;
+  team_a: string;
+  team_b: string | null;
+  games_a: number | null;
+  games_b: number | null;
+  forfeited_team: string | null;
+  confirmed_at: string | null;
+}
+
+const TOURNAMENT_MATCH_COLS =
+  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at';
+
+/** Les matchs d'UN TOUR, terrain par terrain — le tableau de la soirée.
+ *  Triés Terrain 1 en premier : « du Terrain 1 en haut » se lit directement
+ *  dans l'ordre du tableau, aucun tri à refaire à l'écran. */
+export async function fetchRoundMatches(tournamentId: string, roundNo: number): Promise<TournamentMatch[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_matches')
+    .select(TOURNAMENT_MATCH_COLS)
+    .eq('tournament_id', tournamentId)
+    .eq('round_no', roundNo)
+    .order('court_no', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentMatch[];
+}
+
+/** Une ligne de `tournament_movements` : comment un binôme est arrivé sur SON
+ *  terrain à CE tour (`court_before` → `court_after`, `movement`). Écrite par
+ *  `tournament_generate_round` (Task 10) — c'est elle qui porte « les flèches
+ *  de montée et de descente », jamais un calcul local sur le résultat du tour
+ *  précédent. Au tour 1, tout le monde est 'STAY' (personne n'a encore
+ *  bougé) : aucune flèche ne s'affiche, ce qui est la vérité. */
+export interface TournamentMovement {
+  team_id: string;
+  round_no: number;
+  court_before: number;
+  court_after: number;
+  movement: 'UP' | 'DOWN' | 'STAY';
+}
+
+export async function fetchRoundMovements(tournamentId: string, roundNo: number): Promise<TournamentMovement[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_movements')
+    .select('team_id, round_no, court_before, court_after, movement')
+    .eq('tournament_id', tournamentId)
+    .eq('round_no', roundNo);
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentMovement[];
+}
+
+/** Une SAISIE INDIVIDUELLE (`tournament_match_entries`) : un joueur, un match,
+ *  son score. `games_a`/`games_b` sont déjà orientés `team_a`/`team_b` DU
+ *  MATCH — quel que soit le joueur qui a saisi (contrat d'orientation de
+ *  `tournament_enter_score`) — donc directement affichables sans savoir qui
+ *  les a écrites. */
+export interface TournamentMatchEntry {
+  id: string;
+  match_id: string;
+  player_id: string;
+  games_a: number;
+  games_b: number;
+  entered_at: string;
+}
+
+/** Les saisies des matchs donnés — de quoi dire « ce qui manque pour que le
+ *  match soit acquis » avant même d'appeler le serveur. */
+export async function fetchMatchEntries(matchIds: string[]): Promise<TournamentMatchEntry[]> {
+  if (matchIds.length === 0) return [];
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_match_entries')
+    .select('id, match_id, player_id, games_a, games_b, entered_at')
+    .in('match_id', matchIds);
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentMatchEntry[];
+}
+
+/** Saisir MON score pour un match — n'importe lequel des quatre joueurs peut
+ *  appeler cette fonction. `gamesA` est TOUJOURS le score de `team_a` DU
+ *  MATCH, `gamesB` celui de `team_b` — JAMAIS « mon score » : l'écran doit
+ *  nommer les deux camps et ne jamais réordonner les colonnes selon qui
+ *  saisit (en-tête de `tournament_enter_score`, tournaments_rpcs.sql). Le
+ *  retour porte `state`: 'recorded' | 'confirmed' | 'disputed'. */
+export function enterTournamentScore(
+  matchId: string, gamesA: number, gamesB: number,
+): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_enter_score', {
+    p_match: matchId, p_games_a: gamesA, p_games_b: gamesB,
+  });
+}
+
+/** L'état d'un match, tel qu'un écran peut le lire SANS JAMAIS redériver de
+ *  vainqueur : bye et forfait se lisent aux champs dédiés (`hasTeamB`,
+ *  `forfeitedTeam`), confirmé se lit à `confirmedAt`. Seul le cas ni bye ni
+ *  forfait ni confirmé regarde les saisies individuelles — et seulement pour
+ *  distinguer « personne n'a encore rien dit » de « les deux camps se
+ *  contredisent », jamais pour décider qui gagne (ça, c'est `forfeited_team`
+ *  ou la concordance des jeux, et c'est le SERVEUR qui tranche). */
+export type MatchLiveStatus = 'bye' | 'forfeited' | 'confirmed' | 'disputed' | 'awaiting';
+
+export function matchLiveStatus(
+  hasTeamB: boolean,
+  forfeitedTeam: string | null | undefined,
+  confirmedAt: string | null | undefined,
+  teamAEntries: Pick<TournamentMatchEntry, 'games_a' | 'games_b'>[],
+  teamBEntries: Pick<TournamentMatchEntry, 'games_a' | 'games_b'>[],
+): MatchLiveStatus {
+  if (!hasTeamB) return 'bye';
+  if (forfeitedTeam != null) return 'forfeited';
+  if (confirmedAt != null) return 'confirmed';
+  const bothEntered = teamAEntries.length > 0 && teamBEntries.length > 0;
+  const anyAgree = teamAEntries.some(a =>
+    teamBEntries.some(b => a.games_a === b.games_a && a.games_b === b.games_b));
+  if (bothEntered && !anyAgree) return 'disputed';
+  return 'awaiting';
+}
+
+/** Refuse un score À ÉGALITÉ (et les valeurs hors bornes) CÔTÉ ÉCRAN, avant
+ *  même d'appeler le serveur — miroir exact des trois premiers refus de
+ *  `tournament_enter_score` (`invalid_score`, `score_out_of_range`,
+ *  `draw_not_allowed`), dans le même ordre. Rend `null` tant qu'un des deux
+ *  champs n'est pas encore rempli : ce n'est pas encore une erreur, juste une
+ *  saisie incomplète. Le message vient TOUJOURS de `reasonLabel` — jamais une
+ *  chaîne locale — pour rester le miroir exact du refus serveur. */
+export function validateTournamentScore(gamesA: number | null, gamesB: number | null): string | null {
+  if (gamesA == null || gamesB == null) return null;
+  if (!Number.isInteger(gamesA) || !Number.isInteger(gamesB) || gamesA < 0 || gamesB < 0) {
+    return reasonLabel('invalid_score');
+  }
+  if (gamesA > 20 || gamesB > 20) return reasonLabel('score_out_of_range');
+  if (gamesA === gamesB) return reasonLabel('draw_not_allowed');
+  return null;
+}
+
+/** Le classement — LA SEULE SOURCE, jamais un calcul local. `lib/tournament.ts`
+ *  n'existe que pour la parité testée contre ce SQL (Task 6) ; il n'est appelé
+ *  par AUCUN écran, et ne doit pas le devenir ici. `maxRound` omis = tous les
+ *  matchs confirmés comptent (le classement courant de la soirée). */
+export interface TournamentStanding {
+  team_id: string;
+  player1_id: string;
+  player2_id: string;
+  withdrawn: boolean;
+  played: number;
+  wins: number;
+  losses: number;
+  games_won: number;
+  games_lost: number;
+  games_avg: number;
+  diff: number;
+  best_court: number | null;
+  h2h: number;
+  rank: number;
+}
+
+export async function fetchStandings(
+  tournamentId: string, maxRound?: number | null,
+): Promise<TournamentStanding[]> {
+  const res = await callTournamentRpc('tournament_standings', {
+    p_tournament: tournamentId, p_max_round: maxRound ?? null,
+  });
+  if (!res.ok) return [];
+  return ((res as { standings?: TournamentStanding[] }).standings ?? []);
+}

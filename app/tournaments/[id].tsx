@@ -40,9 +40,15 @@ import {
   waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel,
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
   acceptsRegistrations, acceptsPairing, acceptsCheckIn, ROUND_MINUTES,
+  fetchRoundMatches, fetchRoundMovements, fetchMatchEntries, fetchStandings,
+  enterTournamentScore, matchLiveStatus,
   type Tournament, type TournamentRegistration, type TournamentTeam, type TournamentResult,
   type JoinRequest, type TournamentSide,
+  type TournamentMatch, type TournamentMovement, type TournamentMatchEntry, type TournamentStanding,
 } from '../../lib/tournaments';
+import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
+import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
+import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
 
@@ -136,6 +142,36 @@ function SideChooser({ value, onChange }: { value: TournamentSide; onChange: (v:
   );
 }
 
+/** Tableau / Classement — deux segments joints, même motif que SideChooser. */
+function LiveTabs({ value, onChange }: { value: 'tableau' | 'classement'; onChange: (v: 'tableau' | 'classement') => void }) {
+  const options: { v: 'tableau' | 'classement'; label: string }[] = [
+    { v: 'tableau', label: 'Tableau' },
+    { v: 'classement', label: 'Classement' },
+  ];
+  return (
+    <View style={{
+      flexDirection: 'row', borderRadius: 14, backgroundColor: Colors.bgCard,
+      borderWidth: 1, borderColor: Colors.border, overflow: 'hidden',
+    }}>
+      {options.map((o, i) => {
+        const active = value === o.v;
+        return (
+          <TouchableOpacity key={o.v} onPress={() => onChange(o.v)} activeOpacity={0.8}
+            style={{
+              flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12,
+              backgroundColor: active ? Colors.primary : 'transparent',
+              borderLeftWidth: i > 0 ? 1 : 0, borderLeftColor: Colors.border,
+            }}>
+            <Text style={{ color: active ? Colors.textOnDark : Colors.textPrimary, fontFamily: Fonts.uiExtraBold, fontSize: 12.5 }}>
+              {o.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 function Notice({ tone, children }: { tone: 'warning' | 'info' | 'success'; children: React.ReactNode }) {
   const map = {
     warning: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)', fg: '#B45309' },
@@ -183,6 +219,17 @@ export default function TournamentDetailScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // ── La soirée (Task 8) : tableau du tour EN COURS, ses mouvements, ses
+  // saisies, et le classement courant. Chargés seulement une fois le premier
+  // tour tiré (current_round > 0) — avant ça, rien de tout ceci n'existe.
+  const [matches, setMatches] = useState<TournamentMatch[]>([]);
+  const [movements, setMovements] = useState<TournamentMovement[]>([]);
+  const [matchEntries, setMatchEntries] = useState<TournamentMatchEntry[]>([]);
+  const [standings, setStandings] = useState<TournamentStanding[]>([]);
+  const [liveTab, setLiveTab] = useState<'tableau' | 'classement'>('tableau');
+  const [scoreSheetMatchId, setScoreSheetMatchId] = useState<string | null>(null);
+  const [scoreBusy, setScoreBusy] = useState(false);
+
   const load = useCallback(async () => {
     if (!id) return;
     const on = await getTournamentsEnabled();
@@ -193,6 +240,19 @@ export default function TournamentDetailScreen() {
         fetchTournament(id), fetchRegistrations(id), fetchTeams(id), fetchMyJoinRequests(id),
       ]);
       setTournament(t); setRegs(r); setTeams(tm); setRequests(jr);
+      if (t && t.current_round > 0) {
+        const [m, mv] = await Promise.all([
+          fetchRoundMatches(id, t.current_round),
+          fetchRoundMovements(id, t.current_round),
+        ]);
+        const [en, st] = await Promise.all([
+          fetchMatchEntries(m.map(x => x.id)),
+          fetchStandings(id),
+        ]);
+        setMatches(m); setMovements(mv); setMatchEntries(en); setStandings(st);
+      } else {
+        setMatches([]); setMovements([]); setMatchEntries([]); setStandings([]);
+      }
     } catch (e) {
       console.warn('[tournois] fiche indisponible', e);
     } finally {
@@ -237,6 +297,60 @@ export default function TournamentDetailScreen() {
     for (const r of regs) m.set(r.player_id, r);
     return m;
   }, [regs]);
+
+  // ── La soirée : lookups dérivés des lectures ci-dessus, aucun accès réseau. ──
+  const teamById = useMemo(() => {
+    const m = new Map<string, TournamentTeam>();
+    for (const tm of teams) m.set(tm.id, tm);
+    return m;
+  }, [teams]);
+
+  const namesOf = useCallback((player1Id: string, player2Id: string): [string, string] => [
+    displayName(byId.get(player1Id)?.player, 'player'),
+    displayName(byId.get(player2Id)?.player, 'player'),
+  ], [byId]);
+
+  // « Depuis la rotation précédente » — tournament_movements du tour EN
+  // COURS, jamais une comparaison de rangs recalculée ici.
+  const movementByTeam = useMemo(() => {
+    const m = new Map<string, 'UP' | 'DOWN' | 'STAY'>();
+    for (const mv of movements) m.set(mv.team_id, mv.movement);
+    return m;
+  }, [movements]);
+
+  const entriesByMatch = useMemo(() => {
+    const m = new Map<string, TournamentMatchEntry[]>();
+    for (const e of matchEntries) {
+      const list = m.get(e.match_id);
+      if (list) list.push(e); else m.set(e.match_id, [e]);
+    }
+    return m;
+  }, [matchEntries]);
+
+  const started = !!tournament && (tournament.current_round > 0 || tournament.status === 'EN_COURS');
+
+  /** Saisir un score de tournoi. Distinct du `run()` générique ci-dessus :
+   *  le message de retour dépend de `state` (recorded/confirmed/disputed),
+   *  ce que `run()` ne porte pas. */
+  const submitScore = useCallback(async (matchId: string, gA: number, gB: number) => {
+    setScoreBusy(true);
+    try {
+      const res = await enterTournamentScore(matchId, gA, gB);
+      if (isFeatureDisabled(res)) { setEnabled(false); return; }
+      if (!res.ok) { Alert.alert('Impossible', resultMessage(res)); return; }
+      await load();
+      if (res.state === 'confirmed') {
+        setScoreSheetMatchId(null);
+        Alert.alert('Score acquis', 'Les deux camps concordent : le match est terminé.');
+      } else if (res.state === 'disputed') {
+        setScoreSheetMatchId(null);
+        Alert.alert('Litige', 'Vos scores ne concordent pas. L’organisateur tranchera.');
+      }
+      // 'recorded' : la feuille reste ouverte, elle affiche déjà « ce qui manque ».
+    } finally {
+      setScoreBusy(false);
+    }
+  }, [load]);
 
   if (enabled !== true || loading) {
     return (
@@ -313,6 +427,69 @@ export default function TournamentDetailScreen() {
         contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 32, gap: 14 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
+        {/* ── La soirée : tableau des terrains + classement ── */}
+        {started && (
+          <View style={{ gap: 10 }}>
+            <SectionTitle>La soirée</SectionTitle>
+            <LiveTabs value={liveTab} onChange={setLiveTab} />
+            {!t.current_round ? (
+              <Notice tone="info">Le premier tour n’a pas encore été tiré.</Notice>
+            ) : liveTab === 'tableau' ? (
+              matches.length === 0 ? (
+                <Notice tone="info">Aucun match pour ce tour.</Notice>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {matches.map(m => {
+                    const teamAInfo = teamById.get(m.team_a);
+                    const teamBInfo = m.team_b ? teamById.get(m.team_b) : null;
+                    if (!teamAInfo) return null;
+                    const teamAData: CourtTeamInfo = {
+                      id: teamAInfo.id,
+                      names: namesOf(teamAInfo.player1_id, teamAInfo.player2_id),
+                      movement: movementByTeam.get(teamAInfo.id) ?? null,
+                      mine: me.team?.id === teamAInfo.id,
+                    };
+                    const teamBData: CourtTeamInfo | null = teamBInfo ? {
+                      id: teamBInfo.id,
+                      names: namesOf(teamBInfo.player1_id, teamBInfo.player2_id),
+                      movement: movementByTeam.get(teamBInfo.id) ?? null,
+                      mine: me.team?.id === teamBInfo.id,
+                    } : null;
+                    const entriesForMatch = entriesByMatch.get(m.id) ?? [];
+                    const status = matchLiveStatus(
+                      m.team_b != null, m.forfeited_team, m.confirmed_at,
+                      entriesForMatch.filter(e => teamAInfo.player1_id === e.player_id || teamAInfo.player2_id === e.player_id),
+                      entriesForMatch.filter(e => !!teamBInfo && (teamBInfo.player1_id === e.player_id || teamBInfo.player2_id === e.player_id)),
+                    );
+                    return (
+                      <CourtRow
+                        key={m.id}
+                        courtNo={m.court_no}
+                        isTopCourt={m.court_no === 1}
+                        teamA={teamAData}
+                        teamB={teamBData}
+                        gamesA={m.games_a} gamesB={m.games_b}
+                        forfeitedTeamId={m.forfeited_team}
+                        status={status}
+                        onPress={m.team_b ? () => setScoreSheetMatchId(m.id) : undefined}
+                      />
+                    );
+                  })}
+                </View>
+              )
+            ) : standings.length === 0 ? (
+              <Notice tone="info">Le classement apparaîtra dès le premier match acquis.</Notice>
+            ) : (
+              <StandingsTable rows={standings.map((s): StandingRowData => ({
+                standing: s,
+                names: namesOf(s.player1_id, s.player2_id),
+                movement: movementByTeam.get(s.team_id) ?? null,
+                mine: me.team?.id === s.team_id,
+              }))} />
+            )}
+          </View>
+        )}
+
         {/* ── Les places, en JOUEURS ── */}
         <View style={[cs.card, { padding: 14 }]}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
@@ -608,6 +785,43 @@ export default function TournamentDetailScreen() {
           }}
         />
       )}
+
+      {scoreSheetMatchId && (() => {
+        const m = matches.find(x => x.id === scoreSheetMatchId);
+        if (!m || !m.team_b) return null;
+        const teamAInfo = teamById.get(m.team_a);
+        const teamBInfo = teamById.get(m.team_b);
+        if (!teamAInfo || !teamBInfo) return null;
+        const teamAData: ScoreSheetTeam = {
+          id: teamAInfo.id, names: namesOf(teamAInfo.player1_id, teamAInfo.player2_id),
+          playerIds: [teamAInfo.player1_id, teamAInfo.player2_id],
+        };
+        const teamBData: ScoreSheetTeam = {
+          id: teamBInfo.id, names: namesOf(teamBInfo.player1_id, teamBInfo.player2_id),
+          playerIds: [teamBInfo.player1_id, teamBInfo.player2_id],
+        };
+        const entriesForMatch = entriesByMatch.get(m.id) ?? [];
+        const teamAEntries = entriesForMatch.filter(e => teamAData.playerIds.includes(e.player_id));
+        const teamBEntries = entriesForMatch.filter(e => teamBData.playerIds.includes(e.player_id));
+        const status = matchLiveStatus(true, m.forfeited_team, m.confirmed_at, teamAEntries, teamBEntries);
+        const iAmIn = !!player && (teamAData.playerIds.includes(player.id) || teamBData.playerIds.includes(player.id));
+        const canEnter = t.status === 'EN_COURS' && iAmIn && status !== 'confirmed' && status !== 'forfeited';
+        return (
+          <ScoreSheet
+            courtNo={m.court_no}
+            teamA={teamAData} teamB={teamBData}
+            status={status}
+            gamesA={m.games_a} gamesB={m.games_b}
+            forfeitedTeamId={m.forfeited_team}
+            entries={entriesForMatch}
+            myPlayerId={player?.id ?? ''}
+            canEnter={canEnter}
+            busy={scoreBusy}
+            onSubmit={(gA, gB) => submitScore(m.id, gA, gB)}
+            onClose={() => setScoreSheetMatchId(null)}
+          />
+        );
+      })()}
     </View>
   );
 }

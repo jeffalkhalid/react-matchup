@@ -8,7 +8,7 @@ import {
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   seatedTeams, tournamentPhase, sameSideWarning, levelRangeLabel, priceLabel,
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
-  acceptsCheckIn, isFeatureDisabled,
+  acceptsCheckIn, isFeatureDisabled, matchLiveStatus, validateTournamentScore,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
 } from '../tournaments';
 
@@ -166,5 +166,73 @@ describe('feature_disabled ne s’affiche pas, il fait disparaître l’entrée'
     expect(isFeatureDisabled({ ok: false, reason: 'tournament_not_open' })).toBe(false);
     expect(isFeatureDisabled({ ok: true })).toBe(false);
     expect(isFeatureDisabled(null)).toBe(false);
+  });
+});
+
+// La soirée (Task 8) : le tableau, le classement, la saisie.
+
+const entry = (a: number, b: number) => ({ games_a: a, games_b: b });
+
+describe('matchLiveStatus — jamais un vainqueur redérivé', () => {
+  it('un bye se lit à `hasTeamB`, avant tout le reste', () => {
+    expect(matchLiveStatus(false, null, null, [], [])).toBe('bye');
+    // Même confirmé ou forfait, l'absence d'adversaire prime : ce cas ne
+    // devrait jamais survenir en pratique (un bye ne se confirme ni ne se
+    // forfait), mais le bye reste la première clé lue.
+    expect(matchLiveStatus(false, 'x', '2026-01-01', [], [])).toBe('bye');
+  });
+
+  it('un forfait se lit à `forfeitedTeam`, jamais aux jeux', () => {
+    // Score de courtoisie égal des deux côtés : rien dans les jeux ne dirait
+    // qui a forfait, c'est bien le marqueur qui tranche.
+    expect(matchLiveStatus(true, 'team-a', null, [entry(4, 4)], [entry(4, 4)])).toBe('forfeited');
+  });
+
+  it('confirmé se lit à `confirmedAt`, avant même de regarder les saisies', () => {
+    expect(matchLiveStatus(true, null, '2026-01-01T20:00:00Z', [], [])).toBe('confirmed');
+  });
+
+  it('personne n’a encore saisi → en attente', () => {
+    expect(matchLiveStatus(true, null, null, [], [])).toBe('awaiting');
+  });
+
+  it('un seul camp a saisi → en attente, pas litige', () => {
+    expect(matchLiveStatus(true, null, null, [entry(6, 3)], [])).toBe('awaiting');
+    expect(matchLiveStatus(true, null, null, [], [entry(6, 3)])).toBe('awaiting');
+  });
+
+  it('les deux camps concordent → en attente (le serveur confirmera au refresh), pas litige', () => {
+    expect(matchLiveStatus(true, null, null, [entry(6, 3)], [entry(6, 3)])).toBe('awaiting');
+  });
+
+  it('les deux camps se contredisent → litige', () => {
+    expect(matchLiveStatus(true, null, null, [entry(6, 3)], [entry(6, 4)])).toBe('disputed');
+  });
+});
+
+describe('validateTournamentScore — refuse l’égalité CÔTÉ ÉCRAN, avant le serveur', () => {
+  it('rend null tant que la saisie est incomplète — pas encore une erreur', () => {
+    expect(validateTournamentScore(null, null)).toBeNull();
+    expect(validateTournamentScore(6, null)).toBeNull();
+  });
+
+  it('un score valide ne dit rien', () => {
+    expect(validateTournamentScore(6, 3)).toBeNull();
+  });
+
+  it('l’égalité est refusée, avec un message qui explique pourquoi', () => {
+    expect(validateTournamentScore(4, 4)).toContain('égalité');
+  });
+
+  it('un score négatif est refusé', () => {
+    expect(validateTournamentScore(-1, 3)).not.toBeNull();
+  });
+
+  it('un score au-delà de 20 jeux est refusé', () => {
+    expect(validateTournamentScore(21, 3)).not.toBeNull();
+  });
+
+  it('20 jeux reste dans les bornes', () => {
+    expect(validateTournamentScore(20, 3)).toBeNull();
   });
 });
