@@ -22,10 +22,13 @@
 export const GENERIC_REASON = "Action impossible pour le moment. Réessaie dans un instant.";
 
 /** Les refus de `tournaments_rpcs.sql` (46 à l'origine, plus ceux de la Task 11
- *  : `tournament_create`), dans l'ordre alphabétique du SQL.
+ *  : `tournament_create`, plus deux de la Task 12 : `already_cancelled` et
+ *  `tournament_not_in_check_in`, pour la réversibilité et l'annulation),
+ *  dans l'ordre alphabétique du SQL.
  *  Formulés du point de vue du JOUEUR, à la deuxième personne comme le reste
  *  de l'app. */
 export const TOURNAMENT_REASONS: Record<string, string> = {
+  already_cancelled:             'Ce tournoi est déjà annulé.',
   already_confirmed:             'Ce score est déjà confirmé.',
   already_finished:              'Ce tournoi est déjà terminé.',
   already_in_team:               'Tu fais déjà partie d’un binôme sur ce tournoi.',
@@ -75,6 +78,7 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   team_not_seated:               'Ce binôme n’a pas de place dans le tournoi.',
   tournament_not_finished:       'Le tournoi n’est pas encore terminé.',
   tournament_not_found:          'Ce tournoi est introuvable.',
+  tournament_not_in_check_in:    'Le pointage n’est pas ouvert.',
   tournament_not_live:           'Le tournoi n’est pas en cours.',
   tournament_not_open:           'Les inscriptions sont fermées.',
   tournament_not_started:        'Le tournoi n’a pas encore commencé.',

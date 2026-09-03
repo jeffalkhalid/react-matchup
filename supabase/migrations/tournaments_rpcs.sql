@@ -91,18 +91,25 @@ CREATE EXTENSION IF NOT EXISTS supabase_vault;
 -- Helper interne : le bareme de points.
 --
 -- `points_scale` est un objet {rang: points} A RANGS PARTIELS, par exemple
--- {"1":20,"2":15,"3":10,"5":5,"7":-2}. REGLE D'INTERPRETATION : un rang prend
--- les points du SEUIL DEFINI LE PLUS PROCHE EN DESSOUS OU EGAL A LUI.
+-- {"1":20,"2":15,"3":10,"5":5}. REGLE D'INTERPRETATION : un rang prend les
+-- points du SEUIL DEFINI LE PLUS PROCHE EN DESSOUS OU EGAL A LUI.
 --   rang 1 -> seuil 1 -> 20
 --   rang 2 -> seuil 2 -> 15
 --   rang 3 -> seuil 3 -> 10
 --   rang 4 -> seuil 3 -> 10   (pas de seuil 4 : on prend le 3)
 --   rang 5 -> seuil 5 ->  5
 --   rang 6 -> seuil 5 ->  5
---   rang 7 -> seuil 7 -> -2
---   rang 8 et au-dela -> seuil 7 -> -2
+--   rang 7 et au-dela -> seuil 5 ->  5
 -- Si aucun seuil n'est <= au rang (bareme qui ne commence pas a 1), le rang
--- vaut 0 point. Les points peuvent etre negatifs, c'est voulu.
+-- vaut 0 point.
+--
+-- ⚠️ PAS DE POINTS NEGATIFS -- ce module ne DECIDE de rien la-dessus, il
+-- applique juste ce que `tournaments.points_scale` (CHECK) et `tournament_create`
+-- (refus `invalid_points_scale`) imposent en amont : « un tournoi ne punit
+-- pas, il classe ». Une version anterieure de ce commentaire affirmait le
+-- contraire (« les points peuvent etre negatifs, c'est voulu ») -- deux
+-- reponses a la meme question, l'une dans une CHECK, l'autre dans un
+-- commentaire ; la CHECK fait foi et le commentaire etait perime.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_tournament_points(p_scale jsonb, p_rank int)
 RETURNS int
@@ -481,10 +488,14 @@ BEGIN
   IF p_starts_at IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_starts_at');
   END IF;
-  IF p_court_count IS NULL OR p_court_count <= 0 THEN
+  -- Plafonds (Task 12), MEME regle que la CHECK de `tournaments.court_count` /
+  -- `round_count' : sans eux, `court_count * 4` (fn_tournament_open_seats)
+  -- deborde l'int a la premiere inscription -- `integer out of range` brut,
+  -- au lieu de ce refus nomme, des la creation.
+  IF p_court_count IS NULL OR p_court_count <= 0 OR p_court_count > 20 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_court_count');
   END IF;
-  IF p_round_count IS NULL OR p_round_count <= 0 THEN
+  IF p_round_count IS NULL OR p_round_count <= 0 OR p_round_count > 20 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_round_count');
   END IF;
   IF p_price_mad IS NULL OR p_price_mad < 0 THEN
@@ -504,10 +515,21 @@ BEGIN
   -- Bareme : reprend le defaut de la colonne quand rien n'est donne, et
   -- applique EN AMONT la meme regle que sa CHECK -- un refus nomme, pas une
   -- violation de contrainte brute.
+  --
+  -- FORME, pas seulement signe (Task 12) : `@.type() != "number"` avant le
+  -- `@ < 0`, sinon `{"1":"abc"}`, `{"1":true}` ou `{"1":{"a":1}}` passaient
+  -- tous les trois -- un comparateur `< 0` sur un type incompatible rend
+  -- "inconnu" en mode tolerant, jamais vrai, donc aucun ne violait la CHECK
+  -- d'origine. Le bareme atteignait alors `fn_tournament_points`, dont le
+  -- `round((kv.value)::numeric)` levait une erreur SQL brute AU MILIEU de
+  -- `tournament_close` -- transaction annulee, tournoi coince en EN_COURS,
+  -- et aucune RPC ne permettait de corriger `points_scale` apres coup. Fermer
+  -- cette porte ICI, a la creation, rend cet etat inatteignable plutot que
+  -- d'avoir a ecrire un chemin de reparation.
   v_scale := COALESCE(p_points_scale,
     '{"1":100,"2":80,"3":65,"4":55,"5":45,"6":35,"7":25,"8":15}'::jsonb);
   IF jsonb_typeof(v_scale) <> 'object'
-     OR jsonb_path_exists(v_scale, '$.* ? (@ < 0)') THEN
+     OR jsonb_path_exists(v_scale, '$.* ? (@.type() != "number" || @ < 0)') THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_points_scale');
   END IF;
 
@@ -794,18 +816,46 @@ REVOKE ALL ON FUNCTION public.fn_tournament_free_places(uuid) FROM PUBLIC, anon,
 
 -- ----------------------------------------------------------------------------
 -- Helper interne : le statut suit la capacite, entre INSCRIPTIONS_OUVERTES et
--- COMPLET, et RIEN D'AUTRE. La clause `status IN (...)` est la garantie que ce
--- helper ne peut pas faire reculer un tournoi depuis CHECK_IN, PRET, EN_COURS
--- ou au-dela : la machine a etats appartient a l'organisateur, ce helper ne
--- fait que refleter « reste-t-il une place ».
+-- COMPLET, et RIEN D'AUTRE PAR DEFAUT. La clause de garde est ce qui empeche ce
+-- helper de faire reculer un tournoi depuis CHECK_IN, PRET, EN_COURS ou
+-- au-dela : la machine a etats appartient a l'organisateur, ce helper ne fait
+-- QUE refleter « reste-t-il une place », jamais decider seul de rouvrir.
 --
 -- Il lit `fn_tournament_free_places`, PAS `fn_tournament_open_seats` : le
 -- statut annonce ce qu'un nouvel inscrit obtiendrait, et avec une file en
 -- cours, il n'obtient rien. Un tournoi qui affiche INSCRIPTIONS_OUVERTES
 -- pendant que tout arrivant tombe en liste d'attente est un mensonge
 -- d'affichage.
+--
+-- ⚠️ `p_allow_reopen` (Task 12) -- ELARGIT LA FENETRE, NE DUPLIQUE PAS LA
+-- REGLE. La relecture de branche a trouve un CHECK_IN sans issue : une fois le
+-- pointage ouvert, RIEN ne pouvait plus repasser un tournoi en
+-- INSCRIPTIONS_OUVERTES, meme quand il manque un binome et que personne n'a
+-- encore ete pointe. Le remede est `tournament_reopen_registrations`, mais
+-- elle NE DOIT PAS ecrire `status` elle-meme -- ce helper reste le SEUL
+-- ecrivain du statut de capacite, sans quoi deux fonctions pourraient un jour
+-- calculer « ouvert ou complet » differemment.
+--
+-- Le defaut (`false`) NE CHANGE RIEN au comportement existant : tous les
+-- autres appelants de ce fichier (`tournament_register`, `tournament_join`,
+-- `tournament_respond_join`, `fn_tournament_promote_waitlist`, etc.)
+-- continuent d'appeler SANS ce parametre, donc avec la fenetre d'origine.
+-- SEUL `tournament_reopen_registrations` passe `true` -- explicitement, pour
+-- UN geste explicite de l'organisateur. Sans ce distinguo, elargir purement et
+-- simplement la fenetre a CHECK_IN/PRET aurait fait qu'un simple retrait
+-- pendant le pointage (qui appelle aussi `fn_tournament_promote_waitlist`,
+-- donc ce helper) aurait pu repasser le tournoi en INSCRIPTIONS_OUVERTES tout
+-- seul -- une reouverture EN EFFET DE BORD, jamais demandee par personne.
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.fn_tournament_sync_capacity_status(p_tournament uuid)
+-- Ajouter un parametre CHANGE la signature : Postgres creerait une SURCHARGE a
+-- cote de l'ancienne (uuid) plutot que de la remplacer, et un appel a un seul
+-- argument deviendrait AMBIGU entre les deux. On supprime l'ancienne d'abord.
+DROP FUNCTION IF EXISTS public.fn_tournament_sync_capacity_status(uuid);
+
+CREATE OR REPLACE FUNCTION public.fn_tournament_sync_capacity_status(
+  p_tournament   uuid,
+  p_allow_reopen boolean DEFAULT false
+)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -819,12 +869,15 @@ BEGIN
   UPDATE public.tournaments
      SET status = v_target
    WHERE id = p_tournament
-     AND status IN ('INSCRIPTIONS_OUVERTES','COMPLET')
+     AND (
+           status IN ('INSCRIPTIONS_OUVERTES','COMPLET')
+           OR (p_allow_reopen AND status IN ('CHECK_IN','PRET'))
+         )
      AND status <> v_target;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.fn_tournament_sync_capacity_status(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_tournament_sync_capacity_status(uuid, boolean) FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- Helper interne : UN BINOME EST AUSSI LOIN DANS LA FILE QUE SON MEMBRE LE
@@ -1253,6 +1306,25 @@ GRANT EXECUTE ON FUNCTION public.tournament_register(uuid, text, boolean, uuid) 
 -- l'ecrire reste a faire (`fn_tournament_join_request_notify`, meme motif :
 -- AFTER INSERT prevenir `to_player`, AFTER UPDATE vers 'accepted'/'declined'
 -- prevenir `from_player`).
+--
+-- ⚠️ LA PROMOTION DEPUIS LA LISTE D'ATTENTE, AJOUTEE ICI (Task 12), PAS DANS
+-- UN DECLENCHEUR A PART. La relecture de branche a trouve `fn_tournament_
+-- promote_waitlist` MUETTE : elle fait `SET waitlist_position = NULL` et rien
+-- d'autre, et le SEUL declencheur pose jusqu'ici etait AFTER INSERT -- une
+-- promotion est un UPDATE, qui ne le croise jamais. Un joueur qui passe de la
+-- file au tournoi ne l'apprenait qu'en rouvrant l'ecran, pour un evenement
+-- DATE avec un PRIX affiche -- la meme urgence que le partenaire invite
+-- ci-dessus, donc la meme fonction : un second declencheur (AFTER UPDATE,
+-- distingue par un WHEN a la creation) appelle CETTE fonction, qui branche
+-- sur `TG_OP` pour choisir le message. Un troisieme fichier ne ferait que
+-- dupliquer `v_tname` / `v_price` / `v_key` / `v_url`.
+--
+-- Le WHEN du declencheur (`OLD.waitlist_position IS NOT NULL AND
+-- NEW.waitlist_position IS NULL`) est la SEULE ecriture qui declenche ce
+-- bloc : le seul autre ecrivain de `waitlist_position`,
+-- `fn_tournament_align_waitlist`, ne le passe JAMAIS a NULL -- il aligne deux
+-- positions non NULL sur la plus grande. Ce bloc ne peut donc se declencher
+-- que par une authentique promotion.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.fn_tournament_registration_notify()
 RETURNS trigger
@@ -1261,16 +1333,23 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_me    uuid := public.current_player_id();
-  v_by    text;
-  v_tname text;
-  v_price int;
-  v_key   text;
-  v_url   text := 'https://icshhobxeppttgayxmba.supabase.co/functions/v1/send-push';
+  v_me     uuid := public.current_player_id();
+  v_by     text;
+  v_tname  text;
+  v_price  int;
+  v_key    text;
+  v_url    text := 'https://icshhobxeppttgayxmba.supabase.co/functions/v1/send-push';
+  v_title  text;
+  v_body   text;
 BEGIN
-  -- Seul le cas produit par `tournament_register(..., p_partner)` : une ligne
-  -- creee POUR quelqu'un d'autre. Ma propre inscription ne notifie personne.
-  IF v_me IS NULL OR NEW.player_id = v_me THEN RETURN NEW; END IF;
+  IF TG_OP = 'INSERT' THEN
+    -- Seul le cas produit par `tournament_register(..., p_partner)` : une
+    -- ligne creee POUR quelqu'un d'autre. Ma propre inscription ne notifie
+    -- personne.
+    IF v_me IS NULL OR NEW.player_id = v_me THEN RETURN NEW; END IF;
+  END IF;
+  -- TG_OP = 'UPDATE' : le WHEN du declencheur a deja filtre -- on est
+  -- forcement dans le cas d'une promotion.
 
   SELECT t.name, t.price_mad INTO v_tname, v_price
     FROM public.tournaments t WHERE t.id = NEW.tournament_id;
@@ -1279,18 +1358,28 @@ BEGIN
   SELECT decrypted_secret INTO v_key FROM vault.decrypted_secrets WHERE name = 'service_role_key';
   IF v_key IS NULL THEN RETURN NEW; END IF;
 
-  SELECT name INTO v_by FROM public.players WHERE id = v_me;
+  IF TG_OP = 'UPDATE' THEN
+    v_title := '🏆 Une place s''est liberee';
+    v_body  := 'Tu as maintenant ta place a « ' || v_tname || ' »'
+               || CASE WHEN coalesce(v_price, 0) > 0
+                       THEN ' (' || v_price || ' MAD affiches)' ELSE '' END
+               || '.';
+  ELSE
+    SELECT name INTO v_by FROM public.players WHERE id = v_me;
+    v_title := '🏆 Inscrit·e a un tournoi';
+    v_body  := coalesce(v_by, 'Un joueur') || ' t''a inscrit·e a « ' || v_tname || ' »'
+               || CASE WHEN coalesce(v_price, 0) > 0
+                       THEN ' (' || v_price || ' MAD affiches)' ELSE '' END
+               || '. Tu peux defaire le binome, te desinscrire, ou declarer ton cote.';
+  END IF;
 
   PERFORM net.http_post(
     url     := v_url,
     headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer '||v_key),
     body    := jsonb_build_object(
                  'playerIds', to_jsonb(ARRAY[NEW.player_id]),
-                 'title', '🏆 Inscrit·e a un tournoi',
-                 'body',  coalesce(v_by, 'Un joueur') || ' t''a inscrit·e a « ' || v_tname || ' »'
-                          || CASE WHEN coalesce(v_price, 0) > 0
-                                  THEN ' (' || v_price || ' MAD affiches)' ELSE '' END
-                          || '. Tu peux defaire le binome, te desinscrire, ou declarer ton cote.',
+                 'title', v_title,
+                 'body',  v_body,
                  'data',  jsonb_build_object('type', 'tournament', 'tournamentId', NEW.tournament_id))
   );
   RETURN NEW;
@@ -1303,6 +1392,15 @@ DROP TRIGGER IF EXISTS trg_tournament_registration_notify ON public.tournament_r
 CREATE TRIGGER trg_tournament_registration_notify
   AFTER INSERT ON public.tournament_registrations
   FOR EACH ROW
+  EXECUTE FUNCTION public.fn_tournament_registration_notify();
+
+-- Second declencheur (Task 12), meme fonction : la promotion depuis la liste
+-- d'attente. Voir l'en-tete de `fn_tournament_registration_notify` ci-dessus.
+DROP TRIGGER IF EXISTS trg_tournament_registration_promoted ON public.tournament_registrations;
+CREATE TRIGGER trg_tournament_registration_promoted
+  AFTER UPDATE ON public.tournament_registrations
+  FOR EACH ROW
+  WHEN (OLD.waitlist_position IS NOT NULL AND NEW.waitlist_position IS NULL)
   EXECUTE FUNCTION public.fn_tournament_registration_notify();
 
 -- ============================================================================
@@ -1712,6 +1810,76 @@ $$;
 REVOKE ALL ON FUNCTION public.tournament_leave_team(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_leave_team(uuid) TO authenticated;
 
+-- ----------------------------------------------------------------------------
+-- Helper interne : LE CORPS DU RETRAIT -- partage par `tournament_withdraw`
+-- (le joueur, pour lui-meme) et `tournament_remove_registration` (Task 12 :
+-- l'organisateur, sur un tiers). Chacun verifie le sujet et le statut A SA
+-- MANIERE -- `current_player_id()` contre `p_player` pour l'un,
+-- `tournaments.created_by` pour l'autre -- puis delegue ICI la MEME suite :
+-- defaire le binome eventuel, retirer l'inscription, avancer la file,
+-- synchroniser la capacite. Un seul endroit qui sait ce que « partir » veut
+-- dire, pas deux qui pourraient un jour diverger.
+--
+-- SUPPOSE DEJA VERIFIE PAR L'APPELANT : le tournoi existe et est VERROUILLE
+-- (FOR UPDATE), son statut autorise le retrait, aucun match n'est tire
+-- (`matches_already_generated`), et l'inscription du joueur vise EXISTE
+-- (`not_registered`). Ce helper n'est pas accorde et ne refait donc aucun de
+-- ces controles : il n'est atteignable que par les deux RPC ci-dessous, qui
+-- les font toutes AVANT de l'appeler.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_tournament_withdraw_player(
+  p_tournament uuid, p_player uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_was_wl   boolean;
+  v_team     uuid;
+  v_mate     uuid;
+  v_promoted int := 0;
+BEGIN
+  SELECT r.waitlist_position IS NOT NULL INTO v_was_wl
+    FROM public.tournament_registrations r
+   WHERE r.tournament_id = p_tournament AND r.player_id = p_player;
+
+  SELECT tp.team_id INTO v_team
+    FROM public.tournament_participants tp
+   WHERE tp.tournament_id = p_tournament AND tp.player_id = p_player;
+  IF FOUND THEN
+    SELECT tp.player_id INTO v_mate
+      FROM public.tournament_participants tp
+     WHERE tp.tournament_id = p_tournament AND tp.team_id = v_team
+       AND tp.player_id <> p_player;
+  END IF;
+
+  ---------------------------------------------------------------------------
+  -- ECRITURES.
+  ---------------------------------------------------------------------------
+  -- Le binome se defait, et c'est tout : le partenaire garde sa place, son
+  -- rang de file s'il en avait un, et son mode de consentement.
+  IF v_team IS NOT NULL THEN
+    DELETE FROM public.tournament_teams WHERE id = v_team;
+  END IF;
+
+  DELETE FROM public.tournament_registrations
+   WHERE tournament_id = p_tournament AND player_id = p_player;
+
+  -- Une seule regle, sans exception a retenir : apres toute mutation
+  -- d'inscription, la file tourne. Partir depuis la file ne libere aucun
+  -- siege, la promotion ne fera alors rien -- et elle synchronise le statut
+  -- dans tous les cas.
+  v_promoted := public.fn_tournament_promote_waitlist(p_tournament);
+
+  RETURN jsonb_build_object('ok', true,
+                            'was_waitlisted', coalesce(v_was_wl, false),
+                            'partner_id', v_mate, 'promoted', v_promoted);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_withdraw_player(uuid, uuid) FROM PUBLIC, anon, authenticated;
+
 -- ============================================================================
 -- tournament_withdraw(p_tournament)
 --
@@ -1724,8 +1892,11 @@ GRANT EXECUTE ON FUNCTION public.tournament_leave_team(uuid) TO authenticated;
 --
 -- ⚠️ Ce n'est PAS le forfait en cours de tournoi, qui marque
 -- `tournament_teams.withdrawn` et solde les matchs restants -- celui-la
--- appartient a la tache « deroulement » et devra s'appeler
--- `tournament_forfeit(p_team)`.
+-- s'appelle `tournament_forfeit(p_team)`, plus bas dans la section
+-- « deroulement d'une rotation ». Et ce n'est pas non plus le retrait par
+-- l'ORGANISATEUR, sur un tiers -- `tournament_remove_registration`,
+-- juste apres -- meme suite (`fn_tournament_withdraw_player` ci-dessus),
+-- sujet et garde d'autorite differents.
 --
 -- `open_to_join` du partenaire laisse n'est PAS touche, pour la meme raison
 -- que dans `tournament_leave_team` : c'est son consentement, pas le mien.
@@ -1741,12 +1912,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_me       uuid := public.current_player_id();
-  v_status   text;
-  v_reg      public.tournament_registrations%ROWTYPE;
-  v_team     uuid;
-  v_mate     uuid;
-  v_promoted int := 0;
+  v_me     uuid := public.current_player_id();
+  v_status text;
 BEGIN
   IF NOT public.fn_tournaments_enabled() THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
@@ -1767,54 +1934,113 @@ BEGIN
   -- Meme garde-fou que dans `tournament_leave_team`, et pour la meme raison :
   -- `tournament_matches` reference `tournament_teams` SANS ON DELETE CASCADE.
   -- Une fois les matchs tires, partir n'est plus une desinscription mais un
-  -- forfait, qui appartient a `tournament_forfeit` (cf. [PLACE VACANTE]).
+  -- forfait, qui appartient a `tournament_forfeit`.
   IF EXISTS (SELECT 1 FROM public.tournament_matches m
               WHERE m.tournament_id = p_tournament) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'matches_already_generated');
   END IF;
 
-  SELECT * INTO v_reg FROM public.tournament_registrations r
-   WHERE r.tournament_id = p_tournament AND r.player_id = v_me;
-  IF NOT FOUND THEN
+  IF NOT EXISTS (SELECT 1 FROM public.tournament_registrations r
+                  WHERE r.tournament_id = p_tournament AND r.player_id = v_me) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
   END IF;
 
-  SELECT tp.team_id INTO v_team
-    FROM public.tournament_participants tp
-   WHERE tp.tournament_id = p_tournament AND tp.player_id = v_me;
-  IF FOUND THEN
-    SELECT tp.player_id INTO v_mate
-      FROM public.tournament_participants tp
-     WHERE tp.tournament_id = p_tournament AND tp.team_id = v_team
-       AND tp.player_id <> v_me;
-  END IF;
-
   ---------------------------------------------------------------------------
-  -- ECRITURES.
+  -- ECRITURES -- deleguees a `fn_tournament_withdraw_player`, partagee avec
+  -- `tournament_remove_registration` : meme suite exacte.
   ---------------------------------------------------------------------------
-  -- Le binome se defait, et c'est tout : mon partenaire garde sa place, son
-  -- rang de file s'il en avait un, et son mode de consentement.
-  IF v_team IS NOT NULL THEN
-    DELETE FROM public.tournament_teams WHERE id = v_team;
-  END IF;
-
-  DELETE FROM public.tournament_registrations
-   WHERE tournament_id = p_tournament AND player_id = v_me;
-
-  -- Une seule regle, sans exception a retenir : apres toute mutation
-  -- d'inscription, la file tourne. Partir depuis la file ne libere aucun
-  -- siege, la promotion ne fera alors rien -- et elle synchronise le statut
-  -- dans tous les cas.
-  v_promoted := public.fn_tournament_promote_waitlist(p_tournament);
-
-  RETURN jsonb_build_object('ok', true,
-                            'was_waitlisted', v_reg.waitlist_position IS NOT NULL,
-                            'partner_id', v_mate, 'promoted', v_promoted);
+  RETURN public.fn_tournament_withdraw_player(p_tournament, v_me);
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.tournament_withdraw(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_withdraw(uuid) TO authenticated;
+
+-- ============================================================================
+-- tournament_remove_registration(p_tournament, p_player)
+--
+-- L'ORGANISATEUR RETIRE UNE INSCRIPTION. Le recours qui manquait au troisieme
+-- defaut grave trouve en relecture de branche : `tournament_register(...,
+-- p_partner)` permet a N'IMPORTE QUEL inscrit d'ajouter un tiers arbitraire
+-- (voir son en-tete), et jusqu'ici SEUL ce tiers pouvait se retirer lui-meme
+-- (`tournament_withdraw`) -- un attaquant pouvait inscrire une victime, se
+-- desinscrire LUI (sa propre ligne, jamais celle de la victime), et
+-- recommencer : il sature les sieges sans que l'organisateur ait la moindre
+-- prise. `tournament_mark_no_show` ne libere pas non plus le siege -- il ne
+-- fait que consigner une absence.
+--
+-- ⚠️ TRANCHE ASSUMEE : inscrire quelqu'un reste possible, et la boucle
+-- decrite ci-dessus reste possible techniquement -- l'interdire casserait
+-- l'inscription a deux, une fonctionnalite voulue. Ce que cette fonction
+-- ajoute, c'est le RECOURS : l'organisateur peut desormais nettoyer, ce qui
+-- rend la boucle REVERSIBLE au lieu d'irreversible. Un risque residuel assume
+-- pour une fonctionnalite eteinte par defaut.
+--
+-- MEME SUITE QUE `tournament_withdraw`, PAR LE MEME HELPER
+-- (`fn_tournament_withdraw_player`, juste au-dessus) -- binome eventuel
+-- defait, inscription retiree, file avancee, capacite synchronisee -- pour
+-- que cette regle ne soit jamais ecrite qu'a un seul endroit. Seuls le SUJET
+-- (un parametre, pas `current_player_id()`) et le garde d'autorite
+-- (l'organisateur, pas le joueur lui-meme) different.
+--
+-- MEME GARDE-FOU que `tournament_withdraw` sur les matchs deja tires
+-- (`matches_already_generated`) : une fois le tableau publie,
+-- `tournament_matches` reference le binome SANS ON DELETE CASCADE, et
+-- retirer l'inscription casserait la reference. Passe ce point, le recours de
+-- l'organisateur est `tournament_forfeit`, qui SOLDE plutot que de RETIRER.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, tournament_not_open, matches_already_generated,
+--         not_registered.
+-- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_remove_registration(
+  p_tournament uuid, p_player uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me uuid := public.current_player_id();
+  v_t  public.tournaments%ROWTYPE;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_t.created_by <> v_me THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_t.status NOT IN ('INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN','PRET') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tournament_matches m
+              WHERE m.tournament_id = p_tournament) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'matches_already_generated');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.tournament_registrations r
+                  WHERE r.tournament_id = p_tournament AND r.player_id = p_player) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
+  END IF;
+
+  ---------------------------------------------------------------------------
+  -- ECRITURES -- deleguees a `fn_tournament_withdraw_player`, partagee avec
+  -- `tournament_withdraw` : meme suite exacte.
+  ---------------------------------------------------------------------------
+  RETURN public.fn_tournament_withdraw_player(p_tournament, p_player);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_remove_registration(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_remove_registration(uuid, uuid) TO authenticated;
 
 -- ============================================================================
 -- tournament_check_in(p_tournament)
@@ -1960,6 +2186,85 @@ REVOKE ALL ON FUNCTION public.tournament_open_check_in(uuid) FROM PUBLIC, anon, 
 GRANT EXECUTE ON FUNCTION public.tournament_open_check_in(uuid) TO authenticated;
 
 -- ============================================================================
+-- tournament_reopen_registrations(p_tournament)
+--
+-- L'ORGANISATEUR ROUVRE LES INSCRIPTIONS : CHECK_IN / PRET -> retour au
+-- statut de capacite reel (INSCRIPTIONS_OUVERTES ou COMPLET, selon qu'il reste
+-- une place). C'est le remede au premier defaut grave trouve en relecture de
+-- branche : `tournament_open_check_in` est une porte a SENS UNIQUE tant que
+-- cette fonction n'existe pas -- un organisateur qui l'ouvre trop tot (3
+-- inscrits solos sur 4 terrains, par exemple) ne peut plus jamais revenir
+-- inscrire le binome manquant. Le tournoi restait alors en CHECK_IN POUR
+-- TOUJOURS : les inscriptions fermees, `tournament_autopair` incapable de
+-- former un quatrieme binome sans un quatrieme joueur, `tournament_start`
+-- refusant `not_enough_teams`.
+--
+-- LE CHOIX EST LA REVERSIBILITE, PAS UNE GARDE SUPPLEMENTAIRE : interdire
+-- d'ouvrir le pointage tant que les places ne sont pas toutes prises punirait
+-- un geste tout a fait legitime (un organisateur qui veut voir qui est deja
+-- la). Ce qui manquait n'etait pas une garde a l'entree, c'etait une porte de
+-- sortie.
+--
+-- ⚠️ ELLE NE DUPLIQUE PAS LA REGLE DE STATUT, ET N'ECRIT JAMAIS `status`
+-- ELLE-MEME. `fn_tournament_sync_capacity_status` reste le SEUL ecrivain du
+-- statut de capacite -- cette RPC se contente de l'appeler avec
+-- `p_allow_reopen => true`, le seul appel de tout ce fichier a le faire. Tous
+-- les autres appelants (`tournament_register`, `tournament_join`,
+-- `fn_tournament_promote_waitlist`, etc.) continuent d'appeler SANS ce
+-- parametre : leur comportement ne change pas d'un bit, et un retrait pendant
+-- le pointage ne rouvre toujours rien tout seul -- seul CE geste explicite de
+-- l'organisateur le fait.
+--
+-- CE QU'ELLE NE FAIT PAS : elle ne touche a AUCUNE inscription, AUCUN binome,
+-- AUCUN jeton de check-in. `check_in_status` de chacun reste ce qu'il etait --
+-- rouvrir les inscriptions n'efface pas qui s'etait deja pointe present ou
+-- absent. Si le tournoi redevient COMPLET (aucune place libre), rien n'empeche
+-- l'organisateur de rouvrir le pointage a nouveau via `tournament_open_check_in`.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, tournament_not_in_check_in.
+-- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_reopen_registrations(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me     uuid := public.current_player_id();
+  v_t      public.tournaments%ROWTYPE;
+  v_status text;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_t.created_by <> v_me THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_t.status NOT IN ('CHECK_IN','PRET') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_in_check_in');
+  END IF;
+
+  PERFORM public.fn_tournament_sync_capacity_status(p_tournament, true);
+
+  SELECT status INTO v_status FROM public.tournaments WHERE id = p_tournament;
+  RETURN jsonb_build_object('ok', true, 'status', v_status);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_reopen_registrations(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_reopen_registrations(uuid) TO authenticated;
+
+-- ============================================================================
 -- tournament_mark_no_show(p_tournament, p_player)
 --
 -- L'ORGANISATEUR marque un joueur ABSENT : « qui est la, qui manque » (cahier
@@ -1978,10 +2283,20 @@ GRANT EXECUTE ON FUNCTION public.tournament_open_check_in(uuid) TO authenticated
 -- d'inscription du joueur vise, meme raisonnement que `tournament_check_in`
 -- et `tournament_set_open_to_join`.
 --
--- N'ECRASE PAS un `checked_in` par erreur d'un geste malheureux : si
--- l'organisateur se trompe, `tournament_check_in` (le joueur) ou une future
--- fonction symetrique peuvent renverser -- cette fonction-ci n'a qu'un sens,
--- marquer absent, et ne verifie donc pas l'etat de depart.
+-- ECRASE UN `checked_in` SANS CONDITION -- ce n'est PAS un oubli : c'est le
+-- meme geste que `tournament_check_in`, qui ecrit `checked_in` sans regarder
+-- l'etat de depart non plus (le check-in n'est pas une sanction ni une
+-- progression, il dit qui est la MAINTENANT). Un `checked_in` marque `no_show`
+-- par erreur se renverse par le MEME chemin qui l'a marque present :
+-- `tournament_check_in`, appele par le joueur lui-meme, qui n'exige pas non
+-- plus un `check_in_status` de depart particulier -- seulement une PLACE.
+--
+-- ⚠️ `waitlist_position IS NULL` EXIGE (Task 12) : un joueur EN FILE n'a pas
+-- de siege a ne pas occuper, donc rien a marquer absent. Sans cette exigence,
+-- la relecture de branche a trouve un joueur en file marque `no_show` A VIE --
+-- `tournament_check_in` (le seul chemin qui renverse un `no_show`) refuse tout
+-- joueur en liste d'attente, quel que soit son `check_in_status`, donc rien ne
+-- pouvait plus jamais le faire redevenir `pending`.
 --
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
 --         not_the_organizer, tournament_not_open, not_registered.
@@ -2018,9 +2333,13 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
   END IF;
 
+  -- `AND waitlist_position IS NULL` : un joueur en file ne compte pas comme
+  -- "registered" pour ce geste, exactement la convention deja posee par
+  -- `tournament_check_in` pour la meme raison (pas de siege, rien a pointer).
   UPDATE public.tournament_registrations
      SET check_in_status = 'no_show'
-   WHERE tournament_id = p_tournament AND player_id = p_player;
+   WHERE tournament_id = p_tournament AND player_id = p_player
+     AND waitlist_position IS NULL;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows = 0 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
@@ -2143,8 +2462,21 @@ GRANT EXECUTE ON FUNCTION public.tournament_set_open_to_join(uuid, boolean) TO a
 -- `tournament_start` s'appuie deja sur le cote implicitement via le niveau du
 -- binome, pas sur `side`, donc rien n'exige de figer plus tot).
 --
+-- ⚠️ SIGNATURE GELEE (Task 12) : `tournament_set_side(uuid, text)` est
+-- branchee cote client independamment de ce fichier -- le corps peut changer,
+-- pas les parametres.
+--
+-- GARDE DE STATUT AJOUTEE (Task 12), alignee sur son jumeau
+-- `tournament_set_open_to_join` qui l'a toujours eue : sans elle, un joueur
+-- pouvait changer de cote y compris TERMINE ou CLASSEMENT_VALIDE, tant
+-- qu'aucun match n'avait ete tire -- notamment le trou trace en relecture de
+-- branche, un EN_COURS a `current_round = 0` (des forfaits en cascade avant
+-- la premiere rotation) ou `tournament_matches` reste vide. `tournament_not_open`,
+-- meme raison que le jumeau, pour la meme fenetre de statuts.
+--
 -- Refus : feature_disabled, not_authenticated, invalid_side,
---         tournament_not_found, matches_already_generated, not_registered.
+--         tournament_not_found, tournament_not_open,
+--         matches_already_generated, not_registered.
 -- Appelable par : tout joueur connecte, POUR LUI-MEME uniquement.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_set_side(p_tournament uuid, p_side text)
@@ -2154,8 +2486,9 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_me   uuid := public.current_player_id();
-  v_rows int;
+  v_me     uuid := public.current_player_id();
+  v_status text;
+  v_rows   int;
 BEGIN
   IF NOT public.fn_tournaments_enabled() THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
@@ -2169,8 +2502,15 @@ BEGIN
 
   -- Pas de FOR UPDATE : ce chemin ne touche aucun siege, aucune position de
   -- file, aucun binome -- seulement une colonne de ma propre ligne.
-  IF NOT EXISTS (SELECT 1 FROM public.tournaments WHERE id = p_tournament) THEN
+  SELECT t.status INTO v_status FROM public.tournaments t WHERE t.id = p_tournament;
+  IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  -- Meme fenetre que `tournament_set_open_to_join` : le cote ne sert qu'a se
+  -- faire trouver ou placer un partenaire, il ne veut plus rien dire une fois
+  -- le tournoi clos, valide ou annule.
+  IF v_status NOT IN ('INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN','PRET') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
   END IF;
 
   -- Meme garde-fou que `tournament_leave_team` / `tournament_withdraw`, et
@@ -2214,10 +2554,36 @@ GRANT EXECUTE ON FUNCTION public.tournament_set_side(uuid, text) TO authenticate
 -- l'anciennete d'inscription, puis les identifiants -- deux executions sur les
 -- memes donnees rendent le meme resultat.
 --
--- Les joueurs marques 'no_show' sont ECARTES, et LAISSES TELS QUELS : les
--- apparier reviendrait a composer un binome autour d'un absent, et leur
--- retirer leur place est une decision d'organisateur (remplacement), pas un
--- effet de bord de l'appariement.
+-- ⚠️ `check_in_status` N'EST PLUS LU ICI (Task 12) -- LA REGLE UNIQUE DE «
+-- QUI EST PRESENT ». La relecture de branche a trouve trois lecteurs de
+-- presence qui ne repondaient pas la meme chose : `fn_tournament_open_seats`
+-- compte le siege d'un `no_show` comme occupe, cette fonction l'ECARTAIT de
+-- l'appariement, et `tournament_start` / `fn_tournament_seated_teams` ne
+-- regardaient `check_in_status` NULLE PART -- un binome dont un joueur est
+-- `no_show` jouait quand meme des qu'il en avait un.
+--
+-- LA REGLE RETENUE, ET POURQUOI : `check_in_status` est PUREMENT INFORMATIF --
+-- il dit qui s'est deja pointe, jamais qui a le droit de jouer ou d'etre
+-- assis. C'est deja ce que documente `tournament_check_in` (« le check-in
+-- n'est pas une sanction, il dit qui est la MAINTENANT ») et deja ce que
+-- font DEUX DES TROIS lecteurs -- `fn_tournament_open_seats` (le siege reste
+-- pris, l'absent peut encore arriver) et `tournament_start` /
+-- `fn_tournament_seated_teams` (le binome joue, exactement comme un binome
+-- dont personne ne s'est jamais pointe). La seule fonction qui derogeait a
+-- cette regle etait CELLE-CI. La retirer de l'exclusion, plutot que
+-- d'inventer une exclusion symetrique dans les deux autres, evite de toucher
+-- `fn_tournament_seated_teams` -- le lecteur central de l'echelle, du
+-- classement et de la cloture, dont l'invariant en tete de fichier NE PORTE
+-- QUE sur `waitlist_position`, jamais sur `check_in_status`. Le seul cout
+-- assume : un joueur marque absent PEUT desormais recevoir un partenaire par
+-- appariement automatique, comme n'importe quel autre joueur assis --
+-- coherent, puisque son siege est deja compte comme pris et que son binome
+-- jouera de toute facon s'il en forme un.
+--
+-- LE VRAI RETRAIT D'UN ABSENT reste une decision d'organisateur EXPLICITE,
+-- prise APRES coup : `tournament_forfeit` (en cours de tournoi) ou
+-- `tournament_remove_registration` (avant le tirage), jamais un effet de bord
+-- de l'appariement.
 --
 -- NOMBRE IMPAIR : le joueur qui reste sans partenaire ne joue pas et retourne
 -- EN TETE de la liste d'attente (positions existantes decalees). Sa place se
@@ -2271,7 +2637,15 @@ BEGIN
   IF v_me <> v_creator THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
   END IF;
-  IF v_status NOT IN ('COMPLET','CHECK_IN','PRET') THEN
+  -- INSCRIPTIONS_OUVERTES ACCEPTE (Task 12), ALIGNE SUR `tournament_start` --
+  -- qui l'accepte deja, explicitement, pour le tournoi qui ne se remplit
+  -- jamais (« demarrer a sept binomes »). L'exclure ici forcait l'organisateur
+  -- d'un tel tournoi a franchir `tournament_open_check_in` -- alors une porte
+  -- a sens unique (defaut n°1 de la relecture de branche) -- SEULEMENT pour
+  -- pouvoir apparier ses solos avant de demarrer. Les deux gardes ensemble
+  -- transformaient un geste legitime en piege ; ils disent maintenant la meme
+  -- chose.
+  IF v_status NOT IN ('INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN','PRET') THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
   END IF;
   -- Les matchs tires figent la composition : apparier apres coup creerait des
@@ -2296,7 +2670,6 @@ BEGIN
           JOIN public.players p ON p.id = r.player_id
          WHERE r.tournament_id      = p_tournament
            AND r.waitlist_position IS NULL
-           AND r.check_in_status   <> 'no_show'
            AND NOT EXISTS (SELECT 1 FROM public.tournament_participants tp
                             WHERE tp.tournament_id = p_tournament
                               AND tp.player_id     = r.player_id)
@@ -2327,7 +2700,6 @@ BEGIN
       FROM public.tournament_registrations r
      WHERE r.tournament_id      = p_tournament
        AND r.waitlist_position IS NULL
-       AND r.check_in_status   <> 'no_show'
        AND NOT EXISTS (SELECT 1 FROM public.tournament_participants tp
                         WHERE tp.tournament_id = p_tournament
                           AND tp.player_id     = r.player_id);
@@ -3035,12 +3407,33 @@ REVOKE ALL ON FUNCTION public.tournament_forfeit(uuid, uuid) FROM PUBLIC, anon, 
 GRANT EXECUTE ON FUNCTION public.tournament_forfeit(uuid, uuid) TO authenticated;
 
 -- ============================================================================
--- tournament_generate_round(p_tournament)
+-- fn_tournament_generate_round(p_tournament, p_final_round) -- LE MOTEUR.
 --
--- Tire la rotation suivante. Port de `pairUp` de `lib/tournament.ts` ; le
--- palier de chaque binome A L'ENTREE du tour vient de `fn_tournament_ladder`,
--- qui est le port de `nextCourts` (et, au tour 1, du `start_court` pose par
--- `tournament_start`, port de `initialCourts`).
+-- L'appariement d'une rotation, port de `pairUp` de `lib/tournament.ts` --
+-- QUE CE FICHIER N'ACCORDE A PERSONNE (Task 12, cf. le paragraphe ⚠️
+-- ci-dessous). Deux facades PUBLIQUES l'appellent avec un `p_final_round`
+-- different : `tournament_generate_round(p_tournament)`, juste apres, qui
+-- l'appelle TOUJOURS a `false` ; et `tournament_final_round`, plus bas dans le
+-- fichier, seul appelant legitime a le passer a `true`.
+--
+-- ⚠️ POURQUOI CE MOTEUR N'EST ACCORDE A PERSONNE. La version precedente
+-- accordait `tournament_generate_round(uuid, boolean)` A L'IDENTIQUE cote
+-- organisateur, en ne comptant que sur le DEFAUT du parametre (`false`) pour
+-- proteger la rotation de classement : rien n'empechait un organisateur
+-- d'appeler la fonction avec `p_final_round => true` directement, et de tirer
+-- la rotation de classement SANS jamais passer par `tournament_final_round` --
+-- donc sans jamais calculer ni annoncer `stakes`. `tournament_final_round`
+-- refusait alors `final_round_already_generated` : l'enjeu par terrain
+-- n'etait plus annoncable de la soiree. Un GRANT ne sait pas distinguer QUI
+-- appelle ; seul le fait de ne pas l'accorder le peut. La logique
+-- d'appariement reste donc ICI, jamais accordee directement -- les deux
+-- entrees publiques ne sont que des FACADES qui decident, chacune a sa
+-- maniere, de la valeur de `p_final_round`.
+--
+-- Port de `pairUp` de `lib/tournament.ts` ; le palier de chaque binome A
+-- L'ENTREE du tour vient de `fn_tournament_ladder`, qui est le port de
+-- `nextCourts` (et, au tour 1, du `start_court` pose par `tournament_start`,
+-- port de `initialCourts`).
 --
 -- REGLE DU BYE, identique a `pairUp` : un palier a un nombre IMPAIR d'equipes
 -- donne un bye a celle qui en a recu le MOINS jusqu'ici, l'identifiant
@@ -3074,19 +3467,20 @@ GRANT EXECUTE ON FUNCTION public.tournament_forfeit(uuid, uuid) TO authenticated
 --         round_incomplete (avec `missing`), round_already_generated,
 --         not_enough_teams, not_the_final_round (la DERNIERE rotation se tire
 --         par `tournament_final_round`).
--- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- Appelable par : PERSONNE directement -- voir le paragraphe ⚠️ ci-dessus. Les
+-- deux facades publiques (`tournament_generate_round`, `tournament_final_round`)
+-- restent, elles, reservees a l'ORGANISATEUR (tournaments.created_by).
 -- ============================================================================
 -- Ajouter un parametre CHANGE la signature : Postgres creerait une SURCHARGE a
 -- cote de l'ancienne, et PostgREST ne saurait plus laquelle appeler. On
--- supprime explicitement l'ancienne.
+-- supprime explicitement l'ancienne -- celle d'avant le parametre, ET celle
+-- accordee directement a l'organisateur (Task 12, cf. ⚠️ ci-dessus).
 DROP FUNCTION IF EXISTS public.tournament_generate_round(uuid);
+DROP FUNCTION IF EXISTS public.tournament_generate_round(uuid, boolean);
 
-CREATE OR REPLACE FUNCTION public.tournament_generate_round(
+CREATE OR REPLACE FUNCTION public.fn_tournament_generate_round(
   p_tournament   uuid,
-  -- RESERVE A `tournament_final_round`, qui est le seul appelant legitime a le
-  -- passer a `true`. Les clients appellent la fonction a UN argument : le
-  -- defaut leur refuse la derniere rotation, qui est la rotation de classement.
-  p_final_round  boolean DEFAULT false
+  p_final_round  boolean
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -3304,7 +3698,7 @@ BEGIN
    WHERE id = p_tournament;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows <> 1 THEN
-    RAISE EXCEPTION 'tournament_generate_round: le tournoi % a disparu sous le verrou',
+    RAISE EXCEPTION 'fn_tournament_generate_round: le tournoi % a disparu sous le verrou',
       p_tournament;
   END IF;
 
@@ -3315,8 +3709,37 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.tournament_generate_round(uuid, boolean) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.tournament_generate_round(uuid, boolean) TO authenticated;
+-- PAS de GRANT : ce moteur n'est jamais appele directement par un client,
+-- cf. le paragraphe ⚠️ en tete de fonction.
+REVOKE ALL ON FUNCTION public.fn_tournament_generate_round(uuid, boolean) FROM PUBLIC, anon, authenticated;
+
+-- ============================================================================
+-- tournament_generate_round(p_tournament)
+--
+-- LA FACADE ORDINAIRE (Task 12). Appelle le moteur ci-dessus avec
+-- `p_final_round => false`, TOUJOURS -- il n'y a plus de parametre a cote qui
+-- pourrait dire le contraire, ce qui est exactement ce que corrige cette
+-- tache. Refuse donc systematiquement de tirer la derniere rotation
+-- (`not_the_final_round`, rendu par le moteur), quel que soit l'appelant :
+-- seule `tournament_final_round`, ci-dessous, sait l'atteindre.
+--
+-- Refus, appelable par : voir `fn_tournament_generate_round` ci-dessus -- tous
+-- ses controles s'appliquent ici aussi, cette facade ne fait qu'imposer
+-- `p_final_round`.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_generate_round(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN public.fn_tournament_generate_round(p_tournament, false);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_generate_round(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_generate_round(uuid) TO authenticated;
 
 -- ============================================================================
 -- tournament_reopen_match(p_match)
@@ -4125,12 +4548,14 @@ BEGIN
   END IF;
 
   ---------------------------------------------------------------------------
-  -- ECRITURES -- entierement deleguees. `tournament_generate_round` refait ses
-  -- propres controles (tour courant entierement acquis, palier a plus de trois
-  -- equipes, etc.) : son refus est rendu TEL QUEL, avec sa liste `missing`,
-  -- que l'ecran sait deja afficher.
+  -- ECRITURES -- entierement deleguees au MOTEUR (`fn_tournament_generate_round`,
+  -- jamais a la facade `tournament_generate_round` : c'est elle qui refuserait
+  -- `p_final_round => true` a tout appelant, cette fonction-ci comprise, si on
+  -- l'appelait par erreur). Il refait ses propres controles (tour courant
+  -- entierement acquis, palier a plus de trois equipes, etc.) : son refus est
+  -- rendu TEL QUEL, avec sa liste `missing`, que l'ecran sait deja afficher.
   ---------------------------------------------------------------------------
-  v_gen := public.tournament_generate_round(p_tournament, true);
+  v_gen := public.fn_tournament_generate_round(p_tournament, true);
   IF NOT COALESCE((v_gen->>'ok')::boolean, false) THEN
     RETURN v_gen;
   END IF;
@@ -4608,6 +5033,96 @@ $$;
 
 REVOKE ALL ON FUNCTION public.tournament_validate(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_validate(uuid) TO authenticated;
+
+-- ############################################################################
+-- SECTION ANNULATION (Task 12)
+--
+-- Une seule fonction : le remede GENERAL aux etats sans sortie qu'une
+-- relecture de branche a trouves -- un CHECK_IN sans le moindre binome, un
+-- EN_COURS a `current_round = 0` apres des forfaits en cascade avant la
+-- premiere rotation, ou tout autre blocage qu'aucune fonction specifique de ce
+-- fichier ne sait defaire. Plutot que d'ajouter une garde a l'ouverture du
+-- pointage ou au demarrage -- ce qui punirait un geste legitime, l'organisateur
+-- qui ouvre le pointage tot ou qui accepte des forfaits avant le premier tirage
+-- -- on donne toujours une porte de sortie : une soiree doit TOUJOURS pouvoir
+-- etre abandonnee.
+-- ############################################################################
+
+-- ============================================================================
+-- tournament_cancel(p_tournament)
+--
+-- L'ORGANISATEUR ABANDONNE LA SOIREE : n'importe quel etat NON VALIDE ->
+-- ANNULE, statut TERMINAL.
+--
+-- ATTEIGNABLE DEPUIS TOUT ETAT NON VALIDE -- BROUILLON, INSCRIPTIONS_OUVERTES,
+-- COMPLET, CHECK_IN, PRET, EN_COURS, TERMINE -- MAIS PAS DEPUIS
+-- CLASSEMENT_VALIDE (`already_validated`) : les points sont deja credites et
+-- le tournoi est deja entre dans « Mon parcours » de chaque joueur, ce que ce
+-- fichier ne defait NULLE PART -- meme `tournament_reopen_match` le refuse.
+-- Annuler un tournoi valide laisserait des points credites sans tournoi pour
+-- les justifier. `already_cancelled` protege symetriquement contre un second
+-- appel sur un tournoi deja annule.
+--
+-- CE QU'ELLE NE FAIT PAS : elle ne touche a AUCUNE autre table -- ni les
+-- inscriptions, ni les binomes, ni les matchs, ni `tournament_results`. Un
+-- tournoi annule garde toute sa trace, exactement comme il etait au moment de
+-- l'abandon ; seul son statut change. Aucune autre fonction de ce fichier
+-- n'accepte `ANNULE` dans la moindre liste de statuts autorises -- il est donc
+-- reellement TERMINAL, sans qu'aucune garde supplementaire n'ait ete ajoutee
+-- ailleurs pour le garantir.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, already_cancelled, already_validated.
+-- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_cancel(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me   uuid := public.current_player_id();
+  v_t    public.tournaments%ROWTYPE;
+  v_rows int;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_t.created_by <> v_me THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_t.status = 'ANNULE' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'already_cancelled');
+  END IF;
+  IF v_t.status = 'CLASSEMENT_VALIDE' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'already_validated');
+  END IF;
+
+  ---------------------------------------------------------------------------
+  -- ECRITURE -- la seule de cette fonction.
+  ---------------------------------------------------------------------------
+  UPDATE public.tournaments SET status = 'ANNULE' WHERE id = p_tournament;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'tournament_cancel: le tournoi % a disparu sous le verrou',
+      p_tournament;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'status', 'ANNULE');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_cancel(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_cancel(uuid) TO authenticated;
 
 -- ============================================================================
 -- FIN DU FICHIER -- il n'y a PLUS DE SURFACE GELEE.

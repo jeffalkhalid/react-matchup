@@ -16,29 +16,87 @@ CREATE TABLE IF NOT EXISTS public.tournaments (
   ends_at       timestamptz,
   level_min     numeric(3,1),
   level_max     numeric(3,1),
-  court_count   int  NOT NULL CHECK (court_count > 0),
-  round_count   int  NOT NULL CHECK (round_count > 0),
+  -- Bornees (Task 12) : sans plafond, `court_count * 4` (fn_tournament_open_seats)
+  -- deborde l'int a la premiere inscription -- `integer out of range`, une
+  -- erreur SQL brute au lieu d'un refus nomme. 20 terrains (80 places) et 20
+  -- rotations depassent deja tres largement une soiree de tournoi montante /
+  -- descente ; le plafond n'a pas a coller a l'usage reel, seulement a exclure
+  -- l'absurde et le depassement arithmetique.
+  court_count   int  NOT NULL CHECK (court_count > 0 AND court_count <= 20),
+  round_count   int  NOT NULL CHECK (round_count > 0 AND round_count <= 20),
   price_mad     int  NOT NULL DEFAULT 0,      -- AFFICHE, jamais encaisse
   points_scale  jsonb NOT NULL DEFAULT '{"1":100,"2":80,"3":65,"4":55,"5":45,"6":35,"7":25,"8":15}'::jsonb
                 -- Aucune valeur negative : un tournoi ne punit pas, il classe.
                 -- jsonb_path_exists est un simple appel de fonction (IMMUTABLE),
                 -- pas une sous-requete : autorise dans une CHECK.
-                CHECK (NOT jsonb_path_exists(points_scale, '$.* ? (@ < 0)')),
+                --
+                -- FORME (Task 12), pas seulement signe : la premiere version de
+                -- cette CHECK ne comparait que des NOMBRES -- `{"1":"abc"}`,
+                -- `{"1":true}`, `{"1":{"a":1}}` la passaient tous, parce qu'un
+                -- comparateur `< 0` sur un type incompatible rend "inconnu" (donc
+                -- ni vrai ni faux) en mode tolerant plutot que d'echouer. Le
+                -- barème atteignait alors `fn_tournament_points`, dont le
+                -- `round((kv.value)::numeric)` levait une erreur SQL BRUTE --
+                -- `invalid_text_representation` -- AU MILIEU de `tournament_close`,
+                -- transaction annulee, tournoi coince en EN_COURS sans aucune RPC
+                -- pour corriger `points_scale` apres coup. `@.type() != "number"`
+                -- ferme cette porte en amont : chaque valeur DOIT etre un nombre
+                -- avant meme d'etre comparee a zero.
+                CHECK (
+                  jsonb_typeof(points_scale) = 'object'
+                  AND NOT jsonb_path_exists(points_scale,
+                        '$.* ? (@.type() != "number" || @ < 0)')
+                ),
   -- Score credite a CHAQUE camp quand tournament_matches.forfeited_team est
   -- renseigne (c'est ce marqueur, pas ce nombre, qui distingue un forfait
   -- d'un vrai resultat nul -- interdit ailleurs). 0 pour les deux camps par
   -- defaut : un forfait ne credite aucun jeu. Parametrable si l'organisateur
   -- veut un score de courtoisie (ex. 4-0).
   forfeit_games int  NOT NULL DEFAULT 0 CHECK (forfeit_games >= 0),
+  -- ANNULE (Task 12) : statut TERMINAL, atteignable depuis TOUT etat non
+  -- valide par `tournament_cancel` (tournaments_rpcs.sql) -- le remede general
+  -- aux etats sans sortie qu'une relecture de branche a trouves (un CHECK_IN
+  -- sans binome, un EN_COURS a current_round=0 apres des forfaits en cascade).
+  -- Une soiree doit TOUJOURS pouvoir etre abandonnee.
   status        text NOT NULL DEFAULT 'BROUILLON'
                 CHECK (status IN (
                   'BROUILLON','INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN',
-                  'PRET','EN_COURS','TERMINE','CLASSEMENT_VALIDE'
+                  'PRET','EN_COURS','TERMINE','CLASSEMENT_VALIDE','ANNULE'
                 )),
   current_round int  NOT NULL DEFAULT 0,
   created_by    uuid NOT NULL REFERENCES public.players(id),
   created_at    timestamptz NOT NULL DEFAULT now()
 );
+
+-- Idempotence (Task 12) pour une base ou `tournaments` existe deja : le
+-- `CREATE TABLE IF NOT EXISTS` ci-dessus y est alors un NO-OP, donc les trois
+-- CHECK durcies plus haut (statut + ANNULE, plafonds de court_count /
+-- round_count, forme de points_scale) n'y arriveraient jamais. DROP + ADD sur
+-- le nom AUTOGENERE (`<table>_<colonne>_check`, la convention Postgres pour
+-- une CHECK inline sans nom explicite) est sans risque a chaque rejeu --
+-- contrairement a un `ADD COLUMN` sur une table peuplee (cf. la colonne
+-- `wins` de `tournament_results` plus bas, qui reste volontairement manuelle).
+ALTER TABLE public.tournaments DROP CONSTRAINT IF EXISTS tournaments_status_check;
+ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_status_check
+  CHECK (status IN (
+    'BROUILLON','INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN',
+    'PRET','EN_COURS','TERMINE','CLASSEMENT_VALIDE','ANNULE'
+  ));
+
+ALTER TABLE public.tournaments DROP CONSTRAINT IF EXISTS tournaments_court_count_check;
+ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_court_count_check
+  CHECK (court_count > 0 AND court_count <= 20);
+
+ALTER TABLE public.tournaments DROP CONSTRAINT IF EXISTS tournaments_round_count_check;
+ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_round_count_check
+  CHECK (round_count > 0 AND round_count <= 20);
+
+ALTER TABLE public.tournaments DROP CONSTRAINT IF EXISTS tournaments_points_scale_check;
+ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_points_scale_check
+  CHECK (
+    jsonb_typeof(points_scale) = 'object'
+    AND NOT jsonb_path_exists(points_scale, '$.* ? (@.type() != "number" || @ < 0)')
+  );
 
 CREATE TABLE IF NOT EXISTS public.tournament_teams (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
