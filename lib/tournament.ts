@@ -17,10 +17,36 @@ export type Match = {
   gamesA: number;
   gamesB: number;
   confirmed: boolean;
+  /** Le binome qui a DECLARE FORFAIT sur ce match, quand il y en a un.
+   *  Miroir de `tournament_matches.forfeited_team`. Optionnel : un match
+   *  ordinaire ne le porte pas, et tout le code existant continue de
+   *  compiler. */
+  forfeitedTeam?: string | null;
 };
+
+/** QUI A GAGNE — l unique endroit ou le vainqueur se decide, exactement comme
+ *  `fn_tournament_a_won(forfeited_team, team_a, games_a, games_b)` cote SQL.
+ *
+ *  ON SE FIE AU MARQUEUR, JAMAIS AU SCORE. Un forfait s inscrit a EGALITE
+ *  (0-0 par defaut, cf. `tournaments.forfeit_games`) : re-deduire le vainqueur
+ *  des jeux rendrait « B gagne » a tous les coups, y compris quand c est B qui
+ *  a declare forfait — et ferait alors MONTER le forfaitaire.
+ *
+ *  Hors forfait, la regle reste `gamesA > gamesB`. Une egalite — que
+ *  `tournament_enter_score` refuse en amont (`draw_not_allowed`) — tombe donc
+ *  du cote de B : choix explicite des deux cotes, pas un oubli. */
+export function aWon(m: Match): boolean {
+  if (m.forfeitedTeam != null) return m.forfeitedTeam !== m.teamA;
+  return m.gamesA > m.gamesB;
+}
 
 export type Standing = {
   teamId: string;
+  /** Le binome a quitte la soiree. PREMIERE cle du tri, avant meme le palier :
+   *  un binome parti passe derriere tous ceux qui ont fini. Miroir de
+   *  `tournament_teams.withdrawn`, remonte tel quel par
+   *  `tournament_standings`. */
+  withdrawn: boolean;
   played: number;
   wins: number;
   gamesWon: number;
@@ -108,11 +134,16 @@ export function nextCourts(
   const out = new Map(courts);
   for (const m of matches) {
     if (m.teamA == null || m.teamB == null) continue;      // bye : sur place
+    // Match non confirme : l equipe RESTE ou elle est. C est ce que fait
+    // `fn_tournament_ladder` (`confirmed_at IS NOT NULL`) ; sans ce garde,
+    // le defaut `0-0` d un match pas encore joue vaudrait « B gagne » et
+    // ferait descendre une equipe sur un match que personne n a joue.
+    if (!m.confirmed) continue;
     // Un match de padel ne peut pas etre nul. gamesA === gamesB est un etat
     // qui ne devrait jamais arriver (valide en amont, pas ici) ; si il
-    // survenait quand meme, ce test le traite comme une victoire de B —
-    // choix explicite, pas un oubli.
-    const aGagne = m.gamesA > m.gamesB;
+    // survenait quand meme, `aWon` le traite comme une victoire de B —
+    // choix explicite, pas un oubli. Le FORFAIT, lui, se lit au marqueur.
+    const aGagne = aWon(m);
     const gagnant = aGagne ? m.teamA : m.teamB;
     const perdant = aGagne ? m.teamB : m.teamA;
     out.set(gagnant, Math.max(1, m.court - 1));
@@ -136,9 +167,17 @@ export function lastCompleteRound(matches: Match[]): number {
   return reels.reduce((acc, m) => Math.max(acc, m.round), 0);
 }
 
-/** Classement au palier. Departages successifs : le palier (`bestCourt`),
- *  le nombre de victoires, la difference de jeux, les jeux gagnes, puis la
- *  confrontation directe, puis l id.
+/** Classement au palier. Departages successifs : l ABANDON (`withdrawn`), le
+ *  palier (`bestCourt`), le nombre de victoires, la difference de jeux, les
+ *  jeux gagnes, puis la confrontation directe, puis l id.
+ *
+ *  L ABANDON PASSE AVANT LE PALIER, et c est la seule cle au-dessus de lui.
+ *  Un binome parti garde le meilleur palier de son passage, donc un tres bon
+ *  rang s il est parti de haut : sans cette cle il devancait des binomes qui
+ *  ont joue toute la soiree. Il descend en bas IMMEDIATEMENT, a l ecran,
+ *  pendant la soiree — pas seulement a la cloture. C est ce qui garde UNE
+ *  SEULE source de verite entre le classement affiche et le classement fige.
+ *  `tournament_standings` trie sur la meme cle, en premier lui aussi.
  *
  *  Le palier (`bestCourt`) prime sur tout le reste : le Terrain 1 etant le
  *  plus fort, un binome qui l a atteint devance TOUJOURS un binome qui ne l a
@@ -148,8 +187,8 @@ export function lastCompleteRound(matches: Match[]): number {
  *  binome, les jeux pris aux AUTRES binomes de son groupe d ex aequo moins
  *  les jeux qu il leur a concedes, sur TOUTES leurs rencontres. Le groupe
  *  d ex aequo est l ensemble des binomes que les cles precedentes n ont pas
- *  departages (meme palier, memes victoires, meme difference, memes jeux
- *  gagnes) : un troisieme binome qui ne partagerait que la difference et les
+ *  departages (meme statut d abandon, meme palier, memes victoires, meme
+ *  difference, memes jeux gagnes) : un troisieme binome qui ne partagerait que la difference et les
  *  jeux gagnes, sans etre au meme palier ni avoir le meme nombre de
  *  victoires, n en fait PAS partie -- sinon un de ses matchs, sans rapport
  *  avec le duel des deux binomes reellement lies, polluerait leur agregat et
@@ -174,7 +213,8 @@ export function standings(
   const base = new Map<string, Standing>();
   for (const t of teams) {
     base.set(t.id, {
-      teamId: t.id, played: 0, wins: 0, gamesWon: 0, gamesLost: 0,
+      teamId: t.id, withdrawn: t.withdrawn, played: 0, wins: 0,
+      gamesWon: 0, gamesLost: 0,
       diff: 0, bestCourt: Infinity, h2h: 0, rank: 0,
     });
   }
@@ -182,7 +222,7 @@ export function standings(
     m.confirmed && m.teamA != null && m.teamB != null &&
     (maxRound === undefined || m.round <= maxRound));
   for (const m of joues) {
-    const aGagne = m.gamesA > m.gamesB;
+    const aGagne = aWon(m);
     const a = base.get(m.teamA!); const b = base.get(m.teamB!);
     if (a) {
       a.played++; a.gamesWon += m.gamesA; a.gamesLost += m.gamesB;
@@ -197,13 +237,16 @@ export function standings(
   }
   for (const s of base.values()) s.diff = s.gamesWon - s.gamesLost;
 
-  // Le groupe d ex aequo : meme palier, memes victoires, meme difference ET
-  // memes jeux gagnes -- exactement les quatre cles qui precedent la h2h
-  // dans la hierarchie. C est ce que le SQL isole avec dense_rank() sur ces
-  // quatre cles.
+  // Le groupe d ex aequo : meme statut d abandon, meme palier, memes
+  // victoires, meme difference ET memes jeux gagnes -- exactement les cinq
+  // cles qui precedent la h2h dans la hierarchie. C est ce que le SQL isole
+  // avec dense_rank() sur ces memes cles. Un binome parti et un binome
+  // present ne sont donc JAMAIS dans le meme groupe : leur eventuelle
+  // rencontre n a plus a les departager, l abandon l a fait.
   const groupe = new Map<string, string>();
   for (const s of base.values())
-    groupe.set(s.teamId, `${s.bestCourt}|${s.wins}|${s.diff}|${s.gamesWon}`);
+    groupe.set(s.teamId,
+      `${s.withdrawn}|${s.bestCourt}|${s.wins}|${s.diff}|${s.gamesWon}`);
 
   // Le scalaire de confrontation directe. Somme sur TOUTES les rencontres
   // internes au groupe : jamais la premiere trouvee, sinon le resultat
@@ -218,6 +261,7 @@ export function standings(
   }
 
   const out = [...base.values()].sort((x, y) =>
+    Number(x.withdrawn) - Number(y.withdrawn) ||
     x.bestCourt - y.bestCourt ||
     y.wins - x.wins ||
     y.diff - x.diff ||
@@ -229,47 +273,120 @@ export function standings(
 }
 
 /** Classement direct de la derniere rotation : elle ne fait plus monter ni
- *  descendre, elle classe. Pour chaque terrain, du Terrain 1 au dernier : le
- *  gagnant prend le rang (terrain-1)*2+1, son perdant (terrain-1)*2+2. Ces
- *  deux rangs sont des CRENEAUX FIXES par terrain, pas un compteur qui
- *  avance au fil des resultats : ainsi un terrain sans adversaire (bye) ne
- *  decale jamais les rangs des terrains suivants, il laisse seulement son
- *  propre creneau de perdant vacant. Un terrain absent de `matches` (aucun
- *  match genere ou joue) laisse ses DEUX creneaux vacants, meme traitement.
+ *  descendre, elle CLASSE. Pour chaque terrain, du Terrain 1 au dernier : le
+ *  gagnant prend le CRENEAU (terrain-1)*2+1, son perdant (terrain-1)*2+2. Ces
+ *  deux creneaux sont FIXES par terrain, pas un compteur qui avance au fil des
+ *  resultats : ainsi un terrain sans adversaire (bye) ne decale jamais les
+ *  creneaux des terrains suivants, il laisse seulement son propre creneau de
+ *  perdant vacant. Un terrain absent de `matches` laisse ses DEUX creneaux
+ *  vacants, meme traitement.
  *
- *  Un match reel (deux binomes) NON confirme laisse egalement ses deux
- *  creneaux vacants, comme `standings` l exclut de `joues` : sans ce garde,
- *  un match en cours au moment de l appel (`confirmed: false`, `gamesA: 0`,
- *  `gamesB: 0` -- l etat par defaut d un match pas encore joue dans ce code)
- *  ferait `0 > 0` = faux, et declarerait le binome B gagnant en silence,
- *  avant meme la fin du match. Un bye n a rien a confirmer (cf.
- *  `lastCompleteRound`) : lui seul ignore `confirmed`.
+ *  MAIS LE CRENEAU N EST PAS LE RANG. Les creneaux vacants sont REFERMES par
+ *  une renumerotation contigue 1..N, exactement comme
+ *  `fn_tournament_final_slots` : un bareme qui va du rang 1 au rang 8 ne peut
+ *  pas sauter le rang 4 — ces points ne seraient jamais attribues et tous les
+ *  rangs suivants recevraient moins que leur du. Les creneaux ne servent qu a
+ *  ORDONNER ; le rang se COMPTE. Une version precedente rendait les creneaux
+ *  BRUTS, et son test affirmait `[1,2,3,5,6,7,8]` : c etait la regle d avant.
+ *
+ *  UN MATCH REEL NON CONFIRME OCCUPE SES DEUX CRENEAUX sans les remplir : on
+ *  ne sait pas encore qui prendra ces places, mais elles sont disputees, donc
+ *  elles ne se referment pas. Le SQL fait pareil (`team_id` NULL, cas normal a
+ *  la GENERATION du tour) ; ici ces creneaux comptent dans la renumerotation
+ *  et ne produisent simplement aucune entree. Sans ce garde, le defaut
+ *  `gamesA: 0, gamesB: 0` d un match pas encore joue rendrait `0 > 0` faux et
+ *  declarerait le binome B gagnant en silence. Un bye n a rien a confirmer
+ *  (cf. `lastCompleteRound`) : lui seul ignore `confirmed`.
+ *
+ *  UN PALIER A TROIS EQUIPES (possible apres un forfait) porte un match ET un
+ *  bye. C est le MATCH qui prend les deux creneaux du terrain — le SQL le dit
+ *  par `row_number() ... ORDER BY (team_b IS NOT NULL) DESC` — et le binome du
+ *  bye repart dans les NON-PLACES. La version precedente ecrasait sa `Map` par
+ *  terrain et retenait la DERNIERE ligne rencontree : le classement dependait
+ *  de l ordre du tableau, donc n etait pas defini.
+ *
+ *  `provisional` — le classement provisoire, c est-a-dire la sortie de
+ *  `standings(teams, matches, lastCompleteRound(...))`, exactement ce que le
+ *  SQL lit dans `st`. Optionnel, et c est lui qui apporte les deux dernieres
+ *  regles :
+ *    * UN BINOME PARTI N OCCUPE JAMAIS UN CRENEAU. Un forfait prononce APRES
+ *      la generation de la rotation le laisse dans le tableau du tour, et
+ *      `aWon` le declare perdant : il prendrait le creneau PERDANT de son
+ *      terrain — le rang 2 sur 8 s il etait au Terrain 1 — alors que l ecran
+ *      l a montre DERNIER toute la soiree. Son creneau devient vacant, la
+ *      renumerotation le referme, et le creneau du VAINQUEUR n est pas touche.
+ *    * LES NON-PLACES suivent, dans l ordre du classement provisoire, apres le
+ *      plus grand creneau attribue. Le provisoire trie deja les binomes partis
+ *      en dernier, sur sa premiere cle : inutile de le refaire ici.
+ *  Sans `provisional`, la fonction ne connait que les binomes du tableau : ni
+ *  abandon, ni non-places — l ancien comportement, renumerotation comprise.
  *
  *  Ne regarde que le DERNIER tour present dans `matches` (le maximum de
  *  `round`) : c est a l appelant de fournir les matchs de la rotation finale,
- *  mais filtrer ici plutot que de supposer un tableau deja propre evite
- *  qu un historique complet, passe par erreur, ne fausse le resultat. */
-export function finalRanking(matches: Match[], courtCount: number): FinalRankEntry[] {
+ *  mais filtrer ici plutot que de supposer un tableau deja propre evite qu un
+ *  historique complet, passe par erreur, ne fausse le resultat. */
+export function finalRanking(
+  matches: Match[], courtCount: number, provisional?: Standing[],
+): FinalRankEntry[] {
   const maxRound = matches.reduce((acc, m) => Math.max(acc, m.round), 0);
+  const partis = new Set((provisional ?? []).filter(s => s.withdrawn).map(s => s.teamId));
+
+  // `fr` du SQL : une ligne par terrain, le MATCH prioritaire sur le bye.
   const parTerrain = new Map<number, Match>();
   for (const m of matches) {
-    if (m.round === maxRound) parTerrain.set(m.court, m);
+    if (m.round !== maxRound) continue;
+    const prec = parTerrain.get(m.court);
+    if (prec === undefined || (prec.teamB == null && m.teamB != null)) {
+      parTerrain.set(m.court, m);
+    }
   }
-  const out: FinalRankEntry[] = [];
+
+  // `bruts` puis `places` du SQL : le creneau, et le binome quand il est
+  // connu. Un binome parti est ECARTE ; un creneau encore indecis (null)
+  // traverse, il n y a rien a exclure.
+  type Creneau = { slot: number; teamId: string | null };
+  const places: Creneau[] = [];
+  const engages = new Set<string>();
+  const garde = (c: Creneau) => {
+    if (c.teamId != null && partis.has(c.teamId)) return;
+    places.push(c);
+  };
   for (let court = 1; court <= courtCount; court++) {
     const m = parTerrain.get(court);
     if (!m) continue;
     const base = (court - 1) * 2;
-    if (m.teamA != null && m.teamB != null) {
-      if (!m.confirmed) continue;   // encore en cours : les deux rangs restent vacants
-      const aGagne = m.gamesA > m.gamesB;
-      out.push({ rank: base + 1, teamId: aGagne ? m.teamA : m.teamB });
-      out.push({ rank: base + 2, teamId: aGagne ? m.teamB : m.teamA });
+    if (m.teamB != null) {
+      const a = m.confirmed ? aWon(m) : null;
+      garde({ slot: base + 1, teamId: a === null ? null : (a ? m.teamA : m.teamB) });
+      garde({ slot: base + 2, teamId: a === null ? null : (a ? m.teamB : m.teamA) });
+      // `engages` porte sur le TABLEAU du tour, pas sur le resultat : un
+      // binome dont le match n est pas acquis a bien un creneau, il n est
+      // donc pas non-place. Les binomes partis en sont exclus, comme
+      // ci-dessus : leur creneau n existe pas, ils doivent tomber dans les
+      // non-places.
+      for (const t of [m.teamA, m.teamB]) if (t != null && !partis.has(t)) engages.add(t);
     } else if (m.teamA != null) {
-      out.push({ rank: base + 1, teamId: m.teamA });
-    } else if (m.teamB != null) {
-      out.push({ rank: base + 1, teamId: m.teamB });
+      // Un bye SEUL sur son palier dispute la MEILLEURE des deux places du
+      // terrain. L autre creneau reste vacant.
+      garde({ slot: base + 1, teamId: m.teamA });
+      if (!partis.has(m.teamA)) engages.add(m.teamA);
     }
   }
+
+  // `plafond` : le plus grand creneau attribue, plancher de tout ce qui suit.
+  // Aucun non-place ne passe devant un binome que le tour a departage sur le
+  // terrain — un terrain reduit a un bye libere un creneau BAS, et c est
+  // exactement la forme d echelle que produit un forfait.
+  const plafond = places.reduce((acc, c) => Math.max(acc, c.slot), 0);
+  const reste: Creneau[] = (provisional ?? [])
+    .filter(s => !engages.has(s.teamId))
+    .sort((x, y) => x.rank - y.rank)
+    .map((s, i) => ({ slot: plafond + i + 1, teamId: s.teamId }));
+
+  const attribue = [...places, ...reste].sort((x, y) => x.slot - y.slot);
+  const out: FinalRankEntry[] = [];
+  attribue.forEach((c, i) => {
+    if (c.teamId != null) out.push({ rank: i + 1, teamId: c.teamId });
+  });
   return out;
 }

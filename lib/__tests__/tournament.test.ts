@@ -501,9 +501,19 @@ describe('rotation de classement', () => {
     expect(r[2]).toEqual({ rank: 3, teamId: 'b' });   // gagnant du Terrain 2
   });
 
-  // Le Terrain 2 n a qu une equipe (bye) : elle prend le rang 3, et le rang 4
-  // (celui de son adversaire absent) reste vacant -- il n est PAS recycle
-  // pour decaler les terrains suivants, qui gardent leurs rangs fixes.
+  // Le Terrain 2 n a qu une equipe (bye) : elle dispute la MEILLEURE des deux
+  // places du terrain (creneau 3), et le creneau 4 -- celui de son adversaire
+  // absent -- reste vacant. Les CRENEAUX restent fixes par terrain : le bye ne
+  // decale pas ceux des terrains suivants (le Terrain 3 garde 5 et 6).
+  //
+  // MAIS LE CRENEAU N EST PAS LE RANG. Ce test affirmait `[1,2,3,5,6,7,8]`,
+  // avec un commentaire disant que le rang 4 n etait pas recycle : c etait la
+  // regle d avant, et elle est fausse. Un bareme qui va du rang 1 au rang 8 ne
+  // peut pas SAUTER le rang 4 : ces points ne seraient jamais attribues et
+  // tous les rangs suivants recevraient moins que leur du. Les creneaux
+  // vacants sont donc REFERMES par une renumerotation contigue 1..N, comme
+  // `fn_tournament_final_slots` cote SQL, qui fait autorite. Sur cette
+  // echelle, le Terrain 3 ne joue pas pour les places 5 et 6, mais 4 et 5.
   const FINAL_MATCHES_AVEC_BYE: Match[] = [
     M(1, 'a', 'c', 6, 2),
     { round: 5, court: 2, teamA: 'b', teamB: null, gamesA: 0, gamesB: 0, confirmed: false },
@@ -511,9 +521,12 @@ describe('rotation de classement', () => {
     M(4, 'f', 'h', 6, 1),
   ];
 
-  it('un terrain sans match ne decale pas les rangs suivants', () => {
+  it('un terrain sans match laisse un creneau vacant, que la renumerotation referme', () => {
     const r = finalRanking(FINAL_MATCHES_AVEC_BYE, 4);
-    expect(r.map(x => x.rank)).toEqual([1, 2, 3, 5, 6, 7, 8]);
+    expect(r.map(x => x.rank)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    // L ORDRE, lui, est bien celui des creneaux : c est ce qui distingue une
+    // renumerotation d un simple compteur qui avancerait au fil des resultats.
+    expect(r.map(x => x.teamId)).toEqual(['a', 'c', 'b', 'e', 'g', 'f', 'h']);
   });
 
   // Un terrain totalement ABSENT de `matches` (aucun match genere, ni joue
