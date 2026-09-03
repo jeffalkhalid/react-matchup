@@ -33,6 +33,22 @@
 --     inscriptions concurrentes sur la derniere place libre, et ce qui evite
 --     les interblocages entre deux fonctions qui touchent aux memes joueurs.
 --
+-- ⚠️ INVARIANT DE LECTURE DE `tournament_teams` -- a lire avant d'ecrire la
+-- moindre requete sur cette table, y compris dans les taches suivantes.
+--
+--   UN BINOME PEUT EXISTER SANS AVOIR DE PLACE. Deux joueurs en liste
+--   d'attente peuvent s'apparier (c'est utile : ils avancent ensemble), et
+--   leur binome est une VRAIE ligne de `tournament_teams`, indiscernable d'un
+--   binome assis si on ne regarde que cette table -- elle ne porte AUCUNE
+--   information de place, et il a ete decide de ne pas l'y dupliquer.
+--
+--   AUCUN lecteur de `tournament_teams` ne peut donc se passer de la jointure
+--   vers `tournament_registrations` avec `waitlist_position IS NULL` sur les
+--   DEUX joueurs. Un `SELECT ... FROM tournament_teams WHERE tournament_id = ?`
+--   nu placerait sur l'echelle, et sur un terrain, un binome qui n'est jamais
+--   entre dans le tournoi. Vaut pour le placement initial, la generation des
+--   tours, le classement et tout affichage.
+--
 -- ⚠️ ETAT DU FICHIER. La section « inscription et appariement » ci-dessous est
 -- ecrite pour le schema livre (tournaments.sql) : inscription INDIVIDUELLE,
 -- places comptees EN JOUEURS (court_count x 4), statuts BROUILLON ->
@@ -40,11 +56,12 @@
 -- -> CLASSEMENT_VALIDE.
 -- Les fonctions de DEROULEMENT qui la suivent (enter_score, confirm_score,
 -- generate_round, reopen_match, standings, close) datent, elles, du modele
--- PRECEDENT : elles lisent une colonne `max_teams` qui n'existe plus et
--- ecrivent des statuts ('live', 'finished') que la contrainte CHECK de
--- `tournaments` refuse. Elles s'INSTALLENT sans erreur (plpgsql ne verifie pas
--- les identifiants a la creation) mais ECHOUERAIENT A L'EXECUTION. Les taches
--- suivantes les reecrivent ; ne pas les appeler d'ici la.
+-- PRECEDENT : elles ecrivent les colonnes `entered_by` / `confirmed_by`, que
+-- `tournament_matches` ne porte plus, et les statuts 'open', 'live',
+-- 'finished', 'cancelled', que la contrainte CHECK de `tournaments` refuse.
+-- Elles s'INSTALLENT sans erreur (plpgsql ne verifie pas les identifiants a la
+-- creation) mais ECHOUERAIENT A L'EXECUTION -- raison pour laquelle leur droit
+-- d'execution est RETIRE en fin de fichier, jusqu'a leur reecriture.
 -- ============================================================================
 BEGIN;
 
@@ -198,19 +215,39 @@ REVOKE ALL ON FUNCTION public.fn_tournament_ladder(uuid, int) FROM PUBLIC, anon,
 --     par un binome non confirme est la derive deja payee avec
 --     `spots_available` ;
 --   * DEFAIRE un binome rend les deux joueurs seuls EN GARDANT chacun sa
---     place -- personne n'est ejecte parce qu'un partenaire s'est ravise ;
+--     place, son rang de file et son mode de consentement -- personne n'est
+--     ejecte, ni reouvert malgre lui, parce qu'un partenaire s'est ravise ;
 --   * AU-DELA DES PLACES (court_count x 4, comptees EN JOUEURS), l'inscription
---     entre en liste d'attente ordonnee par date ; quand des places se
---     liberent, la file avance a concurrence des places disponibles.
+--     entre en liste d'attente ordonnee par date ; quand des sieges se
+--     liberent, la file avance a concurrence des sieges disponibles.
+--
+-- LA FILE, en trois regles qui tiennent ensemble :
+--   1. un binome avance ENTIER ou pas du tout -- jamais un membre assis et
+--      l'autre en attente ;
+--   2. un binome est aussi loin dans la file que son membre LE PLUS RECULE
+--      (`fn_tournament_align_waitlist`) : s'apparier en attendant est permis,
+--      et ne fait gagner aucun rang a personne ;
+--   3. un groupe trop grand pour les sieges restants est DEPASSE, pas
+--      bloquant : il garde son rang et passe des que la place existe, mais il
+--      ne laisse pas un siege vide au coup d'envoi.
 --
 -- Les places sont un NOMBRE DE JOUEURS : `court_count x 4`. Rien de derive
--- n'est stocke ; `fn_tournament_free_places()` le recalcule a la lecture.
+-- n'est stocke -- deux fonctions le recalculent a la lecture, et elles ne
+-- disent pas la meme chose : `fn_tournament_open_seats` (sieges vides, ce que
+-- la file consomme) et `fn_tournament_free_places` (ce qu'un NOUVEL inscrit
+-- obtiendrait tout de suite : zero des que quelqu'un attend).
 --
 -- AUCUNE de ces fonctions n'ecrit dans `tournament_participants` : cette table
 -- est l'index derive maintenu par le declencheur pose dans tournaments.sql.
 -- On ecrit `tournament_teams`, le declencheur fait le reste -- et c'est LUI
 -- qui garantit « un joueur, un seul binome par tournoi » (sa PK), ce dont les
 -- filets `EXCEPTION WHEN unique_violation` ci-dessous dependent.
+--
+-- `open_to_join` est un MODE DE CONSENTEMENT, et rien d'autre : « peut-on me
+-- prendre d'un geste, ou faut-il mon accord ». Il ne dit pas « je cherche un
+-- partenaire » -- ca, c'est l'absence de ligne dans `tournament_participants`.
+-- SEUL SON PROPRIETAIRE LE CHANGE : aucune fonction de ce fichier ne le force,
+-- ni a l'inscription a deux, ni en defaisant un binome, ni en se desinscrivant.
 --
 -- `tournament_registrations` n'a PAS de team_id : l'equipe d'un inscrit se lit
 -- par JOIN vers `tournament_participants`. Aucun code ci-dessous ne tente d'en
@@ -318,6 +355,7 @@ CREATE OR REPLACE FUNCTION public.fn_tournament_side_score(p_a text, p_b text)
 RETURNS int
 LANGUAGE sql
 IMMUTABLE
+SECURITY DEFINER
 SET search_path = public
 AS $$
   WITH n AS (
@@ -350,6 +388,7 @@ CREATE OR REPLACE FUNCTION public.fn_tournament_elo_score(p_a numeric, p_b numer
 RETURNS int
 LANGUAGE sql
 IMMUTABLE
+SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT CASE
@@ -364,13 +403,24 @@ $$;
 REVOKE ALL ON FUNCTION public.fn_tournament_elo_score(numeric, numeric) FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- Helper interne : les places LIBRES, EN JOUEURS.
---   places = tournaments.court_count x 4  (jamais stocke, toujours derive)
---   prises = les inscriptions qui ne sont PAS en liste d'attente
--- Une inscription est la seule chose qui occupe une place : ni une demande, ni
--- un binome. Un binome n'est qu'une relation entre deux places deja prises.
+-- DEUX comptages, et ils ne disent pas la meme chose. Les confondre a produit
+-- un mensonge d'affichage (« il reste une place » alors que tout arrivant
+-- tombait en file), donc ils portent desormais deux noms.
+--
+-- `fn_tournament_open_seats` -- les SIEGES VIDES, brut :
+--   sieges = tournaments.court_count x 4  (jamais stocke, toujours derive)
+--   pris   = les inscriptions qui ne sont PAS en liste d'attente
+-- C'est le nombre que la FILE consomme quand elle avance. Une inscription est
+-- la seule chose qui occupe un siege : ni une demande, ni un binome -- un
+-- binome n'est qu'une relation entre deux places deja prises.
+--
+-- `fn_tournament_free_places` -- les places qu'un NOUVEL INSCRIT obtiendrait
+-- IMMEDIATEMENT. Vaut zero des que quelqu'un attend, quel que soit le nombre
+-- de sieges vides : ces sieges appartiennent a la file, pas au prochain
+-- arrivant. C'est la seule lecture qu'un ecran peut afficher honnetement, et
+-- c'est elle qui pilote le statut INSCRIPTIONS_OUVERTES / COMPLET.
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.fn_tournament_free_places(p_tournament uuid)
+CREATE OR REPLACE FUNCTION public.fn_tournament_open_seats(p_tournament uuid)
 RETURNS int
 LANGUAGE sql
 STABLE
@@ -386,6 +436,25 @@ AS $$
    WHERE t.id = p_tournament;
 $$;
 
+REVOKE ALL ON FUNCTION public.fn_tournament_open_seats(uuid) FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.fn_tournament_free_places(p_tournament uuid)
+RETURNS int
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT CASE
+           WHEN EXISTS (SELECT 1
+                          FROM public.tournament_registrations r
+                         WHERE r.tournament_id = p_tournament
+                           AND r.waitlist_position IS NOT NULL)
+           THEN 0
+           ELSE public.fn_tournament_open_seats(p_tournament)
+         END;
+$$;
+
 REVOKE ALL ON FUNCTION public.fn_tournament_free_places(uuid) FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
@@ -394,6 +463,12 @@ REVOKE ALL ON FUNCTION public.fn_tournament_free_places(uuid) FROM PUBLIC, anon,
 -- helper ne peut pas faire reculer un tournoi depuis CHECK_IN, PRET, EN_COURS
 -- ou au-dela : la machine a etats appartient a l'organisateur, ce helper ne
 -- fait que refleter « reste-t-il une place ».
+--
+-- Il lit `fn_tournament_free_places`, PAS `fn_tournament_open_seats` : le
+-- statut annonce ce qu'un nouvel inscrit obtiendrait, et avec une file en
+-- cours, il n'obtient rien. Un tournoi qui affiche INSCRIPTIONS_OUVERTES
+-- pendant que tout arrivant tombe en liste d'attente est un mensonge
+-- d'affichage.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_tournament_sync_capacity_status(p_tournament uuid)
 RETURNS void
@@ -415,6 +490,48 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.fn_tournament_sync_capacity_status(uuid) FROM PUBLIC, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- Helper interne : UN BINOME EST AUSSI LOIN DANS LA FILE QUE SON MEMBRE LE
+-- PLUS RECULE.
+--
+-- Deux joueurs en attente ont le droit de s'apparier -- c'est meme utile, ils
+-- avanceront ensemble. Mais sans cette regle, le #40 qui rejoint le #3 se
+-- retrouverait promu avec lui : la file serait doublee par 36 personnes d'un
+-- seul geste. Aligner les deux positions sur la PLUS GRANDE rend le saut
+-- impossible PAR CONSTRUCTION, plutot que par un garde-fou qu'il faudrait
+-- penser a ecrire dans chaque fonction de promotion.
+--
+-- Les deux membres partagent alors UNE position : un binome occupe un rang,
+-- pas deux, et la file le voit comme un bloc. Si le binome se defait, les deux
+-- gardent ce rang commun et redeviennent deux candidats independants de meme
+-- rang -- aucun des deux n'a rien gagne au passage.
+--
+-- Binome assis (les deux positions NULL) : le WHERE ne selectionne rien, la
+-- fonction ne fait rien. Le cas mixte (un assis, un en attente) n'existe pas,
+-- `waitlist_mismatch` le refuse en amont.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_tournament_align_waitlist(
+  p_tournament uuid, p_a uuid, p_b uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.tournament_registrations r
+     SET waitlist_position = (
+           SELECT max(r2.waitlist_position)
+             FROM public.tournament_registrations r2
+            WHERE r2.tournament_id = p_tournament
+              AND r2.player_id IN (p_a, p_b))
+   WHERE r.tournament_id = p_tournament
+     AND r.player_id IN (p_a, p_b)
+     AND r.waitlist_position IS NOT NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_align_waitlist(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- Helper interne : refuser toutes les demandes VIVANTES qui touchent l'un des
@@ -455,17 +572,31 @@ REVOKE ALL ON FUNCTION public.fn_tournament_close_pending_requests(uuid, uuid, u
 -- ----------------------------------------------------------------------------
 -- Helper interne : LA FILE AVANCE.
 --
--- Appele des qu'une place se libere. Regle du brief : « quand des places se
+-- Appele des qu'un siege se libere. Regle du brief : « quand des places se
 -- liberent, la file avance a concurrence des places disponibles », dans
 -- l'ORDRE.
 --
--- Ruling: FIFO STRICTE, on ne double jamais la file. Si la tete est un binome
--- qui reclame 2 places et qu'une seule est libre, on S'ARRETE -- on ne va pas
--- chercher un joueur seul plus loin dans la file pour combler. Un binome ne se
--- coupe pas en deux (un joueur assis, son partenaire en attente : un binome a
--- moitie inscrit, exactement l'etat batard que ce chantier refuse), et faire
--- passer le suivant devant serait une file qui n'en est plus une. La place
--- reste libre jusqu'a ce qu'une seconde se libere.
+-- Un GROUPE est l'unite qui avance : un joueur seul, ou les DEUX membres d'un
+-- binome. Un binome ne se coupe jamais en deux -- un joueur assis dont le
+-- partenaire attend serait un binome a moitie inscrit, exactement l'etat
+-- batard que ce chantier refuse. Et comme `fn_tournament_align_waitlist`
+-- donne aux deux membres la MEME position, un groupe occupe un rang unique :
+-- il n'y a pas de coequipier a aller chercher trente rangs plus loin.
+--
+-- Ruling: UN GROUPE TROP GRAND EST DEPASSE, PAS BLOQUANT. Si la tete est un
+-- binome qui reclame 2 sieges et qu'un seul est libre, on ne s'arrete pas --
+-- on continue a descendre la file et le premier joueur seul qui rentre prend
+-- le siege. Le binome GARDE SA POSITION et passe devant tout le monde des que
+-- deux sieges existent en meme temps.
+--   * s'arreter laisserait un siege VIDE au coup d'envoi, ce qui coute un
+--     joueur au tournoi -- le prix est paye par l'organisateur et par les 15
+--     autres, pour proteger un rang ;
+--   * le binome n'est ni coupe, ni recule, ni penalise : il n'est depasse que
+--     par ce qui tient dans un espace ou lui ne tient pas.
+-- Contrepartie assumee, ecrite ici pour qu'elle ne surprenne personne : si les
+-- sieges se liberent un par un et qu'il reste des joueurs seuls derriere, un
+-- binome peut se faire depasser plusieurs fois. C'est le prix du siege jamais
+-- vide.
 --
 -- Les positions ne sont PAS renumerotees apres une promotion : seul l'ORDRE
 -- compte, et laisser des trous evite de reecrire toute la file a chaque
@@ -478,32 +609,43 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_free     int;
-  v_head     uuid;
+  v_seats    int;
+  v_cand     uuid;
   v_group    uuid[];
   v_size     int;
   v_promoted int := 0;
 BEGIN
-  LOOP
-    v_free := public.fn_tournament_free_places(p_tournament);
-    EXIT WHEN v_free IS NULL OR v_free <= 0;
-
-    SELECT r.player_id INTO v_head
+  -- On parcourt la file DANS L'ORDRE. Le curseur travaille sur l'instantane
+  -- pris a l'ouverture de la boucle : un joueur promu en cours de route (comme
+  -- coequipier, ou par son propre tour) y figure encore, d'ou le CONTINUE qui
+  -- verifie qu'il attend toujours.
+  FOR v_cand IN
+    SELECT r.player_id
       FROM public.tournament_registrations r
      WHERE r.tournament_id = p_tournament
        AND r.waitlist_position IS NOT NULL
      ORDER BY r.waitlist_position, r.registered_at, r.player_id
-     LIMIT 1;
-    EXIT WHEN NOT FOUND;
+  LOOP
+    CONTINUE WHEN NOT EXISTS (
+      SELECT 1 FROM public.tournament_registrations r
+       WHERE r.tournament_id = p_tournament
+         AND r.player_id = v_cand
+         AND r.waitlist_position IS NOT NULL);
 
-    -- Le groupe indissociable : le joueur de tete, plus son coequipier s'il en
-    -- a un ET qu'il attend lui aussi. Le coequipier se lit dans
+    -- Les SIEGES VIDES, pas `fn_tournament_free_places` : ici c'est justement
+    -- la file qui les consomme, et cette derniere vaudrait zero tant qu'elle
+    -- n'est pas vide -- personne n'avancerait jamais.
+    v_seats := public.fn_tournament_open_seats(p_tournament);
+    EXIT WHEN v_seats IS NULL OR v_seats <= 0;
+
+    -- Le groupe indissociable : le candidat, plus son coequipier s'il en a un
+    -- ET qu'il attend lui aussi. Le coequipier se lit dans
     -- tournament_participants -- l'inscription, elle, ne porte aucun team_id.
     SELECT coalesce(array_agg(r.player_id), ARRAY[]::uuid[]) INTO v_group
       FROM public.tournament_registrations r
      WHERE r.tournament_id = p_tournament
        AND r.waitlist_position IS NOT NULL
-       AND (r.player_id = v_head
+       AND (r.player_id = v_cand
             OR r.player_id IN (
                  SELECT mate.player_id
                    FROM public.tournament_participants me
@@ -511,11 +653,11 @@ BEGIN
                      ON mate.tournament_id = me.tournament_id
                     AND mate.team_id       = me.team_id
                   WHERE me.tournament_id = p_tournament
-                    AND me.player_id     = v_head));
+                    AND me.player_id     = v_cand));
 
     v_size := coalesce(array_length(v_group, 1), 0);
-    EXIT WHEN v_size = 0;        -- ceinture : ne peut pas arriver, la tete y est
-    EXIT WHEN v_size > v_free;   -- FIFO stricte : on attend, on ne double pas
+    CONTINUE WHEN v_size = 0;         -- ceinture : ne peut pas arriver
+    CONTINUE WHEN v_size > v_seats;   -- trop grand pour ce qui reste : on passe
 
     UPDATE public.tournament_registrations
        SET waitlist_position = NULL
@@ -544,17 +686,26 @@ REVOKE ALL ON FUNCTION public.fn_tournament_promote_waitlist(uuid) FROM PUBLIC, 
 -- plutot que de deviner : un cote par defaut serait un cote FAUX, pas une
 -- absence de cote.
 --
--- Le partenaire designe est inscrit avec le cote 'both'. C'est le seul choix
--- honnete : il n'a rien declare, et 'both' est precisement « pas de
--- contrainte », alors que recopier le cote de celui qui l'invite, ou le
--- deduire de son profil, lui preterait une declaration qu'il n'a pas faite.
--- L'ecran doit lui proposer de le preciser -- il est prevenu et peut de toute
--- facon defaire le binome.
+-- Le partenaire designe est inscrit SANS AUCUNE DECLARATION FAITE EN SON NOM :
+-- cote 'both' (« pas de contrainte », et non un cote devine -- recopier celui
+-- de l'invitant ou le deduire du profil lui preterait un choix qu'il n'a pas
+-- fait) et `open_to_join` a la VALEUR PAR DEFAUT de la colonne, ecrit
+-- litteralement `DEFAULT`. `open_to_join` est un MODE DE CONSENTEMENT : seul
+-- son proprietaire le change, jamais une fonction appelee par un tiers, et
+-- jamais un effet de bord. Voir le bloc [PLACE VACANTE] plus bas : il doit
+-- etre PREVENU de cette inscription.
+--
+-- `open_to_join` ne dit PAS « je cherche un partenaire » -- ca, c'est
+-- l'absence de ligne dans `tournament_participants`, et c'est deja ecrit
+-- quelque part. Il dit seulement « on peut me prendre d'un geste, ou faut-il
+-- mon accord ». D'ou : l'inscription a deux ne le met pas a false (le binome
+-- suffit a me rendre indisponible), et defaire un binome ne le remet pas a
+-- true.
 --
 -- Places : court_count x 4, EN JOUEURS. Au-dela, l'inscription entre en file.
 -- Un binome entre en file ENTIER (2 places d'un coup) ou pas du tout, et un
--- nouvel inscrit ne passe JAMAIS devant une file existante, meme si une place
--- s'est liberee entre-temps.
+-- nouvel inscrit ne passe JAMAIS devant une file existante : `free_places`
+-- vaut zero des que quelqu'un attend, meme s'il reste des sieges vides.
 --
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
 --         tournament_not_open, invalid_side, already_registered,
@@ -576,7 +727,6 @@ DECLARE
   v_me      uuid := public.current_player_id();
   v_status  text;
   v_free    int;
-  v_waiting int;
   v_need    int := 1;
   v_last    int := 0;
   v_seated  boolean;
@@ -633,14 +783,11 @@ BEGIN
     v_need := 2;
   END IF;
 
+  -- `free_places` (et non `open_seats`) : il vaut deja zero quand une file
+  -- existe, donc ce seul test porte les DEUX regles -- ne pas doubler la file,
+  -- et ne s'asseoir que si le groupe ENTIER tient.
   v_free := public.fn_tournament_free_places(p_tournament);
-  SELECT count(*) INTO v_waiting
-    FROM public.tournament_registrations r
-   WHERE r.tournament_id = p_tournament AND r.waitlist_position IS NOT NULL;
-
-  -- On s'assoit si, et seulement si, la file est vide ET les places du groupe
-  -- ENTIER sont disponibles.
-  v_seated := (v_waiting = 0 AND coalesce(v_free, 0) >= v_need);
+  v_seated := (coalesce(v_free, 0) >= v_need);
   IF NOT v_seated THEN
     SELECT coalesce(max(r.waitlist_position), 0) INTO v_last
       FROM public.tournament_registrations r
@@ -653,19 +800,22 @@ BEGIN
   -- un refus : jamais une inscription a moitie ecrite.
   ---------------------------------------------------------------------------
   BEGIN
+    -- Mon mode de consentement est celui que J'AI demande, avec ou sans
+    -- partenaire : ce n'est pas a l'inscription d'en decider pour moi.
     INSERT INTO public.tournament_registrations
            (tournament_id, player_id, side, open_to_join, waitlist_position)
     VALUES (p_tournament, v_me, p_side,
-            -- Inscrit a deux : `open_to_join` n'a plus d'objet, il a son
-            -- partenaire. Defaire le binome le remet a true.
-            CASE WHEN p_partner IS NULL THEN coalesce(p_open_to_join, true) ELSE false END,
+            coalesce(p_open_to_join, true),
             CASE WHEN v_seated THEN NULL ELSE v_last + 1 END);
 
     IF p_partner IS NOT NULL THEN
+      -- MEME position que moi, et non v_last + 2 : un binome occupe UN rang
+      -- dans la file et avance en bloc (cf. fn_tournament_align_waitlist).
+      -- `DEFAULT` pour open_to_join : aucune declaration faite en son nom.
       INSERT INTO public.tournament_registrations
              (tournament_id, player_id, side, open_to_join, waitlist_position)
-      VALUES (p_tournament, p_partner, 'both', false,
-              CASE WHEN v_seated THEN NULL ELSE v_last + 2 END);
+      VALUES (p_tournament, p_partner, 'both', DEFAULT,
+              CASE WHEN v_seated THEN NULL ELSE v_last + 1 END);
 
       -- Le declencheur de tournaments.sql remplit tournament_participants et
       -- fait echouer ici, sur sa PK, tout joueur deja engage dans un autre
@@ -676,8 +826,16 @@ BEGIN
     END IF;
   EXCEPTION WHEN unique_violation THEN
     -- Course perdue : quelqu'un s'est inscrit ou apparie entre nos controles
-    -- et nos ecritures. Tout le sous-bloc est annule.
-    RETURN jsonb_build_object('ok', false, 'reason', 'already_registered');
+    -- et nos ecritures. Tout le sous-bloc est annule -- et on regarde QUI a
+    -- collisionne, parce que dire « tu es deja inscrit » a quelqu'un qui ne
+    -- l'est pas l'enverrait chercher une inscription inexistante.
+    IF EXISTS (SELECT 1 FROM public.tournament_registrations r
+                WHERE r.tournament_id = p_tournament AND r.player_id = v_me)
+       OR EXISTS (SELECT 1 FROM public.tournament_participants tp
+                   WHERE tp.tournament_id = p_tournament AND tp.player_id = v_me) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'already_registered');
+    END IF;
+    RETURN jsonb_build_object('ok', false, 'reason', 'partner_already_registered');
   END;
 
   PERFORM public.fn_tournament_sync_capacity_status(p_tournament);
@@ -692,6 +850,45 @@ $$;
 
 REVOKE ALL ON FUNCTION public.tournament_register(uuid, text, boolean, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_register(uuid, text, boolean, uuid) TO authenticated;
+
+-- ============================================================================
+-- [PLACE VACANTE] fn_tournament_registration_notify -- LE PARTENAIRE DOIT
+-- ETRE PREVENU. Rien ne le previent aujourd'hui, et c'est un manque, pas un
+-- choix.
+--
+-- Ce que la spec exige et que ce fichier ne tient pas : « le partenaire est
+-- notifie et peut defaire le binome ». En l'etat, N'IMPORTE QUEL joueur
+-- connecte peut appeler
+--     tournament_register(tournoi, son_cote, son_mode, <mon_id>)
+-- et je me retrouve inscrit a un tournoi AFFICHANT UN PRIX, avec un cote
+-- 'both' que je n'ai pas declare, deja engage dans un binome -- et rien, pas
+-- une ligne, ne me l'apprend. Au check-in je suis un 'pending' qui ne se
+-- presente jamais, et l'organisateur decouvre le trou le soir meme.
+--
+-- Pourquoi ce n'est PAS ecrit dans les fonctions ci-dessus : ce depot notifie
+-- par DECLENCHEUR + pg_net -> edge function `send-push` (motif de
+-- `defi_server_notifs.sql` / `match_reminders.sql`), jamais depuis une RPC
+-- appelee par le client -- une notification poussee par le client se perd des
+-- que le client se ferme. Le manque appartient donc a un declencheur, pas a
+-- `tournament_register`.
+--
+-- A ECRIRE (tache d'integration) :
+--   * `fn_tournament_registration_notify` -- AFTER INSERT ON
+--     `tournament_registrations` FOR EACH ROW : pousser a NEW.player_id quand
+--     `NEW.player_id <> public.current_player_id()`, c'est-a-dire quand la
+--     ligne a ete creee POUR LUI PAR UN AUTRE (le seul cas produit par
+--     `tournament_register` avec p_partner). auth.uid() reste lisible dans un
+--     declencheur appele depuis une fonction SECURITY DEFINER : c'est le JWT
+--     de la session, pas le proprietaire de la fonction.
+--     Message attendu : qui l'a inscrit, quel tournoi, le PRIX AFFICHE, et
+--     qu'il peut defaire le binome (`tournament_leave_team`) ou se desinscrire
+--     (`tournament_withdraw`) -- plus une invitation a declarer son cote,
+--     laisse a 'both' faute de declaration.
+--   * `fn_tournament_join_request_notify` -- AFTER INSERT ON
+--     `tournament_join_requests` : prevenir `to_player` qu'une demande
+--     l'attend ; et AFTER UPDATE vers 'accepted'/'declined' : prevenir
+--     `from_player` de la reponse.
+-- ============================================================================
 
 -- ============================================================================
 -- tournament_join(p_tournament, p_player)
@@ -792,6 +989,11 @@ BEGIN
       -- apparie ailleurs.
       RETURN jsonb_build_object('ok', false, 'reason', 'already_in_team');
     END;
+
+    -- Deux joueurs en attente qui s'apparient prennent tous deux la position
+    -- du plus recule : sans ca, le dernier de la file entrerait avec le
+    -- premier venu et doublerait tout le monde.
+    PERFORM public.fn_tournament_align_waitlist(p_tournament, v_me, p_player);
 
     v_closed := public.fn_tournament_close_pending_requests(p_tournament, v_me, p_player);
     RETURN jsonb_build_object('ok', true, 'mode', 'team',
@@ -959,6 +1161,11 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'already_in_team');
   END;
 
+  -- Meme regle de file que dans `tournament_join` : le binome recule au rang
+  -- de son membre le plus recule.
+  PERFORM public.fn_tournament_align_waitlist(
+            v_req.tournament_id, v_me, v_req.from_player);
+
   -- Refuse TOUT ce qui reste vivant autour des deux joueurs, la demande
   -- courante comprise...
   v_closed := public.fn_tournament_close_pending_requests(
@@ -988,8 +1195,15 @@ GRANT EXECUTE ON FUNCTION public.tournament_respond_join(uuid, boolean) TO authe
 -- tournaments.sql retire les deux lignes de `tournament_participants`. On n'y
 -- touche jamais directement.
 --
+-- `open_to_join` n'est PAS remis a true : c'est un mode de consentement qui
+-- appartient a son proprietaire. Un joueur qui s'etait declare « sur accord »
+-- et qui defait son binome reste « sur accord » -- le remettre a ouvert
+-- inverserait en silence, depuis une fonction appelee pour autre chose, le
+-- seul choix qu'il avait exprime.
+--
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
---         tournament_not_open, not_registered, not_in_team.
+--         tournament_not_open, matches_already_generated, not_registered,
+--         not_in_team.
 -- Appelable par : l'un OU l'autre des deux joueurs du binome.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_leave_team(p_tournament uuid)
@@ -1022,6 +1236,19 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
   END IF;
 
+  -- Des que les matchs sont tires, la composition ne bouge plus. Le controle
+  -- n'est pas theorique : les cles composites de `tournament_matches` vers
+  -- `tournament_teams` ne sont PAS ON DELETE CASCADE, donc le DELETE plus bas
+  -- leverait un `foreign_key_violation` NON CAPTURE -- une erreur SQL brute
+  -- rendue au client, a la place du `{ok:false, reason}` que tout ce fichier
+  -- promet. Le statut PRET est accepte par cette fonction, et rien n'interdit
+  -- a la tache « deroulement » d'y generer le premier tour : le garde-fou
+  -- appartient donc a ICI, pas a la tache qui creera la condition.
+  IF EXISTS (SELECT 1 FROM public.tournament_matches m
+              WHERE m.tournament_id = p_tournament) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'matches_already_generated');
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM public.tournament_registrations r
                   WHERE r.tournament_id = p_tournament AND r.player_id = v_me) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
@@ -1042,14 +1269,12 @@ BEGIN
   ---------------------------------------------------------------------------
   -- ECRITURES.
   ---------------------------------------------------------------------------
+  -- Le DELETE est la SEULE ecriture : le declencheur retire les deux lignes de
+  -- `tournament_participants`, et l'absence de ligne suffit a dire « ces deux
+  -- joueurs cherchent un partenaire ». Ni les places ni les positions de file
+  -- ne bougent (les deux gardent leur rang commun), et surtout pas
+  -- `open_to_join`, qui n'appartient qu'a son proprietaire.
   DELETE FROM public.tournament_teams WHERE id = v_team;
-
-  -- Les deux redeviennent visibles comme cherchant un partenaire. Le mode
-  -- « ouvert » leur est rendu : l'inscription a deux l'avait mis a false faute
-  -- d'objet, et un joueur redevenu seul doit pouvoir etre rejoint.
-  UPDATE public.tournament_registrations
-     SET open_to_join = true
-   WHERE tournament_id = p_tournament AND player_id IN (v_me, v_mate);
 
   RETURN jsonb_build_object('ok', true, 'team_id', v_team, 'partner_id', v_mate);
 END;
@@ -1073,8 +1298,11 @@ GRANT EXECUTE ON FUNCTION public.tournament_leave_team(uuid) TO authenticated;
 -- appartient a la tache « deroulement » et devra s'appeler
 -- `tournament_forfeit(p_team)`.
 --
+-- `open_to_join` du partenaire laisse n'est PAS touche, pour la meme raison
+-- que dans `tournament_leave_team` : c'est son consentement, pas le mien.
+--
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
---         tournament_not_open, not_registered.
+--         tournament_not_open, matches_already_generated, not_registered.
 -- Appelable par : tout joueur connecte, pour lui-meme.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_withdraw(p_tournament uuid)
@@ -1107,6 +1335,15 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
   END IF;
 
+  -- Meme garde-fou que dans `tournament_leave_team`, et pour la meme raison :
+  -- `tournament_matches` reference `tournament_teams` SANS ON DELETE CASCADE.
+  -- Une fois les matchs tires, partir n'est plus une desinscription mais un
+  -- forfait, qui appartient a `tournament_forfeit` (cf. [PLACE VACANTE]).
+  IF EXISTS (SELECT 1 FROM public.tournament_matches m
+              WHERE m.tournament_id = p_tournament) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'matches_already_generated');
+  END IF;
+
   SELECT * INTO v_reg FROM public.tournament_registrations r
    WHERE r.tournament_id = p_tournament AND r.player_id = v_me;
   IF NOT FOUND THEN
@@ -1126,11 +1363,10 @@ BEGIN
   ---------------------------------------------------------------------------
   -- ECRITURES.
   ---------------------------------------------------------------------------
+  -- Le binome se defait, et c'est tout : mon partenaire garde sa place, son
+  -- rang de file s'il en avait un, et son mode de consentement.
   IF v_team IS NOT NULL THEN
     DELETE FROM public.tournament_teams WHERE id = v_team;
-    UPDATE public.tournament_registrations
-       SET open_to_join = true
-     WHERE tournament_id = p_tournament AND player_id = v_mate;
   END IF;
 
   DELETE FROM public.tournament_registrations
@@ -1178,6 +1414,7 @@ DECLARE
   v_me     uuid := public.current_player_id();
   v_status text;
   v_reg    public.tournament_registrations%ROWTYPE;
+  v_rows   int;
 BEGIN
   IF NOT public.fn_tournaments_enabled() THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
@@ -1214,6 +1451,14 @@ BEGIN
      SET check_in_status = 'checked_in'
    WHERE tournament_id = p_tournament AND player_id = v_me;
 
+  -- Un `{ok:true}` rendu pour un UPDATE a zero ligne serait un mensonge : la
+  -- ligne a pu disparaitre entre la lecture et l'ecriture (desinscription
+  -- concurrente), et l'ecran afficherait « present » pour personne.
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
+  END IF;
+
   RETURN jsonb_build_object('ok', true, 'check_in_status', 'checked_in');
 END;
 $$;
@@ -1249,8 +1494,13 @@ GRANT EXECUTE ON FUNCTION public.tournament_check_in(uuid) TO authenticated;
 -- un joueur qui n'aurait plus personne a qui s'apparier. Un nombre impair de
 -- BINOMES, lui, ne pose aucun probleme -- le bye tournant s'en charge.
 --
+-- Les joueurs EN LISTE D'ATTENTE ne sont pas apparies : ils n'ont pas de
+-- place, et un binome sans place est precisement le piege signale en tete de
+-- fichier.
+--
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
---         not_the_organizer, tournament_not_open, already_in_team.
+--         not_the_organizer, tournament_not_open, matches_already_generated,
+--         already_in_team.
 -- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_autopair(p_tournament uuid)
@@ -1286,6 +1536,12 @@ BEGIN
   END IF;
   IF v_status NOT IN ('COMPLET','CHECK_IN','PRET') THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
+  END IF;
+  -- Les matchs tires figent la composition : apparier apres coup creerait des
+  -- binomes que le premier tour ignore.
+  IF EXISTS (SELECT 1 FROM public.tournament_matches m
+              WHERE m.tournament_id = p_tournament) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'matches_already_generated');
   END IF;
 
   ---------------------------------------------------------------------------
@@ -2129,6 +2385,30 @@ $$;
 
 REVOKE ALL ON FUNCTION public.tournament_close(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_close(uuid) TO authenticated;
+
+-- ============================================================================
+-- SURFACE GELEE -- les fonctions de deroulement heritees ne sont PLUS
+-- appelables.
+--
+-- Elles ecrivent `entered_by` / `confirmed_by`, colonnes que
+-- `tournament_matches` ne porte plus, et les statuts 'open', 'live',
+-- 'finished', 'cancelled', que la contrainte CHECK de `tournaments` refuse.
+-- Elles s'installent (plpgsql ne verifie pas les identifiants a la creation)
+-- mais echouent des le premier appel -- avec une erreur SQL BRUTE, la ou tout
+-- ce fichier promet `{ok:false, reason}`.
+--
+-- Laisser leur GRANT en place, c'etait publier a tout utilisateur connecte une
+-- surface d'appel dont on sait qu'elle casse. On la retire ici ; la tache qui
+-- reecrira chaque fonction reposera son propre GRANT. Le REVOKE nomme les
+-- trois (PUBLIC, anon, authenticated) : revoquer a PUBLIC seul ne retire pas
+-- les droits directs.
+-- ============================================================================
+REVOKE ALL ON FUNCTION public.tournament_enter_score(uuid, int, int) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.tournament_confirm_score(uuid)         FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.tournament_generate_round(uuid)        FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.tournament_reopen_match(uuid)          FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.tournament_standings(uuid, int)        FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.tournament_close(uuid)                 FROM PUBLIC, anon, authenticated;
 
 COMMIT;
 
