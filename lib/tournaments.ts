@@ -1,0 +1,514 @@
+// lib/tournaments.ts — l'accès aux tournois montante / descente, côté app.
+//
+// LE SQL FAIT AUTORITÉ (supabase/migrations/tournaments.sql + tournaments_rpcs.sql).
+// Ce module ne recalcule aucune règle métier : il lit ce que le serveur expose et
+// appelle les RPC. Les seuls calculs ici sont des DÉRIVATIONS que le schéma
+// demande explicitement à l'app de faire (« binômes = court_count x 2, places =
+// court_count x 4 se dérivent à la lecture (app / requêtes), jamais stockés »).
+//
+// ⚠️ LES PLACES SE COMPTENT EN JOUEURS, pas en binômes : `court_count x 4`.
+// Un binôme se forme parfois tard (inscription solo puis appariement), donc la
+// capacité ne peut pas se compter en équipes. « 13/16 » est un nombre de joueurs.
+//
+// ⚠️ INVARIANT DE LECTURE DE `tournament_teams` (en-tête de tournaments_rpcs.sql) :
+// un binôme peut exister SANS AVOIR DE PLACE (deux joueurs en liste d'attente ont
+// le droit de s'apparier). Aucun lecteur de cette table ne peut se passer de la
+// jointure vers `tournament_registrations` avec `waitlist_position IS NULL` sur
+// LES DEUX joueurs. `seatedTeams()` ci-dessous est le seul chemin autorisé.
+//
+// ⚠️ `open_to_join` est un MODE DE CONSENTEMENT qui n'appartient qu'au joueur.
+// Aucun écran ne le change implicitement : seule `tournament_set_open_to_join`,
+// déclenchée par un geste explicite de son propriétaire, y touche.
+//
+// Import supabase paresseux (motif de lib/clubFavorites.ts, lib/watchLink.ts) :
+// les fonctions pures restent testables sans environnement Expo.
+
+import { reasonLabel } from './tournamentReasons';
+
+// ─── Types (miroir du schéma) ────────────────────────────────────────────────
+
+export type TournamentStatus =
+  | 'BROUILLON' | 'INSCRIPTIONS_OUVERTES' | 'COMPLET' | 'CHECK_IN'
+  | 'PRET' | 'EN_COURS' | 'TERMINE' | 'CLASSEMENT_VALIDE';
+
+/** Le côté déclaré POUR CE TOURNOI. Même domaine que `players.court_side`,
+ *  qui ne sert qu'à PRÉREMPLIR : le côté se déclare le soir même, on s'adapte
+ *  à son partenaire d'un soir. */
+export type TournamentSide = 'left' | 'right' | 'both';
+
+export type CheckInStatus = 'pending' | 'checked_in' | 'no_show';
+
+export interface TournamentClub { id?: string; name: string | null; city?: string | null }
+
+export interface Tournament {
+  id: string;
+  name: string;
+  club_id: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  level_min: number | null;
+  level_max: number | null;
+  court_count: number;
+  round_count: number;
+  price_mad: number;
+  status: TournamentStatus;
+  current_round: number;
+  created_by: string;
+  created_at: string;
+  club?: TournamentClub | null;
+}
+
+export interface TournamentRegistration {
+  tournament_id: string;
+  player_id: string;
+  side: TournamentSide;
+  open_to_join: boolean;
+  waitlist_position: number | null;
+  check_in_status: CheckInStatus;
+  registered_at: string;
+  player?: { id: string; name: string | null; elo_score?: number | null; deleted_at?: string | null } | null;
+}
+
+export interface TournamentTeam {
+  id: string;
+  tournament_id: string;
+  player1_id: string;
+  player2_id: string;
+  withdrawn: boolean;
+}
+
+export interface JoinRequest {
+  id: string;
+  tournament_id: string;
+  from_player: string;
+  to_player: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+}
+
+/** Ce que rend une RPC de tournoi : `{ok:true, ...}` ou `{ok:false, reason}`.
+ *  Aucune ne lève pour un refus métier — un appelant qui lit `error.message`
+ *  pour certains refus et `data.reason` pour d'autres en oublie toujours un. */
+export interface TournamentResult {
+  ok: boolean;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+// ─── Dérivations de capacité (pures) ─────────────────────────────────────────
+
+/** Un terrain accueille 4 joueurs : deux binômes. */
+export const SEATS_PER_COURT = 4;
+
+/** Les places d'un tournoi, EN JOUEURS. Jamais stocké, toujours dérivé. */
+export function seatCount(courtCount: number): number {
+  return Math.max(0, courtCount) * SEATS_PER_COURT;
+}
+
+/** Les binômes qu'accueille le tournoi quand il est plein. */
+export function teamCount(courtCount: number): number {
+  return Math.max(0, courtCount) * 2;
+}
+
+/** Les places PRISES : une inscription hors liste d'attente occupe un siège.
+ *  Ni une demande, ni un binôme — un binôme n'est qu'une relation entre deux
+ *  places déjà prises (port de `fn_tournament_open_seats`). */
+export function seatsTaken(regs: Pick<TournamentRegistration, 'waitlist_position'>[]): number {
+  return regs.filter(r => r.waitlist_position == null).length;
+}
+
+/** Le nombre de joueurs en liste d'attente. */
+export function waitlistCount(regs: Pick<TournamentRegistration, 'waitlist_position'>[]): number {
+  return regs.filter(r => r.waitlist_position != null).length;
+}
+
+/** Ce qu'un NOUVEL inscrit obtiendrait immédiatement — port de
+ *  `fn_tournament_free_places` : ZÉRO dès que quelqu'un attend, quel que soit
+ *  le nombre de sièges vides. Ces sièges appartiennent à la file, pas au
+ *  prochain arrivant. C'est la seule lecture qu'un écran peut afficher
+ *  honnêtement. */
+export function freePlaces(
+  regs: Pick<TournamentRegistration, 'waitlist_position'>[],
+  courtCount: number,
+): number {
+  if (waitlistCount(regs) > 0) return 0;
+  return Math.max(0, seatCount(courtCount) - seatsTaken(regs));
+}
+
+/** « 13/16 » — un nombre de JOUEURS des deux côtés de la barre. */
+export function seatsLabel(
+  regs: Pick<TournamentRegistration, 'waitlist_position'>[],
+  courtCount: number,
+): string {
+  return `${seatsTaken(regs)}/${seatCount(courtCount)}`;
+}
+
+/** Les binômes qui ont RÉELLEMENT une place — l'invariant de lecture de
+ *  `tournament_teams`, porté ici pour que l'oubli soit impossible plutôt que
+ *  déconseillé (port de `fn_tournament_seated_teams`, sans le filtre
+ *  `withdrawn` : un écran d'inscription veut voir tout le monde). */
+export function seatedTeams(
+  teams: TournamentTeam[],
+  regs: Pick<TournamentRegistration, 'player_id' | 'waitlist_position'>[],
+): TournamentTeam[] {
+  const seated = new Set(regs.filter(r => r.waitlist_position == null).map(r => r.player_id));
+  return teams.filter(t => seated.has(t.player1_id) && seated.has(t.player2_id));
+}
+
+// ─── Phases et libellés (purs) ───────────────────────────────────────────────
+
+export type TournamentPhase = 'draft' | 'upcoming' | 'live' | 'past';
+
+/** Les trois onglets de la liste, plus le brouillon qui n'y figure pas.
+ *  BROUILLON n'est pas encore publié : il n'apparaît nulle part. */
+export function tournamentPhase(status: TournamentStatus): TournamentPhase {
+  switch (status) {
+    case 'BROUILLON':               return 'draft';
+    case 'EN_COURS':                return 'live';
+    case 'TERMINE':
+    case 'CLASSEMENT_VALIDE':       return 'past';
+    default:                        return 'upcoming';   // ouvertes, complet, check-in, prêt
+  }
+}
+
+const STATUS_LABEL: Record<TournamentStatus, string> = {
+  BROUILLON:             'Brouillon',
+  INSCRIPTIONS_OUVERTES: 'Inscriptions ouvertes',
+  COMPLET:               'Complet',
+  CHECK_IN:              'Pointage',
+  PRET:                  'Prêt à démarrer',
+  EN_COURS:              'En cours',
+  TERMINE:               'Terminé',
+  CLASSEMENT_VALIDE:     'Classement validé',
+};
+
+export function statusLabel(status: TournamentStatus): string {
+  return STATUS_LABEL[status] ?? 'Tournoi';
+}
+
+const SIDE_LABEL: Record<TournamentSide, string> = {
+  left:  'Gauche',
+  right: 'Droit',
+  both:  'Les deux',
+};
+
+export function sideLabel(side: TournamentSide | null | undefined): string {
+  return side ? (SIDE_LABEL[side] ?? 'Les deux') : 'Les deux';
+}
+
+/** Deux joueurs du MÊME côté : c'est AUTORISÉ, et seulement SIGNALÉ. On ne
+ *  bloque jamais — le binôme s'arrangera sur le terrain, et « les deux » veut
+ *  précisément dire « pas de contrainte ». Rend null quand il n'y a rien à
+ *  dire. */
+export function sameSideWarning(
+  a: TournamentSide | null | undefined,
+  b: TournamentSide | null | undefined,
+): string | null {
+  if (!a || !b) return null;
+  if (a !== b) return null;
+  if (a === 'both') return null;
+  return a === 'left'
+    ? 'Vous jouez tous les deux à gauche. C’est possible, mais l’un devra passer à droite.'
+    : 'Vous jouez tous les deux à droite. C’est possible, mais l’un devra passer à gauche.';
+}
+
+/** « Niveau 3 à 5 », « Niveau 4 et plus », « Tous niveaux ». */
+export function levelRangeLabel(min: number | null, max: number | null): string {
+  const f = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  if (min != null && max != null) return `Niveau ${f(min)} à ${f(max)}`;
+  if (min != null) return `Niveau ${f(min)} et plus`;
+  if (max != null) return `Niveau ${f(max)} et moins`;
+  return 'Tous niveaux';
+}
+
+/** Le prix est AFFICHÉ, jamais encaissé par l'app (cf. le schéma). */
+export function priceLabel(priceMad: number): string {
+  return priceMad > 0 ? `${priceMad} DH` : 'Gratuit';
+}
+
+/** « Aujourd'hui · 19h00 » / « Demain · 19h00 » / « sam. 6 sept. · 19h00 »,
+ *  même forme que le Lobby. */
+export function formatTournamentDate(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const tom = new Date(); tom.setDate(today.getDate() + 1);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (d.toDateString() === today.toDateString()) return `Aujourd'hui · ${hh}h${mm}`;
+  if (d.toDateString() === tom.toDateString()) return `Demain · ${hh}h${mm}`;
+  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) + ` · ${hh}h${mm}`;
+}
+
+/** Le format en une ligne : « 4 terrains · 6 rotations de 15 min ». La durée
+ *  d'une rotation n'est pas au schéma — elle est la constante du format. */
+export const ROUND_MINUTES = 15;
+
+export function formatLabel(courtCount: number, roundCount: number): string {
+  return `${courtCount} terrain${courtCount > 1 ? 's' : ''} · ${roundCount} rotation${roundCount > 1 ? 's' : ''} de ${ROUND_MINUTES} min`;
+}
+
+// ─── L'interrupteur ──────────────────────────────────────────────────────────
+
+/** Interrupteur global des tournois (app_config.tournaments_enabled).
+ *
+ *  ⚠️ DÉFAUT INVERSE de `getWatchPairingEnabled` : clé absente = ÉTEINT, comme
+ *  côté serveur (`fn_tournaments_enabled`, tournaments_flag.sql). La
+ *  fonctionnalité est neuve, le déploiement doit être sûr par défaut. Un aléa
+ *  réseau masque donc l'entrée — c'est le comportement voulu : mieux vaut une
+ *  entrée absente qu'un écran qui n'aboutira sur rien, toutes les RPC
+ *  répondant `feature_disabled`.
+ *
+ *  Ce n'est qu'un MASQUE d'affichage : le vrai verrou est côté serveur. */
+export async function getTournamentsEnabled(): Promise<boolean> {
+  try {
+    const { supabase } = await import('./supabase');
+    const { data, error } = await supabase
+      .from('app_config').select('value').eq('key', 'tournaments_enabled').maybeSingle();
+    if (error) return false;
+    return data?.value === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/** Vrai quand le serveur refuse parce que la fonctionnalité est éteinte.
+ *  Ce refus-là ne s'AFFICHE PAS : il fait disparaître l'entrée. */
+export function isFeatureDisabled(res: TournamentResult | null | undefined): boolean {
+  return !!res && res.ok === false && res.reason === 'feature_disabled';
+}
+
+/** Le message à montrer pour un refus. Jamais le code brut. */
+export function resultMessage(res: TournamentResult): string {
+  return reasonLabel(res.reason);
+}
+
+// ─── Lectures ────────────────────────────────────────────────────────────────
+
+const TOURNAMENT_COLS =
+  'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, ' +
+  'price_mad, status, current_round, created_by, created_at, club:club_id(id, name, city)';
+
+/** Les tournois PUBLIÉS, du plus proche au plus lointain. Les brouillons sont
+ *  écartés côté requête : ils n'appartiennent qu'à leur organisateur. */
+export async function fetchTournaments(): Promise<Tournament[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournaments')
+    .select(TOURNAMENT_COLS)
+    .neq('status', 'BROUILLON')
+    .order('starts_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as Tournament[];
+}
+
+export async function fetchTournament(id: string): Promise<Tournament | null> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournaments').select(TOURNAMENT_COLS).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Tournament) ?? null;
+}
+
+/** Les inscriptions d'un tournoi, avec le joueur. Ordre : les assis d'abord
+ *  (par date), puis la file dans son ordre. */
+export async function fetchRegistrations(tournamentId: string): Promise<TournamentRegistration[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_registrations')
+    .select('tournament_id, player_id, side, open_to_join, waitlist_position, check_in_status, registered_at, player:player_id(id, name, elo_score, deleted_at)')
+    .eq('tournament_id', tournamentId)
+    .order('waitlist_position', { ascending: true, nullsFirst: true })
+    .order('registered_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentRegistration[];
+}
+
+/** Les inscriptions de PLUSIEURS tournois, en une requête, réduites à ce dont
+ *  la liste a besoin : compter les places et savoir si j'en suis. Une requête
+ *  par carte ferait N appels pour un écran qui en veut un. */
+export async function fetchRegistrationsFor(
+  tournamentIds: string[],
+): Promise<Map<string, TournamentRegistration[]>> {
+  const out = new Map<string, TournamentRegistration[]>();
+  if (tournamentIds.length === 0) return out;
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_registrations')
+    .select('tournament_id, player_id, side, open_to_join, waitlist_position, check_in_status, registered_at')
+    .in('tournament_id', tournamentIds);
+  if (error) throw error;
+  for (const row of (data ?? []) as unknown as TournamentRegistration[]) {
+    const list = out.get(row.tournament_id);
+    if (list) list.push(row); else out.set(row.tournament_id, [row]);
+  }
+  return out;
+}
+
+export async function fetchTeams(tournamentId: string): Promise<TournamentTeam[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_teams')
+    .select('id, tournament_id, player1_id, player2_id, withdrawn')
+    .eq('tournament_id', tournamentId);
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentTeam[];
+}
+
+/** Les demandes d'appariement VIVANTES qui me concernent. La policy ne rend
+ *  déjà que celles où je suis d'un côté ou de l'autre — « qui a demandé à qui »
+ *  n'est pas public, contrairement au tournoi lui-même. */
+export async function fetchMyJoinRequests(tournamentId: string): Promise<JoinRequest[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_join_requests')
+    .select('id, tournament_id, from_player, to_player, status, created_at')
+    .eq('tournament_id', tournamentId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as JoinRequest[];
+}
+
+// ─── Appels serveur ──────────────────────────────────────────────────────────
+
+/** Enveloppe commune : une RPC de tournoi ne lève jamais pour un refus métier,
+ *  mais le transport peut échouer. Un échec réseau devient un refus SANS
+ *  raison, donc un message générique — jamais une trace technique à l'écran. */
+async function callTournamentRpc(
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<TournamentResult> {
+  try {
+    const { supabase } = await import('./supabase');
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error) {
+      console.warn(`[tournois] ${fn} a échoué`, error.message);
+      return { ok: false };
+    }
+    if (!data || typeof data !== 'object') return { ok: false };
+    return data as TournamentResult;
+  } catch (e) {
+    console.warn(`[tournois] ${fn} a échoué`, e);
+    return { ok: false };
+  }
+}
+
+/** S'inscrire, seul ou à deux.
+ *  - `side` est OBLIGATOIRE et vaut pour CE tournoi.
+ *  - `openToJoin` est MON mode de consentement, avec ou sans partenaire.
+ *  - `partnerId` inscrit le partenaire SANS déclaration faite en son nom :
+ *    côté « les deux », consentement FERMÉ. Le serveur s'en charge — n'essaie
+ *    jamais de le corriger depuis un écran. */
+export function registerToTournament(
+  tournamentId: string,
+  side: TournamentSide,
+  openToJoin: boolean,
+  partnerId?: string | null,
+): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_register', {
+    p_tournament: tournamentId,
+    p_side: side,
+    p_open_to_join: openToJoin,
+    p_partner: partnerId ?? null,
+  });
+}
+
+/** Rejoindre un inscrit seul. Fiche « ouverte » : le binôme se forme d'un
+ *  geste (`mode:'team'`). Fiche « sur accord » : une demande part
+ *  (`mode:'request'`), et elle ne retient AUCUNE place. */
+export function joinTournamentPlayer(tournamentId: string, playerId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_join', { p_tournament: tournamentId, p_player: playerId });
+}
+
+/** Répondre à une demande reçue. Accepter forme le binôme ET refuse
+ *  automatiquement les autres demandes vivantes. */
+export function respondJoinRequest(requestId: string, accept: boolean): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_respond_join', { p_request: requestId, p_accept: accept });
+}
+
+/** Défaire son binôme. Les DEUX gardent leur place, leur rang de file et leur
+ *  mode de consentement : personne n'est éjecté parce que l'autre s'est ravisé. */
+export function leaveTournamentTeam(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_leave_team', { p_tournament: tournamentId });
+}
+
+/** Se désinscrire avant le lancement. La place se libère et la file avance. */
+export function withdrawFromTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_withdraw', { p_tournament: tournamentId });
+}
+
+/** Confirmer sa présence le jour J. */
+export function checkInToTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_check_in', { p_tournament: tournamentId });
+}
+
+/** Changer SON mode de consentement — et rien d'autre. Le serveur n'a aucun
+ *  paramètre « joueur » ici : le sujet est toujours l'appelant. */
+export function setOpenToJoin(tournamentId: string, open: boolean): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_set_open_to_join', { p_tournament: tournamentId, p_open: open });
+}
+
+// ─── Vue « moi sur ce tournoi » (pure) ───────────────────────────────────────
+
+export interface MyTournamentState {
+  registration: TournamentRegistration | null;
+  waitlisted: boolean;
+  team: TournamentTeam | null;
+  partnerId: string | null;
+  /** Demandes reçues, en attente de MA réponse. */
+  incoming: JoinRequest[];
+  /** Demandes que J'AI envoyées, sans réponse. */
+  outgoing: JoinRequest[];
+}
+
+/** Assemble en un seul objet ce que les écrans ont besoin de savoir sur moi.
+ *  Aucun accès réseau : tout est déduit des lectures déjà faites, pour qu'il
+ *  n'existe qu'UNE façon de répondre à « où j'en suis ». */
+export function myTournamentState(
+  myId: string,
+  regs: TournamentRegistration[],
+  teams: TournamentTeam[],
+  requests: JoinRequest[],
+): MyTournamentState {
+  const registration = regs.find(r => r.player_id === myId) ?? null;
+  const team = teams.find(t => t.player1_id === myId || t.player2_id === myId) ?? null;
+  return {
+    registration,
+    waitlisted: !!registration && registration.waitlist_position != null,
+    team,
+    partnerId: team ? (team.player1_id === myId ? team.player2_id : team.player1_id) : null,
+    incoming: requests.filter(r => r.to_player === myId && r.status === 'pending'),
+    outgoing: requests.filter(r => r.from_player === myId && r.status === 'pending'),
+  };
+}
+
+/** Les inscrits qui cherchent encore un partenaire : ceux qui n'ont AUCUN
+ *  binôme. « open_to_join » ne dit pas « je cherche » — ça, c'est justement
+ *  l'absence d'équipe ; il ne dit que « peut-on me prendre d'un geste ». */
+export function soloRegistrations(
+  regs: TournamentRegistration[],
+  teams: TournamentTeam[],
+): TournamentRegistration[] {
+  const paired = new Set<string>();
+  for (const t of teams) { paired.add(t.player1_id); paired.add(t.player2_id); }
+  return regs.filter(r => !paired.has(r.player_id));
+}
+
+/** Les inscriptions peuvent-elles encore bouger ? Miroir des statuts acceptés
+ *  par `tournament_register` (ouvertes/complet — au-delà des places on entre
+ *  en file, ce n'est pas un refus). */
+export function acceptsRegistrations(status: TournamentStatus): boolean {
+  return status === 'INSCRIPTIONS_OUVERTES' || status === 'COMPLET';
+}
+
+/** Un binôme se fait et se défait jusqu'au lancement — miroir de
+ *  `tournament_join` / `tournament_leave_team`. */
+export function acceptsPairing(status: TournamentStatus): boolean {
+  return status === 'INSCRIPTIONS_OUVERTES' || status === 'COMPLET'
+      || status === 'CHECK_IN' || status === 'PRET';
+}
+
+/** Le pointage est ouvert. */
+export function acceptsCheckIn(status: TournamentStatus): boolean {
+  return status === 'CHECK_IN' || status === 'PRET';
+}
