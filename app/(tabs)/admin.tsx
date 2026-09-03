@@ -1214,7 +1214,7 @@ export default function AdminScreen() {
           />
         )}
         {tab === 'badges' && <BadgesTab />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'settings' && <SettingsTab onTournamentsToggled={setTournamentsEnabled} />}
         {tab === 'tournaments' && tournamentsEnabled && player && (
           <TournamentsTab myPlayerId={player.id} />
         )}
@@ -1250,7 +1250,7 @@ function BadgeIconPreview({ iconKey, color, size = 56 }: { iconKey: string; colo
 }
 
 // ── Réglages applicatifs (app_config) ──────────────────────────────
-function SettingsTab() {
+function SettingsTab({ onTournamentsToggled }: { onTournamentsToggled: (v: boolean) => void }) {
   const [win, setWin] = useState('');
   const [liveOn, setLiveOn] = useState(false);
   // Défaut `true` : clé absente = activé, même convention que fn_watch_enabled().
@@ -1363,6 +1363,10 @@ function SettingsTab() {
             const { error } = await supabase.from('app_config')
               .upsert({ key: 'tournaments_enabled', value: v ? 'true' : 'false', updated_at: new Date().toISOString() }, { onConflict: 'key' });
             if (error) { setTournamentsOn(!v); Alert.alert('Erreur', error.message); }
+            // La liste des onglets ne lit le drapeau qu'au montage de l'écran :
+            // sans ce rappel, on bascule l'interrupteur et l'onglet Tournois
+            // n'apparaît qu'après être sorti de l'écran et y être revenu.
+            else onTournamentsToggled(v);
           }} />
         </View>
       </View>
