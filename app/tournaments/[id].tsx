@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
-  TextInput, Alert, Pressable, StyleSheet, KeyboardAvoidingView, Platform,
+  TextInput, Alert, Pressable, StyleSheet, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,6 +52,7 @@ import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
+import { TournamentShareCard } from '../../components/tournaments/TournamentShareCard';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
@@ -683,7 +684,20 @@ export default function TournamentDetailScreen() {
               // jamais `standings` (tournament_standings, vivant) : les deux
               // peuvent donner un rang différent pour la même soirée.
               finalStandingRows.length > 0 ? (
-                <FinalStandings rows={finalStandingRows} validated={t.status === 'CLASSEMENT_VALIDE'} />
+                <View style={{ gap: 16 }}>
+                  {/* L'affiche partageable AVANT le tableau détaillé : c'est le
+                      moment de la soirée qu'on envoie dans le groupe, et le
+                      seul écran de tournoi qui sort de l'app — donc le seul qui
+                      porte le filigrane de marque. */}
+                  <TournamentShareCard
+                    name={t.name}
+                    startsAt={t.starts_at}
+                    clubName={t.club?.name ?? null}
+                    rows={finalStandingRows}
+                    validated={t.status === 'CLASSEMENT_VALIDE'}
+                  />
+                  <FinalStandings rows={finalStandingRows} validated={t.status === 'CLASSEMENT_VALIDE'} />
+                </View>
               ) : finalResultsError ? (
                 <Notice tone="warning">{finalResultsError}</Notice>
               ) : (
@@ -1019,6 +1033,16 @@ export default function TournamentDetailScreen() {
               );
             })
           )}
+        </View>
+
+        {/* Signature de marque, en pied de fiche — même sobriété que le pied
+            des Stories : la raquette, le nom, rien qui prenne la place du
+            contenu. Les maquettes du format la portaient. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 18, opacity: 0.4 }}>
+          <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 13, height: 13 }} resizeMode="contain" />
+          <Text style={{ fontSize: 10, fontFamily: Fonts.uiBold, color: Colors.textMuted, letterSpacing: 2.2 }}>
+            PAGMATCH
+          </Text>
         </View>
       </ScrollView>
 
