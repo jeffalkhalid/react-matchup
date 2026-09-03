@@ -28,6 +28,7 @@ import {
   fetchTournaments, fetchTournament, fetchRegistrations, fetchTeams, fetchRoundMatches, fetchRoundMovements,
   fetchMatchEntries, fetchStandings, fetchTournamentMatches, fetchTournamentResults, createTournament,
   autopairTournament, startTournament, generateTournamentRound, generateFinalTournamentRound,
+  fetchFinalStakes, cancelTournament, reopenTournamentRegistrations, removeTournamentRegistration,
   resolveTournamentDispute, forfeitTournamentTeam, reopenTournamentMatch, closeTournament,
   validateTournament, openCheckIn, markNoShow, canOpenCheckIn, acceptsCheckIn,
   seatsLabel, seatsTaken, seatCount, waitlistCount, soloRegistrations, seatedTeams,
@@ -2317,16 +2318,19 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
   // statuts-là : les deux peuvent donner un rang différent (défaut n°3).
   const [finalResults, setFinalResults] = useState<TournamentResultTeamRow[]>([]);
   const [finalResultsError, setFinalResultsError] = useState<string | null>(null);
-  // L'enjeu de LA rotation de classement (`stakes`), capturé UNIQUEMENT au
-  // moment où `tournament_final_round` répond — aucune table ni RPC ne le
-  // réexpose ensuite (cf. l'en-tête de `generateFinalTournamentRound`,
-  // lib/tournaments.ts). Se perd donc si cet écran est quitté puis rouvert :
-  // limite connue, pas un oubli.
-  const [finalStakes, setFinalStakes] = useState<TournamentStake[] | null>(null);
+  // L'enjeu de LA rotation de classement (`stakes`) — LU DE FAÇON DURABLE
+  // (Task 13, `fetchFinalStakes` → `tournament_final_stakes`), plus jamais
+  // capturé seulement dans la réponse de `tournament_final_round` : rechargé
+  // par `load()` comme le reste de l'écran, donc toujours là après un
+  // rechargement ou une réouverture de cette fiche.
+  const [finalStakes, setFinalStakes] = useState<TournamentStake[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const isOrganizer = t.created_by === myPlayerId;
+  // Miroir exact des deux refus de `tournament_cancel` (en-tête SQL) : la
+  // sortie universelle est offerte partout SAUF sur ces deux états terminaux.
+  const canCancel = isOrganizer && t.status !== 'CLASSEMENT_VALIDE' && t.status !== 'ANNULE';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2373,6 +2377,19 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
         }
       } else {
         setRoundMatches([]); setMovements([]); setAllMatches([]); setEntries([]); setStandings([]); setStandingsError(null);
+      }
+
+      // L'enjeu de la rotation de classement — LECTURE DURABLE (Task 13),
+      // isolée dans son propre try/catch : un échec ici ne doit ni bloquer le
+      // reste de l'écran, ni se confondre avec « la rotation de classement
+      // n'a pas encore été tirée » (`drawn:false`, un résultat normal, pas un
+      // échec — `fetchFinalStakes` ne l'avale jamais en refus).
+      try {
+        const stkRes = await fetchFinalStakes(tournament.id);
+        setFinalStakes(stkRes.ok ? ((stkRes.stakes as TournamentStake[] | undefined) ?? []) : []);
+      } catch (e) {
+        console.warn('[tournois] enjeu de la rotation de classement indisponible', e);
+        setFinalStakes([]);
       }
 
       // Le classement FIGÉ — dès TERMINE, avant même la validation (les rangs
@@ -2444,18 +2461,16 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
 
   const handleGenerateRound = () => {
     const isFinal = nextRoundIsFinal(t.current_round, t.round_count);
-    if (!isFinal) setFinalStakes(null); // une rotation ordinaire n'a pas d'enjeu à afficher
     runAction(
       'round',
       () => isFinal ? generateFinalTournamentRound(t.id) : generateTournamentRound(t.id),
       (res) => isFinal
-        ? `Rotation de classement lancée (tour ${res.round}). L’enjeu de chaque terrain est affiché ci-dessous — dis-le aux joueurs, il ne sera plus visible si tu quittes cet écran.`
+        ? `Rotation de classement lancée (tour ${res.round}). L’enjeu de chaque terrain est affiché ci-dessous — dis-le aux joueurs, il reste visible même si tu quittes cet écran.`
         : `Rotation ${res.round} lancée : ${res.matches} match(s), ${res.byes} repos.`,
-      // `stakes` n'existe QUE dans CETTE réponse (cf. l'en-tête de
-      // `generateFinalTournamentRound`) : rien à relire ensuite, donc capturé
-      // ici, avant que `load()` ne rafraîchisse le reste (défaut n°2 de la
-      // relecture — l'enjeu de la dernière rotation ne s'affichait NULLE PART).
-      (res) => { if (isFinal) setFinalStakes((res.stakes as TournamentStake[] | undefined) ?? []); },
+      // Plus besoin de capturer `stakes` depuis CETTE réponse (Task 13) :
+      // `runAction` appelle `load()` juste après, qui relit désormais l'enjeu
+      // de façon DURABLE (`fetchFinalStakes`) — même chemin qu'un
+      // rechargement d'écran ou qu'un autre joueur qui consulterait la fiche.
     );
   };
 
@@ -2501,6 +2516,44 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
     [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Valider', style: 'destructive', onPress: () => runAction('validate', () => validateTournament(t.id)) },
+    ],
+  );
+
+  // La SORTIE UNIVERSELLE (Task 13, `tournament_cancel`, en-tête SQL) —
+  // atteignable depuis tout état non validé. Même gabarit d'alerte que le
+  // forfait : les conséquences en toutes lettres, jamais un « Êtes-vous
+  // sûr ? » générique.
+  const handleCancel = () => Alert.alert(
+    'Annuler le tournoi — irréversible',
+    'La soirée est abandonnée : le tournoi passe en statut « Annulé », définitif. Aucune inscription, aucun binôme, ' +
+    'aucun match n’est supprimé — tout reste tel quel pour la trace — mais plus personne ne peut s’inscrire, se ' +
+    'pointer ou jouer, et la fiche l’affichera clairement aux joueurs. Aucun moyen de revenir en arrière.',
+    [
+      { text: 'Garder le tournoi', style: 'cancel' },
+      { text: 'Annuler le tournoi', style: 'destructive', onPress: () => runAction('cancel', () => cancelTournament(t.id)) },
+    ],
+  );
+
+  // La porte de sortie du pointage ouvert trop tôt — RÉVERSIBLE (en-tête SQL
+  // de `tournament_reopen_registrations` : « le choix est la réversibilité,
+  // pas une garde supplémentaire »), donc pas d'alerte lourde, même geste
+  // direct qu'« Ouvrir le pointage ».
+  const handleReopenRegistrations = () =>
+    runAction('reopenreg', () => reopenTournamentRegistrations(t.id));
+
+  // Le seul recours contre un inscrit qui en ajoute un autre sans son accord
+  // (`tournament_register(..., p_partner)`) — IRRÉVERSIBLE, même gabarit
+  // d'alerte que le forfait et l'annulation.
+  const handleRemoveRegistration = (playerId: string, label: string) => Alert.alert(
+    'Retirer cette inscription — irréversible',
+    `${label} sort du tournoi immédiatement : sa place se libère, la liste d’attente avance, et le binôme qu’il ` +
+    'formait éventuellement est défait. Aucun moyen de revenir en arrière — il faudra se réinscrire.',
+    [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Retirer', style: 'destructive',
+        onPress: () => runAction(`remove-${playerId}`, () => removeTournamentRegistration(t.id, playerId)),
+      },
     ],
   );
 
@@ -2587,6 +2640,33 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
             </Text>
           </View>
         )}
+        {/* Un tournoi ANNULÉ est un tournoi MORT : le dire clairement, plutôt
+            que de laisser le reste de l'écran (check-in, tableau, validation)
+            le montrer comme un tournoi vivant — même geste que la fiche
+            joueur (app/tournaments/[id].tsx). Aucune section plus bas ne
+            s'affiche pour ce statut : il n'entre dans AUCUNE des conditions
+            `TOURNAMENT_PRE_START` / `EN_COURS` / `TERMINE` / `CLASSEMENT_VALIDE`. */}
+        {t.status === 'ANNULE' && (
+          <View style={{ marginTop: 4, backgroundColor: 'rgba(239,68,68,0.10)', borderRadius: 10, padding: 8, borderWidth: 1, borderColor: 'rgba(239,68,68,0.30)' }}>
+            <Text style={{ fontSize: 11, color: Colors.danger, fontWeight: '700' }}>
+              Ce tournoi a été annulé. Il ne se jouera pas — la trace (inscriptions, binômes, matchs éventuels)
+              reste intacte, mais aucune action n’est plus possible.
+            </Text>
+          </View>
+        )}
+        {/* La sortie universelle — visible depuis tout état non validé, pas
+            seulement pendant l'organisation ou la conduite : c'est
+            précisément ce que corrige cette section (Task 13). */}
+        {canCancel && (
+          <TouchableOpacity
+            onPress={handleCancel} disabled={busy === 'cancel'}
+            style={[sty.btnCancel, { alignSelf: 'flex-start', marginTop: 6 }]}
+          >
+            {busy === 'cancel'
+              ? <ActivityIndicator color={Colors.danger} size="small" />
+              : <Text style={{ fontSize: 11.5, fontWeight: '700', color: Colors.danger }}>Annuler le tournoi</Text>}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── Check-in & appariement ── */}
@@ -2609,10 +2689,18 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
               // attente » à jamais, faute d'un chemin pour les faire bouger
               // (défaut n°1 de la relecture).
               const canMarkNoShow = isOrganizer && acceptsCheckIn(t.status) && r.check_in_status !== 'no_show';
+              // Le recours de l'organisateur (Task 13) contre un inscrit qui
+              // en ajoute un autre sans son accord. Cette carte ne s'affiche
+              // que pour `TOURNAMENT_PRE_START` — avant `EN_COURS`, donc avant
+              // qu'aucun match n'ait pu être tiré (`matches_already_generated`,
+              // le seul autre refus, n'est donc jamais atteint depuis ce
+              // bouton en pratique).
+              const canRemove = isOrganizer;
+              const label = displayName(r.player, 'player');
               return (
                 <View key={r.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <Text numberOfLines={1} style={{ flex: 1, minWidth: 80, fontSize: 12, fontWeight: '700', color: Colors.textPrimary }}>
-                    {displayName(r.player, 'player')}
+                    {label}
                   </Text>
                   {r.waitlist_position != null && <Pill variant="warning">File #{r.waitlist_position}</Pill>}
                   {!paired && <Pill variant="neutral">Seul</Pill>}
@@ -2628,6 +2716,17 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                       {busy === `noshow-${r.player_id}`
                         ? <ActivityIndicator color={Colors.danger} size="small" />
                         : <Text style={{ fontSize: 10.5, fontWeight: '700', color: Colors.danger }}>Marquer absent</Text>}
+                    </TouchableOpacity>
+                  )}
+                  {canRemove && (
+                    <TouchableOpacity
+                      disabled={!!busy}
+                      onPress={() => handleRemoveRegistration(r.player_id, label)}
+                      style={sty.btnCancel}
+                    >
+                      {busy === `remove-${r.player_id}`
+                        ? <ActivityIndicator color={Colors.danger} size="small" />
+                        : <Text style={{ fontSize: 10.5, fontWeight: '700', color: Colors.danger }}>Retirer</Text>}
                     </TouchableOpacity>
                   )}
                 </View>
@@ -2651,6 +2750,21 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                   {busy === 'opencheckin'
                     ? <ActivityIndicator color={Colors.textPrimary} size="small" />
                     : <Text style={sty.btnOutlineText}>Ouvrir le pointage</Text>}
+                </TouchableOpacity>
+              )}
+              {/* La porte de sortie du pointage — RÉVERSIBLE (Task 13, en-tête
+                  SQL de `tournament_reopen_registrations`) : un organisateur
+                  qui a ouvert le pointage trop tôt (des inscrits manquent
+                  encore) peut revenir aux inscriptions, geste direct sans
+                  alerte, comme « Ouvrir le pointage » ci-dessus. */}
+              {acceptsCheckIn(t.status) && (
+                <TouchableOpacity
+                  onPress={handleReopenRegistrations}
+                  disabled={busy === 'reopenreg'} style={sty.btnOutline}
+                >
+                  {busy === 'reopenreg'
+                    ? <ActivityIndicator color={Colors.textPrimary} size="small" />
+                    : <Text style={sty.btnOutlineText}>Rouvrir les inscriptions</Text>}
                 </TouchableOpacity>
               )}
               {TOURNAMENT_AUTOPAIR_OK.includes(t.status) ? (

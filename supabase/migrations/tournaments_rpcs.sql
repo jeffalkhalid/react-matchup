@@ -64,11 +64,20 @@
 -- paraissaient faux ni l'un ni l'autre isolement.
 --
 -- La section « classement, rotation finale, cloture » qui la termine ecrit
--- `tournament_standings`, `tournament_final_round`, `tournament_close` et
--- `tournament_validate`, contre les memes statuts et la meme convention de
--- paliers. LA HIERARCHIE DE CLASSEMENT y est ecrite une fois pour toutes :
--- palier -> victoires -> difference de jeux -> jeux gagnes -> confrontation
--- directe agregee -> identifiant.
+-- `tournament_standings`, `tournament_final_round`, `tournament_final_stakes`
+-- (Task 13 -- la lecture DURABLE de l'enjeu de la rotation de classement,
+-- ouverte a tout joueur), `tournament_close` et `tournament_validate`, contre
+-- les memes statuts et la meme convention de paliers. LA HIERARCHIE DE
+-- CLASSEMENT y est ecrite une fois pour toutes : palier -> victoires ->
+-- difference de jeux -> jeux gagnes -> confrontation directe agregee ->
+-- identifiant.
+--
+-- Task 13 ajoute aussi trois remedes REVERSIBLES/IRREVERSIBLES aux etats sans
+-- sortie (section ANNULATION en fin de fichier, et `tournament_reopen_registrations`
+-- / `tournament_remove_registration` plus haut) : `tournament_cancel` (sortie
+-- universelle, ANNULE terminal), `tournament_reopen_registrations` (retour
+-- CHECK_IN/PRET -> inscriptions) et `tournament_remove_registration`
+-- (l'organisateur retire une inscription).
 --
 -- IL NE RESTE PLUS AUCUNE FONCTION DU MODELE PRECEDENT. Les trois qui
 -- survivaient, gelees et sans droit d'execution, ont ete soldees :
@@ -4439,9 +4448,17 @@ REVOKE ALL ON FUNCTION public.fn_tournament_final_slots(uuid, int, int) FROM PUB
 -- qui le suivaient. Ce decalage est VOULU, et TOUJOURS FAVORABLE : personne ne
 -- recoit pire que le rang promis ici, sauf le partant lui-meme -- qui tombe en
 -- bas, ce qui est precisement le correctif que ce comportement existe pour
--- produire. Aucun ecran ne consomme encore `stakes` aujourd'hui, et ce tour
--- n'est jamais reannonce apres un forfait : un ecran qui l'afficherait devra
--- le savoir perime des qu'un forfait touche la rotation de classement.
+-- produire. Ce tour n'est jamais REANNONCE ici apres un forfait -- cette
+-- fonction ne s'execute qu'une fois, a la generation.
+--
+-- ⚠️ Task 13 : `tournament_final_stakes(p_tournament)`, plus bas dans ce
+-- fichier, EXPOSE DESORMAIS `stakes` EN LECTURE DURABLE -- c'est elle que les
+-- ecrans consomment, jamais `stakes` capture dans CETTE reponse-ci. Elle
+-- n'A PAS le probleme de peremption decrit ci-dessus : parce qu'elle relit
+-- `fn_tournament_final_slots` (donc `tournament_standings`, donc `withdrawn`)
+-- A CHAQUE APPEL plutot que de rejouer une capture figee, un forfait
+-- prononce apres la generation de la rotation de classement s'y reflete
+-- IMMEDIATEMENT -- exactement l'inverse d'une valeur perimee.
 --
 -- ELLE N'APPARIE PAS ELLE-MEME. L'appariement d'un tour a UN seul domicile
 -- dans ce fichier -- `tournament_generate_round` -- et le dupliquer ici serait
@@ -4601,6 +4618,107 @@ $$;
 
 REVOKE ALL ON FUNCTION public.tournament_final_round(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
+
+-- ============================================================================
+-- tournament_final_stakes(p_tournament)
+--
+-- LECTURE DURABLE DE L'ENJEU DE LA ROTATION DE CLASSEMENT (Task 13). Le trou
+-- trouvé en relecture de branche : `tournament_final_round` ci-dessus rend
+-- `stakes` (l'enjeu de chaque terrain -- quel rang se joue en gagnant, en
+-- perdant), mais UNIQUEMENT dans SA propre réponse, à l'ORGANISATEUR qui vient
+-- de l'appeler. Rien ne les PERSISTE : perdus au premier rechargement d'écran,
+-- et invisibles à tout joueur qui n'est pas l'organisateur au moment précis de
+-- l'appel -- alors que c'est le moment le plus important de la soirée : « le
+-- Terrain 2 joue les places 3 et 4 », tous les joueurs doivent pouvoir le
+-- lire, pas seulement celui qui a tiré la rotation.
+--
+-- MÊME MOULE QUE `tournament_standings` : une LECTURE, ouverte à TOUT
+-- authentifié -- aucun contrôle d'organisateur ici, l'enjeu d'une soirée
+-- n'appartient à personne en particulier, contrairement au GESTE qui la tire.
+--
+-- UNE SEULE RÈGLE, UN SEUL ENDROIT : s'appuie sur `fn_tournament_final_slots`,
+-- EXACTEMENT comme `tournament_final_round` s'appuie dessus pour construire son
+-- propre `stakes` -- même CTE, même jointure, même mise en forme. Rien ici ne
+-- recalcule un rang ; recalculer serait exactement le risque que l'appelant de
+-- cette tâche a refusé de prendre côté client.
+--
+-- CE QUE `drawn` DIT. La rotation de classement n'a pas forcément été tirée --
+-- tournoi qui n'en est pas encore là, ou qui ne l'atteindra jamais (soirée
+-- écourtée, cf. l'en-tête de `tournament_final_round`, section « LA SOIRÉE QUI
+-- DÉBORDE »). Ce n'est PAS un refus : interroger un tournoi qui n'en est pas
+-- encore là est un usage tout à fait normal (l'écran organisateur à chaque
+-- tour, la fiche d'un joueur avant la dernière rotation). `drawn:false` le dit
+-- EXPLICITEMENT, avec `stakes:[]` -- pour qu'un écran ne confonde jamais
+-- « pas encore tirée » avec « tirée, mais rien à annoncer ».
+--
+-- Refus : feature_disabled, tournament_not_found.
+-- Appelable par : tout joueur authentifié (lecture seule, comme
+-- `tournament_standings`).
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_final_stakes(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_t      public.tournaments%ROWTYPE;
+  v_drawn  boolean;
+  v_stakes jsonb;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+
+  -- La rotation de classement, si elle existe, porte TOUJOURS le numéro
+  -- `round_count` (même définition que `tournament_final_round` ci-dessus).
+  v_drawn := EXISTS (SELECT 1 FROM public.tournament_matches m
+                       WHERE m.tournament_id = p_tournament
+                         AND m.round_no      = v_t.round_count);
+  IF NOT v_drawn THEN
+    RETURN jsonb_build_object('ok', true, 'drawn', false,
+                              'final_round', v_t.round_count, 'stakes', '[]'::jsonb);
+  END IF;
+
+  -- MÊME REQUÊTE que le bloc final de `tournament_final_round` : les créneaux
+  -- du tour de classement déjà tiré, à la MÊME borne de classement provisoire
+  -- (le tour qui le précède).
+  WITH slots AS (
+    SELECT * FROM public.fn_tournament_final_slots(
+                     p_tournament, v_t.round_count - 1, v_t.round_count)
+  )
+  SELECT jsonb_agg(jsonb_build_object(
+           'match_id',  m.id,
+           'court_no',  m.court_no,
+           'team_a',    m.team_a,
+           'team_b',    m.team_b,
+           'rank_win',  w.final_rank,
+           'rank_lose', l.final_rank
+         ) ORDER BY m.court_no ASC, (m.team_b IS NULL) ASC)
+    INTO v_stakes
+    FROM public.tournament_matches m
+    LEFT JOIN slots w ON w.court_no = m.court_no
+                     AND w.role     = CASE WHEN m.team_b IS NULL THEN 'bye'
+                                           ELSE 'winner' END
+    LEFT JOIN slots l ON l.court_no = m.court_no
+                     AND l.role     = 'loser'
+                     AND m.team_b  IS NOT NULL
+   WHERE m.tournament_id = p_tournament
+     AND m.round_no      = v_t.round_count;
+
+  RETURN jsonb_build_object('ok', true, 'drawn', true, 'final_round', v_t.round_count,
+                            'stakes', COALESCE(v_stakes, '[]'::jsonb));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_final_stakes(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_final_stakes(uuid) TO authenticated;
 
 -- ============================================================================
 -- tournament_close(p_tournament)

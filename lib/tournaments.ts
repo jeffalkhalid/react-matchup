@@ -1095,13 +1095,19 @@ export async function createTournament(input: TournamentCreateInput): Promise<To
   return row as unknown as Tournament;
 }
 
-// ⚠️ `tournament_generate_round` ACCEPTE un second paramètre `p_final_round`,
-// mais SEUL `tournament_final_round` a le droit de le passer à `true` — c'est
-// elle qui porte les enjeux (`stakes`) que la dernière rotation doit afficher,
-// et que `generateTournamentRound` n'a aucun moyen de reconstituer. Cet écran
-// appelle TOUJOURS `generateTournamentRound` À UN SEUL ARGUMENT ;
+// ⚠️ MISE À JOUR Task 13 : `public.tournament_generate_round(uuid)` — LA
+// FAÇADE, seule exposée à `authenticated` — N'ACCEPTE QU'UN SEUL ARGUMENT.
+// Le paramètre `p_final_round` n'existe plus que sur le MOTEUR
+// (`fn_tournament_generate_round(uuid, boolean)`, en-tête SQL), désormais
+// REVOQUÉ de `authenticated` : aucune ambiguïté de surcharge n'est donc
+// atteignable depuis l'app, la façade appelle TOUJOURS le moteur avec
+// `false`. `generateFinalTournamentRound` (`tournament_final_round`,
+// ci-dessous) reste le SEUL chemin vers la dernière rotation — c'est elle qui
+// porte les enjeux (`stakes`) que la dernière rotation doit afficher — mais
+// elle y arrive en appelant le MOTEUR directement côté serveur, jamais en
+// passant un second argument à cette façade-ci depuis le client.
 // `nextRoundIsFinal` ci-dessous dit QUAND appeler `generateFinalTournamentRound`
-// à la place — jamais en passant un second argument à l'autre.
+// à la place de `generateTournamentRound`.
 export function nextRoundIsFinal(currentRound: number, roundCount: number): boolean {
   return currentRound + 1 === roundCount;
 }
@@ -1196,20 +1202,39 @@ export function generateTournamentRound(tournamentId: string): Promise<Tournamen
  *  appelante légitime du second argument de `tournament_generate_round`,
  *  qu'elle passe elle-même — cette fonction-ci n'en prend aucun.
  *
- *  ⚠️ `stakes` N'EST DISPONIBLE QUE DANS CETTE RÉPONSE — aucune table ni RPC
- *  ne le réexpose ensuite (`fn_tournament_final_slots`, qui le calcule, est
- *  révoquée de `authenticated` : c'est un helper interne, jamais un chemin de
- *  lecture). Seul l'ORGANISATEUR appelle cette fonction (Task 10, admin.tsx) :
- *  c'est donc lui, et lui seul, qui peut voir `stakes` — et seulement dans la
- *  même session, entre cet appel et le moment où il quitte l'écran. Ni
- *  l'écran organisateur après un rechargement, ni la fiche d'un joueur
- *  quelconque, n'ont de chemin légitime pour le retrouver : le recalculer
- *  côté client redupliquerait `fn_tournament_final_slots` (byes, binômes
- *  partis, paliers troués) en TypeScript, exactement ce que ce fichier
- *  s'interdit ailleurs. `stakeLabel` ci-dessous ne fait que TRADUIRE la ligne
- *  déjà tranchée par le serveur — jamais recalculer un rang. */
+ *  ⚠️ `stakes`, DANS CETTE RÉPONSE, N'EST QU'UN CONFORT IMMÉDIAT — capturé par
+ *  l'écran organisateur pour éviter un aller-retour réseau juste après l'avoir
+ *  tirée. Ce n'est PLUS le seul chemin (Task 13, défaut trouvé en relecture de
+ *  branche) : `fetchFinalStakes` ci-dessous lit la MÊME information de façon
+ *  DURABLE, via `tournament_final_stakes` — n'importe quel joueur, à tout
+ *  moment, y compris après un rechargement d'écran. Un appelant qui veut
+ *  l'ENJEU (plutôt que le résultat du tirage lui-même) doit préférer
+ *  `fetchFinalStakes` ; seul l'écran organisateur garde une raison d'utiliser
+ *  `stakes` de CETTE réponse-ci, comme accélérateur d'affichage juste après le
+ *  tirage. `stakeLabel` ci-dessous ne fait que TRADUIRE une ligne déjà
+ *  tranchée par le serveur, quelle que soit sa provenance — jamais recalculer
+ *  un rang. */
 export function generateFinalTournamentRound(tournamentId: string): Promise<TournamentResult> {
   return callTournamentRpc('tournament_final_round', { p_tournament: tournamentId });
+}
+
+/** L'ENJEU de la rotation de classement, EN LECTURE DURABLE — port de
+ *  `tournament_final_stakes` (Task 13). Corrige le trou que
+ *  `generateFinalTournamentRound` documentait sans pouvoir le combler tout
+ *  seul : `stakes` n'y existait QUE dans SA réponse, perdu au premier
+ *  rechargement d'écran et invisible à tout joueur qui n'était pas
+ *  l'organisateur au moment précis de l'appel — alors que « Terrain 2, places
+ *  3 et 4 » est le fait le plus important de la soirée.
+ *
+ *  MÊME MOULE que `fetchStandings` : ouverte à TOUT joueur authentifié,
+ *  `ok:true` porte `drawn` (la rotation de classement a-t-elle été tirée ?) et
+ *  `stakes` (vide tant que non tirée) — `drawn:false` le dit EXPLICITEMENT,
+ *  jamais confondu avec « tirée, mais rien à annoncer » ni avec un refus. Un
+ *  refus (`feature_disabled`, `tournament_not_found`, ou aucune raison sur un
+ *  aléa réseau) reste un refus, jamais avalé en tableau vide — même
+ *  raisonnement que `fetchStandings`. */
+export function fetchFinalStakes(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_final_stakes', { p_tournament: tournamentId });
 }
 
 /** Une ligne de `stakes`, rendue par `tournament_final_round` : l'enjeu d'UN
@@ -1277,6 +1302,50 @@ export function closeTournament(tournamentId: string): Promise<TournamentResult>
  *  rien n'est recalculé ici, `tournament_close` a déjà tout figé. */
 export function validateTournament(tournamentId: string): Promise<TournamentResult> {
   return callTournamentRpc('tournament_validate', { p_tournament: tournamentId });
+}
+
+// ─── Réversibilité et annulation (Task 13) ───────────────────────────────────
+//
+// Trois fonctions serveur livrées par la vague serveur (Task 12) mais jamais
+// branchées : les remèdes aux états sans sortie trouvés en relecture de
+// branche. Même moule que le reste de cette section — ORGANISATEUR seul,
+// aucun paramètre « organisateur » (le sujet est toujours l'appelant côté
+// serveur), refus `{ok:false, reason}` jamais une levée.
+
+/** L'ORGANISATEUR ABANDONNE LA SOIRÉE — IRRÉVERSIBLE. N'importe quel état non
+ *  validé → `ANNULE`, terminal (signature GELÉE `tournament_cancel(uuid)`,
+ *  en-tête SQL). C'est la SORTIE UNIVERSELLE : un tournoi bloqué (check-in
+ *  sans binôme, forfaits en cascade avant le premier tirage…) doit toujours
+ *  pouvoir être abandonné. Refuse `already_validated`
+ *  (`CLASSEMENT_VALIDE` : les points sont déjà crédités, annuler laisserait
+ *  des points sans tournoi pour les justifier) et `already_cancelled`. */
+export function cancelTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_cancel', { p_tournament: tournamentId });
+}
+
+/** L'ORGANISATEUR ROUVRE LES INSCRIPTIONS — `CHECK_IN`/`PRET` → le statut de
+ *  capacité réel (`INSCRIPTIONS_OUVERTES` ou `COMPLET`). RÉVERSIBLE, à
+ *  l'inverse de `cancelTournament` : le remède au pointage ouvert trop tôt,
+ *  qui laissait le tournoi bloqué en `CHECK_IN` pour toujours, incapable de
+ *  recevoir le binôme manquant (en-tête SQL de `tournament_reopen_registrations`).
+ *  Ne touche à AUCUNE inscription, AUCUN binôme, AUCUN jeton de check-in —
+ *  seul le statut de capacité change. */
+export function reopenTournamentRegistrations(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_reopen_registrations', { p_tournament: tournamentId });
+}
+
+/** L'ORGANISATEUR RETIRE UNE INSCRIPTION — IRRÉVERSIBLE (signature GELÉE
+ *  `tournament_remove_registration(uuid, uuid)`). Le SEUL recours contre un
+ *  inscrit qui ajoute un tiers sans son accord (`tournament_register(...,
+ *  p_partner)` le permet) : sans ce geste, l'organisateur ne pouvait rien
+ *  faire pour libérer ce siège. Même suite exacte que `withdrawFromTournament`
+ *  (binôme éventuel défait, file avancée, capacité synchronisée) — seul le
+ *  SUJET (un paramètre, pas l'appelant) et le garde d'autorité diffèrent.
+ *  Refuse `matches_already_generated` : une fois le tableau publié, le recours
+ *  de l'organisateur devient `forfeitTournamentTeam`, qui SOLDE plutôt que de
+ *  RETIRER. */
+export function removeTournamentRegistration(tournamentId: string, playerId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_remove_registration', { p_tournament: tournamentId, p_player: playerId });
 }
 
 /** TOUS les matchs d'un tournoi, tous tours confondus — ce que

@@ -41,12 +41,12 @@ import {
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
   acceptsRegistrations, acceptsPairing, acceptsCheckIn, ROUND_MINUTES,
   fetchRoundMatches, fetchRoundMovements, fetchMatchEntries, fetchStandings,
-  fetchTournamentResults, groupResultsByTeam,
+  fetchTournamentResults, groupResultsByTeam, fetchFinalStakes, stakeLabel,
   enterTournamentScore, matchLiveStatus,
   type Tournament, type TournamentRegistration, type TournamentTeam, type TournamentResult,
   type JoinRequest, type TournamentSide,
   type TournamentMatch, type TournamentMovement, type TournamentMatchEntry, type TournamentStanding,
-  type TournamentResultTeamRow,
+  type TournamentResultTeamRow, type TournamentStake,
 } from '../../lib/tournaments';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
@@ -249,6 +249,13 @@ export default function TournamentDetailScreen() {
   // commentaire de `fetchTournamentResults`, lib/tournaments.ts.
   const [finalResults, setFinalResults] = useState<TournamentResultTeamRow[]>([]);
   const [finalResultsError, setFinalResultsError] = useState<string | null>(null);
+  // L'enjeu de LA rotation de classement — LECTURE DURABLE (Task 13,
+  // `fetchFinalStakes` → `tournament_final_stakes`), lisible par n'importe
+  // quel joueur à tout moment, pas seulement par l'organisateur au moment où
+  // il la tire. `[]` tant qu'elle n'a pas été tirée (`drawn:false`, un état
+  // normal, pas un refus) — `stakeByMatch` plus bas ne montre alors
+  // simplement rien, comme pour n'importe quel autre tour.
+  const [finalStakes, setFinalStakes] = useState<TournamentStake[]>([]);
   const [liveTab, setLiveTab] = useState<'tableau' | 'classement'>('tableau');
   const [scoreSheetMatchId, setScoreSheetMatchId] = useState<string | null>(null);
   const [scoreBusy, setScoreBusy] = useState(false);
@@ -304,6 +311,17 @@ export default function TournamentDetailScreen() {
         }
       } else {
         setMatches([]); setMovements([]); setMatchEntries([]); setStandings([]); setStandingsError(null);
+      }
+
+      // L'enjeu de la rotation de classement — isolé dans son propre
+      // try/catch : un échec ici ne doit ni faire passer le tournoi pour
+      // introuvable, ni empêcher le reste de l'écran de s'afficher.
+      try {
+        const stkRes = await fetchFinalStakes(id);
+        setFinalStakes(stkRes.ok ? ((stkRes.stakes as TournamentStake[] | undefined) ?? []) : []);
+      } catch (e) {
+        console.warn('[tournois] enjeu de la rotation de classement indisponible', e);
+        setFinalStakes([]);
       }
 
       // Le classement FINAL, FIGÉ — dès TERMINE, avant même la validation
@@ -509,6 +527,12 @@ export default function TournamentDetailScreen() {
   const roundAwaitingNextDraw = t.status === 'EN_COURS' && matches.length > 0
     && [...matchStatuses.values()].every(s => s === 'confirmed' || s === 'bye' || s === 'forfeited');
 
+  // L'enjeu de chaque terrain à LA rotation de classement — traduit par
+  // `stakeLabel`, jamais recalculé ici. Vide (donc aucun badge) tant qu'elle
+  // n'a pas été tirée, ou pour n'importe quel autre tour : `CourtRow` ne
+  // montre le badge que si `stakeText` est fourni pour CE match.
+  const stakeByMatch = new Map(finalStakes.map(s => [s.match_id, stakeLabel(s)]));
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* ── En-tête sombre ── */}
@@ -638,6 +662,7 @@ export default function TournamentDetailScreen() {
                         gamesA={m.games_a} gamesB={m.games_b}
                         forfeitedTeamId={m.forfeited_team}
                         status={status}
+                        stakeText={stakeByMatch.get(m.id)}
                         onPress={m.team_b ? () => setScoreSheetMatchId(m.id) : undefined}
                       />
                     );
