@@ -869,55 +869,72 @@ export interface TournamentCreateInput {
 }
 
 /** Crée un tournoi et le PUBLIE dans le même geste : statut
- *  `INSCRIPTIONS_OUVERTES` écrit directement, JAMAIS `BROUILLON`.
+ *  `INSCRIPTIONS_OUVERTES` écrit directement, JAMAIS `BROUILLON` — c'est la
+ *  RPC `tournament_create` (Task 11) qui l'écrit ainsi, pour la raison
+ *  documentée dans son en-tête SQL : aucune fonction de `tournaments_rpcs.sql`
+ *  ne fait jamais passer un tournoi de `BROUILLON` à `INSCRIPTIONS_OUVERTES`,
+ *  un tournoi créé en `BROUILLON` resterait donc bloqué pour toujours —
+ *  `fetchTournaments` l'exclut explicitement, et personne ne pourrait plus
+ *  jamais s'y inscrire.
  *
- *  ⚠️ CE CHOIX EST DÉLIBÉRÉ, ET IL COMPENSE UN TROU DU SCHÉMA LIVRÉ (Tasks 2-4,
- *  gelées) : AUCUNE fonction de `tournaments_rpcs.sql` ne fait jamais passer un
- *  tournoi de `BROUILLON` à `INSCRIPTIONS_OUVERTES` — `BROUILLON` n'y apparaît
- *  que dans des commentaires, jamais à gauche d'un `UPDATE ... SET status`. Un
- *  tournoi créé en `BROUILLON` resterait donc un tournoi qu'AUCUN geste ne
- *  pourrait jamais publier : `fetchTournaments` l'exclut explicitement
- *  (« les brouillons n'appartiennent qu'à leur organisateur »), et personne ne
- *  pourrait plus jamais s'y inscrire. Publier au moment même de la création
- *  est donc la seule façon pour un tournoi créé ici d'exister pour de vrai.
+ *  ⚠️ `ends_at` n'est écrit NI ICI NI PAR LA RPC, et ce n'est pas un oubli :
+ *  `tournament_close` pose `ends_at = COALESCE(ends_at, now())`, une date
+ *  posée à la création y SURVIVRAIT et afficherait une heure de fin ESTIMÉE
+ *  plutôt que l'heure réelle du geste de clôture.
  *
- *  ⚠️ `ends_at` N'EST JAMAIS ÉCRIT ICI, et ce n'est pas un oubli.
- *  `tournament_close` pose `ends_at = COALESCE(ends_at, now())` : une date
- *  posée à la création y SURVIVRAIT, et la clôture afficherait l'heure de FIN
- *  ESTIMÉE à la création — pas l'heure réelle du geste de clôture. La colonne
- *  reste `NULL` jusqu'à ce que `tournament_close` (ou une réouverture, qui la
- *  remet à `NULL`) la pose pour de vrai.
+ *  ⚠️ `input.createdBy` N'EST PAS envoyé à la RPC. Même moule que tout
+ *  `tournaments_rpcs.sql` : le sujet d'une écriture n'est jamais un
+ *  paramètre — `tournament_create` pose `created_by = current_player_id()`
+ *  elle-même, à partir de la session authentifiée, jamais d'un argument
+ *  fourni par l'appelant. Le champ reste dans `TournamentCreateInput` pour ne
+ *  pas casser l'appelant (`admin.tsx` le remplit avec `myPlayerId`), mais il
+ *  est ignoré ici comme côté serveur.
  *
- *  ⚠️ GAP CONNU, NON CORRIGÉ ICI (aucun fichier SQL ne se modifie dans cette
- *  tâche — cf. rapport de Task 10). `public.tournaments` ne porte, au moment
- *  d'écrire ce module, AUCUNE policy RLS d'écriture : seule `tournaments_read`
- *  (SELECT) existe, et aucune RPC de création n'a été livrée par les tâches
- *  précédentes. Cet INSERT échouera donc (violation RLS) tant qu'une policy
- *  d'écriture réservée aux administrateurs — motif de `badge_defs` — ou une
- *  RPC dédiée n'aura pas été ajoutée côté serveur. Ce module écrit l'appel que
- *  le contrat de cette tâche attend ; il ne peut pas fabriquer la policy qui
- *  le rend possible. */
+ *  ⚠️ CE MODULE FAISAIT AUPARAVANT UN `INSERT` DIRECT sur `public.tournaments`.
+ *  `tournaments` ne porte qu'une policy `SELECT` (`tournaments_read`) et
+ *  AUCUNE policy `INSERT` : cet insert ÉCHOUAIT toujours (violation RLS)
+ *  contre une vraie base. Appelle désormais `tournament_create` (Task 11),
+ *  seule voie d'écriture sur cette table.
+ *
+ *  La RPC ne rend que `{ok:true, id}` — le moule du fichier SQL rend
+ *  l'identifiant créé, jamais la ligne entière (voir son en-tête : « refus
+ *  nommés... et rend l'identifiant créé »). Ce module RELIT donc le tournoi
+ *  par son id pour continuer de rendre l'objet `Tournament` COMPLET
+ *  qu'attend l'écran d'organisation, qui l'injecte directement dans sa liste
+ *  locale sans second aller-retour réseau (`TournamentsTab.onCreated`,
+ *  admin.tsx) — changer la forme du retour aurait donc cassé l'écran, alors
+ *  que le point d'appel seul pouvait s'adapter.
+ *
+ *  Passe par `callTournamentRpc`, comme tous les autres appels de ce fichier
+ *  — y compris son enveloppe des échecs de TRANSPORT (réseau, RPC introuvable)
+ *  en `{ok:false}` SANS raison plutôt qu'une levée. Un refus, transport ou
+ *  métier, devient donc ici une exception dont le message est DÉJÀ TRADUIT en
+ *  français (`resultMessage`, donc `lib/tournamentReasons.ts` — un `reason`
+ *  absent y rend le générique) — jamais un code brut ni l'erreur Postgres —
+ *  puisque `TournamentCreateForm` (admin.tsx) l'affiche telle quelle dans son
+ *  `Alert.alert('Erreur', ...)`. */
 export async function createTournament(input: TournamentCreateInput): Promise<Tournament> {
+  const result = await callTournamentRpc('tournament_create', {
+    p_name: input.name,
+    p_starts_at: input.startsAt,
+    p_court_count: input.courtCount,
+    p_round_count: input.roundCount,
+    p_club_id: input.clubId,
+    p_level_min: input.levelMin,
+    p_level_max: input.levelMax,
+    p_price_mad: input.priceMad,
+    p_points_scale: input.pointsScale,
+  });
+  if (!result.ok) throw new Error(resultMessage(result));
+
   const { supabase } = await import('./supabase');
-  const { data, error } = await supabase
+  const { data: row, error } = await supabase
     .from('tournaments')
-    .insert({
-      name: input.name,
-      club_id: input.clubId,
-      starts_at: input.startsAt,
-      level_min: input.levelMin,
-      level_max: input.levelMax,
-      court_count: input.courtCount,
-      round_count: input.roundCount,
-      price_mad: input.priceMad,
-      points_scale: input.pointsScale,
-      status: 'INSCRIPTIONS_OUVERTES',
-      created_by: input.createdBy,
-    })
     .select(TOURNAMENT_COLS)
+    .eq('id', result.id as string)
     .single();
   if (error) throw error;
-  return data as unknown as Tournament;
+  return row as unknown as Tournament;
 }
 
 // ⚠️ `tournament_generate_round` ACCEPTE un second paramètre `p_final_round`,
