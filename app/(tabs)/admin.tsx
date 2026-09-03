@@ -18,8 +18,26 @@ import { Icon } from '../../components/community/icons';
 import { BADGE_ICONS, BADGE_ICON_VIEWBOX, FALLBACK_ICON_KEY } from '../../components/profile/badgeIcons';
 import { SvgXml } from 'react-native-svg';
 import { loadBadgeDefs } from '../../lib/badges';
+import {
+  type Tournament, type TournamentRegistration, type TournamentTeam,
+  type TournamentMatch, type TournamentMatchEntry, type TournamentMovement,
+  type TournamentStanding, type TournamentResult, type TournamentMissingMatch,
+  getTournamentsEnabled, isFeatureDisabled, resultMessage,
+  fetchTournaments, fetchTournament, fetchRegistrations, fetchTeams, fetchRoundMatches, fetchRoundMovements,
+  fetchMatchEntries, fetchStandings, fetchTournamentMatches, createTournament,
+  autopairTournament, startTournament, generateTournamentRound, generateFinalTournamentRound,
+  resolveTournamentDispute, forfeitTournamentTeam, reopenTournamentMatch, closeTournament,
+  validateTournament,
+  seatsLabel, seatsTaken, seatCount, waitlistCount, soloRegistrations, seatedTeams,
+  statusLabel, levelRangeLabel, priceLabel, formatTournamentDate, formatLabel, ROUND_MINUTES,
+  nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches,
+  validateTournamentScore, matchLiveStatus, pointsScaleValid, DEFAULT_POINTS_SCALE,
+} from '../../lib/tournaments';
+import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
+import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
+import { Pill } from '../../components/Pill';
 
-type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings';
+type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -755,6 +773,11 @@ export default function AdminScreen() {
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playerActingId, setPlayerActingId] = useState<string | null>(null);
 
+  // Tournois — l'interrupteur (fn_tournaments_enabled) : éteint par défaut,
+  // la section n'apparaît alors NULLE PART dans ce panel, pas même l'onglet.
+  const [tournamentsEnabled, setTournamentsEnabled] = useState(false);
+  useEffect(() => { getTournamentsEnabled().then(setTournamentsEnabled); }, []);
+
   // Auth guard
   useEffect(() => {
     if (player && !player.is_admin) {
@@ -1085,12 +1108,17 @@ export default function AdminScreen() {
             { title: 'Données', items: [
               { key: 'frmt'    as AdminTab, label: '🏆 FRMT',    badge: 0 },
               { key: 'players' as AdminTab, label: '👥 Joueurs', badge: 0 },
-              { key: 'games'   as AdminTab, label: '🎾 Parties', badge: 0 },
+              { key: 'games'   as AdminTab, label: '🏟️ Parties', badge: 0 },
             ] },
             { title: 'Config', items: [
               { key: 'badges' as AdminTab, label: '🏅 Badges', badge: 0 },
               { key: 'settings' as AdminTab, label: '⚙️ Réglages', badge: 0 },
             ] },
+            // L'interrupteur : ce groupe entier disparaît, onglet compris,
+            // tant que fn_tournaments_enabled() est éteint côté serveur.
+            ...(tournamentsEnabled ? [{ title: 'Tournois', items: [
+              { key: 'tournaments' as AdminTab, label: '🏆 Tournois', badge: 0 },
+            ] }] : []),
           ]).map(group => (
             <View key={group.title} style={{ gap: 6 }}>
               <Text style={{ fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: Fonts.uiBlack }}>{group.title}</Text>
@@ -1182,6 +1210,9 @@ export default function AdminScreen() {
         )}
         {tab === 'badges' && <BadgesTab />}
         {tab === 'settings' && <SettingsTab />}
+        {tab === 'tournaments' && tournamentsEnabled && player && (
+          <TournamentsTab myPlayerId={player.id} />
+        )}
       </ScrollView>
     </View>
   );
@@ -1815,6 +1846,782 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
 }
 
 // ─── Styles ───────────────────────────────────────────────────
+// ─── Tournois (Task 10) — l'écran d'organisation ───────────────────────────
+//
+// Réservé au créateur du tournoi (`created_by`) : les neuf fonctions serveur
+// de cette section le refusent toutes sinon (`not_the_organizer`). Ce panel
+// affiche donc les tournois en lecture pour tout arbitre, mais grise/annote
+// les actions quand `myPlayerId` n'est pas l'organisateur — plutôt que de
+// laisser le serveur les refuser en silence.
+//
+// PAS DE BASE NI D'APPAREIL POUR VÉRIFIER CET ÉCRAN : tout ce qui suit est
+// RAISONNÉ contre les en-têtes de `tournaments_rpcs.sql`, jamais observé en
+// exécution. Voir le rapport de Task 10 pour le détail des zones à risque
+// (statuts CHECK_IN/PRET jamais atteints par aucune fonction serveur,
+// création d'un tournoi bloquée tant qu'aucune policy RLS d'écriture
+// n'existe sur `tournaments`).
+
+function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
+  const [list, setList] = useState<Tournament[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setList(await fetchTournaments());
+    } catch {
+      Alert.alert('Erreur', 'Chargement des tournois impossible.');
+    }
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const selected = list.find(t => t.id === selectedId) ?? null;
+
+  if (selectedId && selected) {
+    return (
+      <TournamentManage
+        tournament={selected}
+        myPlayerId={myPlayerId}
+        onBack={() => setSelectedId(null)}
+        onChanged={load}
+      />
+    );
+  }
+
+  if (creating) {
+    return (
+      <TournamentCreateForm
+        myPlayerId={myPlayerId}
+        onCancel={() => setCreating(false)}
+        onCreated={(t) => {
+          // Injecté directement dans la liste locale (pas seulement via
+          // `load()`, async) : `selectedId` doit trouver son tournoi DÈS le
+          // prochain rendu, sans dépendre d'une réponse réseau qui pourrait
+          // arriver après — sans quoi cet écran retomberait un instant sur la
+          // liste (le tournoi tout juste créé n'y figurant pas encore).
+          setCreating(false);
+          setList(prev => [t, ...prev]);
+          setSelectedId(t.id);
+          load();
+        }}
+      />
+    );
+  }
+
+  return (
+    <View style={{ gap: 12 }}>
+      <TouchableOpacity onPress={() => setCreating(true)} activeOpacity={0.85} style={sty.btnBrand}>
+        <Text style={sty.btnBrandText}>+ Créer un tournoi</Text>
+      </TouchableOpacity>
+
+      {loading ? (
+        <ActivityIndicator color={Colors.brand} style={{ marginTop: 30 }} />
+      ) : list.length === 0 ? (
+        <View style={sty.emptyCard}>
+          <Text style={{ fontSize: 40, marginBottom: 10 }}>🏆</Text>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.textMuted, textAlign: 'center', fontFamily: Fonts.uiBlack }}>
+            Aucun tournoi publié
+          </Text>
+        </View>
+      ) : (
+        <View style={{ gap: 8 }}>
+          {list.map(t => (
+            <TouchableOpacity key={t.id} onPress={() => setSelectedId(t.id)} activeOpacity={0.85} style={sty.frmtRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                  <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>
+                    {t.name}
+                  </Text>
+                  {t.created_by === myPlayerId && <Pill variant="brand">Toi</Pill>}
+                </View>
+                <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>
+                  {formatTournamentDate(t.starts_at)} · {statusLabel(t.status)}
+                </Text>
+                <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginTop: 2 }}>
+                  {formatLabel(t.court_count, t.round_count)}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 18, color: Colors.textMuted }}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Créer ──────────────────────────────────────────────────────────────────
+function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
+  myPlayerId: string;
+  onCancel: () => void;
+  onCreated: (t: Tournament) => void;
+}) {
+  const todayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const [name, setName] = useState('');
+  const [clubs, setClubs] = useState<{ id: string; name: string; city: string | null }[]>([]);
+  const [clubPickerOpen, setClubPickerOpen] = useState(false);
+  const [club, setClub] = useState<{ id: string; name: string; city: string | null } | null>(null);
+  const [date, setDate] = useState(todayStr());
+  const [time, setTime] = useState('19:00');
+  const [levelMin, setLevelMin] = useState('');
+  const [levelMax, setLevelMax] = useState('');
+  const [courtCount, setCourtCount] = useState('4');
+  const [roundCount, setRoundCount] = useState('6');
+  const [priceMad, setPriceMad] = useState('0');
+  const [scale, setScale] = useState<Record<string, string>>(
+    Object.fromEntries(Object.entries(DEFAULT_POINTS_SCALE).map(([k, v]) => [k, String(v)])),
+  );
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from('clubs').select('id,name,city').order('name').then(({ data }) => setClubs(data ?? []));
+  }, []);
+
+  const handleCreate = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) { Alert.alert('Nom manquant', 'Donne un nom au tournoi.'); return; }
+
+    const startsAt = new Date(`${date}T${time}`);
+    if (isNaN(startsAt.getTime())) {
+      Alert.alert('Date invalide', 'Utilise le format AAAA-MM-JJ pour la date et HH:MM pour l’heure.');
+      return;
+    }
+
+    const cc = parseInt(courtCount, 10);
+    if (!Number.isInteger(cc) || cc <= 0) { Alert.alert('Terrains invalides', 'Le nombre de terrains doit être un entier positif.'); return; }
+    const rc = parseInt(roundCount, 10);
+    if (!Number.isInteger(rc) || rc <= 0) { Alert.alert('Rotations invalides', 'Le nombre de rotations doit être un entier positif.'); return; }
+
+    const lvlMin = levelMin.trim() === '' ? null : Number(levelMin);
+    const lvlMax = levelMax.trim() === '' ? null : Number(levelMax);
+    if (lvlMin != null && !Number.isFinite(lvlMin)) { Alert.alert('Niveau invalide', 'Le niveau minimum n’est pas un nombre.'); return; }
+    if (lvlMax != null && !Number.isFinite(lvlMax)) { Alert.alert('Niveau invalide', 'Le niveau maximum n’est pas un nombre.'); return; }
+    if (lvlMin != null && lvlMax != null && lvlMin > lvlMax) {
+      Alert.alert('Plage de niveau invalide', 'Le niveau minimum ne peut pas dépasser le maximum.');
+      return;
+    }
+
+    const price = parseInt(priceMad, 10);
+    if (!Number.isInteger(price) || price < 0) { Alert.alert('Prix invalide', 'Le prix affiché doit être un entier positif ou nul.'); return; }
+
+    const pointsScale: Record<string, number> = {};
+    for (const [rank, v] of Object.entries(scale)) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) { Alert.alert('Barème invalide', `La valeur du rang ${rank} n’est pas un nombre.`); return; }
+      pointsScale[rank] = n;
+    }
+    if (!pointsScaleValid(pointsScale)) {
+      Alert.alert('Barème invalide', 'Aucun rang ne peut recevoir un nombre négatif de points.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const t = await createTournament({
+        name: trimmedName, clubId: club?.id ?? null, startsAt: startsAt.toISOString(),
+        levelMin: lvlMin, levelMax: lvlMax, courtCount: cc, roundCount: rc, priceMad: price,
+        pointsScale, createdBy: myPlayerId,
+      });
+      onCreated(t);
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message ?? 'Création impossible.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ gap: 14, paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
+      <TouchableOpacity onPress={onCancel}>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.brand }}>‹ Annuler</Text>
+      </TouchableOpacity>
+
+      <View style={sty.orgCard}>
+        <Text style={sty.orgCardTitle}>Informations</Text>
+        <View>
+          <Text style={sty.fieldLabel}>Nom du tournoi</Text>
+          <TextInput value={name} onChangeText={setName} placeholder="Montante / descente du jeudi"
+            placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+        </View>
+        <View>
+          <Text style={sty.fieldLabel}>Club</Text>
+          <TouchableOpacity onPress={() => setClubPickerOpen(true)} style={sty.scoreInput}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: club ? Colors.textPrimary : Colors.textSecondary }}>
+              {club ? `${club.name}${club.city ? ` · ${club.city}` : ''}` : 'Club à confirmer (optionnel)'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Date</Text>
+            <TextInput value={date} onChangeText={setDate} placeholder="AAAA-MM-JJ"
+              placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Heure</Text>
+            <TextInput value={time} onChangeText={setTime} placeholder="HH:MM"
+              placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Niveau min (optionnel)</Text>
+            <TextInput value={levelMin} onChangeText={setLevelMin} placeholder="ex. 3.0" keyboardType="decimal-pad"
+              placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Niveau max (optionnel)</Text>
+            <TextInput value={levelMax} onChangeText={setLevelMax} placeholder="ex. 6.0" keyboardType="decimal-pad"
+              placeholderTextColor={Colors.textSecondary} style={sty.scoreInput} />
+          </View>
+        </View>
+      </View>
+
+      <View style={sty.orgCard}>
+        <Text style={sty.orgCardTitle}>Format</Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Terrains</Text>
+            <TextInput value={courtCount} onChangeText={t => setCourtCount(t.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad" style={sty.scoreInput} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Rotations</Text>
+            <TextInput value={roundCount} onChangeText={t => setRoundCount(t.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad" style={sty.scoreInput} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={sty.fieldLabel}>Prix (DH)</Text>
+            <TextInput value={priceMad} onChangeText={t => setPriceMad(t.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad" style={sty.scoreInput} />
+          </View>
+        </View>
+        <Text style={sty.orgCardDesc}>
+          Durée d’une rotation : {ROUND_MINUTES} min (fixe, même pour tous les tournois PagMatch — ce n’est pas un
+          paramètre du serveur). Placement initial : automatique par niveau — les deux binômes les plus forts au
+          Terrain 1. La dernière rotation se joue toujours pour le classement.
+        </Text>
+      </View>
+
+      <View style={sty.orgCard}>
+        <Text style={sty.orgCardTitle}>Barème (points par rang final)</Text>
+        <Text style={sty.orgCardDesc}>
+          Un rang sans seuil défini reprend les points du seuil le plus proche EN DESSOUS. Aucune valeur négative —
+          un tournoi classe, il ne punit pas.
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {Object.keys(DEFAULT_POINTS_SCALE).map(rank => (
+            <View key={rank} style={{ width: 70 }}>
+              <Text style={sty.fieldLabel}>Rang {rank}</Text>
+              <TextInput
+                value={scale[rank] ?? ''}
+                onChangeText={v => setScale(prev => ({ ...prev, [rank]: v.replace(/[^0-9-]/g, '') }))}
+                keyboardType="number-pad" style={[sty.scoreInput, { paddingHorizontal: 8, textAlign: 'center' }]}
+              />
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <TouchableOpacity onPress={handleCreate} disabled={saving} style={[sty.btnBrand, { opacity: saving ? 0.6 : 1 }]}>
+        {saving ? <ActivityIndicator color={Colors.textOnBrand} /> : <Text style={sty.btnBrandText}>Créer et publier</Text>}
+      </TouchableOpacity>
+      <Text style={sty.orgCardDesc}>
+        Le tournoi est publié immédiatement (inscriptions ouvertes) : ce chantier n’a reçu aucun geste serveur pour
+        publier un brouillon plus tard, donc « créer » et « publier » sont le même geste ici.
+      </Text>
+
+      <Modal visible={clubPickerOpen} animationType="slide" transparent statusBarTranslucent onRequestClose={() => setClubPickerOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setClubPickerOpen(false)} />
+          <View style={{ backgroundColor: Colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%', borderWidth: 1, borderColor: Colors.border }}>
+            <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
+              <View style={{ width: 36, height: 4, backgroundColor: Colors.border, borderRadius: 2 }} />
+            </View>
+            <FlatList
+              data={clubs}
+              keyExtractor={c => c.id}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
+              ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: Colors.border }} />}
+              ListEmptyComponent={<Text style={{ color: Colors.textSecondary, textAlign: 'center', padding: 20 }}>Aucun club.</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity onPress={() => { setClub(item); setClubPickerOpen(false); }} style={{ paddingVertical: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textPrimary }}>{item.name}</Text>
+                  {item.city && <Text style={{ fontSize: 11, color: Colors.textSecondary }}>{item.city}</Text>}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+// ─── Conduire ───────────────────────────────────────────────────────────────
+const TOURNAMENT_PRE_START = ['INSCRIPTIONS_OUVERTES', 'COMPLET', 'CHECK_IN', 'PRET'];
+// Asymétrie du serveur (en-tête de `tournament_autopair`) : elle exige
+// COMPLET/CHECK_IN/PRET, contrairement à `tournament_start` qui accepte aussi
+// INSCRIPTIONS_OUVERTES. L'écran ne doit jamais proposer un geste refusé.
+const TOURNAMENT_AUTOPAIR_OK = ['COMPLET', 'CHECK_IN', 'PRET'];
+
+function AdminMatchCard({
+  match, teamA, teamB, status, entriesCount, isOrganizer, busy, laterCount, forfeitGames,
+  onResolve, onForfeit, onReopen,
+}: {
+  match: TournamentMatch;
+  teamA: CourtTeamInfo;
+  teamB: CourtTeamInfo | null;
+  status: ReturnType<typeof matchLiveStatus>;
+  entriesCount: number;
+  isOrganizer: boolean;
+  busy: boolean;
+  laterCount: number;
+  forfeitGames: number;
+  onResolve: (matchId: string, gamesA: number, gamesB: number) => void;
+  onForfeit: (teamId: string, teamLabel: string) => void;
+  onReopen: (match: TournamentMatch, laterCount: number) => void;
+}) {
+  const [inputA, setInputA] = useState('');
+  const [inputB, setInputB] = useState('');
+  const parsedA = inputA.trim() === '' ? null : Number(inputA);
+  const parsedB = inputB.trim() === '' ? null : Number(inputB);
+  const error = validateTournamentScore(parsedA, parsedB);
+  const canResolve = parsedA != null && parsedB != null && !error && !busy;
+
+  return (
+    <View style={sty.matchCard}>
+      <CourtRow
+        courtNo={match.court_no} isTopCourt={match.court_no === 1}
+        teamA={teamA} teamB={teamB}
+        gamesA={match.games_a} gamesB={match.games_b}
+        forfeitedTeamId={match.forfeited_team} status={status}
+      />
+
+      {isOrganizer && teamB && status === 'disputed' && (
+        <View style={{ gap: 8 }}>
+          <Text style={sty.fieldLabel}>Trancher le litige (score de {teamA.names.join(' · ')} en premier)</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary }}>
+              {teamA.names.join(' · ')}
+            </Text>
+            <TextInput value={inputA} onChangeText={t => setInputA(t.replace(/[^0-9]/g, '').slice(0, 2))}
+              keyboardType="number-pad" style={sty.smallScoreInput} />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary }}>
+              {teamB.names.join(' · ')}
+            </Text>
+            <TextInput value={inputB} onChangeText={t => setInputB(t.replace(/[^0-9]/g, '').slice(0, 2))}
+              keyboardType="number-pad" style={sty.smallScoreInput} />
+          </View>
+          {error && parsedA != null && parsedB != null && (
+            <Text style={{ fontSize: 11, color: Colors.danger, fontWeight: '700' }}>{error}</Text>
+          )}
+          <TouchableOpacity
+            disabled={!canResolve}
+            onPress={() => { if (parsedA != null && parsedB != null) onResolve(match.id, parsedA, parsedB); }}
+            style={[sty.btnValidate, { opacity: canResolve ? 1 : 0.4 }]}
+          >
+            <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 12, fontFamily: Fonts.uiBlack }}>
+              Trancher
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isOrganizer && teamB && status !== 'disputed' && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {status === 'forfeited' ? (
+            <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontStyle: 'italic' }}>
+              Forfait — score {forfeitGames}-{forfeitGames}, non réouvrable.
+            </Text>
+          ) : (
+            <>
+              {status === 'confirmed' && (
+                <TouchableOpacity onPress={() => onReopen(match, laterCount)} disabled={busy} style={sty.btnOutline}>
+                  <Text style={sty.btnOutlineText}>↺ Rouvrir</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => onForfeit(teamA.id, teamA.names.join(' · '))} disabled={busy} style={sty.btnCancel}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.danger }}>Forfait {teamA.names[0]}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onForfeit(teamB.id, teamB.names.join(' · '))} disabled={busy} style={sty.btnCancel}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.danger }}>Forfait {teamB.names[0]}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
+
+      {!teamB && (
+        <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontStyle: 'italic' }}>
+          Repos ce tour — {entriesCount === 0 ? 'aucune action possible' : ''}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
+  tournament: Tournament;
+  myPlayerId: string;
+  onBack: () => void;
+  onChanged: () => void;
+}) {
+  const [t, setT] = useState<Tournament>(tournament);
+  const [regs, setRegs] = useState<TournamentRegistration[]>([]);
+  const [teams, setTeams] = useState<TournamentTeam[]>([]);
+  const [roundMatches, setRoundMatches] = useState<TournamentMatch[]>([]);
+  const [allMatches, setAllMatches] = useState<TournamentMatch[]>([]);
+  const [movements, setMovements] = useState<TournamentMovement[]>([]);
+  const [entries, setEntries] = useState<TournamentMatchEntry[]>([]);
+  const [standings, setStandings] = useState<TournamentStanding[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const isOrganizer = t.created_by === myPlayerId;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [freshT, r, tm] = await Promise.all([
+        fetchTournament(tournament.id),
+        fetchRegistrations(tournament.id),
+        fetchTeams(tournament.id),
+      ]);
+      const current = freshT ?? tournament;
+      setT(current);
+      setRegs(r);
+      setTeams(tm);
+
+      if (current.current_round > 0) {
+        const [rm, mv, allM] = await Promise.all([
+          fetchRoundMatches(tournament.id, current.current_round),
+          fetchRoundMovements(tournament.id, current.current_round),
+          fetchTournamentMatches(tournament.id),
+        ]);
+        setRoundMatches(rm);
+        setMovements(mv);
+        setAllMatches(allM);
+        setEntries(await fetchMatchEntries(rm.map(m => m.id)));
+
+        const stRes = await fetchStandings(tournament.id);
+        setStandings(stRes.ok ? ((stRes.standings as TournamentStanding[] | undefined) ?? []) : []);
+      } else {
+        setRoundMatches([]); setMovements([]); setAllMatches([]); setEntries([]); setStandings([]);
+      }
+    } catch {
+      Alert.alert('Erreur', 'Chargement du tournoi impossible.');
+    }
+    setLoading(false);
+    // Volontairement []: `tournament.id` est stable pour la durée de vie de cet écran.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const runAction = useCallback(async (
+    key: string, fn: () => Promise<TournamentResult>, successMessage?: (res: TournamentResult) => string,
+  ) => {
+    setBusy(key);
+    try {
+      const res = await fn();
+      if (isFeatureDisabled(res)) { Alert.alert('Indisponible', resultMessage(res)); return; }
+      if (!res.ok) {
+        if (res.reason === 'round_incomplete') {
+          const missing = (res.missing as TournamentMissingMatch[] | undefined) ?? [];
+          const lines = missing.map(missingMatchLabel).join('\n');
+          Alert.alert('Rotation incomplète', `${resultMessage(res)}\n\n${lines || 'Aucun détail disponible.'}`);
+        } else {
+          Alert.alert('Impossible', resultMessage(res));
+        }
+        return;
+      }
+      if (successMessage) Alert.alert('', successMessage(res));
+      await load();
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
+  }, [load, onChanged]);
+
+  const handleAutopair = () => runAction('autopair', () => autopairTournament(t.id), (res) => {
+    const alone = (res.left_alone as string[] | undefined) ?? [];
+    const created = res.teams_created as number;
+    return `Binôme(s) formé(s) : ${created}.` + (alone.length > 0 ? ' Un joueur reste seul — renvoyé en tête de liste d’attente.' : '');
+  });
+
+  const handleStart = () => Alert.alert(
+    'Démarrer le tournoi ?',
+    'Cela fige la composition des binômes et le nombre de terrains réellement en jeu. Le pointage n’est pas exigé : cela sert de « lancer quand même ». Le premier tour se tire ensuite séparément.',
+    [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Démarrer', style: 'destructive', onPress: () => runAction('start', () => startTournament(t.id)) },
+    ],
+  );
+
+  const handleGenerateRound = () => {
+    const isFinal = nextRoundIsFinal(t.current_round, t.round_count);
+    runAction(
+      'round',
+      () => isFinal ? generateFinalTournamentRound(t.id) : generateTournamentRound(t.id),
+      (res) => isFinal
+        ? `Rotation de classement lancée (tour ${res.round}).`
+        : `Rotation ${res.round} lancée : ${res.matches} match(s), ${res.byes} repos.`,
+    );
+  };
+
+  const handleResolveDispute = (matchId: string, gamesA: number, gamesB: number) =>
+    runAction(`resolve-${matchId}`, () => resolveTournamentDispute(matchId, gamesA, gamesB));
+
+  const handleForfeit = (teamId: string, teamLabel: string) => Alert.alert(
+    'Déclarer forfait — irréversible',
+    `${teamLabel} sort du tournoi. Aucun moyen de revenir en arrière ensuite : ses matchs non encore acquis seront soldés ${t.forfeit_games}-${t.forfeit_games} en faveur de l’adversaire, qui monte automatiquement.`,
+    [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Déclarer forfait', style: 'destructive', onPress: () => runAction('forfeit', () => forfeitTournamentTeam(t.id, teamId)) },
+    ],
+  );
+
+  const handleReopen = (match: TournamentMatch, laterCount: number) => {
+    const msg = laterCount > 0
+      ? `Cela supprime ${laterCount} match${laterCount > 1 ? 's' : ''} des rotations suivantes (tour ${match.round_no + 1} à ${t.round_count}) et leurs saisies, et ramène la soirée au tour ${match.round_no}. Action irréversible.`
+      : 'Aucune rotation postérieure n’existe encore : seul ce match sera rouvert. Action irréversible.';
+    Alert.alert('Rouvrir ce score ?', msg, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Rouvrir', style: 'destructive', onPress: () => runAction('reopen', () => reopenTournamentMatch(match.id)) },
+    ]);
+  };
+
+  const handleClose = () => Alert.alert(
+    'Clôturer le tournoi ?',
+    'Fige le classement (rang, statistiques, points) au dernier tour complet et passe le tournoi en Terminé. Les points ne compteront qu’après validation.',
+    [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Clôturer', style: 'destructive', onPress: () => runAction('close', () => closeTournament(t.id)) },
+    ],
+  );
+
+  const handleValidate = () => Alert.alert(
+    'Valider le classement ?',
+    'Dernier geste : les points sont crédités et le tournoi entre dans « Mon parcours » de chaque joueur. Pour corriger un score après coup, il faudra rouvrir un match puis re-clôturer.',
+    [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Valider', style: 'destructive', onPress: () => runAction('validate', () => validateTournament(t.id)) },
+    ],
+  );
+
+  const namesOf = (p1: string, p2: string): [string, string] => [
+    regs.find(r => r.player_id === p1)?.player?.name ?? '?',
+    regs.find(r => r.player_id === p2)?.player?.name ?? '?',
+  ];
+  const teamById = new Map(teams.map(tm => [tm.id, tm]));
+  const movementByTeam = new Map(movements.map(m => [m.team_id, m.movement]));
+  const entriesByMatch = new Map<string, TournamentMatchEntry[]>();
+  for (const e of entries) {
+    const arr = entriesByMatch.get(e.match_id) ?? [];
+    arr.push(e);
+    entriesByMatch.set(e.match_id, arr);
+  }
+
+  const standingRows: StandingRowData[] = standings.map(s => ({
+    standing: s,
+    names: namesOf(s.player1_id, s.player2_id),
+    movement: movementByTeam.get(s.team_id) ?? null,
+  }));
+
+  if (loading) return <ActivityIndicator color={Colors.brand} style={{ marginTop: 40 }} />;
+
+  return (
+    <ScrollView contentContainerStyle={{ gap: 14, paddingBottom: 20 }}>
+      <TouchableOpacity onPress={onBack}>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.brand }}>‹ Tous les tournois</Text>
+      </TouchableOpacity>
+
+      <View style={sty.orgCard}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
+            {t.name}
+          </Text>
+          <Pill variant={t.status === 'EN_COURS' ? 'brand' : (t.status === 'TERMINE' || t.status === 'CLASSEMENT_VALIDE') ? 'neutral' : 'success'}>
+            {statusLabel(t.status)}
+          </Pill>
+        </View>
+        <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '700' }}>
+          {formatTournamentDate(t.starts_at)} · {t.club?.name ?? 'Club à confirmer'}
+        </Text>
+        <Text style={{ fontSize: 12, color: Colors.textMuted, fontWeight: '600' }}>
+          {formatLabel(t.court_count, t.round_count)} · {levelRangeLabel(t.level_min, t.level_max)} · {priceLabel(t.price_mad)}
+        </Text>
+        {!isOrganizer && (
+          <View style={{ marginTop: 4, backgroundColor: 'rgba(239,68,68,0.10)', borderRadius: 10, padding: 8, borderWidth: 1, borderColor: 'rgba(239,68,68,0.30)' }}>
+            <Text style={{ fontSize: 11, color: Colors.danger, fontWeight: '700' }}>
+              Tu n’es pas l’organisateur de ce tournoi : chaque action ci-dessous te serait refusée par le serveur
+              (« Seul l’organisateur peut faire ça »). Elles sont donc masquées.
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* ── Check-in & appariement ── */}
+      {TOURNAMENT_PRE_START.includes(t.status) && (
+        <View style={sty.orgCard}>
+          <Text style={sty.orgCardTitle}>Check-in & appariement</Text>
+          <Text style={sty.orgCardDesc}>
+            {seatsTaken(regs)} joueur(s) sur {seatCount(t.court_count)} places · {waitlistCount(regs)} en liste d’attente ·{' '}
+            {soloRegistrations(regs, teams).length} cherchent encore un partenaire.
+          </Text>
+
+          <View style={{ gap: 6 }}>
+            {regs.map(r => {
+              const paired = teams.some(tm => tm.player1_id === r.player_id || tm.player2_id === r.player_id);
+              return (
+                <View key={r.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text numberOfLines={1} style={{ flex: 1, minWidth: 80, fontSize: 12, fontWeight: '700', color: Colors.textPrimary }}>
+                    {r.player?.name ?? '—'}
+                  </Text>
+                  {r.waitlist_position != null && <Pill variant="warning">File #{r.waitlist_position}</Pill>}
+                  {!paired && <Pill variant="neutral">Seul</Pill>}
+                  <Pill variant={r.check_in_status === 'checked_in' ? 'success' : r.check_in_status === 'no_show' ? 'danger' : 'neutral'}>
+                    {r.check_in_status === 'checked_in' ? 'Présent' : r.check_in_status === 'no_show' ? 'Absent' : 'En attente'}
+                  </Pill>
+                </View>
+              );
+            })}
+            {regs.length === 0 && <Text style={sty.orgCardDesc}>Aucune inscription pour l’instant.</Text>}
+          </View>
+
+          {isOrganizer && (
+            <View style={{ gap: 8, marginTop: 6 }}>
+              {TOURNAMENT_AUTOPAIR_OK.includes(t.status) ? (
+                <TouchableOpacity onPress={handleAutopair} disabled={busy === 'autopair'} style={sty.btnOutline}>
+                  {busy === 'autopair'
+                    ? <ActivityIndicator color={Colors.textPrimary} size="small" />
+                    : <Text style={sty.btnOutlineText}>Apparier les joueurs seuls</Text>}
+                </TouchableOpacity>
+              ) : (
+                <Text style={sty.orgCardDesc}>
+                  L’appariement automatique demande un tournoi complet (ou déjà au pointage) — indisponible tant que
+                  des inscriptions sont encore ouvertes.
+                </Text>
+              )}
+              <TouchableOpacity onPress={handleStart} disabled={busy === 'start'} style={sty.btnValidate}>
+                {busy === 'start'
+                  ? <ActivityIndicator color={Colors.textOnDark} size="small" />
+                  : <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack }}>Démarrer le tournoi</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── Conduire ── */}
+      {t.status === 'EN_COURS' && (
+        <View style={sty.orgCard}>
+          <Text style={sty.orgCardTitle}>Conduire — tour {t.current_round || '–'} / {t.round_count}</Text>
+
+          {t.current_round === 0 ? (
+            <Text style={sty.orgCardDesc}>Aucune rotation tirée pour l’instant.</Text>
+          ) : roundMatches.length === 0 ? (
+            <Text style={sty.orgCardDesc}>Aucun match pour ce tour.</Text>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {roundMatches.map(m => {
+                const teamAInfo = teamById.get(m.team_a);
+                const teamBInfo = m.team_b ? teamById.get(m.team_b) : null;
+                if (!teamAInfo) return null;
+                const teamAData: CourtTeamInfo = { id: teamAInfo.id, names: namesOf(teamAInfo.player1_id, teamAInfo.player2_id), movement: movementByTeam.get(teamAInfo.id) ?? null };
+                const teamBData: CourtTeamInfo | null = teamBInfo
+                  ? { id: teamBInfo.id, names: namesOf(teamBInfo.player1_id, teamBInfo.player2_id), movement: movementByTeam.get(teamBInfo.id) ?? null }
+                  : null;
+                const entriesForMatch = entriesByMatch.get(m.id) ?? [];
+                const teamAEntries = entriesForMatch.filter(e => teamAInfo.player1_id === e.player_id || teamAInfo.player2_id === e.player_id);
+                const teamBEntries = entriesForMatch.filter(e => !!teamBInfo && (teamBInfo.player1_id === e.player_id || teamBInfo.player2_id === e.player_id));
+                const status = matchLiveStatus(m.team_b != null, m.forfeited_team, m.confirmed_at, teamAEntries, teamBEntries);
+                return (
+                  <AdminMatchCard
+                    key={m.id}
+                    match={m} teamA={teamAData} teamB={teamBData} status={status}
+                    entriesCount={entriesForMatch.length}
+                    isOrganizer={isOrganizer} busy={!!busy}
+                    laterCount={countLaterRoundMatches(allMatches, m.round_no)}
+                    forfeitGames={t.forfeit_games}
+                    onResolve={handleResolveDispute} onForfeit={handleForfeit} onReopen={handleReopen}
+                  />
+                );
+              })}
+            </View>
+          )}
+
+          {isOrganizer && (
+            <View style={{ gap: 8, marginTop: 6 }}>
+              {t.current_round < t.round_count ? (
+                <TouchableOpacity onPress={handleGenerateRound} disabled={busy === 'round'} style={sty.btnValidate}>
+                  {busy === 'round'
+                    ? <ActivityIndicator color={Colors.textOnDark} size="small" />
+                    : (
+                      <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack }}>
+                        {nextRoundIsFinal(t.current_round, t.round_count) ? 'Lancer la rotation de classement' : 'Générer la rotation suivante'}
+                      </Text>
+                    )}
+                </TouchableOpacity>
+              ) : (
+                <Text style={sty.orgCardDesc}>Toutes les rotations ont été tirées.</Text>
+              )}
+              <TouchableOpacity onPress={handleClose} disabled={busy === 'close' || t.current_round < 1} style={[sty.btnCancel, { opacity: t.current_round < 1 ? 0.4 : 1 }]}>
+                <Text style={{ color: Colors.danger, fontWeight: '700', fontSize: 13 }}>Clôturer le tournoi</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {standingRows.length > 0 && (
+            <View style={{ gap: 8, marginTop: 8 }}>
+              <Text style={sty.orgCardTitle}>Classement provisoire</Text>
+              <StandingsTable rows={standingRows} />
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── Validation ── */}
+      {t.status === 'TERMINE' && (
+        <View style={sty.orgCard}>
+          <Text style={sty.orgCardTitle}>Validation du classement</Text>
+          <Text style={sty.orgCardDesc}>
+            Le tournoi est clos. Les points ne comptent pas encore : ils seront crédités, et le tournoi entrera dans
+            « Mon parcours » de chaque joueur, seulement après validation.
+          </Text>
+          {standingRows.length > 0 && <StandingsTable rows={standingRows} />}
+          {isOrganizer && (
+            <TouchableOpacity onPress={handleValidate} disabled={busy === 'validate'} style={sty.btnValidate}>
+              {busy === 'validate'
+                ? <ActivityIndicator color={Colors.textOnDark} size="small" />
+                : <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack }}>Valider le classement</Text>}
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {t.status === 'CLASSEMENT_VALIDE' && (
+        <View style={sty.orgCard}>
+          <Text style={sty.orgCardTitle}>Classement validé</Text>
+          <Text style={sty.orgCardDesc}>
+            Les points sont crédités et ce tournoi figure dans « Mon parcours » de chaque joueur.
+          </Text>
+          {standingRows.length > 0 && <StandingsTable rows={standingRows} />}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
 const sty = StyleSheet.create({
   emptyCard: {
     backgroundColor: Colors.bgCard, borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
@@ -1896,5 +2703,31 @@ const sty = StyleSheet.create({
   btnDelete: {
     backgroundColor: '#ef444415', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
     borderWidth: 1, borderColor: '#ef444440',
+  },
+  // ── Tournois (Task 10) ──
+  orgCard: {
+    backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 16, padding: 16, gap: 10,
+  },
+  orgCardTitle: { fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary },
+  orgCardDesc: { fontSize: 12, color: Colors.textMuted, lineHeight: 17 },
+  btnBrand: {
+    backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 13,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  btnBrandText: { color: Colors.textOnBrand, fontSize: 14, fontWeight: '900', fontFamily: Fonts.uiBlack },
+  btnOutline: {
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9, backgroundColor: Colors.bgCard,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  btnOutlineText: { fontSize: 11, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack },
+  smallScoreInput: {
+    width: 52, textAlign: 'center', backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 10, paddingVertical: 8, fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary,
+  },
+  matchCard: {
+    backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border,
+    padding: 12, gap: 8,
   },
 });

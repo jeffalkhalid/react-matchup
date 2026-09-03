@@ -51,6 +51,11 @@ export interface Tournament {
   court_count: number;
   round_count: number;
   price_mad: number;
+  /** Score crédité À CHAQUE camp sur un match soldé par un forfait (0 par
+   *  défaut) — c'est `forfeited_team`, jamais ce nombre, qui dit qui a gagné.
+   *  Lu pour l'AVERTIR à l'écran avant de déclarer un forfait, jamais pour en
+   *  déduire un résultat. */
+  forfeit_games: number;
   status: TournamentStatus;
   current_round: number;
   created_by: string;
@@ -286,7 +291,7 @@ export function resultMessage(res: TournamentResult): string {
 
 const TOURNAMENT_COLS =
   'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, ' +
-  'price_mad, status, current_round, created_by, created_at, club:club_id(id, name, city)';
+  'price_mad, forfeit_games, status, current_round, created_by, created_at, club:club_id(id, name, city)';
 
 /** Les tournois PUBLIÉS, du plus proche au plus lointain. Les brouillons sont
  *  écartés côté requête : ils n'appartiennent qu'à leur organisateur. */
@@ -822,4 +827,242 @@ export function computeCareerTotals(
     podiums: rows.filter(r => r.final_rank <= 3).length,
     points,
   };
+}
+
+// ─── L'organisation : créer, conduire, clôturer (Task 10) ────────────────────
+//
+// LES NEUF FONCTIONS SERVEUR DE CETTE SECTION SONT TOUTES RÉSERVÉES À
+// L'ORGANISATEUR (`tournaments.created_by`, comparé à `current_player_id()`
+// côté serveur — refus `not_the_organizer`). Aucune ne prend l'organisateur en
+// paramètre : le sujet est toujours l'appelant, exactement comme
+// `tournament_set_open_to_join`. Même enveloppe que le reste du fichier
+// (`callTournamentRpc`) : un refus rend `{ok:false, reason}`, jamais une levée.
+
+/** Le barème par défaut de la colonne `tournaments.points_scale` — recopié
+ *  MOT POUR MOT du `DEFAULT` du schéma (tournaments.sql), pour préremplir le
+ *  formulaire de création avec exactement ce que la base écrirait d'elle-même
+ *  si la colonne n'était pas fournie. */
+export const DEFAULT_POINTS_SCALE: Record<string, number> = {
+  '1': 100, '2': 80, '3': 65, '4': 55, '5': 45, '6': 35, '7': 25, '8': 15,
+};
+
+/** Miroir de la CHECK de `tournaments.points_scale` : aucune valeur négative
+ *  (« un tournoi ne punit pas, il classe »). Pure, pour valider CÔTÉ ÉCRAN
+ *  avant l'appel, comme `validateTournamentScore`. */
+export function pointsScaleValid(scale: Record<string, number>): boolean {
+  const entries = Object.values(scale);
+  return entries.length > 0 && entries.every(n => Number.isFinite(n) && n >= 0);
+}
+
+export interface TournamentCreateInput {
+  name: string;
+  clubId: string | null;
+  /** ISO — date ET heure, le tournoi se joue un soir donné. */
+  startsAt: string;
+  levelMin: number | null;
+  levelMax: number | null;
+  courtCount: number;
+  roundCount: number;
+  priceMad: number;
+  pointsScale: Record<string, number>;
+  createdBy: string;
+}
+
+/** Crée un tournoi et le PUBLIE dans le même geste : statut
+ *  `INSCRIPTIONS_OUVERTES` écrit directement, JAMAIS `BROUILLON`.
+ *
+ *  ⚠️ CE CHOIX EST DÉLIBÉRÉ, ET IL COMPENSE UN TROU DU SCHÉMA LIVRÉ (Tasks 2-4,
+ *  gelées) : AUCUNE fonction de `tournaments_rpcs.sql` ne fait jamais passer un
+ *  tournoi de `BROUILLON` à `INSCRIPTIONS_OUVERTES` — `BROUILLON` n'y apparaît
+ *  que dans des commentaires, jamais à gauche d'un `UPDATE ... SET status`. Un
+ *  tournoi créé en `BROUILLON` resterait donc un tournoi qu'AUCUN geste ne
+ *  pourrait jamais publier : `fetchTournaments` l'exclut explicitement
+ *  (« les brouillons n'appartiennent qu'à leur organisateur »), et personne ne
+ *  pourrait plus jamais s'y inscrire. Publier au moment même de la création
+ *  est donc la seule façon pour un tournoi créé ici d'exister pour de vrai.
+ *
+ *  ⚠️ `ends_at` N'EST JAMAIS ÉCRIT ICI, et ce n'est pas un oubli.
+ *  `tournament_close` pose `ends_at = COALESCE(ends_at, now())` : une date
+ *  posée à la création y SURVIVRAIT, et la clôture afficherait l'heure de FIN
+ *  ESTIMÉE à la création — pas l'heure réelle du geste de clôture. La colonne
+ *  reste `NULL` jusqu'à ce que `tournament_close` (ou une réouverture, qui la
+ *  remet à `NULL`) la pose pour de vrai.
+ *
+ *  ⚠️ GAP CONNU, NON CORRIGÉ ICI (aucun fichier SQL ne se modifie dans cette
+ *  tâche — cf. rapport de Task 10). `public.tournaments` ne porte, au moment
+ *  d'écrire ce module, AUCUNE policy RLS d'écriture : seule `tournaments_read`
+ *  (SELECT) existe, et aucune RPC de création n'a été livrée par les tâches
+ *  précédentes. Cet INSERT échouera donc (violation RLS) tant qu'une policy
+ *  d'écriture réservée aux administrateurs — motif de `badge_defs` — ou une
+ *  RPC dédiée n'aura pas été ajoutée côté serveur. Ce module écrit l'appel que
+ *  le contrat de cette tâche attend ; il ne peut pas fabriquer la policy qui
+ *  le rend possible. */
+export async function createTournament(input: TournamentCreateInput): Promise<Tournament> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournaments')
+    .insert({
+      name: input.name,
+      club_id: input.clubId,
+      starts_at: input.startsAt,
+      level_min: input.levelMin,
+      level_max: input.levelMax,
+      court_count: input.courtCount,
+      round_count: input.roundCount,
+      price_mad: input.priceMad,
+      points_scale: input.pointsScale,
+      status: 'INSCRIPTIONS_OUVERTES',
+      created_by: input.createdBy,
+    })
+    .select(TOURNAMENT_COLS)
+    .single();
+  if (error) throw error;
+  return data as unknown as Tournament;
+}
+
+// ⚠️ `tournament_generate_round` ACCEPTE un second paramètre `p_final_round`,
+// mais SEUL `tournament_final_round` a le droit de le passer à `true` — c'est
+// elle qui porte les enjeux (`stakes`) que la dernière rotation doit afficher,
+// et que `generateTournamentRound` n'a aucun moyen de reconstituer. Cet écran
+// appelle TOUJOURS `generateTournamentRound` À UN SEUL ARGUMENT ;
+// `nextRoundIsFinal` ci-dessous dit QUAND appeler `generateFinalTournamentRound`
+// à la place — jamais en passant un second argument à l'autre.
+export function nextRoundIsFinal(currentRound: number, roundCount: number): boolean {
+  return currentRound + 1 === roundCount;
+}
+
+/** Une entrée du refus `round_incomplete` de `tournament_generate_round` — DÉJÀ
+ *  nommée par le serveur (le terrain, les deux binômes), pas seulement des
+ *  identifiants que l'écran devrait résoudre lui-même. `entries` dit combien de
+ *  joueurs ont saisi (0, 1 ou 2), `disputed` si les deux camps se contredisent :
+ *  « personne n'a rien dit » et « litige » ne se règlent pas pareil. */
+export interface TournamentMissingMatch {
+  match_id: string;
+  round_no: number;
+  court_no: number;
+  team_a: string;
+  team_b: string;
+  team_a_label: string | null;
+  team_b_label: string | null;
+  entries: number;
+  disputed: boolean;
+}
+
+/** Une ligne lisible pour CE refus précis — jamais un identifiant nu à
+ *  l'écran. « Un refus qui ne dit pas quoi corriger bloque la soirée. » */
+export function missingMatchLabel(m: Pick<TournamentMissingMatch,
+  'court_no' | 'team_a_label' | 'team_b_label' | 'entries' | 'disputed'>): string {
+  const a = m.team_a_label ?? 'Équipe A';
+  const b = m.team_b_label ?? 'Équipe B';
+  const state = m.disputed
+    ? 'litige : les deux camps se contredisent'
+    : m.entries === 0
+      ? 'aucune saisie'
+      : 'un seul camp a saisi';
+  return `Terrain ${m.court_no} — ${a} vs ${b} (${state})`;
+}
+
+/** Combien de matchs (réels ET byes, tous confondus) seraient détruits par
+ *  `tournament_reopen_match` sur un match du tour `round` — port EXACT du
+ *  `DELETE ... WHERE round_no > v_m.round_no` de son en-tête. L'écran le dit
+ *  AVANT d'appeler, avec le nombre exact — jamais un « Êtes-vous sûr ? »
+ *  générique. */
+export function countLaterRoundMatches(
+  matches: Pick<TournamentMatch, 'round_no'>[], round: number,
+): number {
+  return matches.filter(m => m.round_no > round).length;
+}
+
+/** Apparier, au check-in, les joueurs restés seuls. N'apparie QUE les ASSIS
+ *  (jamais la liste d'attente), et REFUSE en `INSCRIPTIONS_OUVERTES` — elle
+ *  exige `COMPLET`, `CHECK_IN` ou `PRET` (en-tête de `tournament_autopair`),
+ *  contrairement à `startTournament` qui accepte les quatre. L'écran doit
+ *  refléter cette asymétrie, pas la découvrir en pratique (`tournament_not_open`). */
+export function autopairTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_autopair', { p_tournament: tournamentId });
+}
+
+/** Le coup d'envoi. Accepte `INSCRIPTIONS_OUVERTES`, `COMPLET`, `CHECK_IN` ET
+ *  `PRET` — c'est ELLE, pas `autopairTournament`, qui sert de « lancer quand
+ *  même » : rien ici n'exige que le check-in soit complet, ni même commencé. */
+export function startTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_start', { p_tournament: tournamentId });
+}
+
+/** Tire la rotation suivante — TOUJOURS À UN SEUL ARGUMENT (cf. la note
+ *  au-dessus de `nextRoundIsFinal`). Refuse la DERNIÈRE rotation
+ *  (`not_the_final_round`) : c'est `generateFinalTournamentRound` qui la tire.
+ *  Refuse aussi `round_incomplete`, avec la liste `missing`
+ *  (`TournamentMissingMatch[]`) que `missingMatchLabel` traduit. */
+export function generateTournamentRound(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_generate_round', { p_tournament: tournamentId });
+}
+
+/** LA rotation de classement — la dernière, celle qui fige les places et rend
+ *  `stakes` (l'enjeu de chaque terrain : quelles places s'y jouent). Seule
+ *  appelante légitime du second argument de `tournament_generate_round`,
+ *  qu'elle passe elle-même — cette fonction-ci n'en prend aucun. */
+export function generateFinalTournamentRound(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_final_round', { p_tournament: tournamentId });
+}
+
+/** Trancher un litige. MÊME CONTRAT D'ORIENTATION que `enterTournamentScore` :
+ *  `gamesA` est TOUJOURS le score de `team_a` DU MATCH — l'écran nomme les
+ *  deux camps, jamais « vous / eux ». Passer par `validateTournamentScore`
+ *  côté écran avant l'appel, comme la saisie joueur (mêmes trois refus, même
+ *  ordre : `invalid_score`, `score_out_of_range`, `draw_not_allowed`). */
+export function resolveTournamentDispute(
+  matchId: string, gamesA: number, gamesB: number,
+): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_resolve_dispute', {
+    p_match: matchId, p_games_a: gamesA, p_games_b: gamesB,
+  });
+}
+
+/** Déclarer un binôme forfait. IRRÉVERSIBLE : aucun chemin ne le défait — un
+ *  match soldé par un forfait refuse même `reopenTournamentMatch`
+ *  (`forfeited_match`). L'écran doit le dire AVANT d'appeler, avec la même
+ *  franchise que pour la réouverture. */
+export function forfeitTournamentTeam(tournamentId: string, teamId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_forfeit', { p_tournament: tournamentId, p_team: teamId });
+}
+
+/** Rouvrir un score acquis — le SEUL chemin qui en défasse un. DÉTRUIT tous
+ *  les tours POSTÉRIEURS (matchs, mouvements, saisies) : `countLaterRoundMatches`
+ *  donne ce nombre AVANT l'appel, pour que l'écran le dise en toutes lettres,
+ *  pas un « Êtes-vous sûr ? » générique. Refuse un match forfait
+ *  (`forfeited_match`) : un forfait ne se rouvre pas ici. */
+export function reopenTournamentMatch(matchId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_reopen_match', { p_match: matchId });
+}
+
+/** La clôture — fige `tournament_results` (rang, stats, points) et passe le
+ *  tournoi TERMINE. Les points ne comptent PAS encore : seule
+ *  `validateTournament` les crédite et fait entrer le tournoi dans
+ *  « Mon parcours » de chaque joueur. */
+export function closeTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_close', { p_tournament: tournamentId });
+}
+
+/** Le dernier geste : TERMINE → CLASSEMENT_VALIDE. Un ACCORD, pas un calcul —
+ *  rien n'est recalculé ici, `tournament_close` a déjà tout figé. */
+export function validateTournament(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_validate', { p_tournament: tournamentId });
+}
+
+/** TOUS les matchs d'un tournoi, tous tours confondus — ce que
+ *  `countLaterRoundMatches` compte avant une réouverture, et l'historique
+ *  complet de la soirée pour l'organisateur. `fetchRoundMatches` (Task 8) ne
+ *  lit qu'UN tour ; cette fonction existe pour ce que Task 8 n'avait pas
+ *  besoin de voir. */
+export async function fetchTournamentMatches(tournamentId: string): Promise<TournamentMatch[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_matches')
+    .select(TOURNAMENT_MATCH_COLS)
+    .eq('tournament_id', tournamentId)
+    .order('round_no', { ascending: true })
+    .order('court_no', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentMatch[];
 }

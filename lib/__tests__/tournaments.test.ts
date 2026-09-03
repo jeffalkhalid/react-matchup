@@ -10,7 +10,10 @@ import {
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
   acceptsCheckIn, isFeatureDisabled, matchLiveStatus, validateTournamentScore,
   computeCareerTotals,
+  nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, pointsScaleValid,
+  DEFAULT_POINTS_SCALE,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
+  type TournamentMissingMatch,
 } from '../tournaments';
 
 const reg = (player_id: string, waitlist_position: number | null = null, extra: Partial<TournamentRegistration> = {}) => ({
@@ -289,5 +292,77 @@ describe('computeCareerTotals — les cumuls de « Mon parcours »', () => {
   it('la différence de jeux peut être négative', () => {
     const t = computeCareerTotals([res(8, 6, 1, 10, 30, 20)]);
     expect(t.gamesDiff).toBe(-20);
+  });
+});
+
+// ─── L'organisation (Task 10) ─────────────────────────────────────────────
+
+describe('nextRoundIsFinal — quand appeler generateFinalTournamentRound', () => {
+  it('vrai quand le tour à tirer EST la dernière rotation', () => {
+    expect(nextRoundIsFinal(5, 6)).toBe(true); // tour 5 acquis, tour 6 = dernier
+  });
+
+  it('faux tant qu’il reste des rotations ordinaires avant la dernière', () => {
+    expect(nextRoundIsFinal(0, 6)).toBe(false); // premier tour
+    expect(nextRoundIsFinal(3, 6)).toBe(false);
+    expect(nextRoundIsFinal(4, 6)).toBe(false);
+  });
+
+  it('faux une fois la dernière rotation déjà tirée (rien à générer)', () => {
+    expect(nextRoundIsFinal(6, 6)).toBe(false);
+  });
+});
+
+describe('missingMatchLabel — le refus round_incomplete, nommé', () => {
+  const base: Pick<TournamentMissingMatch, 'court_no' | 'team_a_label' | 'team_b_label' | 'entries' | 'disputed'> = {
+    court_no: 2, team_a_label: 'Alice · Bob', team_b_label: 'Carla · Dan', entries: 0, disputed: false,
+  };
+
+  it('nomme le terrain et les deux binômes', () => {
+    expect(missingMatchLabel(base)).toContain('Terrain 2');
+    expect(missingMatchLabel(base)).toContain('Alice · Bob');
+    expect(missingMatchLabel(base)).toContain('Carla · Dan');
+  });
+
+  it('distingue « aucune saisie », « un seul camp » et « litige »', () => {
+    expect(missingMatchLabel({ ...base, entries: 0, disputed: false })).toContain('aucune saisie');
+    expect(missingMatchLabel({ ...base, entries: 1, disputed: false })).toContain('un seul camp a saisi');
+    expect(missingMatchLabel({ ...base, entries: 2, disputed: true })).toContain('litige');
+  });
+
+  it('un binôme sans nom retombe sur un libellé générique, jamais un identifiant nu', () => {
+    const label = missingMatchLabel({ ...base, team_a_label: null, team_b_label: null });
+    expect(label).toContain('Équipe A');
+    expect(label).toContain('Équipe B');
+  });
+});
+
+describe('countLaterRoundMatches — ce qu’une réouverture détruirait', () => {
+  const m = (round_no: number) => ({ round_no });
+
+  it('compte les matchs des tours STRICTEMENT postérieurs, byes compris', () => {
+    const matches = [m(1), m(1), m(2), m(2), m(3)];
+    expect(countLaterRoundMatches(matches, 1)).toBe(3);
+    expect(countLaterRoundMatches(matches, 2)).toBe(1);
+  });
+
+  it('zéro quand on rouvre le dernier tour joué', () => {
+    const matches = [m(1), m(2), m(3)];
+    expect(countLaterRoundMatches(matches, 3)).toBe(0);
+  });
+});
+
+describe('pointsScaleValid — miroir de la CHECK sur tournaments.points_scale', () => {
+  it('accepte le barème par défaut du schéma', () => {
+    expect(pointsScaleValid(DEFAULT_POINTS_SCALE)).toBe(true);
+  });
+
+  it('refuse toute valeur négative', () => {
+    expect(pointsScaleValid({ '1': 100, '2': -5 })).toBe(false);
+  });
+
+  it('accepte zéro, et refuse un barème vide', () => {
+    expect(pointsScaleValid({ '1': 0 })).toBe(true);
+    expect(pointsScaleValid({})).toBe(false);
   });
 });
