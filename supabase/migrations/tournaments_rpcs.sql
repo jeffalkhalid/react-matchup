@@ -63,17 +63,21 @@
 -- initial, qui faisaient tous deux l'inverse et se repondaient, donc ne
 -- paraissaient faux ni l'un ni l'autre isolement.
 --
--- Il RESTE trois fonctions du modele PRECEDENT : `tournament_confirm_score`
--- (perimee par le modele : un score est acquis par la CONCORDANCE de deux
--- saisies opposees, il n'y a plus d'etape de confirmation), et
--- `tournament_standings` / `tournament_close`, que la tache « classement,
--- rotation finale, cloture » doit reecrire. Elles ecrivent les colonnes
--- `entered_by` / `confirmed_by`, que `tournament_matches` ne porte plus, et
--- les statuts 'open', 'live', 'finished', 'cancelled', que la contrainte CHECK
--- de `tournaments` refuse. Elles s'INSTALLENT sans erreur (plpgsql ne verifie
--- pas les identifiants a la creation) mais ECHOUERAIENT A L'EXECUTION --
--- raison pour laquelle leur droit d'execution est RETIRE en fin de fichier,
--- dans le bloc « SURFACE GELEE », jusqu'a leur reecriture.
+-- La section « classement, rotation finale, cloture » qui la termine ecrit
+-- `tournament_standings`, `tournament_final_round`, `tournament_close` et
+-- `tournament_validate`, contre les memes statuts et la meme convention de
+-- paliers. LA HIERARCHIE DE CLASSEMENT y est ecrite une fois pour toutes :
+-- palier -> victoires -> difference de jeux -> jeux gagnes -> confrontation
+-- directe agregee -> identifiant.
+--
+-- IL NE RESTE PLUS AUCUNE FONCTION DU MODELE PRECEDENT. Les trois qui
+-- survivaient, gelees et sans droit d'execution, ont ete soldees :
+-- `tournament_confirm_score` est SUPPRIMEE (perimee par le modele -- un score
+-- est acquis par la CONCORDANCE de deux saisies OPPOSEES, il n'y a plus
+-- d'etape de confirmation), `tournament_standings` et `tournament_close` sont
+-- REECRITES. Le bloc « SURFACE GELEE » qui terminait ce fichier n'a plus
+-- d'objet et a disparu avec elles : toute fonction encore ici est appelable
+-- et a son GRANT.
 -- ============================================================================
 BEGIN;
 
@@ -2425,86 +2429,21 @@ REVOKE ALL ON FUNCTION public.tournament_resolve_dispute(uuid, int, int) FROM PU
 GRANT EXECUTE ON FUNCTION public.tournament_resolve_dispute(uuid, int, int) TO authenticated;
 
 -- ============================================================================
--- tournament_confirm_score(p_match)  -- ⚠️ GELEE, ET PERIMEE PAR LE MODELE.
+-- tournament_confirm_score(p_match) -- SUPPRIMEE, et non plus gelee.
 --
--- Un score est desormais acquis des que deux joueurs de binomes OPPOSES
--- saisissent le meme score (`tournament_enter_score` ci-dessus) : il n'y a
--- plus d'etape de confirmation a declencher, donc plus de role pour cette
--- fonction. Elle est laissee ici, inerte et sans droit d'execution (cf. le
--- bloc « SURFACE GELEE » en fin de fichier), plutot que supprimee : sa
--- disparition appartient a la tache qui aura fini de reecrire cette surface.
--- NE PAS l'appeler, NE PAS lui reposer de GRANT.
+-- Elle etait PERIMEE PAR LE MODELE, pas seulement par le schema : un score est
+-- acquis des que deux joueurs de binomes OPPOSES saisissent le meme score
+-- (`tournament_enter_score` ci-dessus). Il n'y a plus d'etape de confirmation
+-- a declencher, donc plus aucun role pour cette fonction -- et son corps
+-- ecrivait `entered_by` / `confirmed_by`, colonnes que `tournament_matches` ne
+-- porte plus : elle aurait leve une erreur SQL BRUTE au premier appel, la ou
+-- tout ce fichier promet `{ok:false, reason}`.
 --
--- La confirmation vient de l'ADVERSAIRE : le binome qui a saisi ne peut pas
--- se confirmer lui-meme.
---
--- Refus : feature_disabled, not_authenticated, match_not_found, bye_match,
---         already_confirmed, no_score_entered, not_a_participant,
---         cannot_confirm_own.
--- Appelable par : les deux joueurs du binome QUI N'A PAS saisi.
+-- Le DROP est explicite et RESTE : une base ou l'ancienne version a ete
+-- appliquee garderait sinon une fonction morte, sans droit d'execution
+-- aujourd'hui mais qu'un GRANT malheureux pourrait rallumer demain.
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.tournament_confirm_score(p_match uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_me      uuid := public.current_player_id();
-  v_m       public.tournament_matches%ROWTYPE;
-  v_my_team uuid;
-  v_author  uuid;   -- le binome de celui qui a saisi
-BEGIN
-  IF NOT public.fn_tournaments_enabled() THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
-  END IF;
-  IF v_me IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
-  END IF;
-
-  SELECT * INTO v_m FROM public.tournament_matches WHERE id = p_match FOR UPDATE;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'match_not_found');
-  END IF;
-  IF v_m.team_a IS NULL OR v_m.team_b IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'bye_match');
-  END IF;
-  IF v_m.confirmed_at IS NOT NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'already_confirmed');
-  END IF;
-  IF v_m.entered_by IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'no_score_entered');
-  END IF;
-
-  SELECT tt.id INTO v_my_team
-    FROM public.tournament_teams tt
-   WHERE tt.id IN (v_m.team_a, v_m.team_b)
-     AND (tt.player1_id = v_me OR tt.player2_id = v_me);
-  IF v_my_team IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_a_participant');
-  END IF;
-
-  SELECT tt.id INTO v_author
-    FROM public.tournament_teams tt
-   WHERE tt.id IN (v_m.team_a, v_m.team_b)
-     AND (tt.player1_id = v_m.entered_by OR tt.player2_id = v_m.entered_by);
-  IF v_author IS NOT NULL AND v_author = v_my_team THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'cannot_confirm_own');
-  END IF;
-
-  UPDATE public.tournament_matches
-     SET confirmed_by = v_me,
-         confirmed_at = now()
-   WHERE id = p_match;
-
-  RETURN jsonb_build_object('ok', true, 'match_id', p_match);
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.tournament_confirm_score(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.tournament_confirm_score(uuid) TO authenticated;
--- ⚠️ Ce GRANT est RETIRE en fin de fichier (bloc « SURFACE GELEE »). Il est
--- laisse ici pour que la fonction gelee reste lisible telle qu'elle etait.
+DROP FUNCTION IF EXISTS public.tournament_confirm_score(uuid);
 
 -- ============================================================================
 -- tournament_forfeit(p_tournament, p_team)
@@ -3060,95 +2999,104 @@ $$;
 REVOKE ALL ON FUNCTION public.tournament_reopen_match(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 
+-- ############################################################################
+-- SECTION CLASSEMENT, ROTATION DE CLASSEMENT, CLOTURE (Task 5)
+--
+-- Quatre fonctions, et la fin du tournoi :
+--   * `tournament_standings`   -- le classement, provisoire ou borne ;
+--   * `tournament_final_round` -- la rotation de CLASSEMENT (la derniere) ;
+--   * `tournament_close`       -- fige `tournament_results`, statut TERMINE ;
+--   * `tournament_validate`    -- statut CLASSEMENT_VALIDE, les points comptent.
+--
+-- LA HIERARCHIE DE CLASSEMENT, une fois pour toutes (spec §8, et
+-- `standings()` de `lib/tournament.ts` qui en est le miroir) :
+--
+--     1. le PALIER atteint       -- le plus PETIT terrain jamais atteint,
+--                                   croissant : le Terrain 1 est le meilleur ;
+--     2. les VICTOIRES           -- decroissant ;
+--     3. la DIFFERENCE de jeux   -- decroissant ;
+--     4. les JEUX GAGNES         -- decroissant ;
+--     5. la CONFRONTATION DIRECTE agregee -- decroissant ;
+--     6. l'identifiant           -- croissant, pour que l'ordre soit TOTAL.
+--
+-- Le palier prime sur tout : un binome qui s'est maintenu en haut devance un
+-- binome qui a accumule des jeux en bas. C'est le sens meme du format.
+--
+-- LE SENS DU PALIER. Le Terrain 1 est le MEILLEUR, donc le palier d'un binome
+-- est le MINIMUM des terrains ou il a joue, et il se trie CROISSANT. La
+-- version precedente de cette fonction prenait un `max(court_no)` trie DESC --
+-- juste sous la convention abandonnee, faux depuis le redressement des paliers
+-- -- et placait le binome qui gagne tout DERRIERE celui qui perd tout.
+--
+-- LA SENTINELLE. Un binome qui n'a joue AUCUN match reel dans la borne n'a pas
+-- de palier : `min()` rend NULL, et le tri le renvoie EN DERNIER
+-- (`NULLS LAST`). Le moteur TypeScript ecrit `bestCourt = Infinity` pour la
+-- meme raison exactement. Un `COALESCE(..., 0)` le mettrait PREMIER.
+--
+-- LES VICTOIRES PASSENT PAR `fn_tournament_a_won`. Un forfait s'ecrit 0-0 des
+-- deux cotes : re-deduire le vainqueur des jeux crediterait la victoire au
+-- camp B a tous les coups, forfaitaire compris. Le marqueur `forfeited_team`
+-- est la seule verite, et il n'est lu qu'a un seul endroit de ce fichier.
+--
+-- L'INVARIANT DE LECTURE DE `tournament_teams` (en-tete du fichier) vaut ICI
+-- AUSSI : deux joueurs en liste d'attente peuvent former un binome, dont la
+-- ligne est indiscernable de celle d'un binome assis. Le classement joint donc
+-- `tournament_registrations` et exige `waitlist_position IS NULL` sur les DEUX
+-- joueurs. Il ne peut PAS passer par `fn_tournament_seated_teams`, qui exclut
+-- en plus les `withdrawn`, que le classement doit GARDER : un binome qui a
+-- declare forfait en cours de soiree reste au classement avec les matchs qu'il
+-- a joues (le moteur part de `teams`, pas des matchs, et le faire disparaitre
+-- serait mentir sur la soiree).
+-- ############################################################################
+
 -- ============================================================================
 -- tournament_standings(p_tournament, p_max_round DEFAULT NULL) RETURNS jsonb
 --
--- ⚠️⚠️ GELEE. A REECRIRE PAR LA TACHE « classement, rotation finale, cloture ».
--- CE QUI SUIT EST LA LISTE EXACTE DE CE QUI EST FAUX. Le commentaire d'origine
--- (« Port EXACT de standings() ») est conserve dessous parce qu'il documente
--- l'INTENTION, mais il ne decrit plus le comportement du moteur : NE PAS s'y
--- fier.
+-- Le classement. Port EXACT de `standings()` de `lib/tournament.ts` -- port
+-- DELIBERE, pas un appel : le SQL fait autorite, le TypeScript est le miroir
+-- d'affichage, et le test de parite de la Task 6 interdit la divergence.
 --
---   1. ⚠️ LE SIGNE DU PALIER EST INVERSE, ET C'EST LE PLUS GRAVE. Le corps
---      calcule `highest_court = max(court_no)` et trie dessus en DESC. C'etait
---      juste sous la convention abandonnee, ou le DERNIER terrain etait le
---      meilleur. Depuis le redressement des paliers (tache « deroulement »),
---      LE TERRAIN 1 EST LE MEILLEUR : le moteur calcule
---      `bestCourt = Math.min(court)` et trie CROISSANT. Tel quel, ce SQL place
---      le binome qui gagne tout et atteint le Terrain 1 DERRIERE celui qui perd
---      tout et reste au Terrain 4. A remplacer par un `min(court_no)` trie ASC.
+--   * UNE LIGNE PAR BINOME ASSIS, forfaits (`withdrawn`) COMPRIS ; un binome
+--     sans aucun match dans la borne y figure avec des compteurs a zero. Le
+--     classement ne fait jamais disparaitre personne ;
+--   * seuls les matchs CONFIRMES et A DEUX BINOMES comptent. Un bye n'est ni
+--     une victoire ni une defaite, ne rapporte aucun jeu, ne compte pas comme
+--     match joue et ne pose aucun palier : personne ne peut le confirmer ;
+--   * la CONFRONTATION DIRECTE est un SCALAIRE, pas un comparateur : pour
+--     chaque binome, les jeux pris aux AUTRES binomes de son groupe d'ex aequo
+--     moins ceux qu'il leur a concedes, sur TOUTES leurs rencontres. Un
+--     comparateur deux a deux coincide sur un groupe de DEUX mais laisse un
+--     CYCLE des trois (m bat n, n bat a, a bat m) : ce n'est plus un ordre
+--     total, et SQL et TypeScript rendraient alors deux classements differents
+--     sur la meme soiree. Le scalaire est transitif par construction ;
+--   * le GROUPE d'ex aequo porte sur les QUATRE cles qui precedent la
+--     confrontation -- palier, victoires, difference, jeux gagnes -- et pas
+--     une de moins : un groupe trop large ferait entrer dans l'agregat des
+--     matchs sans rapport avec le duel reellement lie, et pourrait inverser
+--     l'ordre des deux binomes concernes.
 --
---   2. ⚠️ LE PALIER N'EST PLUS UN DEPARTAGE, C'EST LA PREMIERE CLE. Le SQL
---      trie : jeux gagnes -> difference -> confrontation -> palier. Le moteur
---      trie : palier -> VICTOIRES -> difference -> jeux gagnes ->
---      confrontation -> id. La hierarchie entiere est a refaire, pas a
---      retoucher.
---
---   3. ⚠️ IL N'Y A AUCUN COMPTAGE DE VICTOIRES. `Standing.wins` n'a pas
---      d'equivalent ici -- ni colonne, ni cle de tri. C'est un critere ENTIER
---      qui manque, en DEUXIEME position. (Et c'est aussi pourquoi le defaut de
---      forfait corrige dans `fn_tournament_ladder` n'existe PAS ici : ce corps
---      ne deduit aucun vainqueur de `games_a > games_b`. Le jour ou les
---      victoires seront comptees, elles devront passer par
---      `fn_tournament_a_won` -- `forfeited_team` d'abord, les jeux ensuite --
---      sans quoi un forfait 0-0 crediterait la victoire au camp B quel que
---      soit le forfaitaire.)
---
---   4. ⚠️ IL LIT `tournament_teams` EN DIRECT, sans la jointure a
---      `tournament_registrations` avec `waitlist_position IS NULL` sur les DEUX
---      joueurs -- l'invariant en tete de fichier. Un binome forme par deux
---      joueurs en LISTE D'ATTENTE apparaitrait au classement, avec `played = 0`.
---      `fn_tournament_seated_teams` existe desormais pour ca. Attention : il
---      exclut aussi `withdrawn`, alors que le classement doit GARDER les
---      forfaits (le moteur part de `teams`) -- la tache 5 aura besoin de la
---      jointure sans ce filtre-la.
---
---   5. La sentinelle du palier : le moteur donne `bestCourt = Infinity` a un
---      binome qui n'a joue AUCUN match reel, pour qu'il ne se retrouve pas
---      premier faute d'avoir jamais ete note. Le SQL ecrit `COALESCE(..., 0)`,
---      qui sous un tri croissant le mettrait DEVANT tout le monde.
---
---   6. Le groupe d'ex aequo de la confrontation directe (`dense_rank()`) porte
---      sur deux cles (jeux gagnes, difference). Le moteur en utilise QUATRE :
---      palier, victoires, difference, jeux gagnes -- exactement celles qui
---      precedent la confrontation. Un groupe trop large fait entrer dans
---      l'agregat des matchs sans rapport avec le duel reellement lie.
---
--- Ce qui reste VRAI dans le commentaire d'origine ci-dessous : la confrontation
--- directe AGREGE toutes les rencontres (durement acquis, a garder), les byes
--- n'entrent pas au classement, et `p_max_round` BORNE sans rien supprimer.
---
--- ---------------------------------------------------------------------------
--- Commentaire d'origine, conserve pour l'intention :
---
--- Port EXACT de `standings()` de `lib/tournament.ts`.
---   * une ligne par binome INSCRIT, forfaits compris (le TypeScript part de
---     `teams`, pas des matchs) ;
---   * seuls les matchs CONFIRMES et a deux binomes comptent (un bye n'entre
---     jamais dans le classement) ;
---   * tri : jeux gagnes DESC, puis difference DESC, puis confrontation
---     directe, puis palier le plus haut atteint DESC, puis id ASC ;
---   * la confrontation directe AGREGE toutes les rencontres entre les deux
---     binomes, jamais la premiere trouvee -- les revanches sont la norme dans
---     cette echelle, et sommer rend le resultat independant de l'ordre des
---     lignes.
---
--- `p_max_round` borne le classement aux tours <= a cette valeur ; NULL (le
--- defaut) compte tous les matchs confirmes. C est le pendant exact du
--- parametre `maxRound` de `standings()` cote TypeScript, pour qu un rejeu de
--- parite puisse borner les deux cotes de la meme facon. `tournament_close`
--- lui passe le dernier tour COMPLET.
+-- `p_max_round` BORNE le calcul aux tours <= a cette valeur ; NULL (le defaut)
+-- compte tous les matchs confirmes. IL NE SUPPRIME JAMAIS DE LIGNE : un binome
+-- dont tous les matchs sont au-dela de la borne reste au classement, a zero.
+-- C'est le pendant exact du parametre `maxRound` du moteur, et c'est ce que
+-- `tournament_close` lui passe (le dernier tour COMPLET).
 --
 -- Forme renvoyee :
 --   {ok:true, standings:[{team_id, player1_id, player2_id, withdrawn, played,
---                         games_won, games_lost, games_avg, diff,
---                         highest_court, h2h, rank}, ...]}
+--                         wins, losses, games_won, games_lost, games_avg,
+--                         diff, best_court, h2h, rank}, ...]}
+--
+-- La cle `highest_court` de la version precedente DISPARAIT, elle ne se
+-- renomme pas : elle portait le terrain le plus HAUT en numero, c'est-a-dire
+-- le PIRE. `best_court` porte l'inverse, et vaut `null` pour un binome qui n'a
+-- jamais joue. Aucun ecran ne lit encore l'une ou l'autre (Tasks 6 et 8).
 --
 -- Refus : feature_disabled, tournament_not_found.
--- Appelable par : tout joueur connecte (un tournoi est un evenement public).
+-- Appelable par : tout joueur connecte -- un tournoi est un evenement public,
+-- et cette fonction ne fait que LIRE.
 -- ============================================================================
 -- Ajouter un parametre CHANGE la signature : Postgres creerait une SURCHARGE
--- au lieu de remplacer. On supprime explicitement l ancienne signature.
+-- au lieu de remplacer. On supprime explicitement l'ancienne signature.
 DROP FUNCTION IF EXISTS public.tournament_standings(uuid);
 
 CREATE OR REPLACE FUNCTION public.tournament_standings(
@@ -3171,87 +3119,120 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
   END IF;
 
-  WITH pm AS (
-    SELECT m.team_a, m.team_b, m.games_a, m.games_b, m.court_no
+  WITH assis AS (
+    -- L'invariant de lecture de `tournament_teams`, ecrit ici plutot que pris
+    -- a `fn_tournament_seated_teams`, qui filtre en plus les `withdrawn` --
+    -- que le classement doit garder.
+    SELECT tt.id AS team_id, tt.player1_id, tt.player2_id, tt.withdrawn
+      FROM public.tournament_teams tt
+      JOIN public.tournament_registrations r1
+        ON r1.tournament_id = tt.tournament_id AND r1.player_id = tt.player1_id
+      JOIN public.tournament_registrations r2
+        ON r2.tournament_id = tt.tournament_id AND r2.player_id = tt.player2_id
+     WHERE tt.tournament_id      = p_tournament
+       AND r1.waitlist_position IS NULL
+       AND r2.waitlist_position IS NULL
+  ),
+  pm AS (
+    SELECT m.team_a, m.team_b, m.games_a, m.games_b, m.court_no,
+           public.fn_tournament_a_won(m.forfeited_team, m.team_a,
+                                      m.games_a, m.games_b) AS a_won
       FROM public.tournament_matches m
      WHERE m.tournament_id = p_tournament
        AND m.confirmed_at IS NOT NULL
-       AND m.team_a IS NOT NULL
-       AND m.team_b IS NOT NULL
+       AND m.team_a       IS NOT NULL
+       AND m.team_b       IS NOT NULL
        AND (p_max_round IS NULL OR m.round_no <= p_max_round)
   ),
   per_team AS (
-    SELECT p.team_a AS team_id, p.games_a AS gw, p.games_b AS gl, p.court_no FROM pm p
+    SELECT p.team_a AS team_id, p.games_a AS gw, p.games_b AS gl, p.court_no,
+           CASE WHEN p.a_won THEN 1 ELSE 0 END AS win
+      FROM pm p
     UNION ALL
-    SELECT p.team_b,            p.games_b,      p.games_a,      p.court_no FROM pm p
+    SELECT p.team_b,            p.games_b,      p.games_a,      p.court_no,
+           CASE WHEN p.a_won THEN 0 ELSE 1 END
+      FROM pm p
   ),
   agg AS (
-    SELECT tt.id AS team_id, tt.player1_id, tt.player2_id, tt.withdrawn,
-           count(pt.team_id)::int                AS played,
-           COALESCE(sum(pt.gw), 0)::int          AS games_won,
-           COALESCE(sum(pt.gl), 0)::int          AS games_lost,
-           COALESCE(max(pt.court_no), 0)::int    AS highest_court
-      FROM public.tournament_teams tt
-      LEFT JOIN per_team pt ON pt.team_id = tt.id
-     WHERE tt.tournament_id = p_tournament
-     GROUP BY tt.id, tt.player1_id, tt.player2_id, tt.withdrawn
+    SELECT t.team_id, t.player1_id, t.player2_id, t.withdrawn,
+           count(pt.team_id)::int          AS played,
+           COALESCE(sum(pt.win),  0)::int  AS wins,
+           COALESCE(sum(pt.gw),   0)::int  AS games_won,
+           COALESCE(sum(pt.gl),   0)::int  AS games_lost,
+           -- La sentinelle : NULL, pas 0. Aucun match reel = aucun palier.
+           min(pt.court_no)::int           AS best_court
+      FROM assis t
+      LEFT JOIN per_team pt ON pt.team_id = t.team_id
+     GROUP BY t.team_id, t.player1_id, t.player2_id, t.withdrawn
   ),
   scored AS (
-    SELECT a.*, (a.games_won - a.games_lost) AS diff FROM agg a
+    SELECT a.*, (a.played - a.wins) AS losses, (a.games_won - a.games_lost) AS diff
+      FROM agg a
   ),
   grp AS (
-    -- Le groupe d'ex aequo : exactement les binomes que le comparateur du
-    -- TypeScript n'a pas encore departages quand il en arrive a la
-    -- confrontation directe.
-    SELECT s.*, dense_rank() OVER (ORDER BY s.games_won DESC, s.diff DESC) AS tie_grp
+    -- Le groupe d'ex aequo : exactement les binomes que les quatre premieres
+    -- cles n'ont pas departages. `dense_rank()` traite les NULL comme pairs,
+    -- donc les binomes sans palier se groupent entre eux -- comme le moteur,
+    -- ou `Infinity` est une valeur comme une autre.
+    SELECT s.*,
+           dense_rank() OVER (ORDER BY s.best_court ASC NULLS LAST,
+                                       s.wins       DESC,
+                                       s.diff       DESC,
+                                       s.games_won  DESC) AS tie_grp
       FROM scored s
   ),
   h2h_agg AS (
+    -- Somme sur TOUTES les rencontres internes au groupe. Un match donne ne
+    -- s'apparie qu'a un seul `y` (son adversaire), donc rien n'est compte deux
+    -- fois ; un binome seul dans son groupe n'a aucun `y`, donc 0.
     SELECT x.team_id,
            COALESCE(sum(CASE WHEN p.team_a = x.team_id THEN p.games_a - p.games_b
-                             ELSE                            p.games_b - p.games_a END), 0)::int AS h2h
+                             ELSE                           p.games_b - p.games_a END), 0)::int AS h2h
       FROM grp x
-      LEFT JOIN grp y  ON y.tie_grp = x.tie_grp AND y.team_id <> x.team_id
-      LEFT JOIN pm p ON (p.team_a = x.team_id AND p.team_b = y.team_id)
-                         OR (p.team_b = x.team_id AND p.team_a = y.team_id)
+      LEFT JOIN grp y ON y.tie_grp = x.tie_grp AND y.team_id <> x.team_id
+      LEFT JOIN pm  p ON (p.team_a = x.team_id AND p.team_b = y.team_id)
+                      OR (p.team_b = x.team_id AND p.team_a = y.team_id)
      GROUP BY x.team_id
   ),
   final AS (
     SELECT g.*, h.h2h,
-           row_number() OVER (ORDER BY g.games_won DESC,
-                                       g.diff DESC,
-                                       h.h2h DESC,
-                                       g.highest_court DESC,
-                                       g.team_id ASC)::int AS rank
+           row_number() OVER (ORDER BY g.best_court ASC NULLS LAST,
+                                       g.wins       DESC,
+                                       g.diff       DESC,
+                                       g.games_won  DESC,
+                                       h.h2h        DESC,
+                                       g.team_id    ASC)::int AS rank
       FROM grp g JOIN h2h_agg h ON h.team_id = g.team_id
   )
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
-           'team_id',       f.team_id,
-           'player1_id',    f.player1_id,
-           'player2_id',    f.player2_id,
-           'withdrawn',     f.withdrawn,
-           'played',        f.played,
-           'games_won',     f.games_won,
-           'games_lost',    f.games_lost,
-           -- Moyenne de jeux gagnes par match joue. EXPOSEE POUR L AFFICHAGE,
-           -- JAMAIS UTILISEE AU TRI : le classement se fait au TOTAL de jeux
-           -- gagnes, des deux cotes. Arbitrage rendu : une moyenne
-           -- recompenserait un binome qui abandonne apres deux beaux matchs,
-           -- et le cas qui la motivait -- la soiree qui deborde -- est reglee
-           -- a la source par `tournament_close`, qui cloture au dernier tour
-           -- COMPLET.
-           'games_avg',     CASE WHEN f.played > 0
-                                 THEN round(f.games_won::numeric / f.played, 3)
-                                 ELSE 0 END,
-           'diff',          f.diff,
-           'highest_court', f.highest_court,
-           'h2h',           f.h2h,
-           'rank',          f.rank
+           'team_id',     f.team_id,
+           'player1_id',  f.player1_id,
+           'player2_id',  f.player2_id,
+           'withdrawn',   f.withdrawn,
+           'played',      f.played,
+           'wins',        f.wins,
+           'losses',      f.losses,
+           'games_won',   f.games_won,
+           'games_lost',  f.games_lost,
+           -- Moyenne de jeux gagnes par match joue. EXPOSEE POUR L'AFFICHAGE,
+           -- JAMAIS UTILISEE AU TRI : le classement se fait au TOTAL, des deux
+           -- cotes. Une moyenne recompenserait un binome qui abandonne apres
+           -- deux beaux matchs, et le cas qui la motivait -- la soiree qui
+           -- deborde -- est regle a la source par `tournament_close`, qui
+           -- cloture au dernier tour COMPLET.
+           'games_avg',   CASE WHEN f.played > 0
+                               THEN round(f.games_won::numeric / f.played, 3)
+                               ELSE 0 END,
+           'diff',        f.diff,
+           'best_court',  f.best_court,
+           'h2h',         f.h2h,
+           'rank',        f.rank
          ) ORDER BY f.rank), '[]'::jsonb)
     INTO v_out
     FROM final f;
 
-  RETURN jsonb_build_object('ok', true, 'standings', v_out);
+  RETURN jsonb_build_object('ok', true, 'standings', v_out,
+                            'max_round', p_max_round);
 END;
 $$;
 
@@ -3259,33 +3240,243 @@ REVOKE ALL ON FUNCTION public.tournament_standings(uuid, int) FROM PUBLIC, anon,
 GRANT EXECUTE ON FUNCTION public.tournament_standings(uuid, int) TO authenticated;
 
 -- ============================================================================
--- tournament_close(p_tournament)
+-- tournament_final_round(p_tournament)
 --
--- Fige le classement dans `tournament_results` -- UNE LIGNE PAR JOUEUR, donc
--- deux par binome -- applique `points_scale`, et passe le tournoi en
--- `finished`. C'est cette table que lit "Mon parcours" ; tant que le tournoi
--- tourne, le classement se CALCULE et ne se stocke pas.
+-- LA ROTATION DE CLASSEMENT -- la derniere du tournoi (spec §9). Apres
+-- l'avant-derniere rotation, les mouvements sont faits une derniere fois et
+-- LES POSITIONS SONT FIGEES : la derniere rotation ne fait plus monter ni
+-- descendre, elle CLASSE. Chaque terrain y joue pour DEUX PLACES :
 --
--- ON NE CLOTURE JAMAIS AU MILIEU D UN TOUR. La cloture se fait au DERNIER
--- TOUR COMPLET : le classement est BORNE a ce tour, ce qui egalise les
--- nombres de matchs joues sans corriger apres coup par une moyenne.
+--     Terrain 1 -> places 1 et 2      Terrain 3 -> places 5 et 6
+--     Terrain 2 -> places 3 et 4      Terrain 4 -> places 7 et 8
 --
--- BORNE, PAS SUPPRIME. Une version precedente effacait les matchs des tours
--- posterieurs. C etait destructeur pour de vrai : `tournament_matches` est le
--- SEUL endroit ou un score existe -- `tournament_results` n en garde que des
--- agregats, et `tournament_reopen_match` ne peut pas rouvrir une ligne
--- supprimee. Trois terrains sur quatre finissent le tour 3, la quatrieme
--- paire s en va sans confirmer, l organisateur cloture : six joueurs
--- perdaient leur score reel, sans retour possible. Les lignes restent donc en
--- base ; seul le CALCUL les ignore, via le plafond passe a
--- `tournament_standings`.
+--   place du gagnant = (terrain - 1) * 2 + 1
+--   place du perdant = (terrain - 1) * 2 + 2
 --
--- `current_round` revient au dernier tour complet : c est un marqueur de la
--- ou le classement a ete coupe, pas une destruction. Les matchs du tour
--- entame sont toujours la, lisibles, et rouvrables.
+-- Ce sont des CRENEAUX FIXES par terrain, pas un compteur qui avance au fil
+-- des resultats : un terrain sans adversaire (bye) ne decale jamais les places
+-- des terrains suivants, il laisse seulement son propre creneau de perdant
+-- vacant. C'est `finalRanking()` de `lib/tournament.ts`, au mot pres, et c'est
+-- `tournament_close` qui lit ces creneaux -- pas cette fonction, qui ne fait
+-- que TIRER la rotation.
+--
+-- ELLE N'APPARIE PAS ELLE-MEME. L'appariement d'un tour a UN seul domicile
+-- dans ce fichier -- `tournament_generate_round` -- et le dupliquer ici serait
+-- se donner deux endroits ou l'appariement peut etre faux, dont un que
+-- personne ne relirait. La rotation de classement se TIRE exactement comme les
+-- autres : les binomes entrent sur le palier ou les resultats de la rotation
+-- precedente les ont laisses, et s'y rencontrent. Ce qui la distingue n'est
+-- pas son tirage, c'est ce qu'on en FAIT ensuite -- aucun tour apres elle, et
+-- un classement lu aux creneaux.
+--
+-- CE QU'ELLE AJOUTE A `tournament_generate_round`, et qui justifie qu'elle
+-- existe :
+--   1. elle REFUSE de tirer autre chose que la DERNIERE rotation
+--      (`not_the_final_round`) -- l'organisateur qui appelle « rotation de
+--      classement » au tour 3 recoit un refus nomme, pas un tour 3 ordinaire ;
+--   2. elle rend l'ENJEU de chaque terrain (`stakes`), pour que l'ecran puisse
+--      afficher « Terrain 2 : places 3 et 4 » sans recalculer la regle de son
+--      cote.
+--
+-- LA SOIREE QUI DEBORDE N'EST PAS SON PROBLEME. Si la rotation de classement
+-- n'a pas lieu -- terrain repris, binome parti, il est tard -- il n'y a rien a
+-- faire ici : `tournament_close` cloture alors sur le classement provisoire de
+-- la derniere rotation COMPLETE, et les points sont attribues normalement
+-- (spec §9). Raccourcir le tournoi pour avancer la rotation de classement
+-- reviendrait a ecrire `round_count`, donc a changer la forme du tournoi en
+-- cours de soiree : ce n'est pas demande, et ce n'est pas fait.
 --
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
---         not_the_organizer, already_finished, tournament_cancelled,
+--         not_the_organizer, tournament_not_started, tournament_over,
+--         final_round_already_generated, not_the_final_round -- plus tous ceux
+--         de `tournament_generate_round`, rendus TELS QUELS (round_incomplete
+--         avec sa liste `missing`, round_already_generated, not_enough_teams).
+-- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_final_round(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me     uuid := public.current_player_id();
+  v_t      public.tournaments%ROWTYPE;
+  v_round  int;
+  v_gen    jsonb;
+  v_stakes jsonb;
+BEGIN
+  ---------------------------------------------------------------------------
+  -- CONTROLES -- aucune ecriture avant la fin de cette section, et l'appel a
+  -- `tournament_generate_round` en est une. Un refus renvoie {ok:false} SANS
+  -- lever, donc sans rollback : un garde place apres l'appel laisserait
+  -- derriere lui le tour qu'il vient d'annoncer refuse.
+  ---------------------------------------------------------------------------
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  -- ORDRE DES VERROUS : la ligne `tournaments` d'abord. `tournament_generate_round`
+  -- reprendra le meme verrou dans la MEME transaction, ce qui est re-entrant.
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_t.created_by <> v_me THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_t.status IN ('TERMINE','CLASSEMENT_VALIDE') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_over');
+  END IF;
+  IF v_t.status <> 'EN_COURS' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_started');
+  END IF;
+
+  -- La rotation de classement est la DERNIERE : celle qui porte le numero
+  -- `round_count`. Deux refus distincts, parce qu'ils ne se corrigent pas de
+  -- la meme facon : elle est deja tiree (il faut jouer, pas re-tirer), ou il
+  -- reste des rotations ordinaires avant elle (il faut les jouer d'abord).
+  IF EXISTS (SELECT 1 FROM public.tournament_matches m
+              WHERE m.tournament_id = p_tournament
+                AND m.round_no      = v_t.round_count) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'final_round_already_generated',
+                              'round', v_t.round_count);
+  END IF;
+
+  v_round := v_t.current_round + 1;
+  IF v_round <> v_t.round_count THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_final_round',
+                              'round', v_round,
+                              'round_count', v_t.round_count);
+  END IF;
+
+  ---------------------------------------------------------------------------
+  -- ECRITURES -- entierement deleguees. `tournament_generate_round` refait ses
+  -- propres controles (tour courant entierement acquis, palier a plus de trois
+  -- equipes, etc.) : son refus est rendu TEL QUEL, avec sa liste `missing`,
+  -- que l'ecran sait deja afficher.
+  ---------------------------------------------------------------------------
+  v_gen := public.tournament_generate_round(p_tournament);
+  IF NOT COALESCE((v_gen->>'ok')::boolean, false) THEN
+    RETURN v_gen;
+  END IF;
+
+  -- L'enjeu de chaque terrain. Sur un palier qui porte a la fois un match et
+  -- un bye (trois equipes -- possible apres un forfait), le MATCH est donne en
+  -- premier : c'est lui qui decide des deux creneaux, `tournament_close` en
+  -- fait autant.
+  SELECT jsonb_agg(jsonb_build_object(
+           'match_id',  m.id,
+           'court_no',  m.court_no,
+           'team_a',    m.team_a,
+           'team_b',    m.team_b,
+           'rank_win',  (m.court_no - 1) * 2 + 1,
+           'rank_lose', CASE WHEN m.team_b IS NULL THEN NULL
+                             ELSE (m.court_no - 1) * 2 + 2 END
+         ) ORDER BY m.court_no ASC, (m.team_b IS NULL) ASC)
+    INTO v_stakes
+    FROM public.tournament_matches m
+   WHERE m.tournament_id = p_tournament
+     AND m.round_no      = v_round;
+
+  RETURN v_gen || jsonb_build_object('final_round', true,
+                                     'stakes', COALESCE(v_stakes, '[]'::jsonb));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_final_round(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- `tournament_results.wins` -- colonne AJOUTEE ici, additive et idempotente.
+--
+-- Le cahier demande que la cloture fige « rang final, matchs joues, VICTOIRES,
+-- jeux gagnes et perdus, points », et « Mon parcours » (Task 9) affiche V/D.
+-- La table livree par le schema ne porte pas de colonne pour les victoires --
+-- elles ne se deduisent d'aucune des autres : ni les jeux ni le rang ne disent
+-- combien de matchs un binome a gagnes. Les recalculer a la lecture obligerait
+-- « Mon parcours » a rejouer tout le classement d'un tournoi clos, alors que
+-- la table existe precisement pour ne plus avoir a le faire.
+--
+-- NOT NULL DEFAULT 0 : la table est un agregat de fin de soiree, il n'y a rien
+-- a retro-remplir, et `tournament_close` ecrit toujours la valeur. Les DEFAITES
+-- ne sont PAS stockees -- elles se deduisent, elles : `played - wins`.
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.tournament_results
+  ADD COLUMN IF NOT EXISTS wins int NOT NULL DEFAULT 0;
+
+-- ============================================================================
+-- tournament_close(p_tournament)
+--
+-- LA CLOTURE. Elle fige le classement dans `tournament_results` -- UNE LIGNE
+-- PAR JOUEUR, donc DEUX PAR BINOME, avec LES MEMES POINTS pour les deux
+-- coequipiers -- applique `points_scale`, et passe le tournoi en TERMINE.
+-- C'est cette table que lit « Mon parcours » ; tant que le tournoi tourne, le
+-- classement se CALCULE et ne se stocke pas.
+--
+-- LES POINTS NE COMPTENT PAS ENCORE. La cloture les CALCULE et les ECRIT, mais
+-- le tournoi n'entre dans « Mon parcours » qu'au passage en CLASSEMENT_VALIDE,
+-- que seule `tournament_validate` prononce. C'est le dernier regard de
+-- l'organisateur sur son classement, et il n'a de sens que si TERMINE ne
+-- credite rien.
+--
+-- D'OU VIENT LE RANG FINAL -- les deux cas de la spec §9 :
+--
+--   1. LA ROTATION DE CLASSEMENT A EU LIEU (le tour `round_count` est tire ET
+--      entierement acquis). Le rang vient de ses CRENEAUX FIXES : le gagnant
+--      du terrain N prend (N-1)*2+1, son perdant (N-1)*2+2. Les statistiques
+--      des rotations precedentes restent enregistrees mais NE LE REMPLACENT
+--      PAS -- c'est la regle du format, et c'est ce qui fait que la derniere
+--      rotation se joue vraiment.
+--
+--   2. ELLE N'A PAS EU LIEU -- soiree qui deborde, terrain repris, binome
+--      parti. Le rang final est LE CLASSEMENT PROVISOIRE de la derniere
+--      rotation COMPLETE, selon la hierarchie du §8, et les points sont
+--      attribues NORMALEMENT. Un tournoi ecourte compte.
+--
+-- LES CRENEAUX VACANTS. Un terrain qui n'a joue qu'un bye ne remplit que son
+-- creneau de gagnant ; un terrain absent du tour n'en remplit aucun. Les
+-- binomes qui restent -- byes du dernier tour, forfaits, binomes jamais
+-- places -- prennent les NUMEROS ENCORE LIBRES, dans l'ordre du classement
+-- provisoire. Personne ne sort du classement, et deux binomes n'ont jamais le
+-- meme rang : sans quoi `points_scale` recompenserait deux fois la meme place.
+--
+-- Sur un palier qui porte a la fois un match et un bye -- trois equipes, ce
+-- que le format autorise apres un forfait -- LE MATCH prend les deux creneaux
+-- du terrain, et le binome du bye repart dans les numeros libres. Il a joue
+-- moins que les deux autres ce tour-la ; c'est son classement provisoire, pas
+-- un creneau qu'il n'a pas dispute, qui le departage.
+--
+-- ON NE CLOTURE JAMAIS AU MILIEU D'UN TOUR. La cloture se fait au DERNIER TOUR
+-- COMPLET : le classement est BORNE a ce tour, ce qui egalise les nombres de
+-- matchs joues sans corriger apres coup par une moyenne. Meme definition, au
+-- mot pres, que `lastCompleteRound()` cote TypeScript -- le PREMIER tour
+-- incomplet moins un, ce qui reste juste meme si une reouverture a laisse un
+-- trou plus haut.
+--
+-- BORNE, PAS SUPPRIME. Une version precedente effacait les matchs des tours
+-- posterieurs. C'etait destructeur pour de vrai : `tournament_matches` est le
+-- SEUL endroit ou un score existe -- `tournament_results` n'en garde que des
+-- agregats, et `tournament_reopen_match` ne peut pas rouvrir une ligne
+-- supprimee. Trois terrains sur quatre finissent le tour 3, la quatrieme paire
+-- s'en va sans confirmer, l'organisateur cloture : six joueurs perdaient leur
+-- score reel, sans retour possible. Les lignes restent donc en base ; seul le
+-- CALCUL les ignore, via le plafond passe a `tournament_standings`.
+--
+-- `current_round` revient au dernier tour complet : c'est un marqueur de la ou
+-- le classement a ete coupe, pas une destruction. Les matchs du tour entame
+-- sont toujours la, lisibles, et rouvrables.
+--
+-- UNE SEULE SOURCE POUR LES CHIFFRES : `tournament_standings`, celle-la meme
+-- que l'ecran affiche. Deux calculs, meme tres proches, finiraient par
+-- diverger -- et le jour ou ils divergeraient, c'est le classement fige qui
+-- aurait raison contre l'ecran que les joueurs ont vu toute la soiree.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, already_validated, already_finished,
 --         tournament_not_started, no_complete_round.
 -- Appelable par : le createur du tournoi, et lui seul.
 -- ============================================================================
@@ -3300,10 +3491,18 @@ DECLARE
   v_t       public.tournaments%ROWTYPE;
   v_st      jsonb;
   v_rows    int;
-  v_partiel int;   -- premier tour ou un match reel n est pas confirme
-  v_dernier int;   -- dernier tour COMPLET, sur lequel on cloture
-  v_purges  int;   -- matchs laisses de cote par le plafond (jamais supprimes)
+  v_lignes  int;      -- lignes ecrites dans tournament_results
+  v_partiel int;      -- premier tour ou un match reel n'est pas confirme
+  v_dernier int;      -- dernier tour COMPLET, sur lequel on cloture
+  v_ignores int;      -- matchs laisses de cote par le plafond (jamais supprimes)
+  v_final   boolean;  -- la rotation de classement a-t-elle eu lieu ?
+  v_rank    jsonb;
 BEGIN
+  ---------------------------------------------------------------------------
+  -- CONTROLES -- aucune ecriture avant la fin de cette section. Un refus
+  -- renvoie {ok:false} SANS lever, donc sans rollback : un garde place apres
+  -- une ecriture laisserait la ligne derriere lui.
+  ---------------------------------------------------------------------------
   IF NOT public.fn_tournaments_enabled() THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
   END IF;
@@ -3318,27 +3517,29 @@ BEGIN
   IF v_t.created_by <> v_me THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
   END IF;
-  IF v_t.status = 'finished' THEN
+  -- CLASSEMENT_VALIDE : le classement est credite. Le defaire n'appartient pas
+  -- a cette fonction (`tournament_reopen_match` est le chemin, et il refuse
+  -- aussi un tournoi valide).
+  IF v_t.status = 'CLASSEMENT_VALIDE' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'already_validated');
+  END IF;
+  IF v_t.status = 'TERMINE' THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'already_finished');
   END IF;
-  IF v_t.status = 'cancelled' THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_cancelled');
-  END IF;
-  IF v_t.current_round < 1 THEN
+  IF v_t.status <> 'EN_COURS' OR v_t.current_round < 1 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_started');
   END IF;
 
   -- Le dernier tour COMPLET. Un tour est complet quand tous ses matchs REELS
-  -- sont confirmes ; les byes ne se confirment pas et n entrent pas dans le
-  -- controle. `tournament_generate_round` interdisant deja d avancer sur un
+  -- sont confirmes ; les byes ne se confirment pas et n'entrent pas dans le
+  -- controle. `tournament_generate_round` interdisant deja d'avancer sur un
   -- tour incomplet, seul le dernier tour peut etre partiel -- mais on prend le
   -- PREMIER tour incomplet plutot que le dernier, ce qui reste juste meme si
-  -- une reouverture a laisse un trou plus haut. Meme definition, au mot pres,
-  -- que `lastCompleteRound()` cote TypeScript.
+  -- une reouverture a laisse un trou plus haut.
   SELECT min(x.round_no) INTO v_partiel
     FROM public.tournament_matches x
    WHERE x.tournament_id = p_tournament
-     AND x.team_b IS NOT NULL
+     AND x.team_b       IS NOT NULL
      AND x.confirmed_at IS NULL;
 
   v_dernier := COALESCE(v_partiel - 1, v_t.current_round);
@@ -3347,52 +3548,164 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'no_complete_round');
   END IF;
 
+  -- LA ROTATION DE CLASSEMENT A-T-ELLE EU LIEU ? Elle porte le numero
+  -- `round_count` : elle a eu lieu si le dernier tour COMPLET est celui-la, et
+  -- si elle porte effectivement des matchs. Une rotation de classement tiree
+  -- mais inachevee ne compte pas -- `v_dernier` vaut alors `round_count - 1`
+  -- et on retombe, sans rien de special a ecrire, sur le classement
+  -- provisoire de la derniere rotation complete.
+  v_final := (v_dernier = v_t.round_count)
+             AND EXISTS (SELECT 1 FROM public.tournament_matches m
+                          WHERE m.tournament_id = p_tournament
+                            AND m.round_no      = v_t.round_count);
+
   -- Combien de matchs le plafond laisse de cote. On les COMPTE pour le dire a
-  -- l organisateur ; on ne les touche pas.
-  SELECT count(*)::int INTO v_purges
+  -- l'organisateur ; on ne les touche pas.
+  SELECT count(*)::int INTO v_ignores
     FROM public.tournament_matches x
    WHERE x.tournament_id = p_tournament
-     AND x.round_no > v_dernier;
+     AND x.round_no      > v_dernier;
 
-  -- Une seule source pour le classement : la fonction que l ecran affiche est
-  -- celle qui fige les resultats. Deux calculs, meme tres proches, finiraient
-  -- par diverger. Le plafond lui fait ignorer le tour entame.
   v_st := public.tournament_standings(p_tournament, v_dernier);
   IF NOT COALESCE((v_st->>'ok')::boolean, false) THEN
     RETURN v_st;
   END IF;
 
+  ---------------------------------------------------------------------------
+  -- ECRITURES
+  ---------------------------------------------------------------------------
+  WITH st AS (
+    SELECT (e->>'team_id')::uuid AS team_id,
+           (e->>'rank')::int       AS prov_rank,
+           (e->>'played')::int     AS played,
+           (e->>'wins')::int       AS wins,
+           (e->>'games_won')::int  AS games_won,
+           (e->>'games_lost')::int AS games_lost
+      FROM jsonb_array_elements(v_st->'standings') AS e
+  ),
+  fr AS (
+    -- Les lignes de la rotation de classement. Sur un palier qui porte un
+    -- match ET un bye, `pref = 1` retient le MATCH.
+    SELECT m.court_no, m.team_a, m.team_b, m.confirmed_at,
+           public.fn_tournament_a_won(m.forfeited_team, m.team_a,
+                                      m.games_a, m.games_b) AS a_won,
+           row_number() OVER (PARTITION BY m.court_no
+                              ORDER BY (m.team_b IS NOT NULL) DESC) AS pref
+      FROM public.tournament_matches m
+     WHERE v_final
+       AND m.tournament_id = p_tournament
+       AND m.round_no      = v_dernier
+  ),
+  places AS (
+    -- Les creneaux fixes : (terrain - 1) * 2 + 1 au gagnant, + 2 au perdant.
+    SELECT (f.court_no - 1) * 2 + 1 AS slot,
+           CASE WHEN f.a_won THEN f.team_a ELSE f.team_b END AS team_id
+      FROM fr f
+     WHERE f.pref = 1 AND f.team_b IS NOT NULL AND f.confirmed_at IS NOT NULL
+    UNION ALL
+    SELECT (f.court_no - 1) * 2 + 2,
+           CASE WHEN f.a_won THEN f.team_b ELSE f.team_a END
+      FROM fr f
+     WHERE f.pref = 1 AND f.team_b IS NOT NULL AND f.confirmed_at IS NOT NULL
+    UNION ALL
+    -- Un bye ne dispute qu'une place : la meilleure des deux. L'autre creneau
+    -- du terrain reste vacant, et un binome du classement provisoire le
+    -- prendra plus bas.
+    SELECT (f.court_no - 1) * 2 + 1, f.team_a
+      FROM fr f
+     WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
+  ),
+  reste AS (
+    -- Ceux que la rotation de classement n'a pas places, dans l'ordre du
+    -- classement provisoire. Quand elle n'a PAS eu lieu, `places` est vide et
+    -- TOUT LE MONDE passe par ici : les numeros libres sont alors 1..N et le
+    -- rang final est, numero pour numero, le rang provisoire.
+    SELECT s.team_id, row_number() OVER (ORDER BY s.prov_rank) AS n
+      FROM st s
+     WHERE NOT EXISTS (SELECT 1 FROM places p WHERE p.team_id = s.team_id)
+  ),
+  libres AS (
+    -- Les numeros de rang encore libres, croissants. La borne haute
+    -- (nb de binomes + nb de creneaux pris) est genereuse a dessein : elle
+    -- garantit qu'il reste toujours au moins autant de numeros libres que de
+    -- binomes a placer, quel que soit le nombre de terrains.
+    SELECT g AS slot, row_number() OVER (ORDER BY g) AS n
+      FROM generate_series(1, (SELECT count(*)::int FROM st)
+                            + (SELECT count(*)::int FROM places)) AS g
+     WHERE NOT EXISTS (SELECT 1 FROM places p WHERE p.slot = g)
+  ),
+  finale AS (
+    SELECT p.team_id, p.slot AS final_rank FROM places p
+    UNION ALL
+    SELECT r.team_id, l.slot          FROM reste r JOIN libres l ON l.n = r.n
+  )
   INSERT INTO public.tournament_results
-    (tournament_id, team_id, player_id, final_rank, played, games_won, games_lost, points)
+    (tournament_id, team_id, player_id, final_rank, played, wins,
+     games_won, games_lost, points)
   SELECT p_tournament,
-         tt.id,
+         f.team_id,
          pl.player_id,
-         (e->>'rank')::int,
-         (e->>'played')::int,
-         (e->>'games_won')::int,
-         (e->>'games_lost')::int,
-         public.fn_tournament_points(v_t.points_scale, (e->>'rank')::int)
-    FROM jsonb_array_elements(v_st->'standings') AS e
-    JOIN public.tournament_teams tt ON tt.id = (e->>'team_id')::uuid
+         f.final_rank,
+         s.played,
+         s.wins,
+         s.games_won,
+         s.games_lost,
+         -- LES DEUX JOUEURS D'UN BINOME RECOIVENT LES MEMES POINTS : le rang
+         -- appartient au binome, la ligne au joueur.
+         public.fn_tournament_points(v_t.points_scale, f.final_rank)
+    FROM finale f
+    JOIN st s ON s.team_id = f.team_id
+    JOIN public.tournament_teams tt ON tt.tournament_id = p_tournament
+                                   AND tt.id            = f.team_id
     CROSS JOIN LATERAL unnest(ARRAY[tt.player1_id, tt.player2_id]) AS pl(player_id)
   ON CONFLICT (tournament_id, player_id) DO UPDATE
     SET team_id    = EXCLUDED.team_id,
         final_rank = EXCLUDED.final_rank,
         played     = EXCLUDED.played,
+        wins       = EXCLUDED.wins,
         games_won  = EXCLUDED.games_won,
         games_lost = EXCLUDED.games_lost,
         points     = EXCLUDED.points;
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  -- Zero ligne serait un mensonge : le classement rendu ok:true sans qu aucun
+  -- resultat ne soit fige. On compte, et on le dit.
+  GET DIAGNOSTICS v_lignes = ROW_COUNT;
 
   UPDATE public.tournaments
-     SET status        = 'finished',
+     SET status        = 'TERMINE',
          current_round = v_dernier,
          ends_at       = COALESCE(ends_at, now())
    WHERE id = p_tournament;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    -- La ligne est verrouillee et a ete lue plus haut : zero ligne est un etat
+    -- impossible, pas un refus metier. On LEVE, ce qui annule tout.
+    RAISE EXCEPTION 'tournament_close: le tournoi % a disparu sous le verrou',
+      p_tournament;
+  END IF;
 
-  RETURN jsonb_build_object('ok', true, 'results', v_rows,
+  -- Le podium tel qu'il vient d'etre fige -- relu de la table, pas reconstruit
+  -- de tete : ce qui est rendu est ce qui est en base.
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'team_id',    z.team_id,
+           'final_rank', z.final_rank,
+           'played',     z.played,
+           'wins',       z.wins,
+           'games_won',  z.games_won,
+           'games_lost', z.games_lost,
+           'points',     z.points
+         ) ORDER BY z.final_rank), '[]'::jsonb)
+    INTO v_rank
+    FROM (SELECT DISTINCT r.team_id, r.final_rank, r.played, r.wins,
+                          r.games_won, r.games_lost, r.points
+            FROM public.tournament_results r
+           WHERE r.tournament_id = p_tournament) z;
+
+  RETURN jsonb_build_object('ok', true,
+                            'results', v_lignes,
                             'closed_at_round', v_dernier,
-                            'ignored_matches', v_purges,
+                            'final_round_played', v_final,
+                            'ignored_matches', v_ignores,
+                            'ranking', v_rank,
                             'standings', v_st->'standings');
 END;
 $$;
@@ -3401,44 +3714,125 @@ REVOKE ALL ON FUNCTION public.tournament_close(uuid) FROM PUBLIC, anon, authenti
 GRANT EXECUTE ON FUNCTION public.tournament_close(uuid) TO authenticated;
 
 -- ============================================================================
--- SURFACE GELEE -- ce qu'il reste des fonctions heritees.
+-- tournament_validate(p_tournament)
 --
--- La tache « deroulement » a reecrit `tournament_enter_score`,
--- `tournament_generate_round` et `tournament_reopen_match`, et ajoute
--- `tournament_start`, `tournament_resolve_dispute` et `tournament_forfeit` :
--- chacune a repose son propre GRANT et ne figure plus ici.
+-- LE DERNIER GESTE : TERMINE -> CLASSEMENT_VALIDE. C'est LA SEULE ETAPE OU LES
+-- POINTS COMPTENT, et ou le tournoi entre dans « Mon parcours » (spec §14).
 --
--- Restent gelees, jusqu'a la tache « classement, rotation finale, cloture » :
+-- ELLE NE RECALCULE RIEN, ET ELLE N'ECRIT AUCUN POINT. `tournament_close` a
+-- deja fige le rang, les compteurs et les points dans `tournament_results` ;
+-- « crediter » n'est pas une addition quelque part, c'est le fait que ces
+-- lignes DEVIENNENT LISIBLES comme acquises. Il n'existe volontairement AUCUN
+-- cumul denormalise cote joueur : « Mon parcours » (Task 9) somme
+-- `tournament_results` en ne retenant que les tournois CLASSEMENT_VALIDE. Un
+-- total stocke sur `players` serait une seconde verite a garder synchronisee
+-- d'une premiere -- la derive deja payee dans ce depot avec `spots_available`
+-- -- et il faudrait la defaire a chaque reouverture de score.
 --
---   * `tournament_confirm_score` -- PERIMEE PAR LE MODELE, pas seulement par
---     le schema. Un score est desormais acquis des que deux joueurs de
---     binomes OPPOSES saisissent le meme score : il n'y a plus d'etape de
---     confirmation a declencher, et la fonction n'a plus de role a jouer. Elle
---     ecrit par-dessus le marche `entered_by` / `confirmed_by`, colonnes que
---     `tournament_matches` ne porte plus. Sa SUPPRESSION (`DROP FUNCTION`)
---     appartient a la tache qui aura fini de reecrire cette surface -- la
---     laisser gelee la garde inerte en attendant.
+-- Rien ici ne touche a `games`, a l'ELO, ni au classement general de l'appli :
+-- les points de tournoi sont un classement A PART, c'est toute la raison d'etre
+-- de l'architecture separee.
 --
---   * `tournament_standings` et `tournament_close` -- ecrites contre l'ancienne
---     hierarchie de classement (jeux gagnes d'abord, palier le plus HAUT
---     comme dernier critere) et contre les statuts 'live' / 'finished', que la
---     contrainte CHECK de `tournaments` refuse.
---     ⚠️ LA LISTE EXACTE DE CE QUI EST FAUX DANS `tournament_standings` est
---     ecrite juste au-dessus de sa definition, en six points -- dont un que la
---     tache « deroulement » a CREE en redressant les paliers : `highest_court`
---     y est un `max(court_no)` trie DESC, alors que le Terrain 1 est desormais
---     le meilleur. La lire AVANT d'y toucher : elle dit aussi ce qui n'est PAS
---     casse, pour ne pas partir corriger un fantome.
+-- Recalculer avant de valider n'est pas non plus son role : si le classement
+-- fige ne convient pas, le chemin est `tournament_reopen_match` (qui efface
+-- `tournament_results` et rend le tournoi a EN_COURS), puis une nouvelle
+-- cloture. Valider est un ACCORD, pas un calcul.
 --
--- Elles s'installent sans erreur (plpgsql ne verifie pas les identifiants a la
--- creation) mais echoueraient des le premier appel -- avec une erreur SQL
--- BRUTE, la ou tout ce fichier promet `{ok:false, reason}`. Le REVOKE nomme
--- les trois (PUBLIC, anon, authenticated) : revoquer a PUBLIC seul ne retire
--- pas les droits directs.
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, already_validated, tournament_not_finished,
+--         no_results.
+-- Appelable par : le createur du tournoi, et lui seul.
 -- ============================================================================
-REVOKE ALL ON FUNCTION public.tournament_confirm_score(uuid)  FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.tournament_standings(uuid, int) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.tournament_close(uuid)          FROM PUBLIC, anon, authenticated;
+CREATE OR REPLACE FUNCTION public.tournament_validate(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me      uuid := public.current_player_id();
+  v_t       public.tournaments%ROWTYPE;
+  v_joueurs int;
+  v_points  int;
+  v_rows    int;
+BEGIN
+  ---------------------------------------------------------------------------
+  -- CONTROLES -- aucune ecriture avant la fin de cette section.
+  ---------------------------------------------------------------------------
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_t.created_by <> v_me THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_t.status = 'CLASSEMENT_VALIDE' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'already_validated');
+  END IF;
+  -- On ne valide que ce qui est CLOS. Valider depuis EN_COURS sauterait la
+  -- cloture, donc `tournament_results` : le tournoi entrerait dans
+  -- « Mon parcours » sans une seule ligne de resultat.
+  IF v_t.status <> 'TERMINE' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_finished',
+                              'status', v_t.status);
+  END IF;
+
+  SELECT count(*)::int, COALESCE(sum(r.points), 0)::int
+    INTO v_joueurs, v_points
+    FROM public.tournament_results r
+   WHERE r.tournament_id = p_tournament;
+
+  -- Ceinture : un tournoi TERMINE sans resultat serait une cloture qui a menti.
+  -- Mieux vaut le dire que valider un classement vide.
+  IF v_joueurs = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'no_results');
+  END IF;
+
+  ---------------------------------------------------------------------------
+  -- ECRITURES
+  ---------------------------------------------------------------------------
+  UPDATE public.tournaments
+     SET status = 'CLASSEMENT_VALIDE'
+   WHERE id = p_tournament;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'tournament_validate: le tournoi % a disparu sous le verrou',
+      p_tournament;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true,
+                            'players', v_joueurs,
+                            'points_total', v_points);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_validate(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_validate(uuid) TO authenticated;
+
+-- ============================================================================
+-- FIN DU FICHIER -- il n'y a PLUS DE SURFACE GELEE.
+--
+-- Le bloc qui suivait ici retirait le droit d'execution des trois dernieres
+-- fonctions du modele precedent. Les trois ont disparu :
+--   * `tournament_confirm_score` -- SUPPRIMEE (`DROP FUNCTION`, plus haut) :
+--     perimee par le modele lui-meme, un score est acquis des que deux joueurs
+--     de binomes OPPOSES saisissent le meme ;
+--   * `tournament_standings` et `tournament_close` -- REECRITES ci-dessus,
+--     contre les statuts reels (EN_COURS / TERMINE / CLASSEMENT_VALIDE) et
+--     contre la hierarchie de classement du format : palier -> victoires ->
+--     difference -> jeux gagnes -> confrontation directe.
+--
+-- Toute fonction de ce fichier a donc desormais son `REVOKE ALL ... FROM
+-- PUBLIC, anon, authenticated` suivi, pour celles qui sont appelables, de son
+-- `GRANT EXECUTE ... TO authenticated`. Aucune ne reste inerte.
+-- ============================================================================
 
 COMMIT;
 
