@@ -3047,7 +3047,10 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 --
 --     0. l'ABANDON               -- `withdrawn`, croissant : un binome qui a
 --                                   quitte la soiree passe DERRIERE tous ceux
---                                   qui l'ont finie ;
+--                                   qui l'ont finie. ⚠️ CETTE CLE N'EXISTE QUE
+--                                   DANS LE SQL : le moteur TypeScript ne la
+--                                   connait pas encore (cf. l'avertissement
+--                                   au-dessus de `tournament_standings`) ;
 --     1. le PALIER atteint       -- le plus PETIT terrain jamais atteint,
 --                                   croissant : le Terrain 1 est le meilleur ;
 --     2. les VICTOIRES           -- decroissant ;
@@ -3066,8 +3069,11 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 -- des binomes qui ont joue toute la soiree, a l'ecran ET a la remise des
 -- points. Il DESCEND donc en bas du classement IMMEDIATEMENT, pendant la
 -- soiree, a l'ecran que tout le monde regarde -- pas seulement a la cloture.
--- C'est ce qui garde UNE SEULE source de verite : le classement affiche et le
--- classement fige sont le meme, dans le meme ordre.
+-- C'est ce qui garde UNE SEULE source de verite : le classement affiche
+-- pendant la soiree et le classement fige a la cloture rangent les binomes
+-- partis au meme endroit -- en bas. Un binome parti n'occupe donc jamais un
+-- creneau de la rotation de classement, meme s'il figure encore dans son
+-- tableau : `fn_tournament_final_slots` l'ecarte, et il retombe ici.
 --
 -- LE SENS DU PALIER. Le Terrain 1 est le MEILLEUR, donc le palier d'un binome
 -- est le MINIMUM des terrains ou il a joue, et il se trie CROISSANT. La
@@ -3099,9 +3105,20 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 -- ============================================================================
 -- tournament_standings(p_tournament, p_max_round DEFAULT NULL) RETURNS jsonb
 --
--- Le classement. Port EXACT de `standings()` de `lib/tournament.ts` -- port
+-- Le classement. Port de `standings()` de `lib/tournament.ts` -- port
 -- DELIBERE, pas un appel : le SQL fait autorite, le TypeScript est le miroir
 -- d'affichage, et le test de parite de la Task 6 interdit la divergence.
+--
+-- ⚠️ UNE SEULE DIVERGENCE CONNUE, ET ELLE EST VOULUE : `withdrawn`, PREMIERE
+-- CLE DE TRI ICI, N'EXISTE PAS DANS LE MOTEUR. `lib/tournament.ts:171`
+-- (`standings()`) ne lit pas `TeamState.withdrawn` -- le champ existe, il n'est
+-- jamais consulte -- et trie donc un binome parti au milieu des autres, sur le
+-- palier qu'il avait atteint avant de s'en aller. LE SQL FAIT AUTORITE : un
+-- binome qui abandonne passe derriere tous ceux qui ont fini la soiree, a
+-- l'ecran comme a la cloture. C'est la TACHE 6 qui alignera le moteur et son
+-- test de parite. NE PAS « corriger » le SQL vers le TypeScript -- exactement
+-- le meme arbitrage que pour la renumerotation contigue, note au-dessus de
+-- `tournament_final_round`.
 --
 --   * UNE LIGNE PAR BINOME ASSIS, forfaits (`withdrawn`) COMPRIS ; un binome
 --     sans aucun match dans la borne y figure avec des compteurs a zero. Le
@@ -3335,10 +3352,18 @@ GRANT EXECUTE ON FUNCTION public.tournament_standings(uuid, int) TO authenticate
 --                     le rang provisoire. Le cas se traite tout seul, sans
 --                     branche.
 --
--- L'ordre relatif des non-places NE BOUGE PAS entre la generation du tour et
--- la cloture : par definition ils ne jouent aucun match dans ce tour, donc
--- aucune de leurs statistiques ne change. Seul leur rang absolu bouge, et il
--- est recalcule ici de toute facon.
+-- L'ordre relatif des non-places est STABLE EN PRATIQUE entre la generation du
+-- tour et la cloture -- ils n'y jouent aucun match, donc ni leurs jeux, ni
+-- leurs victoires, ni leur palier ne changent -- mais PAS garanti, et la
+-- premiere version de ce commentaire l'affirmait a tort. La confrontation
+-- directe n'est pas une statistique PERSONNELLE : elle se calcule sur le
+-- groupe d'ex aequo, et un binome PLACE, lui, change de statistiques au
+-- dernier tour. Trois binomes a egalite, A et B non places, C place : a la
+-- borne `v_round - 1`, A a battu C et B a perdu contre C, donc A devant B ; a
+-- la borne `v_round`, la victoire de C le sort du groupe, A et B tombent tous
+-- deux a `h2h = 0` et se departagent par `team_id` -- l'ordre peut s'inverser.
+-- Sans effet visible aujourd'hui : les rangs des non-places ne sont annonces
+-- nulle part avant la cloture, seule leur ABSENCE de creneau l'est.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_tournament_final_slots(
   p_tournament  uuid,
@@ -3352,8 +3377,9 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
   WITH st AS (
-    SELECT (e->>'team_id')::uuid AS s_team,
-           (e->>'rank')::int     AS prov_rank
+    SELECT (e->>'team_id')::uuid       AS s_team,
+           (e->>'rank')::int           AS prov_rank,
+           (e->>'withdrawn')::boolean  AS s_withdrawn
       FROM jsonb_array_elements(
              COALESCE(public.tournament_standings(p_tournament, p_max_round)
                         -> 'standings', '[]'::jsonb)) AS e
@@ -3374,7 +3400,7 @@ AS $$
        AND m.tournament_id = p_tournament
        AND m.round_no      = p_final_round
   ),
-  places AS (
+  bruts AS (
     SELECT f.court_no, 'winner'::text AS role,
            CASE WHEN f.confirmed_at IS NULL THEN NULL
                 WHEN f.a_won             THEN f.team_a
@@ -3395,17 +3421,43 @@ AS $$
     SELECT f.court_no, 'bye', f.team_a, ((f.court_no - 1) * 2 + 1)::int
       FROM fr f WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
   ),
+  places AS (
+    -- ⚠️ UN BINOME PARTI N'OCCUPE JAMAIS UN CRENEAU. Un forfait prononce APRES
+    -- la generation de la rotation de classement laisse le binome dans le
+    -- tableau du tour : `tournament_forfeit` solde son match (`forfeited_team`)
+    -- et `fn_tournament_a_won` le declare perdant -- il prendrait donc le
+    -- creneau PERDANT de son terrain, c'est-a-dire le rang 2 sur 8 s'il etait
+    -- au Terrain 1, alors que l'ecran l'a montre DERNIER toute la soiree
+    -- (`withdrawn` est la premiere cle du classement). Il repart donc dans les
+    -- non-places, ou `prov_rank` le met en bas, quel que soit le tour ou il est
+    -- parti. Son creneau devient vacant et la renumerotation le referme ; le
+    -- creneau du VAINQUEUR de ce match n'est pas touche.
+    --
+    -- `team_id` NULL (match pas encore acquis, cas normal a la generation)
+    -- traverse : on ne sait pas encore qui prendra la place, et il n'y a rien
+    -- a exclure.
+    SELECT b.court_no, b.role, b.team_id, b.slot
+      FROM bruts b
+      LEFT JOIN st s ON s.s_team = b.team_id
+     WHERE NOT COALESCE(s.s_withdrawn, false)
+  ),
   engages AS (
     -- Les binomes que le tour PLACE, que le resultat soit connu ou non. C'est
     -- ce filtre -- et non `places.team_id` -- qui evite de compter deux fois un
     -- binome dont le match n'est pas encore acquis : il a son creneau, il n'est
     -- donc pas 'unplaced', meme si on ignore encore s'il sera gagnant.
-    SELECT f.team_a AS e_team FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
-    UNION ALL
-    SELECT f.team_b            FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
-    UNION ALL
-    SELECT f.team_a            FROM fr f
-     WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
+    -- Les binomes PARTIS en sont exclus, exactement comme ci-dessus : leur
+    -- creneau n'existe pas, donc ils doivent tomber dans les non-places.
+    SELECT z.e_team FROM (
+      SELECT f.team_a AS e_team FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
+      UNION ALL
+      SELECT f.team_b            FROM fr f WHERE f.pref = 1 AND f.team_b IS NOT NULL
+      UNION ALL
+      SELECT f.team_a            FROM fr f
+       WHERE f.pref = 1 AND f.team_b IS NULL AND f.team_a IS NOT NULL
+    ) z
+     WHERE NOT EXISTS (SELECT 1 FROM st s
+                        WHERE s.s_team = z.e_team AND s.s_withdrawn)
   ),
   plafond AS (
     -- Le plus grand creneau attribue : le PLANCHER de tout ce qui suit. Aucun
@@ -3663,7 +3715,13 @@ GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
 --
 -- LES CRENEAUX VACANTS, ET CE QU'ON N'EN FAIT PAS. Un terrain qui n'a joue
 -- qu'un bye ne remplit que son creneau de gagnant ; un terrain absent du tour
--- n'en remplit aucun. Les binomes qui restent -- byes d'un palier a trois,
+-- n'en remplit aucun ; et un binome PARTI n'en occupe jamais un, meme s'il
+-- figure encore dans le tableau du tour (un forfait prononce apres la
+-- generation solde son match, et il en ressortirait « perdant » donc classe
+-- 2e sur 8 s'il etait au Terrain 1). Il retombe dans les non-places, donc en
+-- bas -- la ou le classement affiche le montre depuis qu'il est parti.
+--
+-- Les binomes qui restent -- byes d'un palier a trois,
 -- forfaits, binomes jamais places -- prennent des numeros STRICTEMENT
 -- SUPERIEURS au plus grand creneau attribue, dans l'ordre du classement
 -- provisoire.
@@ -3833,6 +3891,27 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'no_teams');
   END IF;
 
+  -- ETAT IMPOSSIBLE, PAS REFUS METIER : un creneau sans binome. `v_final`
+  -- garantit que tous les matchs reels du tour de classement sont acquis, donc
+  -- que le helper connait le nom de chaque gagnant et de chaque perdant. Si
+  -- ca arrivait quand meme, il faut LEVER : ecarter la ligne en silence
+  -- retirerait un rang du milieu de la suite 1..N -- le trou meme que la
+  -- renumerotation existe pour empecher, et que `points_scale` traduirait en
+  -- points jamais distribues. Un garde qui masque ce qu'il detecte est pire
+  -- qu'aucun garde.
+  IF EXISTS (SELECT 1
+               FROM public.fn_tournament_final_slots(
+                      p_tournament, v_dernier,
+                      CASE WHEN v_final THEN v_dernier END) f
+              WHERE f.team_id IS NULL) THEN
+    -- Deux litteraux separes par un saut de ligne : SQL les concatene, ce qui
+    -- garde la ligne lisible sans couper le message.
+    RAISE EXCEPTION
+      'tournament_close: creneau sans binome au tour % du tournoi %'
+      ' -- un match de la rotation de classement n''est pas acquis',
+      v_dernier, p_tournament;
+  END IF;
+
   ---------------------------------------------------------------------------
   -- ECRITURES
   ---------------------------------------------------------------------------
@@ -3849,11 +3928,15 @@ BEGIN
     -- `tournament_final_round` a annonce a l'ecran. `p_final_round` vaut NULL
     -- quand la rotation de classement n'a pas eu lieu -- personne n'est alors
     -- place, et le rang final EST le rang provisoire, sans branche ici.
+    --
+    -- Aucun filtre sur `team_id` : un creneau sans binome a deja fait lever
+    -- plus haut. Le filtrer ICI retirerait un rang du MILIEU de la suite
+    -- 1..N -- exactement le trou que la renumerotation existe pour empecher,
+    -- et que `points_scale` traduirait en points jamais distribues.
     SELECT f.team_id, f.final_rank
       FROM public.fn_tournament_final_slots(
              p_tournament, v_dernier,
              CASE WHEN v_final THEN v_dernier END) f
-     WHERE f.team_id IS NOT NULL
   )
   INSERT INTO public.tournament_results
     (tournament_id, team_id, player_id, final_rank, played, wins,
