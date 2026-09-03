@@ -3478,6 +3478,12 @@ GRANT EXECUTE ON FUNCTION public.tournament_final_round(uuid) TO authenticated;
 -- SUPERIEURS au plus grand creneau attribue, dans l'ordre du classement
 -- provisoire.
 --
+-- LES ABANDONS PASSENT DERNIERS parmi ces non-places : un binome parti garde
+-- le meilleur palier de son passage, donc un bon rang provisoire, et il
+-- repasserait sinon devant un binome qui a joue toutes les rotations et fini
+-- par un bye. Le classement provisoire ordonne les presents entre eux, puis
+-- les partis entre eux.
+--
 -- ⚠️ ILS NE COMBLENT PAS LES TROUS. La premiere version leur donnait les plus
 -- petits numeros libres, et c'etait un defaut GRAVE : un terrain reduit a un
 -- bye libere un creneau BAS, et c'est precisement la forme d'echelle qu'un
@@ -3636,6 +3642,7 @@ BEGIN
   WITH st AS (
     SELECT (e->>'team_id')::uuid AS team_id,
            (e->>'rank')::int       AS prov_rank,
+           (e->>'withdrawn')::boolean AS withdrawn,
            (e->>'played')::int     AS played,
            (e->>'wins')::int       AS wins,
            (e->>'games_won')::int  AS games_won,
@@ -3686,7 +3693,8 @@ BEGIN
     -- Ceux que la rotation de classement n'a pas places : le binome parti en
     -- forfait, celui qui a fait un bye sur un palier a trois, celui qui n'a
     -- jamais ete place. Ils prennent des numeros STRICTEMENT SUPERIEURS au
-    -- plus grand creneau attribue, dans l'ordre du classement provisoire.
+    -- plus grand creneau attribue -- les abandons derriere les presents, et
+    -- chaque groupe dans l'ordre du classement provisoire.
     --
     -- ILS NE PRENNENT PAS LES CRENEAUX LAISSES VACANTS -- c'etait le defaut de
     -- la premiere version, et il etait grave : un terrain qui n'a porte qu'un
@@ -3699,9 +3707,17 @@ BEGIN
     -- Quand la rotation de classement n'a PAS eu lieu, `places` est vide, le
     -- plafond vaut 0, et tout le monde repart de 1 dans l'ordre provisoire :
     -- le cas se traite tout seul, sans branche.
+    --
+    -- LES ABANDONS EN DERNIER, avant toute autre consideration. Un binome qui
+    -- a declare forfait garde le meilleur palier de son passage, donc un bon
+    -- rang provisoire : sans cette cle il repassait devant un binome qui a
+    -- joue les SIX rotations et fini par un bye. C'est l'injustice du defaut
+    -- critique, en plus petit, et elle se voit a la remise des points. Le
+    -- classement provisoire garde tout son sens ENTRE binomes comparables :
+    -- il ordonne les presents entre eux, puis les partis entre eux.
     SELECT s.team_id,
            (SELECT top FROM plafond)
-             + row_number() OVER (ORDER BY s.prov_rank) AS slot
+             + row_number() OVER (ORDER BY s.withdrawn ASC, s.prov_rank) AS slot
       FROM st s
      WHERE NOT EXISTS (SELECT 1 FROM places p WHERE p.team_id = s.team_id)
   ),
