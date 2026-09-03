@@ -81,6 +81,12 @@
 -- ============================================================================
 BEGIN;
 
+-- pg_net + supabase_vault : requis par `fn_tournament_registration_notify`
+-- (declencheur en fin de fichier), meme motif que `cancel_game_notify.sql` /
+-- `defi_server_notifs.sql`. Idempotent -- sans effet si deja crees ailleurs.
+CREATE EXTENSION IF NOT EXISTS pg_net;
+CREATE EXTENSION IF NOT EXISTS supabase_vault;
+
 -- ----------------------------------------------------------------------------
 -- Helper interne : le bareme de points.
 --
@@ -366,6 +372,166 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION public.fn_tournament_ladder(uuid, int) FROM PUBLIC, anon, authenticated;
+
+-- ############################################################################
+-- SECTION CREATION (Task 11)
+--
+-- `public.tournaments` ne portait, avant cette tache, AUCUNE voie d'ecriture :
+-- une seule policy `SELECT` (`tournaments_read`, tournaments.sql), aucune
+-- policy `INSERT`, et aucune RPC. L'ecran d'organisation
+-- (`app/(tabs)/admin.tsx`) et `createTournament()` (`lib/tournaments.ts`)
+-- appelaient donc un contrat qui n'existait nulle part.
+--
+-- CHOIX : une RPC, pas une policy d'ecriture. C'est le moule de tout ce
+-- fichier -- SECURITY DEFINER, refus nommes, sujet jamais un parametre -- et
+-- ca garde le controle des valeurs a la creation (bareme sans points
+-- negatifs, plage de niveau coherente...) au meme endroit que tout le reste,
+-- plutot que dans une CHECK par colonne qui ne validerait pas les
+-- combinaisons.
+--
+-- ⚠️ `createTournament()` (lib/tournaments.ts), ECRITE AVANT cette tache et
+-- QUE CETTE TACHE NE MODIFIE PAS, fait aujourd'hui un `INSERT` DIRECT sur
+-- `public.tournaments` -- PAS un appel RPC. Cette fonction existe donc pour
+-- rendre l'ECRITURE possible (le contrat, les refus nommes, les valeurs
+-- posees par le serveur) et pour que ses PARAMETRES correspondent exactement
+-- a ce que `createTournament()` envoie -- mais tant que ce module continue de
+-- faire un `INSERT` brut plutot que `supabase.rpc('tournament_create', ...)`,
+-- il continuera de heurter l'absence de policy `INSERT` sur `tournaments`.
+-- Combler ce dernier pas (appeler cette RPC au lieu d'inserer en direct)
+-- appartient au client, pas a ce fichier -- voir le rapport de Task 11.
+-- ############################################################################
+
+-- ============================================================================
+-- tournament_create(p_name, p_starts_at, p_court_count, p_round_count,
+--                    p_club_id, p_level_min, p_level_max, p_price_mad,
+--                    p_points_scale)
+--
+-- Cree un tournoi et le PUBLIE dans le meme geste : statut
+-- `INSCRIPTIONS_OUVERTES` ecrit directement, JAMAIS `BROUILLON` -- pour la
+-- meme raison que documentee dans `createTournament()` cote client : aucune
+-- fonction de ce fichier ne fait jamais passer un tournoi de `BROUILLON` a
+-- `INSCRIPTIONS_OUVERTES`, donc un tournoi cree en `BROUILLON` resterait bloque
+-- pour toujours -- personne ne pourrait plus jamais s'y inscrire.
+--
+-- `created_by` est TOUJOURS `current_player_id()`, jamais un parametre --
+-- meme moule que tout le fichier : le sujet d'une ecriture n'est jamais dit
+-- par l'appelant. Le champ `createdBy` que `TournamentCreateInput` porte cote
+-- client est donc IGNORE par cette RPC si jamais elle finissait par etre
+-- appelee avec ; le serveur ne fait confiance qu'a la session authentifiee.
+--
+-- `ends_at` n'est jamais ecrit ici, pour la raison documentee cote client :
+-- `tournament_close` pose `ends_at = COALESCE(ends_at, now())`, une date
+-- posee a la creation y survivrait et afficherait une heure de fin estimee a
+-- la place de l'heure reelle de cloture.
+--
+-- VALIDATIONS, toutes AVANT toute ecriture :
+--   * nom non vide (`invalid_name`) ;
+--   * date de debut fournie (`invalid_starts_at`) ;
+--   * terrains et rotations des entiers strictement positifs
+--     (`invalid_court_count`, `invalid_round_count`) ;
+--   * prix affiche positif ou nul (`invalid_price`) ;
+--   * plage de niveau coherente -- bornes non negatives, min <= max quand les
+--     deux sont donnes (`invalid_level_range`) ;
+--   * club existant s'il est donne (`club_not_found`) ;
+--   * bareme de points SANS VALEUR NEGATIVE (`invalid_points_scale`), LA MEME
+--     regle que la CHECK de `tournaments.points_scale` -- un refus NOMME ici
+--     plutot qu'une violation de contrainte brute renvoyee au client. `NULL`
+--     reprend le bareme par defaut de la colonne.
+--
+-- Refus : feature_disabled, not_authenticated, invalid_name,
+--         invalid_starts_at, invalid_court_count, invalid_round_count,
+--         invalid_price, invalid_level_range, club_not_found,
+--         invalid_points_scale.
+-- Appelable par : tout joueur connecte -- il devient l'organisateur.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_create(
+  p_name         text,
+  p_starts_at    timestamptz,
+  p_court_count  int,
+  p_round_count  int,
+  p_club_id      uuid    DEFAULT NULL,
+  p_level_min    numeric DEFAULT NULL,
+  p_level_max    numeric DEFAULT NULL,
+  p_price_mad    int     DEFAULT 0,
+  p_points_scale jsonb   DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me    uuid := public.current_player_id();
+  v_scale jsonb;
+  v_id    uuid;
+BEGIN
+  ---------------------------------------------------------------------------
+  -- CONTROLES -- aucune ecriture avant la fin de cette section.
+  ---------------------------------------------------------------------------
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  IF p_name IS NULL OR btrim(p_name) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_name');
+  END IF;
+  IF p_starts_at IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_starts_at');
+  END IF;
+  IF p_court_count IS NULL OR p_court_count <= 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_court_count');
+  END IF;
+  IF p_round_count IS NULL OR p_round_count <= 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_round_count');
+  END IF;
+  IF p_price_mad IS NULL OR p_price_mad < 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_price');
+  END IF;
+  IF (p_level_min IS NOT NULL AND p_level_min < 0)
+     OR (p_level_max IS NOT NULL AND p_level_max < 0)
+     OR (p_level_min IS NOT NULL AND p_level_max IS NOT NULL
+         AND p_level_min > p_level_max) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_level_range');
+  END IF;
+  IF p_club_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.clubs WHERE id = p_club_id) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'club_not_found');
+  END IF;
+
+  -- Bareme : reprend le defaut de la colonne quand rien n'est donne, et
+  -- applique EN AMONT la meme regle que sa CHECK -- un refus nomme, pas une
+  -- violation de contrainte brute.
+  v_scale := COALESCE(p_points_scale,
+    '{"1":100,"2":80,"3":65,"4":55,"5":45,"6":35,"7":25,"8":15}'::jsonb);
+  IF jsonb_typeof(v_scale) <> 'object'
+     OR jsonb_path_exists(v_scale, '$.* ? (@ < 0)') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_points_scale');
+  END IF;
+
+  ---------------------------------------------------------------------------
+  -- ECRITURE.
+  ---------------------------------------------------------------------------
+  INSERT INTO public.tournaments
+         (name, club_id, starts_at, level_min, level_max, court_count,
+          round_count, price_mad, points_scale, status, created_by)
+  VALUES (btrim(p_name), p_club_id, p_starts_at, p_level_min, p_level_max,
+          p_court_count, p_round_count, p_price_mad, v_scale,
+          'INSCRIPTIONS_OUVERTES', v_me)
+  RETURNING id INTO v_id;
+
+  RETURN jsonb_build_object('ok', true, 'id', v_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_create(
+  text, timestamptz, int, int, uuid, numeric, numeric, int, jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_create(
+  text, timestamptz, int, int, uuid, numeric, numeric, int, jsonb)
+  TO authenticated;
 
 -- ############################################################################
 -- SECTION INSCRIPTION ET APPARIEMENT (Task 3)
@@ -869,11 +1035,15 @@ REVOKE ALL ON FUNCTION public.fn_tournament_promote_waitlist(uuid) FROM PUBLIC, 
 -- Le partenaire designe est inscrit SANS AUCUNE DECLARATION FAITE EN SON NOM :
 -- cote 'both' (« pas de contrainte », et non un cote devine -- recopier celui
 -- de l'invitant ou le deduire du profil lui preterait un choix qu'il n'a pas
--- fait) et `open_to_join` a la VALEUR PAR DEFAUT de la colonne, ecrit
--- litteralement `DEFAULT`. `open_to_join` est un MODE DE CONSENTEMENT : seul
+-- fait) et `open_to_join` ecrit EXPLICITEMENT a `false` -- PAS le defaut de la
+-- colonne (qui est `true`). Un partenaire invite n'a rien demande, et la
+-- direction sure d'un consentement qu'il n'a pas donne est FERMEE : ouvert, il
+-- serait joignable en un geste par n'importe qui des que ce binome se defait,
+-- pour un tournoi dont il n'a meme pas encore ete prevenu (cf.
+-- `fn_tournament_registration_notify` plus bas, qui l'en previent).
+-- `open_to_join` est un MODE DE CONSENTEMENT : seul
 -- son proprietaire le change, jamais une fonction appelee par un tiers, et
--- jamais un effet de bord. Voir le bloc [PLACE VACANTE] plus bas : il doit
--- etre PREVENU de cette inscription.
+-- jamais un effet de bord.
 --
 -- `open_to_join` ne dit PAS « je cherche un partenaire » -- ca, c'est
 -- l'absence de ligne dans `tournament_participants`, et c'est deja ecrit
@@ -996,8 +1166,8 @@ BEGIN
       -- il n'a rien demande, et le defaut sur est FERME. Ouvert, il serait
       -- joignable en un geste par n'importe qui des que ce binome se defait --
       -- un consentement qu'il n'a jamais donne, a un tournoi dont il n'a
-      -- meme pas encore ete prevenu (cf. le bloc [PLACE VACANTE] ci-dessous).
-      -- Il l'ouvre lui-meme, quand il veut, par
+      -- meme pas encore ete prevenu (cf. `fn_tournament_registration_notify`
+      -- plus bas, qui l'en previent). Il l'ouvre lui-meme, quand il veut, par
       -- `tournament_set_open_to_join`.
       INSERT INTO public.tournament_registrations
              (tournament_id, player_id, side, open_to_join, waitlist_position)
@@ -1044,43 +1214,96 @@ REVOKE ALL ON FUNCTION public.tournament_register(uuid, text, boolean, uuid) FRO
 GRANT EXECUTE ON FUNCTION public.tournament_register(uuid, text, boolean, uuid) TO authenticated;
 
 -- ============================================================================
--- [PLACE VACANTE] fn_tournament_registration_notify -- LE PARTENAIRE DOIT
--- ETRE PREVENU. Rien ne le previent aujourd'hui, et c'est un manque, pas un
--- choix.
+-- fn_tournament_registration_notify -- LE PARTENAIRE INVITE EST PREVENU.
 --
--- Ce que la spec exige et que ce fichier ne tient pas : « le partenaire est
--- notifie et peut defaire le binome ». En l'etat, N'IMPORTE QUEL joueur
--- connecte peut appeler
+-- Ce que la spec exige, et que ce fichier ne tenait pas avant cette tache :
+-- « le partenaire est notifie et peut defaire le binome ». Sans ce
+-- declencheur, N'IMPORTE QUEL joueur connecte pouvait appeler
 --     tournament_register(tournoi, son_cote, son_mode, <mon_id>)
--- et je me retrouve inscrit a un tournoi AFFICHANT UN PRIX, avec un cote
--- 'both' que je n'ai pas declare, deja engage dans un binome -- et rien, pas
--- une ligne, ne me l'apprend. Au check-in je suis un 'pending' qui ne se
--- presente jamais, et l'organisateur decouvre le trou le soir meme.
+-- et inscrire quelqu'un d'autre a un tournoi AFFICHANT UN PRIX, avec un cote
+-- 'both' que la personne n'a pas declare, deja engagee dans un binome -- sans
+-- qu'aucune ligne ne l'en informe. Au check-in elle restait un 'pending' qui
+-- ne se presente jamais, et l'organisateur decouvrait le trou le soir meme.
 --
--- Pourquoi ce n'est PAS ecrit dans les fonctions ci-dessus : ce depot notifie
--- par DECLENCHEUR + pg_net -> edge function `send-push` (motif de
--- `defi_server_notifs.sql` / `match_reminders.sql`), jamais depuis une RPC
--- appelee par le client -- une notification poussee par le client se perd des
--- que le client se ferme. Le manque appartient donc a un declencheur, pas a
--- `tournament_register`.
+-- Pourquoi c'est un DECLENCHEUR et non un appel fait par `tournament_register`
+-- elle-meme : ce depot notifie par DECLENCHEUR + pg_net -> edge function
+-- `send-push` (motif de `cancel_game_notify.sql` / `defi_server_notifs.sql` /
+-- `match_reminders.sql`), jamais depuis une RPC appelee par le client -- une
+-- notification poussee par le client se perd des que le client se ferme.
 --
--- A ECRIRE (tache d'integration) :
---   * `fn_tournament_registration_notify` -- AFTER INSERT ON
---     `tournament_registrations` FOR EACH ROW : pousser a NEW.player_id quand
---     `NEW.player_id <> public.current_player_id()`, c'est-a-dire quand la
---     ligne a ete creee POUR LUI PAR UN AUTRE (le seul cas produit par
---     `tournament_register` avec p_partner). auth.uid() reste lisible dans un
---     declencheur appele depuis une fonction SECURITY DEFINER : c'est le JWT
---     de la session, pas le proprietaire de la fonction.
---     Message attendu : qui l'a inscrit, quel tournoi, le PRIX AFFICHE, et
---     qu'il peut defaire le binome (`tournament_leave_team`) ou se desinscrire
---     (`tournament_withdraw`) -- plus une invitation a declarer son cote,
---     laisse a 'both' faute de declaration.
---   * `fn_tournament_join_request_notify` -- AFTER INSERT ON
---     `tournament_join_requests` : prevenir `to_player` qu'une demande
---     l'attend ; et AFTER UPDATE vers 'accepted'/'declined' : prevenir
---     `from_player` de la reponse.
+-- AFTER INSERT ON `tournament_registrations` FOR EACH ROW : pousse a
+-- `NEW.player_id` quand `NEW.player_id <> current_player_id()`, c'est-a-dire
+-- quand la ligne vient d'etre creee POUR LUI PAR UN AUTRE -- le SEUL cas que
+-- `tournament_register` produit avec `p_partner` (ma propre ligne, dans le
+-- meme appel, a toujours `player_id = current_player_id()` et ne notifie donc
+-- personne : je sais deja que je viens de m'inscrire). `current_player_id()`
+-- reste le bon joueur ici -- `auth.uid()` est le JWT de la session, pas le
+-- proprietaire de la fonction SECURITY DEFINER qui a fait l'INSERT.
+--
+-- Le message porte : qui l'a inscrit, quel tournoi, le PRIX AFFICHE, et
+-- qu'il peut defaire le binome (`tournament_leave_team`) ou se desinscrire
+-- (`tournament_withdraw`) -- plus une invitation a declarer son cote
+-- (`tournament_set_side`, Task 11), laisse a 'both' faute de declaration.
+--
+-- ⚠️ RESTE UNE PLACE VACANTE, DELIBEREMENT LAISSEE : les DEMANDES
+-- d'appariement (`tournament_join_requests`) ne notifient toujours pas leur
+-- destinataire ni leur demandeur. Une demande, contrairement a une inscription
+-- imposee, N'ENGAGE NI PLACE NI PRIX -- son destinataire la decouvre au pire
+-- en rouvrant l'ecran -- donc ce manque n'a pas le meme caractere urgent, et
+-- l'ecrire reste a faire (`fn_tournament_join_request_notify`, meme motif :
+-- AFTER INSERT prevenir `to_player`, AFTER UPDATE vers 'accepted'/'declined'
+-- prevenir `from_player`).
 -- ============================================================================
+CREATE OR REPLACE FUNCTION public.fn_tournament_registration_notify()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me    uuid := public.current_player_id();
+  v_by    text;
+  v_tname text;
+  v_price int;
+  v_key   text;
+  v_url   text := 'https://icshhobxeppttgayxmba.supabase.co/functions/v1/send-push';
+BEGIN
+  -- Seul le cas produit par `tournament_register(..., p_partner)` : une ligne
+  -- creee POUR quelqu'un d'autre. Ma propre inscription ne notifie personne.
+  IF v_me IS NULL OR NEW.player_id = v_me THEN RETURN NEW; END IF;
+
+  SELECT t.name, t.price_mad INTO v_tname, v_price
+    FROM public.tournaments t WHERE t.id = NEW.tournament_id;
+  IF v_tname IS NULL THEN RETURN NEW; END IF;
+
+  SELECT decrypted_secret INTO v_key FROM vault.decrypted_secrets WHERE name = 'service_role_key';
+  IF v_key IS NULL THEN RETURN NEW; END IF;
+
+  SELECT name INTO v_by FROM public.players WHERE id = v_me;
+
+  PERFORM net.http_post(
+    url     := v_url,
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer '||v_key),
+    body    := jsonb_build_object(
+                 'playerIds', to_jsonb(ARRAY[NEW.player_id]),
+                 'title', '🏆 Inscrit·e a un tournoi',
+                 'body',  coalesce(v_by, 'Un joueur') || ' t''a inscrit·e a « ' || v_tname || ' »'
+                          || CASE WHEN coalesce(v_price, 0) > 0
+                                  THEN ' (' || v_price || ' MAD affiches)' ELSE '' END
+                          || '. Tu peux defaire le binome, te desinscrire, ou declarer ton cote.',
+                 'data',  jsonb_build_object('type', 'tournament', 'tournamentId', NEW.tournament_id))
+  );
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_registration_notify() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_tournament_registration_notify ON public.tournament_registrations;
+CREATE TRIGGER trg_tournament_registration_notify
+  AFTER INSERT ON public.tournament_registrations
+  FOR EACH ROW
+  EXECUTE FUNCTION public.fn_tournament_registration_notify();
 
 -- ============================================================================
 -- tournament_join(p_tournament, p_player)
@@ -1671,6 +1894,146 @@ REVOKE ALL ON FUNCTION public.tournament_check_in(uuid) FROM PUBLIC, anon, authe
 GRANT EXECUTE ON FUNCTION public.tournament_check_in(uuid) TO authenticated;
 
 -- ============================================================================
+-- tournament_open_check_in(p_tournament)
+--
+-- L'ORGANISATEUR ouvre le pointage : `INSCRIPTIONS_OUVERTES` ou `COMPLET` ->
+-- `CHECK_IN`. Sans cette fonction, aucun `UPDATE ... SET status = 'CHECK_IN'`
+-- n'existait dans tout ce fichier -- le pointage etait en lecture seule alors
+-- que `check_in_status` prevoit deja `pending | checked_in | no_show`.
+--
+-- FACULTATIF, pas obligatoire : `tournament_start` accepte encore de lancer
+-- directement depuis `INSCRIPTIONS_OUVERTES` ou `COMPLET` (« lancer quand
+-- meme », documente sur cette fonction) -- ouvrir le pointage n'est donc pas
+-- une etape que ce chantier rend incontournable, seulement possible. `PRET`
+-- n'a symetriquement aucune transition qui y mene : la machine a etats de
+-- `tournaments.sql` l'accepte partout ou `CHECK_IN` l'est, mais rien dans le
+-- brief de cette tache n'exige un geste distinct pour l'atteindre, et en
+-- inventer un serait une transition que la spec ne demande pas.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, tournament_not_open.
+-- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_open_check_in(p_tournament uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me   uuid := public.current_player_id();
+  v_t    public.tournaments%ROWTYPE;
+  v_rows int;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_t.created_by <> v_me THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_t.status NOT IN ('INSCRIPTIONS_OUVERTES','COMPLET') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
+  END IF;
+
+  UPDATE public.tournaments SET status = 'CHECK_IN' WHERE id = p_tournament;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    -- La ligne est verrouillee et a ete lue juste au-dessus : zero ligne est
+    -- un etat impossible, pas un refus metier. On LEVE, ce qui annule tout.
+    RAISE EXCEPTION 'tournament_open_check_in: le tournoi % a disparu sous le verrou',
+      p_tournament;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'status', 'CHECK_IN');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_open_check_in(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_open_check_in(uuid) TO authenticated;
+
+-- ============================================================================
+-- tournament_mark_no_show(p_tournament, p_player)
+--
+-- L'ORGANISATEUR marque un joueur ABSENT : « qui est la, qui manque » (cahier
+-- du pointage). C'est le pendant organisateur de `tournament_check_in`, sur
+-- la MEME fenetre de statut -- le pointage n'a de sens qu'entre son ouverture
+-- et le coup d'envoi.
+--
+-- `p_player` est un PARAMETRE ici, volontairement, contrairement au reste du
+-- fichier : ce n'est PAS un geste que le sujet fait sur lui-meme (comme
+-- `tournament_check_in`), c'est un geste que l'organisateur fait sur UN
+-- AUTRE -- exactement comme `tournament_forfeit(p_tournament, p_team)` plus
+-- bas ne peut pas non plus avoir pour sujet `current_player_id()`.
+--
+-- Pas de FOR UPDATE sur `tournaments` : ce chemin ne touche a aucun siege,
+-- aucune position de file, aucun binome -- seulement une colonne de la ligne
+-- d'inscription du joueur vise, meme raisonnement que `tournament_check_in`
+-- et `tournament_set_open_to_join`.
+--
+-- N'ECRASE PAS un `checked_in` par erreur d'un geste malheureux : si
+-- l'organisateur se trompe, `tournament_check_in` (le joueur) ou une future
+-- fonction symetrique peuvent renverser -- cette fonction-ci n'a qu'un sens,
+-- marquer absent, et ne verifie donc pas l'etat de depart.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         not_the_organizer, tournament_not_open, not_registered.
+-- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_mark_no_show(p_tournament uuid, p_player uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me      uuid := public.current_player_id();
+  v_status  text;
+  v_creator uuid;
+  v_rows    int;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  SELECT t.status, t.created_by INTO v_status, v_creator
+    FROM public.tournaments t WHERE t.id = p_tournament;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  IF v_me <> v_creator THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_the_organizer');
+  END IF;
+  IF v_status NOT IN ('CHECK_IN','PRET') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
+  END IF;
+
+  UPDATE public.tournament_registrations
+     SET check_in_status = 'no_show'
+   WHERE tournament_id = p_tournament AND player_id = p_player;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'player_id', p_player, 'check_in_status', 'no_show');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_mark_no_show(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_mark_no_show(uuid, uuid) TO authenticated;
+
+-- ============================================================================
 -- tournament_set_open_to_join(p_tournament, p_open)
 --
 -- Changer SON mode de consentement : « on peut me prendre d'un geste » (true)
@@ -1754,6 +2117,85 @@ $$;
 
 REVOKE ALL ON FUNCTION public.tournament_set_open_to_join(uuid, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tournament_set_open_to_join(uuid, boolean) TO authenticated;
+
+-- ============================================================================
+-- tournament_set_side(p_tournament, p_side)
+--
+-- Changer SON cote. Le pendant manquant de `tournament_set_open_to_join`, et
+-- exige par la MEME regle de consentement : le cote appartient au joueur. Un
+-- partenaire invite par `tournament_register(..., p_partner)` recoit un cote
+-- 'both' qu'il n'a pas declare (cf. l'en-tete de `tournament_register`), et
+-- n'avait jusqu'ici AUCUN recours dans l'app -- ni RPC, ni policy `UPDATE` sur
+-- `tournament_registrations`.
+--
+-- AUCUN parametre `p_player` -- meme raison que `tournament_set_open_to_join` :
+-- le sujet est toujours `auth.uid()`, et il n'existe donc aucun chemin par
+-- lequel quelqu'un declare le cote d'un autre.
+--
+-- A LA DIFFERENCE de `open_to_join`, le cote reste SIGNIFIANT une fois en
+-- binome -- c'est un cote de TERRAIN (gauche/droit), pas un mode de recherche
+-- de partenaire, donc `already_in_team` ne s'applique pas ici : changer de
+-- cote au sein d'un binome deja forme reste un geste qui veut dire quelque
+-- chose. Ce qui borne le changement, c'est le TIRAGE : une fois les matchs
+-- generes, meme garde-fou nomme que `tournament_leave_team` et
+-- `tournament_withdraw` (`matches_already_generated`, teste directement sur
+-- `tournament_matches` plutot que sur le statut -- le placement initial de
+-- `tournament_start` s'appuie deja sur le cote implicitement via le niveau du
+-- binome, pas sur `side`, donc rien n'exige de figer plus tot).
+--
+-- Refus : feature_disabled, not_authenticated, invalid_side,
+--         tournament_not_found, matches_already_generated, not_registered.
+-- Appelable par : tout joueur connecte, POUR LUI-MEME uniquement.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_set_side(p_tournament uuid, p_side text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me   uuid := public.current_player_id();
+  v_rows int;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+  IF p_side IS NULL OR p_side NOT IN ('left','right','both') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_side');
+  END IF;
+
+  -- Pas de FOR UPDATE : ce chemin ne touche aucun siege, aucune position de
+  -- file, aucun binome -- seulement une colonne de ma propre ligne.
+  IF NOT EXISTS (SELECT 1 FROM public.tournaments WHERE id = p_tournament) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+
+  -- Meme garde-fou que `tournament_leave_team` / `tournament_withdraw`, et
+  -- pour la meme raison de fond : une fois les matchs tires, le tableau est
+  -- publie sur la base des cotes declares a cet instant-la -- le changer
+  -- romprait la coherence de ce qui a deja ete montre.
+  IF EXISTS (SELECT 1 FROM public.tournament_matches m
+              WHERE m.tournament_id = p_tournament) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'matches_already_generated');
+  END IF;
+
+  UPDATE public.tournament_registrations
+     SET side = p_side
+   WHERE tournament_id = p_tournament AND player_id = v_me;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'side', p_side);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_set_side(uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_set_side(uuid, text) TO authenticated;
 
 -- ============================================================================
 -- tournament_autopair(p_tournament)
@@ -3381,18 +3823,37 @@ CREATE OR REPLACE FUNCTION public.fn_tournament_final_slots(
   p_final_round int DEFAULT NULL
 )
 RETURNS TABLE (court_no int, role text, team_id uuid, final_rank int)
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  v_standings jsonb;
+BEGIN
+  -- ⚠️ `tournament_standings` PEUT REFUSER (`{ok:false, reason:...}`), et ce
+  -- helper est le SEUL endroit du fichier ou un tel refus n'etait pas
+  -- propage : un `COALESCE(... -> 'standings', '[]')` muet le remplacait par
+  -- un tableau vide, et l'exclusion des binomes partis disparaissait en
+  -- silence -- les creneaux bruts sortaient tels quels. En pratique
+  -- inatteignable (les deux appelants, `tournament_close` et
+  -- `tournament_final_round`, ont deja verifie `fn_tournaments_enabled()` et
+  -- l'existence du tournoi avant d'arriver ici), mais un garde qui masque ce
+  -- qu'il detecte est pire qu'aucun garde : on LEVE plutot que d'inventer un
+  -- classement vide.
+  v_standings := public.tournament_standings(p_tournament, p_max_round);
+  IF NOT COALESCE((v_standings->>'ok')::boolean, false) THEN
+    RAISE EXCEPTION
+      'fn_tournament_final_slots: tournament_standings a refuse (%) pour le tournoi %',
+      v_standings->>'reason', p_tournament;
+  END IF;
+
+  RETURN QUERY
   WITH st AS (
     SELECT (e->>'team_id')::uuid       AS s_team,
            (e->>'rank')::int           AS prov_rank,
            (e->>'withdrawn')::boolean  AS s_withdrawn
-      FROM jsonb_array_elements(
-             COALESCE(public.tournament_standings(p_tournament, p_max_round)
-                        -> 'standings', '[]'::jsonb)) AS e
+      FROM jsonb_array_elements(COALESCE(v_standings -> 'standings', '[]'::jsonb)) AS e
   ),
   fr AS (
     -- Les lignes du tour de classement. Sur un palier qui porte un match ET un
@@ -3495,6 +3956,7 @@ AS $$
   SELECT a.court_no, a.role, a.team_id,
          row_number() OVER (ORDER BY a.slot)::int
     FROM attribue a;
+END;
 $$;
 
 REVOKE ALL ON FUNCTION public.fn_tournament_final_slots(uuid, int, int) FROM PUBLIC, anon, authenticated;
@@ -3543,8 +4005,20 @@ REVOKE ALL ON FUNCTION public.fn_tournament_final_slots(uuid, int, int) FROM PUB
 -- fichier vers le TypeScript : c'est le TypeScript qu'on ramene ici.
 --
 -- C'est `tournament_close` qui ECRIT ces rangs, et cette fonction qui les
--- ANNONCE -- toutes deux par le meme helper, pour qu'elles ne puissent plus
--- diverger.
+-- ANNONCE -- toutes deux par le MEME helper, pour que le CALCUL ne puisse plus
+-- diverger entre les deux.
+--
+-- ⚠️ CE QUE CETTE PARITE NE GARANTIT PAS : que l'enjeu annonce ICI soit encore
+-- exact au moment ou `tournament_close` s'execute. Entre les deux, un binome
+-- peut partir (`tournament_forfeit`) -- et un forfait prononce APRES cette
+-- annonce retire ce binome de son creneau (cf. le commentaire de
+-- `fn_tournament_final_slots`), ce qui DECALE les rangs de tous les binomes
+-- qui le suivaient. Ce decalage est VOULU, et TOUJOURS FAVORABLE : personne ne
+-- recoit pire que le rang promis ici, sauf le partant lui-meme -- qui tombe en
+-- bas, ce qui est precisement le correctif que ce comportement existe pour
+-- produire. Aucun ecran ne consomme encore `stakes` aujourd'hui, et ce tour
+-- n'est jamais reannonce apres un forfait : un ecran qui l'afficherait devra
+-- le savoir perime des qu'un forfait touche la rotation de classement.
 --
 -- ELLE N'APPARIE PAS ELLE-MEME. L'appariement d'un tour a UN seul domicile
 -- dans ce fichier -- `tournament_generate_round` -- et le dupliquer ici serait
