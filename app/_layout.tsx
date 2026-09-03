@@ -52,6 +52,12 @@ function RootNavigator() {
             Étaient des onglets cachés (singletons, sans historique) avant 2026-08-08. */}
         <Stack.Screen name="ranking" options={{ presentation: 'card' }} />
         <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
+        {/* Tournois montante / descente. L'entrée du menu est masquée quand
+            l'interrupteur serveur est éteint (défaut) ; ces écrans se referment
+            alors d'eux-mêmes si on y arrive par un lien direct. */}
+        <Stack.Screen name="tournaments/index" options={{ presentation: 'card' }} />
+        <Stack.Screen name="tournaments/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="tournaments/parcours" options={{ presentation: 'card' }} />
         <Stack.Screen name="community" />
         <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="dm/[conversationId]" options={{ presentation: 'card' }} />

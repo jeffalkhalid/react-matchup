@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
 import { getWatchPairingEnabled } from '../../lib/watchLink';
+import { getTournamentsEnabled } from '../../lib/tournaments';
 
 function Group({ title }: { title: string }) {
   return (
@@ -37,10 +38,15 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
   // `return null` ci-dessous : les appeler après le rendrait conditionnel.
   // Défaut `true` : on ne masque jamais l'entrée à cause d'un aléa réseau.
   const [watchOn, setWatchOn] = useState(true);
+  // Interrupteur global des tournois. Défaut `false`, à l'INVERSE de la montre :
+  // côté serveur, clé absente = ÉTEINT (tournaments_flag.sql), et le brief est
+  // formel — éteint, l'entrée n'apparaît NULLE PART, ni écran vide ni message.
+  const [tournamentsOn, setTournamentsOn] = useState(false);
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     getWatchPairingEnabled().then(v => { if (!cancelled) setWatchOn(v); });
+    getTournamentsEnabled().then(v => { if (!cancelled) setTournamentsOn(v); });
     return () => { cancelled = true; };
   }, [visible]);
 
@@ -69,6 +75,8 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
 
           <Group title="Raccourcis" />
           <Row icon="trophy" label="Classement" onPress={() => nav('/ranking')} />
+          {tournamentsOn && <Row icon="medal" label="Tournois" onPress={() => nav('/tournaments')} />}
+          {tournamentsOn && <Row icon="trendingUp" label="Mon parcours" onPress={() => nav('/tournaments/parcours')} />}
           <Row icon="bell" label="Notifications" onPress={() => nav('/notifications')} />
 
           {isAdmin && (
