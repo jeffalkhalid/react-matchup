@@ -33,8 +33,8 @@
 // utilisé par le reste du monde `tournament_*` plutôt que la palette sombre
 // dédiée du profil, pour rester cohérent avec les deux écrans voisins.
 //
-// Onglets « Résultats » et « Stats » : PAS construits ici, non spécifiés par
-// le cahier de cette tâche.
+// Un seul écran : les cumuls et l'historique cohabitent sur la même page,
+// sans onglets « Résultats » / « Stats » séparés.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -110,14 +110,20 @@ function RowStat({ label, value, tone }: { label: string; value: string; tone?: 
  *  doré/argenté/bronze sur le podium. */
 function RankBadge({ rank }: { rank: number }) {
   const podium = rank <= 3;
+  // `tone` porte la couleur doré/argenté/bronze que le commentaire promet —
+  // avant cette correction, `podium` (rank <= 3) était vrai CHAQUE FOIS que
+  // `tone` était défini (rank 1, 2 ou 3), donc la branche qui le lisait
+  // n'était jamais atteinte : les trois places du podium rendaient la MÊME
+  // couleur uniforme, jamais doré/argenté/bronze. `tone` sert maintenant le
+  // FOND du badge (podium), pas le texte (toujours lisible en clair dessus).
   const tone = rank === 1 ? '#F59E0B' : rank === 2 ? '#94A3B8' : rank === 3 ? '#B45309' : undefined;
   return (
     <View style={{
       width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: podium ? Colors.brand : Colors.bg,
-      borderWidth: 1, borderColor: podium ? Colors.brand : Colors.border,
+      backgroundColor: podium ? (tone ?? Colors.brand) : Colors.bg,
+      borderWidth: 1, borderColor: podium ? (tone ?? Colors.brand) : Colors.border,
     }}>
-      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: podium ? Colors.textOnBrand : (tone ?? Colors.textPrimary) }}>
+      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: podium ? Colors.textOnBrand : Colors.textPrimary }}>
         {rank}
       </Text>
     </View>
@@ -180,7 +186,11 @@ function CumulsCard({ totals }: { totals: TournamentCareerTotals }) {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
         <BigStat value={totals.tournamentsPlayed} label="Tournois" />
         <BigStat value={totals.matchesPlayed} label="Matchs" />
-        <BigStat value={`${totals.winPct}%`} label="Victoires" />
+        {/* « % Victoires » et non « Victoires » tout court : l'historique
+            plus bas (ResultRow) utilise le même mot « V » pour un COMPTE de
+            victoires — deux grandeurs différentes sous un même intitulé sur
+            le même écran, sans le préfixe. */}
+        <BigStat value={`${totals.winPct}%`} label="% Victoires" />
         <BigStat value={diffValue} label="Diff. jeux" tone={diffTone} />
         <BigStat value={totals.tournamentWins} label="Tournois gagnés" tone={totals.tournamentWins > 0 ? Colors.brandDeep : undefined} />
         <BigStat value={totals.podiums} label="Podiums" tone={totals.podiums > 0 ? Colors.brandDeep : undefined} />

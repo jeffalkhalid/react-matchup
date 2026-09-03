@@ -13,18 +13,20 @@ import { Icon } from '../community/icons';
 import {
   type Tournament, type TournamentRegistration,
   seatsLabel, waitlistCount,
-  levelRangeLabel, priceLabel, statusLabel, tournamentPhase, freePlaces,
+  levelRangeLabel, priceLabel, statusLabel, statusTone, tournamentPhase, freePlaces, dateBucket,
 } from '../../lib/tournaments';
 
 // Décompose la date en label (« AUJOURD'HUI » / « DEMAIN » / date courte) +
 // heure « HH:MM » — même bloc horaire que les cartes de partie du Lobby.
+// Le calcul « aujourd'hui / demain » passe par `dateBucket` (lib/tournaments.ts,
+// TESTÉ) — avant cette correction, cette fonction portait son PROPRE calcul,
+// séparé de celui de `formatTournamentDate`, ni l'un ni l'autre testé.
 function splitDate(iso: string): { label: string; tone: 'today' | 'tomorrow' | 'other'; time: string } {
   const d = new Date(iso);
-  const today = new Date();
-  const tom = new Date(); tom.setDate(today.getDate() + 1);
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (d.toDateString() === today.toDateString()) return { label: "AUJOURD'HUI", tone: 'today', time };
-  if (d.toDateString() === tom.toDateString()) return { label: 'DEMAIN', tone: 'tomorrow', time };
+  const bucket = dateBucket(iso);
+  if (bucket === 'today') return { label: "AUJOURD'HUI", tone: 'today', time };
+  if (bucket === 'tomorrow') return { label: 'DEMAIN', tone: 'tomorrow', time };
   return {
     label: d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase(),
     tone: 'other',
@@ -32,13 +34,12 @@ function splitDate(iso: string): { label: string; tone: 'today' | 'tomorrow' | '
   };
 }
 
+// La couleur passe désormais par `statusTone` (lib/tournaments.ts) — SOURCE
+// UNIQUE partagée avec la fiche (app/tournaments/[id].tsx) et l'admin
+// (app/(tabs)/admin.tsx TournamentManage) : avant, COMPLET était orange ici,
+// gris sur la fiche, vert dans l'admin — trois vérités pour le même mot.
 function StatusPill({ t }: { t: Tournament }) {
-  const phase = tournamentPhase(t.status);
-  if (phase === 'live') return <Pill variant="brand">{statusLabel(t.status)}</Pill>;
-  if (phase === 'past') return <Pill variant="neutral">{statusLabel(t.status)}</Pill>;
-  if (t.status === 'COMPLET') return <Pill variant="warning">Complet</Pill>;
-  if (t.status === 'INSCRIPTIONS_OUVERTES') return <Pill variant="success">Inscriptions ouvertes</Pill>;
-  return <Pill variant="ink">{statusLabel(t.status)}</Pill>;
+  return <Pill variant={statusTone(t.status)}>{statusLabel(t.status)}</Pill>;
 }
 
 function Info({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {

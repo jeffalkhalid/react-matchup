@@ -73,14 +73,25 @@ export function ScoreSheet({
   const insets = useSafeAreaInsets();
   const teamAEntries = entries.filter(e => teamA.playerIds.includes(e.player_id));
   const teamBEntries = entries.filter(e => teamB.playerIds.includes(e.player_id));
+  // Le préremplissage vient de MOI ou de MON COÉQUIPIER, JAMAIS de
+  // l'adversaire : avant cette correction, à défaut de ma propre saisie, la
+  // case se préremplissait avec la PREMIÈRE saisie connue toutes équipes
+  // confondues — donc, la moitié du temps, celle du camp d'en face. « Deux
+  // témoignages indépendants » devenait alors « un tap pour entériner la
+  // version de l'adversaire ». Rien à préremplir tant que ni moi ni mon
+  // coéquipier n'avons rien saisi : mieux vaut un champ vide qu'une
+  // proposition venue d'en face.
+  const myTeamEntries = teamA.playerIds.includes(myPlayerId) ? teamAEntries
+    : teamB.playerIds.includes(myPlayerId) ? teamBEntries
+    : [];
   const myEntry = entries.find(e => e.player_id === myPlayerId)
-    ?? [...teamAEntries, ...teamBEntries][0]
+    ?? myTeamEntries[0]
     ?? null;
 
   const [inputA, setInputA] = useState(myEntry ? String(myEntry.games_a) : '');
   const [inputB, setInputB] = useState(myEntry ? String(myEntry.games_b) : '');
 
-  // Une saisie déjà connue (la mienne, ou à défaut la première venue —
+  // Une saisie déjà connue (la mienne, ou à défaut celle de mon coéquipier —
   // orientation team_a/team_b déjà correcte quel qu'en soit l'auteur) préremplit
   // les deux cases : confirmer un score juste ne demande alors qu'un tap.
   useEffect(() => {

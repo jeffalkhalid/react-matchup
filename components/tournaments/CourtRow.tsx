@@ -81,7 +81,7 @@ const STATUS_PILL: Record<MatchLiveStatus, { variant: PillVariant; label: string
   awaiting:  { variant: 'warning', label: 'En attente' },
 };
 
-export function CourtRow({ courtNo, isTopCourt, teamA, teamB, gamesA, gamesB, forfeitedTeamId, status, onPress }: {
+export function CourtRow({ courtNo, isTopCourt, teamA, teamB, gamesA, gamesB, forfeitedTeamId, status, stakeText, onPress }: {
   courtNo: number;
   /** Terrain 1 : le palier le plus fort. Accent visuel seulement. */
   isTopCourt?: boolean;
@@ -92,6 +92,11 @@ export function CourtRow({ courtNo, isTopCourt, teamA, teamB, gamesA, gamesB, fo
   gamesB: number | null;
   forfeitedTeamId?: string | null;
   status: MatchLiveStatus;
+  /** L'enjeu de CE terrain à LA rotation de classement — `stakeLabel()`
+   *  (lib/tournaments.ts), déjà traduit, jamais recalculé ici. `undefined`
+   *  en dehors de cette rotation-là : ce composant ne sait pas quand il est
+   *  pertinent, seul l'appelant le sait (Task 12). */
+  stakeText?: string | null;
   onPress?: () => void;
 }) {
   const pill = STATUS_PILL[status];
@@ -110,6 +115,13 @@ export function CourtRow({ courtNo, isTopCourt, teamA, teamB, gamesA, gamesB, fo
         </Text>
         <Pill variant={pill.variant}>{pill.label}</Pill>
       </View>
+      {stakeText && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 2 }}>
+          <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>
+            🏆 {stakeText}
+          </Text>
+        </View>
+      )}
       <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
         <TeamLine team={teamA} games={showScore ? gamesA : null} forfeited={!!forfeitedTeamId && forfeitedTeamId === teamA.id} />
         {teamB ? (

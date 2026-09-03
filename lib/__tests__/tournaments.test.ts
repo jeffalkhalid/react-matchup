@@ -11,9 +11,10 @@ import {
   acceptsCheckIn, isFeatureDisabled, matchLiveStatus, validateTournamentScore,
   computeCareerTotals,
   nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, pointsScaleValid,
-  DEFAULT_POINTS_SCALE,
+  DEFAULT_POINTS_SCALE, statusLabel, statusTone, canOpenCheckIn, stakeLabel,
+  groupResultsByTeam, dateBucket, formatTournamentDate,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
-  type TournamentMissingMatch,
+  type TournamentMissingMatch, type TournamentResultTeamRow,
 } from '../tournaments';
 
 const reg = (player_id: string, waitlist_position: number | null = null, extra: Partial<TournamentRegistration> = {}) => ({
@@ -41,6 +42,13 @@ describe('les places se comptent en JOUEURS', () => {
     const regs = [reg('a'), reg('b'), reg('c', 1), reg('d', 1)];
     expect(seatsTaken(regs)).toBe(2);
     expect(waitlistCount(regs)).toBe(2);
+  });
+
+  it('`waitlist_position` ABSENT (undefined) occupe une place, comme `null` explicite — ' +
+     'aucune fixture ne le posait jusqu’ici, un `== null` muté en `=== null` passait donc à tort', () => {
+    const noKey = { player_id: 'x' } as unknown as Pick<TournamentRegistration, 'waitlist_position'>;
+    expect(seatsTaken([noKey])).toBe(1);
+    expect(waitlistCount([noKey])).toBe(0);
   });
 });
 
@@ -194,6 +202,13 @@ describe('matchLiveStatus — jamais un vainqueur redérivé', () => {
 
   it('confirmé se lit à `confirmedAt`, avant même de regarder les saisies', () => {
     expect(matchLiveStatus(true, null, '2026-01-01T20:00:00Z', [], [])).toBe('confirmed');
+  });
+
+  it('un match forfait PORTE AUSSI `confirmedAt` posé (le serveur écrit les deux) : ' +
+     'reste `forfeited`, jamais `confirmed` — sous l’ordre inverse des deux gardes ' +
+     'ci-dessus, ce cas rendrait `confirmed`, un score 0-0 s’afficherait comme un vrai ' +
+     'score et la pastille « Forfait » disparaîtrait', () => {
+    expect(matchLiveStatus(true, 'team-a', '2026-01-01T20:00:00Z', [], [])).toBe('forfeited');
   });
 
   it('personne n’a encore saisi → en attente', () => {
@@ -364,5 +379,134 @@ describe('pointsScaleValid — miroir de la CHECK sur tournaments.points_scale',
   it('accepte zéro, et refuse un barème vide', () => {
     expect(pointsScaleValid({ '1': 0 })).toBe(true);
     expect(pointsScaleValid({})).toBe(false);
+  });
+});
+
+// ─── ANNULE (Task 12) ──────────────────────────────────────────────────────
+
+describe('ANNULE — un tournoi mort, jamais affiché comme vivant', () => {
+  it('va dans « Passés », ni « à venir » ni « en cours »', () => {
+    expect(tournamentPhase('ANNULE')).toBe('past');
+  });
+
+  it('a son propre libellé, jamais confondu avec un autre statut', () => {
+    expect(statusLabel('ANNULE')).toBe('Annulé');
+    expect(statusLabel('ANNULE')).not.toBe(statusLabel('TERMINE'));
+  });
+
+  it('n’accepte plus rien : ni inscription, ni appariement, ni pointage', () => {
+    expect(acceptsRegistrations('ANNULE')).toBe(false);
+    expect(acceptsPairing('ANNULE')).toBe(false);
+    expect(acceptsCheckIn('ANNULE')).toBe(false);
+    expect(canOpenCheckIn('ANNULE')).toBe(false);
+  });
+});
+
+describe('statusTone — la couleur d’un statut, SOURCE UNIQUE (comme statusLabel pour le texte)', () => {
+  it('COMPLET a une seule couleur, la même partout où ce code l’appelle', () => {
+    expect(statusTone('COMPLET')).toBe('warning');
+  });
+
+  it('un statut et son opposé n’ont jamais la même couleur', () => {
+    expect(statusTone('INSCRIPTIONS_OUVERTES')).not.toBe(statusTone('ANNULE'));
+    expect(statusTone('EN_COURS')).not.toBe(statusTone('TERMINE'));
+  });
+
+  it('ANNULE est signalé (danger), jamais confondu avec TERMINE (neutre)', () => {
+    expect(statusTone('ANNULE')).toBe('danger');
+    expect(statusTone('TERMINE')).toBe('neutral');
+  });
+});
+
+describe('canOpenCheckIn — miroir de tournament_open_check_in', () => {
+  it('ouvertes et complet seulement', () => {
+    expect(canOpenCheckIn('INSCRIPTIONS_OUVERTES')).toBe(true);
+    expect(canOpenCheckIn('COMPLET')).toBe(true);
+  });
+  it('pas une fois le pointage déjà ouvert, ni après', () => {
+    expect(canOpenCheckIn('CHECK_IN')).toBe(false);
+    expect(canOpenCheckIn('PRET')).toBe(false);
+    expect(canOpenCheckIn('EN_COURS')).toBe(false);
+  });
+});
+
+// ─── stakes (Task 12) : l’enjeu de la rotation de classement ────────────────
+
+describe('stakeLabel — la traduction d’UNE ligne de stakes, jamais un calcul de rang', () => {
+  it('les deux places d’un terrain qui oppose deux équipes', () => {
+    expect(stakeLabel({ rank_win: 3, rank_lose: 4 })).toBe('Places 3 et 4 en jeu');
+  });
+
+  it('une seule place pour un bye qui ne partage pas son palier', () => {
+    expect(stakeLabel({ rank_win: 1, rank_lose: null })).toBe('Place 1 en jeu');
+  });
+
+  it('rien à annoncer pour un bye qui partage son palier avec un match', () => {
+    expect(stakeLabel({ rank_win: null, rank_lose: null })).toBeNull();
+  });
+});
+
+// ─── Le classement figé d’un tournoi clos (Task 12) ──────────────────────────
+
+describe('groupResultsByTeam — une ligne par joueur devient une ligne par binôme', () => {
+  const row = (team_id: string, player_id: string, final_rank: number): TournamentResultTeamRow => ({
+    tournament_id: 'T', team_id, player_id, final_rank, played: 6, wins: 4, games_won: 24, games_lost: 14, points: 80,
+  });
+
+  it('regroupe les deux joueurs d’un même binôme sans dupliquer la ligne', () => {
+    const rows = [row('t1', 'a', 1), row('t1', 'b', 1)];
+    const grouped = groupResultsByTeam(rows);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].player_ids.sort()).toEqual(['a', 'b']);
+    expect(grouped[0].final_rank).toBe(1);
+  });
+
+  it('trie par rang final, plusieurs binômes', () => {
+    const rows = [row('t2', 'c', 3), row('t2', 'd', 3), row('t1', 'a', 1), row('t1', 'b', 1)];
+    const grouped = groupResultsByTeam(rows);
+    expect(grouped.map(g => g.team_id)).toEqual(['t1', 't2']);
+  });
+
+  it('ne recalcule aucun total : les chiffres sont recopiés tels quels', () => {
+    const grouped = groupResultsByTeam([row('t1', 'a', 2), row('t1', 'b', 2)]);
+    expect(grouped[0]).toMatchObject({ played: 6, wins: 4, games_won: 24, games_lost: 14, points: 80 });
+  });
+});
+
+// ─── dateBucket — SOURCE UNIQUE du « aujourd'hui / demain » (Task 12) ────────
+// Avant cette fonction, `formatTournamentDate` ici et `splitDate`
+// (components/tournaments/TournamentCard.tsx) portaient chacune leur propre
+// calcul, NI L'UN NI L'AUTRE testé — deux implémentations qui pouvaient
+// diverger au passage de minuit.
+
+describe('dateBucket — le jour calendaire d’une date ISO, par rapport à `now`', () => {
+  const now = new Date('2026-09-10T22:00:00');
+
+  it('la même date calendaire que `now` est « today », même à une autre heure', () => {
+    expect(dateBucket('2026-09-10T08:00:00', now)).toBe('today');
+  });
+
+  it('le lendemain calendaire est « tomorrow »', () => {
+    expect(dateBucket('2026-09-11T08:00:00', now)).toBe('tomorrow');
+  });
+
+  it('tout le reste est « other », avant comme après', () => {
+    expect(dateBucket('2026-09-09T08:00:00', now)).toBe('other');
+    expect(dateBucket('2026-09-12T08:00:00', now)).toBe('other');
+  });
+
+  it('minuit ne fait pas déborder « today » sur la veille ou le lendemain', () => {
+    const justAfterMidnight = new Date('2026-09-10T00:05:00');
+    expect(dateBucket('2026-09-10T23:55:00', justAfterMidnight)).toBe('today');
+    expect(dateBucket('2026-09-09T23:55:00', justAfterMidnight)).toBe('other');
+  });
+});
+
+describe('formatTournamentDate — utilise dateBucket, jamais un calcul séparé', () => {
+  it('contient "Aujourd\'hui" pour la date du jour', () => {
+    const today = new Date();
+    const hh = String(today.getHours()).padStart(2, '0');
+    const mm = String(today.getMinutes()).padStart(2, '0');
+    expect(formatTournamentDate(today.toISOString())).toBe(`Aujourd'hui · ${hh}h${mm}`);
   });
 });

@@ -24,6 +24,7 @@ import {
   fetchTournaments, fetchRegistrationsFor, getTournamentsEnabled,
   tournamentPhase, type Tournament, type TournamentRegistration, type TournamentPhase,
 } from '../../lib/tournaments';
+import { GENERIC_REASON } from '../../lib/tournamentReasons';
 
 type TabKey = Extract<TournamentPhase, 'upcoming' | 'live' | 'past'>;
 
@@ -52,10 +53,29 @@ function EmptyState({ text, sub }: { text: string; sub?: string }) {
   );
 }
 
+/** Un refus (réseau, PostgREST), distinct d'une liste simplement VIDE — même
+ *  motif que `standingsError` (app/tournaments/[id].tsx) et `loadError`
+ *  (app/tournaments/parcours.tsx). Un aléa réseau ne doit jamais se lire
+ *  comme « aucun tournoi annoncé » : c'est exactement ce que disait le texte
+ *  de l'onglet « À venir » avant cette correction. */
+function ErrorNotice({ message }: { message: string }) {
+  return (
+    <View style={{
+      backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.50)',
+      borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    }}>
+      <Text style={{ color: '#B45309', fontSize: 12.5, fontFamily: Fonts.uiBold, lineHeight: 17 }}>{message}</Text>
+    </View>
+  );
+}
+
 export default function TournamentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { player } = usePlayer();
+  // `playerLoading` : sans lui, un inscrit voyait un instant une carte SANS
+  // la pastille « Inscrit » (`isMine` dépend de `player?.id`, indisponible
+  // tant que `usePlayer` n'a pas résolu).
+  const { player, loading: playerLoading } = usePlayer();
 
   // `null` = on ne sait pas encore. On n'affiche RIEN tant qu'on ne sait pas :
   // un écran vide qui se referme serait déjà une entrée visible.
@@ -63,6 +83,8 @@ export default function TournamentsScreen() {
   const [tab, setTab] = useState<TabKey>('upcoming');
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [regs, setRegs] = useState<Map<string, TournamentRegistration[]>>(new Map());
+  // Distinct d'une liste simplement VIDE — cf. `ErrorNotice` ci-dessus.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -72,10 +94,20 @@ export default function TournamentsScreen() {
     if (!on) { setLoading(false); return; }
     try {
       const list = await fetchTournaments();
+      // Les DEUX lectures réussissent avant qu'AUCUNE des deux n'atteigne
+      // l'écran : `setTournaments(list)` seul, suivi d'un `fetchRegistrationsFor`
+      // qui échoue, affichait avant cette correction des cartes à « 0/16
+      // joueurs » sur un tournoi complet — un CHIFFRE FAUX, pire qu'un refus
+      // affiché. Si la seconde lecture échoue, on tombe dans le `catch`
+      // ci-dessous SANS avoir touché `tournaments` : la liste précédente
+      // (ou vide) reste affichée, jamais une liste à moitié à jour.
+      const registrations = await fetchRegistrationsFor(list.map(t => t.id));
       setTournaments(list);
-      setRegs(await fetchRegistrationsFor(list.map(t => t.id)));
+      setRegs(registrations);
+      setLoadError(null);
     } catch (e) {
       console.warn('[tournois] liste indisponible', e);
+      setLoadError(GENERIC_REASON);
     } finally {
       setLoading(false);
     }
@@ -181,7 +213,7 @@ export default function TournamentsScreen() {
         </View>
       </View>
 
-      {loading ? (
+      {(loading || playerLoading) ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={Colors.primary} size="large" />
         </View>
@@ -190,8 +222,12 @@ export default function TournamentsScreen() {
           contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 28, gap: 10 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
         >
+          {/* Un rafraîchissement en échec garde la liste déjà connue à
+              l'écran, avec ce bandeau au-dessus plutôt qu'à sa place. */}
+          {loadError && <ErrorNotice message={loadError} />}
+
           {shown.length === 0
-            ? <EmptyState text={empty.text} sub={empty.sub} />
+            ? (loadError ? null : <EmptyState text={empty.text} sub={empty.sub} />)
             : shown.map(t => (
                 <TournamentCard
                   key={t.id}

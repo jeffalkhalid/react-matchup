@@ -35,19 +35,23 @@ import {
   fetchTournament, fetchRegistrations, fetchTeams, fetchMyJoinRequests,
   getTournamentsEnabled, registerToTournament, joinTournamentPlayer,
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
-  checkInToTournament, setOpenToJoin, isFeatureDisabled, resultMessage,
+  checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount,
-  waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel,
+  waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel, statusTone,
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
   acceptsRegistrations, acceptsPairing, acceptsCheckIn, ROUND_MINUTES,
   fetchRoundMatches, fetchRoundMovements, fetchMatchEntries, fetchStandings,
+  fetchTournamentResults, groupResultsByTeam,
   enterTournamentScore, matchLiveStatus,
   type Tournament, type TournamentRegistration, type TournamentTeam, type TournamentResult,
   type JoinRequest, type TournamentSide,
   type TournamentMatch, type TournamentMovement, type TournamentMatchEntry, type TournamentStanding,
+  type TournamentResultTeamRow,
 } from '../../lib/tournaments';
+import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
+import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
@@ -172,11 +176,12 @@ function LiveTabs({ value, onChange }: { value: 'tableau' | 'classement'; onChan
   );
 }
 
-function Notice({ tone, children }: { tone: 'warning' | 'info' | 'success'; children: React.ReactNode }) {
+function Notice({ tone, children }: { tone: 'warning' | 'info' | 'success' | 'danger'; children: React.ReactNode }) {
   const map = {
     warning: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.50)', fg: '#B45309' },
     info:    { bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.45)', fg: '#1D4ED8' },
     success: { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.45)', fg: '#047857' },
+    danger:  { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.45)',  fg: '#B91C1C' },
   }[tone];
   return (
     <View style={{
@@ -207,7 +212,11 @@ export default function TournamentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { player } = usePlayer();
+  // `playerLoading` : sans lui, un inscrit voyait un instant « M'inscrire »
+  // (canRegister se lit sur `me.registration`, qui dépend de `player?.id` —
+  // tant que `usePlayer` n'a pas résolu, `player` est `null` et `me` ne peut
+  // trouver aucune inscription, même la sienne).
+  const { player, loading: playerLoading } = usePlayer();
 
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -218,6 +227,11 @@ export default function TournamentDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [sideSheetOpen, setSideSheetOpen] = useState(false);
+  // Distinct de « ce tournoi n'existe pas » : un aléa réseau ne doit jamais
+  // se lire comme « Ce tournoi est introuvable » — cf. le `if (!tournament)`
+  // plus bas, qui distingue les deux messages.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // ── La soirée (Task 8) : tableau du tour EN COURS, ses mouvements, ses
   // saisies, et le classement courant. Chargés seulement une fois le premier
@@ -230,6 +244,11 @@ export default function TournamentDetailScreen() {
   // un refus serveur (feature_disabled, tournament_not_found) ou un aléa
   // réseau ne doit jamais se lire comme « rien n'a encore été joué ».
   const [standingsError, setStandingsError] = useState<string | null>(null);
+  // Le classement FIGÉ (tournament_results), pour un tournoi CLOS — jamais
+  // le même que `standings` (tournament_standings, vivant). Cf. le
+  // commentaire de `fetchTournamentResults`, lib/tournaments.ts.
+  const [finalResults, setFinalResults] = useState<TournamentResultTeamRow[]>([]);
+  const [finalResultsError, setFinalResultsError] = useState<string | null>(null);
   const [liveTab, setLiveTab] = useState<'tableau' | 'classement'>('tableau');
   const [scoreSheetMatchId, setScoreSheetMatchId] = useState<string | null>(null);
   const [scoreBusy, setScoreBusy] = useState(false);
@@ -243,32 +262,67 @@ export default function TournamentDetailScreen() {
       const [t, r, tm, jr] = await Promise.all([
         fetchTournament(id), fetchRegistrations(id), fetchTeams(id), fetchMyJoinRequests(id),
       ]);
+      // Ces quatre lectures ont RÉUSSI (sans quoi on serait dans le `catch`
+      // ci-dessous) : `t === null` ici veut dire « ce tournoi n'existe
+      // vraiment pas », jamais « le réseau a lâché » — `loadError` reste donc
+      // `null`, et l'écran « introuvable » plus bas peut s'y fier.
       setTournament(t); setRegs(r); setTeams(tm); setRequests(jr);
-      if (t && t.current_round > 0) {
-        const [m, mv] = await Promise.all([
-          fetchRoundMatches(id, t.current_round),
-          fetchRoundMovements(id, t.current_round),
-        ]);
-        const [en, stRes] = await Promise.all([
-          fetchMatchEntries(m.map(x => x.id)),
-          fetchStandings(id),
-        ]);
-        setMatches(m); setMovements(mv); setMatchEntries(en);
-        // Le classement est un refus serveur comme un autre : jamais avalé
-        // en `[]` silencieux (cf. l'en-tête de `fetchStandings`).
-        if (isFeatureDisabled(stRes)) { setEnabled(false); return; }
-        if (stRes.ok) {
-          setStandings((stRes.standings as TournamentStanding[] | undefined) ?? []);
-          setStandingsError(null);
-        } else {
-          setStandings([]);
-          setStandingsError(resultMessage(stRes));
+      setLoadError(null);
+      if (!t) { setLoading(false); return; }
+
+      if (t.current_round > 0) {
+        // Isolé dans son PROPRE try/catch : un échec ICI ne doit ni faire
+        // croire que le tournoi est introuvable (il vient d'être affiché
+        // deux lignes plus haut), ni faire sauter par-dessus la branche
+        // `standingsError` qui suit — les deux arrivaient avant cette
+        // correction, dès qu'une lecture voisine (les mouvements, les
+        // saisies) levait entre `setTournament(t)` et le calcul du
+        // classement.
+        try {
+          const [m, mv] = await Promise.all([
+            fetchRoundMatches(id, t.current_round),
+            fetchRoundMovements(id, t.current_round),
+          ]);
+          const [en, stRes] = await Promise.all([
+            fetchMatchEntries(m.map(x => x.id)),
+            fetchStandings(id),
+          ]);
+          setMatches(m); setMovements(mv); setMatchEntries(en);
+          // Le classement est un refus serveur comme un autre : jamais avalé
+          // en `[]` silencieux (cf. l'en-tête de `fetchStandings`).
+          if (isFeatureDisabled(stRes)) { setEnabled(false); return; }
+          if (stRes.ok) {
+            setStandings((stRes.standings as TournamentStanding[] | undefined) ?? []);
+            setStandingsError(null);
+          } else {
+            setStandings([]);
+            setStandingsError(resultMessage(stRes));
+          }
+        } catch (e) {
+          console.warn('[tournois] tableau/classement indisponibles', e);
+          setStandingsError(GENERIC_REASON);
         }
       } else {
         setMatches([]); setMovements([]); setMatchEntries([]); setStandings([]); setStandingsError(null);
       }
+
+      // Le classement FINAL, FIGÉ — dès TERMINE, avant même la validation
+      // (cf. l'en-tête de `fetchTournamentResults`) : la fiche d'un tournoi
+      // clos ne doit plus jamais lire `tournament_standings` (le vivant).
+      if (t.status === 'TERMINE' || t.status === 'CLASSEMENT_VALIDE') {
+        try {
+          setFinalResults(await fetchTournamentResults(id));
+          setFinalResultsError(null);
+        } catch (e) {
+          console.warn('[tournois] classement final indisponible', e);
+          setFinalResultsError(GENERIC_REASON);
+        }
+      } else {
+        setFinalResults([]); setFinalResultsError(null);
+      }
     } catch (e) {
       console.warn('[tournois] fiche indisponible', e);
+      setLoadError(GENERIC_REASON);
     } finally {
       setLoading(false);
     }
@@ -341,6 +395,25 @@ export default function TournamentDetailScreen() {
     return m;
   }, [matchEntries]);
 
+  // L'état de CHAQUE match du tour affiché — calculé une seule fois ici et
+  // réutilisé pour le rendu du tableau ET pour savoir si la rotation est
+  // ENTIÈREMENT jouée (cf. `roundAwaitingNextDraw` plus bas, Task 12).
+  const matchStatuses = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof matchLiveStatus>>();
+    for (const match of matches) {
+      const teamAInfo = teamById.get(match.team_a);
+      const teamBInfo = match.team_b ? teamById.get(match.team_b) : null;
+      if (!teamAInfo) continue;
+      const entriesForMatch = entriesByMatch.get(match.id) ?? [];
+      m.set(match.id, matchLiveStatus(
+        match.team_b != null, match.forfeited_team, match.confirmed_at,
+        entriesForMatch.filter(e => teamAInfo.player1_id === e.player_id || teamAInfo.player2_id === e.player_id),
+        entriesForMatch.filter(e => !!teamBInfo && (teamBInfo.player1_id === e.player_id || teamBInfo.player2_id === e.player_id)),
+      ));
+    }
+    return m;
+  }, [matches, teamById, entriesByMatch]);
+
   const started = !!tournament && (tournament.current_round > 0 || tournament.status === 'EN_COURS');
 
   /** Saisir un score de tournoi. Distinct du `run()` générique ci-dessus :
@@ -366,7 +439,7 @@ export default function TournamentDetailScreen() {
     }
   }, [load]);
 
-  if (enabled !== true || loading) {
+  if (enabled !== true || loading || playerLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
         {enabled !== false && <ActivityIndicator color={Colors.primary} size="large" />}
@@ -375,15 +448,23 @@ export default function TournamentDetailScreen() {
   }
 
   if (!tournament) {
+    // `loadError` distingue « le réseau a lâché » de « ce tournoi n'existe
+    // pas » — avant cette correction, les deux rendaient EXACTEMENT le même
+    // message alors que le tournoi existe très bien dans le second cas.
     return (
       <View style={{ flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
         <Icon name="trophy" size={40} color={Colors.textMuted} stroke={1.8} />
         <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center', marginTop: 10 }}>
-          Ce tournoi est introuvable
+          {loadError ? 'Fiche indisponible' : 'Ce tournoi est introuvable'}
         </Text>
-        <TouchableOpacity onPress={() => router.back()}
+        {loadError && (
+          <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary, textAlign: 'center', marginTop: 6 }}>
+            {loadError}
+          </Text>
+        )}
+        <TouchableOpacity onPress={loadError ? load : () => router.back()}
           style={{ marginTop: 20, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 12, backgroundColor: Colors.primary }}>
-          <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Retour</Text>
+          <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>{loadError ? 'Réessayer' : 'Retour'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -399,6 +480,34 @@ export default function TournamentDetailScreen() {
   const mySide = me.registration?.side ?? null;
   const partnerReg = me.partnerId ? byId.get(me.partnerId) : null;
   const pairWarning = sameSideWarning(mySide, partnerReg?.side ?? null);
+  // Le côté n'est plus modifiable une fois le premier tirage fait
+  // (`matches_already_generated` côté serveur) — `current_round > 0` en est
+  // le miroir exact côté lecture : c'est `tournament_generate_round` qui
+  // écrit le premier tour, et rien d'autre n'insère dans `tournament_matches`.
+  const canChangeSide = t.current_round === 0;
+
+  // Le classement CLOS (tournament_results), jamais le vivant, une fois le
+  // tournoi TERMINE/CLASSEMENT_VALIDE. `validated` distingue « en attente »
+  // (TERMINE) de « crédités » (CLASSEMENT_VALIDE) — jamais le même mot pour
+  // les deux (défaut n°3 de la relecture).
+  const closed = t.status === 'TERMINE' || t.status === 'CLASSEMENT_VALIDE';
+  const finalStandingRows: FinalStandingRowData[] = groupResultsByTeam(finalResults).map(r => ({
+    ...r,
+    names: namesOf(...(teamById.get(r.team_id)
+      ? [teamById.get(r.team_id)!.player1_id, teamById.get(r.team_id)!.player2_id] as [string, string]
+      : [r.player_ids[0], r.player_ids[1]] as [string, string])),
+    mine: me.team?.id === r.team_id,
+  }));
+  const myFinalResult = me.team ? finalStandingRows.find(r => r.team_id === me.team!.id) ?? null : null;
+
+  // La rotation affichée est ENTIÈREMENT jouée (tous les matchs
+  // confirmés/bye/forfait) mais le tournoi n'a pas encore avancé : il n'y a
+  // pas de temps réel ici, seul le tirer-pour-rafraîchir dit la suite — le
+  // joueur doit au moins savoir que la balle est dans le camp de
+  // l'organisateur, plutôt que de voir quatre pastilles vertes et rien
+  // d'autre (défaut n°10 de la relecture).
+  const roundAwaitingNextDraw = t.status === 'EN_COURS' && matches.length > 0
+    && [...matchStatuses.values()].every(s => s === 'confirmed' || s === 'bye' || s === 'forfeited');
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -429,7 +538,9 @@ export default function TournamentDetailScreen() {
           {formatTournamentDate(t.starts_at)} · {t.club?.name ?? 'Club à confirmer'}
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-          <Pill variant={t.status === 'INSCRIPTIONS_OUVERTES' ? 'success' : t.status === 'EN_COURS' ? 'brand' : 'neutral'}>
+          {/* Couleur SOURCE UNIQUE (`statusTone`, lib/tournaments.ts) — même
+              couleur ici, sur la carte de liste et dans l'admin. */}
+          <Pill variant={statusTone(t.status)}>
             {statusLabel(t.status)}
           </Pill>
           <Pill variant="neutral">{levelRangeLabel(t.level_min, t.level_max)}</Pill>
@@ -441,6 +552,47 @@ export default function TournamentDetailScreen() {
         contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 32, gap: 14 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
+        {/* ── Un tournoi ANNULÉ est un tournoi MORT : le dire clairement,
+            plutôt que de laisser le reste de la fiche (places, format,
+            inscription) le montrer comme un tournoi vivant. Les actions
+            (M'inscrire, Je suis là, etc.) sont déjà fermées automatiquement :
+            ANNULE n'entre dans AUCUNE fenêtre `accepts*` (lib/tournaments.ts,
+            des listes d'autorisation, pas d'exclusion — rien à y ajouter). */}
+        {t.status === 'ANNULE' && (
+          <Notice tone="danger">Ce tournoi a été annulé par l’organisateur. Il ne se jouera pas.</Notice>
+        )}
+
+        {/* ── Mon résultat — dès que le tournoi est clos, LE fait de la
+            soirée : « tu finis Xe, +Y points ». Séparé de « La soirée »
+            ci-dessous pour ne jamais se confondre avec le tableau du dernier
+            tour ou le classement vivant (défaut n°3 de la relecture). */}
+        {closed && me.team && (
+          <View style={[cs.card, { padding: 14, gap: 4 }]}>
+            <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+              Mon résultat
+            </Text>
+            {myFinalResult ? (
+              <>
+                <Text style={{ fontSize: 22, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                  {myFinalResult.final_rank === 1 ? '🏆 1er' : `${myFinalResult.final_rank}e`} place
+                  {t.status === 'CLASSEMENT_VALIDE' ? ` · +${myFinalResult.points} points` : ''}
+                </Text>
+                {t.status === 'TERMINE' && (
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+                    {myFinalResult.points} points en attente de validation par l’organisateur.
+                  </Text>
+                )}
+              </>
+            ) : finalResultsError ? (
+              <Notice tone="warning">{finalResultsError}</Notice>
+            ) : (
+              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+                Résultat pas encore disponible.
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* ── La soirée : tableau des terrains + classement ── */}
         {started && (
           <View style={{ gap: 10 }}>
@@ -453,6 +605,12 @@ export default function TournamentDetailScreen() {
                 <Notice tone="info">Aucun match pour ce tour.</Notice>
               ) : (
                 <View style={{ gap: 8 }}>
+                  {roundAwaitingNextDraw && (
+                    <Notice tone="info">
+                      Tous les matchs de cette rotation sont joués. La suite s’affichera ici dès que
+                      l’organisateur tire la prochaine rotation — tire vers le bas pour actualiser.
+                    </Notice>
+                  )}
                   {matches.map(m => {
                     const teamAInfo = teamById.get(m.team_a);
                     const teamBInfo = m.team_b ? teamById.get(m.team_b) : null;
@@ -469,12 +627,7 @@ export default function TournamentDetailScreen() {
                       movement: movementByTeam.get(teamBInfo.id) ?? null,
                       mine: me.team?.id === teamBInfo.id,
                     } : null;
-                    const entriesForMatch = entriesByMatch.get(m.id) ?? [];
-                    const status = matchLiveStatus(
-                      m.team_b != null, m.forfeited_team, m.confirmed_at,
-                      entriesForMatch.filter(e => teamAInfo.player1_id === e.player_id || teamAInfo.player2_id === e.player_id),
-                      entriesForMatch.filter(e => !!teamBInfo && (teamBInfo.player1_id === e.player_id || teamBInfo.player2_id === e.player_id)),
-                    );
+                    const status = matchStatuses.get(m.id) ?? 'awaiting';
                     return (
                       <CourtRow
                         key={m.id}
@@ -490,6 +643,17 @@ export default function TournamentDetailScreen() {
                     );
                   })}
                 </View>
+              )
+            ) : closed ? (
+              // Un tournoi CLOS montre le classement FIGÉ (tournament_results),
+              // jamais `standings` (tournament_standings, vivant) : les deux
+              // peuvent donner un rang différent pour la même soirée.
+              finalStandingRows.length > 0 ? (
+                <FinalStandings rows={finalStandingRows} validated={t.status === 'CLASSEMENT_VALIDE'} />
+              ) : finalResultsError ? (
+                <Notice tone="warning">{finalResultsError}</Notice>
+              ) : (
+                <Notice tone="info">Classement final pas encore disponible.</Notice>
               )
             ) : standings.length === 0 ? (
               standingsError ? (
@@ -584,15 +748,29 @@ export default function TournamentDetailScreen() {
             <View style={[cs.card, { padding: 14, gap: 12 }]}>
               {me.waitlisted && (
                 <Notice tone="warning">
-                  Tu es en liste d’attente{me.registration.waitlist_position ? ` (rang ${me.registration.waitlist_position})` : ''}.
-                  Ta place se prendra dès qu’il s’en libère une.
+                  Tu es en liste d’attente{me.registration.waitlist_position ? ` (rang ${me.registration.waitlist_position})` : ''}.{' '}
+                  {/* La file n'avance plus une fois les matchs tirés — un
+                      texte qui promet encore une place après le lancement
+                      serait un mensonge (défaut n°9 de la relecture). */}
+                  {acceptsPairing(t.status)
+                    ? 'Ta place se prendra dès qu’il s’en libère une.'
+                    : 'Le tournoi a démarré sans que ta place ne se libère : la liste d’attente ne bouge plus pour cette soirée.'}
                 </Notice>
               )}
 
-              {/* Mon côté (déclaré POUR CE TOURNOI) */}
+              {/* Mon côté (déclaré POUR CE TOURNOI) — modifiable jusqu'au
+                  premier tirage (`tournament_set_side`, `matches_already_generated`
+                  au-delà). La feuille d'inscription PROMET ce changement
+                  (« il pourra changer ») : avant cette correction, rien ne le
+                  tenait (défaut n°1 de la relecture). */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>Mon côté ce soir-là</Text>
                 <Pill variant="ink">{sideLabel(me.registration.side)}</Pill>
+                {canChangeSide && (
+                  <TouchableOpacity onPress={() => setSideSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>Changer</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* Mon binôme, ou mon mode de consentement */}
@@ -601,7 +779,16 @@ export default function TournamentDetailScreen() {
                   afficherait quand même « tu as un binôme » plutôt que le
                   réglage de consentement, que le serveur refuserait
                   (`already_in_team`). */}
-              {me.team ? (
+              {me.team?.withdrawn ? (
+                // Le binôme a été déclaré FORFAIT (organisateur, admin.tsx) :
+                // rien ne le disait ici avant cette correction — le joueur
+                // lisait encore « Ton binôme · côté gauche » comme si de rien
+                // n'était (défaut n°8 de la relecture). Même mot partout
+                // pour cet événement : « Forfait », jamais « Abandon ».
+                <Notice tone="danger">
+                  {displayName(partnerReg?.player, 'partner')} et toi avez été déclarés forfait. Vous ne jouez plus ce tournoi.
+                </Notice>
+              ) : me.team ? (
                 <View style={{ gap: 10 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <Avatar name={displayName(partnerReg?.player, 'partner')} />
@@ -632,7 +819,15 @@ export default function TournamentDetailScreen() {
                 </View>
               ) : (
                 <View style={{ gap: 10 }}>
-                  <Notice tone="info">Tu n’as pas encore de binôme. Choisis quelqu’un dans la liste plus bas.</Notice>
+                  {/* Le message ne promet la liste plus bas que si elle porte
+                      encore un bouton — après le tirage, `canAsk` y est
+                      toujours faux et l'instruction devenait fausse (défaut
+                      n°9 de la relecture). */}
+                  <Notice tone="info">
+                    {canPair
+                      ? 'Tu n’as pas encore de binôme. Choisis quelqu’un dans la liste plus bas.'
+                      : 'Tu n’as pas de binôme, et l’appariement est fermé pour cette soirée.'}
+                  </Notice>
                   {/* MODE DE CONSENTEMENT — n'appartient qu'à moi, et ne change
                       que par ce geste-ci. */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -641,9 +836,11 @@ export default function TournamentDetailScreen() {
                         {me.registration.open_to_join ? 'On peut me prendre d’un geste' : 'Il faut mon accord'}
                       </Text>
                       <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 2 }}>
-                        {me.registration.open_to_join
-                          ? 'N’importe quel inscrit peut former le binôme sans te demander.'
-                          : 'Une demande t’est envoyée, tu réponds.'}
+                        {canPair
+                          ? (me.registration.open_to_join
+                              ? 'N’importe quel inscrit peut former le binôme sans te demander.'
+                              : 'Une demande t’est envoyée, tu réponds.')
+                          : 'Ce réglage ne compte plus : l’appariement est fermé pour cette soirée.'}
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -667,8 +864,14 @@ export default function TournamentDetailScreen() {
                 </View>
               )}
 
-              {/* Pointage du jour J */}
-              {acceptsCheckIn(t.status) && (
+              {/* Pointage du jour J — MASQUÉ en liste d'attente : le serveur
+                  refuse `tournament_check_in` pour un joueur en attente
+                  (`not_registered`, alors qu'il EST inscrit) parce qu'il n'a
+                  aucune place à confirmer. Avant cette correction, le bouton
+                  s'affichait juste sous le bandeau « Tu es en liste
+                  d'attente » et niait l'encadré du dessus (défaut n°1 de la
+                  relecture). */}
+              {acceptsCheckIn(t.status) && !me.waitlisted && (
                 me.registration.check_in_status === 'checked_in'
                   ? <Notice tone="success">Ta présence est enregistrée.</Notice>
                   : <PrimaryButton tone="brand" label="Je suis là" busy={busy === 'checkin'}
@@ -804,6 +1007,18 @@ export default function TournamentDetailScreen() {
         />
       )}
 
+      {sideSheetOpen && me.registration && (
+        <ChangeSideSheet
+          current={me.registration.side}
+          busy={busy === 'side'}
+          onClose={() => setSideSheetOpen(false)}
+          onChoose={(v) => {
+            setSideSheetOpen(false);
+            if (v !== me.registration!.side) run('side', () => setSide(t.id, v));
+          }}
+        />
+      )}
+
       {scoreSheetMatchId && (() => {
         const m = matches.find(x => x.id === scoreSheetMatchId);
         if (!m || !m.team_b) return null;
@@ -875,22 +1090,32 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose
   const [results, setResults] = useState<{ id: string; name: string; elo_score?: number | null }[]>([]);
   const [partner, setPartner] = useState<{ id: string; name: string } | null>(null);
   const [searching, setSearching] = useState(false);
+  // Distinct de « aucun joueur trouvé » : avant cette correction, `data`
+  // était destructuré SANS jamais lire `error` — un refus réseau rendait une
+  // liste vide, indiscernable de « Karim n'est pas dans l'app ».
+  const [searchError, setSearchError] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Recherche du partenaire — même forme que lib/community.searchPlayers.
   useEffect(() => {
     if (mode !== 'duo') return;
     const term = query.trim();
-    if (term.length < 2) { setResults([]); return; }
+    if (term.length < 2) { setResults([]); setSearchError(false); return; }
     let cancelled = false;
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
         const { supabase } = await import('../../lib/supabase');
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('players').select('id, name, elo_score')
           .is('deleted_at', null).ilike('name', `%${term}%`).neq('id', myId).limit(20);
-        if (!cancelled) setResults((data ?? []) as any);
+        if (cancelled) return;
+        if (error) {
+          console.warn('[tournois] recherche de partenaire indisponible', error);
+          setResults([]); setSearchError(true);
+        } else {
+          setResults((data ?? []) as any); setSearchError(false);
+        }
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -1028,6 +1253,16 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose
                       }}
                     />
                     {searching && <ActivityIndicator style={{ marginTop: 10 }} color={Colors.primary} />}
+                    {!searching && searchError && (
+                      <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.danger, marginTop: 8 }}>
+                        Recherche indisponible pour l’instant. Réessaie dans un instant.
+                      </Text>
+                    )}
+                    {!searching && !searchError && query.trim().length >= 2 && results.length === 0 && (
+                      <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 8 }}>
+                        Aucun joueur trouvé.
+                      </Text>
+                    )}
                     <View style={{ gap: 6, marginTop: 8 }}>
                       {results.map(p => {
                         const already = registeredIds.has(p.id);
@@ -1068,6 +1303,48 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+// ─── Changer de côté (Task 12) ───────────────────────────────────────────────
+// La feuille d'inscription promet « il pourra changer, ou défaire le
+// binôme » pour le partenaire inscrit sans avoir rien déclaré — cette feuille
+// tient cette promesse : `tournament_set_side`, signature GELÉE, appelable
+// jusqu'au premier tirage (`canChangeSide` dans l'écran appelant). Même motif
+// de surimpression absolue que `RegisterSheet` / `ScoreSheet`.
+
+function ChangeSideSheet({ current, busy, onClose, onChoose }: {
+  current: TournamentSide;
+  busy: boolean;
+  onClose: () => void;
+  onChoose: (side: TournamentSide) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [side, setSideLocal] = useState<TournamentSide>(current);
+  return (
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={onClose} />
+      <View style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        backgroundColor: Colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22,
+        paddingBottom: insets.bottom + 16, paddingHorizontal: 18,
+      }}>
+        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 2 }}>
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border }} />
+        </View>
+        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 16, color: Colors.textPrimary, paddingTop: 8, paddingBottom: 4 }}>
+          Mon côté ce soir-là
+        </Text>
+        <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, paddingBottom: 14, lineHeight: 16 }}>
+          Vaut pour CE tournoi. Modifiable jusqu’au premier tirage — une fois les matchs affichés, le tableau est
+          publié sur la base des côtés déclarés à cet instant-là.
+        </Text>
+        <SideChooser value={side} onChange={setSideLocal} />
+        <View style={{ marginTop: 16 }}>
+          <PrimaryButton label="Valider" busy={busy} onPress={() => onChoose(side)} />
+        </View>
+      </View>
     </View>
   );
 }

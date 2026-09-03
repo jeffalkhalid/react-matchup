@@ -29,7 +29,7 @@ import { reasonLabel } from './tournamentReasons';
 
 export type TournamentStatus =
   | 'BROUILLON' | 'INSCRIPTIONS_OUVERTES' | 'COMPLET' | 'CHECK_IN'
-  | 'PRET' | 'EN_COURS' | 'TERMINE' | 'CLASSEMENT_VALIDE';
+  | 'PRET' | 'EN_COURS' | 'TERMINE' | 'CLASSEMENT_VALIDE' | 'ANNULE';
 
 /** Le côté déclaré POUR CE TOURNOI. Même domaine que `players.court_side`,
  *  qui ne sert qu'à PRÉREMPLIR : le côté se déclare le soir même, on s'adapte
@@ -165,13 +165,17 @@ export function seatedTeams(
 export type TournamentPhase = 'draft' | 'upcoming' | 'live' | 'past';
 
 /** Les trois onglets de la liste, plus le brouillon qui n'y figure pas.
- *  BROUILLON n'est pas encore publié : il n'apparaît nulle part. */
+ *  BROUILLON n'est pas encore publié : il n'apparaît nulle part. ANNULE va
+ *  dans « Passés » — un tournoi mort n'est ni à venir ni en cours, et
+ *  `statusLabel` + `statusTone` disent déjà clairement qu'il est annulé plutôt
+ *  que joué. */
 export function tournamentPhase(status: TournamentStatus): TournamentPhase {
   switch (status) {
     case 'BROUILLON':               return 'draft';
     case 'EN_COURS':                return 'live';
     case 'TERMINE':
-    case 'CLASSEMENT_VALIDE':       return 'past';
+    case 'CLASSEMENT_VALIDE':
+    case 'ANNULE':                  return 'past';
     default:                        return 'upcoming';   // ouvertes, complet, check-in, prêt
   }
 }
@@ -185,10 +189,39 @@ const STATUS_LABEL: Record<TournamentStatus, string> = {
   EN_COURS:              'En cours',
   TERMINE:               'Terminé',
   CLASSEMENT_VALIDE:     'Classement validé',
+  ANNULE:                'Annulé',
 };
 
 export function statusLabel(status: TournamentStatus): string {
   return STATUS_LABEL[status] ?? 'Tournoi';
+}
+
+/** La couleur d'un statut — SOURCE UNIQUE, comme `statusLabel` pour le texte.
+ *  Avant cette fonction, la carte de liste, la fiche et l'admin choisissaient
+ *  chacune leur propre couleur pour le même statut (COMPLET : orange sur la
+ *  carte, gris sur la fiche — confondu avec TERMINE —, vert dans l'admin) :
+ *  trois vérités sur trois écrans qu'on enchaîne en deux taps.
+ *
+ *  Le type de retour est un SOUS-ENSEMBLE, recopié en littéral, de
+ *  `PillVariant` (components/Pill.tsx) plutôt qu'importé : ce module reste
+ *  testable sans environnement Expo (cf. l'en-tête du fichier) — importer
+ *  components/Pill.tsx y introduirait react-native. */
+export type TournamentStatusTone = 'success' | 'warning' | 'brand' | 'neutral' | 'ink' | 'danger';
+
+const STATUS_TONE: Record<TournamentStatus, TournamentStatusTone> = {
+  BROUILLON:             'neutral',
+  INSCRIPTIONS_OUVERTES: 'success',
+  COMPLET:               'warning',
+  CHECK_IN:              'ink',
+  PRET:                  'ink',
+  EN_COURS:              'brand',
+  TERMINE:               'neutral',
+  CLASSEMENT_VALIDE:     'neutral',
+  ANNULE:                'danger',
+};
+
+export function statusTone(status: TournamentStatus): TournamentStatusTone {
+  return STATUS_TONE[status] ?? 'neutral';
 }
 
 const SIDE_LABEL: Record<TournamentSide, string> = {
@@ -231,16 +264,32 @@ export function priceLabel(priceMad: number): string {
   return priceMad > 0 ? `${priceMad} DH` : 'Gratuit';
 }
 
+/** « today » / « tomorrow » / « other » — SOURCE UNIQUE de la comparaison de
+ *  jour calendaire. Avant cette fonction, `formatTournamentDate` ci-dessous
+ *  ET `splitDate` (components/tournaments/TournamentCard.tsx) portaient
+ *  chacune leur PROPRE calcul du même « aujourd'hui / demain », ni l'un ni
+ *  l'autre testé — deux implémentations qui pouvaient diverger au passage de
+ *  minuit (deux appels à `new Date()` à quelques millisecondes d'écart, un
+ *  qui tombe avant minuit et l'autre après). `now` est un paramètre PUREMENT
+ *  pour la testabilité (jamais appelé avec autre chose que l'heure réelle en
+ *  dehors des tests) — cf. `lib/__tests__/tournaments.test.ts`. */
+export function dateBucket(iso: string, now: Date = new Date()): 'today' | 'tomorrow' | 'other' {
+  const d = new Date(iso);
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+  if (d.toDateString() === now.toDateString()) return 'today';
+  if (d.toDateString() === tomorrow.toDateString()) return 'tomorrow';
+  return 'other';
+}
+
 /** « Aujourd'hui · 19h00 » / « Demain · 19h00 » / « sam. 6 sept. · 19h00 »,
  *  même forme que le Lobby. */
 export function formatTournamentDate(iso: string): string {
   const d = new Date(iso);
-  const today = new Date();
-  const tom = new Date(); tom.setDate(today.getDate() + 1);
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
-  if (d.toDateString() === today.toDateString()) return `Aujourd'hui · ${hh}h${mm}`;
-  if (d.toDateString() === tom.toDateString()) return `Demain · ${hh}h${mm}`;
+  const bucket = dateBucket(iso);
+  if (bucket === 'today') return `Aujourd'hui · ${hh}h${mm}`;
+  if (bucket === 'tomorrow') return `Demain · ${hh}h${mm}`;
   return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) + ` · ${hh}h${mm}`;
 }
 
@@ -453,6 +502,15 @@ export function setOpenToJoin(tournamentId: string, open: boolean): Promise<Tour
   return callTournamentRpc('tournament_set_open_to_join', { p_tournament: tournamentId, p_open: open });
 }
 
+/** Changer SON côté — et rien d'autre (même moule que `setOpenToJoin`, aucun
+ *  paramètre « joueur » : le sujet est toujours l'appelant). Signature GELÉE
+ *  côté serveur (`tournament_set_side(uuid, text)`) : refuse une fois les
+ *  matchs tirés (`matches_already_generated`), jamais avant — un binôme déjà
+ *  formé n'empêche pas de changer de côté, seul le tirage le fige. */
+export function setSide(tournamentId: string, side: TournamentSide): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_set_side', { p_tournament: tournamentId, p_side: side });
+}
+
 // ─── Vue « moi sur ce tournoi » (pure) ───────────────────────────────────────
 
 export interface MyTournamentState {
@@ -516,6 +574,14 @@ export function acceptsPairing(status: TournamentStatus): boolean {
 /** Le pointage est ouvert. */
 export function acceptsCheckIn(status: TournamentStatus): boolean {
   return status === 'CHECK_IN' || status === 'PRET';
+}
+
+/** Le pointage peut s'OUVRIR — miroir de `tournament_open_check_in`
+ *  (`INSCRIPTIONS_OUVERTES` ou `COMPLET` -> `CHECK_IN`). Facultatif :
+ *  `tournament_start` accepte encore de lancer directement sans passer par
+ *  ici (« lancer quand même »), donc ce n'est jamais un préalable obligatoire. */
+export function canOpenCheckIn(status: TournamentStatus): boolean {
+  return status === 'INSCRIPTIONS_OUVERTES' || status === 'COMPLET';
 }
 
 // ─── La soirée : tableau, classement, saisie (Task 8) ────────────────────────
@@ -829,6 +895,87 @@ export function computeCareerTotals(
   };
 }
 
+// ─── Le classement FIGÉ d'un tournoi clos, pour SES PROPRES écrans ───────────
+//
+// ⚠️ NE PAS CONFONDRE avec `tournament_standings` (le classement VIVANT, trié
+// abandon → palier → victoires → différence → jeux → confrontation) : sur un
+// tournoi TERMINE ou CLASSEMENT_VALIDE, `tournament_close` a déjà FIGÉ les
+// rangs et les points dans `tournament_results` aux CRÉNEAUX de la rotation de
+// classement — une valeur DIFFÉRENTE du classement vivant, qui continue de
+// trier sur les cumuls de la soirée. Les deux ne s'affichent jamais sous le
+// même mot : un écran qui montre le rang d'un tournoi clos DOIT lire cette
+// section, jamais `fetchStandings`.
+//
+// `fetchMyTournamentResults` (ci-dessus, Task 9) filtre déjà sur MON
+// `player_id` ET `tournament.status = CLASSEMENT_VALIDE` — bon pour « Mon
+// parcours », inutilisable pour afficher le classement ENTIER d'UN tournoi
+// (la fiche, l'admin) : il faut TOUS les joueurs, et le lire dès TERMINE
+// (avant validation, les rangs existent déjà — seuls les points n'ont pas
+// encore compté, cf. `closeTournament`).
+
+/** Une ligne de `tournament_results` pour UN tournoi entier — une ligne PAR
+ *  JOUEUR (comme `TournamentResultRow`), sans filtre de statut : l'appelant
+ *  connaît déjà le tournoi auquel il s'adresse. */
+export interface TournamentResultTeamRow {
+  tournament_id: string;
+  team_id: string;
+  player_id: string;
+  final_rank: number;
+  played: number;
+  wins: number;
+  games_won: number;
+  games_lost: number;
+  points: number;
+}
+
+/** Tout `tournament_results` d'UN tournoi — RLS ouverte à tout authentifié
+ *  (même policy que `fetchMyTournamentResults`), lu en direct. */
+export async function fetchTournamentResults(tournamentId: string): Promise<TournamentResultTeamRow[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_results')
+    .select('tournament_id, team_id, player_id, final_rank, played, wins, games_won, games_lost, points')
+    .eq('tournament_id', tournamentId);
+  if (error) throw error;
+  return (data ?? []) as unknown as TournamentResultTeamRow[];
+}
+
+/** Une ligne de `tournament_results` REGROUPÉE par binôme — pour l'affichage,
+ *  qui montre un binôme, pas deux fois le même joueur. */
+export interface TeamFinalResult {
+  team_id: string;
+  player_ids: [string, string];
+  final_rank: number;
+  played: number;
+  wins: number;
+  games_won: number;
+  games_lost: number;
+  points: number;
+}
+
+/** Regroupe les lignes PAR JOUEUR en une ligne PAR BINÔME, triée par rang. Les
+ *  deux joueurs d'une équipe portent EXACTEMENT les mêmes chiffres (en-tête de
+ *  la table, tournaments.sql) : regrouper ne fait que rassembler les deux
+ *  `player_id`, ça ne recalcule jamais un rang ni un total. */
+export function groupResultsByTeam(
+  rows: Pick<TournamentResultTeamRow,
+    'team_id' | 'player_id' | 'final_rank' | 'played' | 'wins' | 'games_won' | 'games_lost' | 'points'>[],
+): TeamFinalResult[] {
+  const byTeam = new Map<string, TeamFinalResult>();
+  for (const r of rows) {
+    const existing = byTeam.get(r.team_id);
+    if (existing) {
+      existing.player_ids = [existing.player_ids[0], r.player_id];
+    } else {
+      byTeam.set(r.team_id, {
+        team_id: r.team_id, player_ids: [r.player_id, r.player_id], final_rank: r.final_rank,
+        played: r.played, wins: r.wins, games_won: r.games_won, games_lost: r.games_lost, points: r.points,
+      });
+    }
+  }
+  return [...byTeam.values()].sort((a, b) => a.final_rank - b.final_rank);
+}
+
 // ─── L'organisation : créer, conduire, clôturer (Task 10) ────────────────────
 //
 // LES NEUF FONCTIONS SERVEUR DE CETTE SECTION SONT TOUTES RÉSERVÉES À
@@ -933,7 +1080,18 @@ export async function createTournament(input: TournamentCreateInput): Promise<To
     .select(TOURNAMENT_COLS)
     .eq('id', result.id as string)
     .single();
-  if (error) throw error;
+  // Le tournoi EXISTE déjà à ce stade (la RPC ci-dessus a rendu `ok:true` et
+  // un id) : un refus ICI n'est jamais « la création a échoué », seulement
+  // « sa relecture a échoué ». Le dire tel quel — jamais l'erreur Postgres
+  // brute (`error.message`), qui laisserait l'organisateur croire que rien
+  // n'a été créé et recréer un second tournoi, avec sa propre liste d'inscrits.
+  if (error) {
+    console.warn('[tournois] tournament_create a réussi mais la relecture a échoué', error);
+    throw new Error(
+      'Le tournoi a bien été créé, mais son chargement a échoué juste après. ' +
+      'Reviens à la liste avant de recommencer : il y figure déjà.',
+    );
+  }
   return row as unknown as Tournament;
 }
 
@@ -990,6 +1148,24 @@ export function countLaterRoundMatches(
   return matches.filter(m => m.round_no > round).length;
 }
 
+/** Ouvrir le pointage — ORGANISATEUR seul, signature GELÉE
+ *  (`tournament_open_check_in(uuid)`). `INSCRIPTIONS_OUVERTES`/`COMPLET` ->
+ *  `CHECK_IN`. C'est ce qui rend `checkInToTournament` et `markNoShow`
+ *  atteignables : sans ce geste, `CHECK_IN` n'est jamais écrit et le pointage
+ *  reste en lecture seule pour tout le monde. */
+export function openCheckIn(tournamentId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_open_check_in', { p_tournament: tournamentId });
+}
+
+/** Marquer un AUTRE joueur absent — ORGANISATEUR seul, signature GELÉE
+ *  (`tournament_mark_no_show(uuid, uuid)`). Pendant organisateur de
+ *  `checkInToTournament` (le joueur, sur lui-même) : « qui est là, qui
+ *  manque ». N'écrase jamais un `checked_in` par erreur : ce geste ne fait
+ *  que déclarer absent, jamais présent. */
+export function markNoShow(tournamentId: string, playerId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_mark_no_show', { p_tournament: tournamentId, p_player: playerId });
+}
+
 /** Apparier, au check-in, les joueurs restés seuls. N'apparie QUE les ASSIS
  *  (jamais la liste d'attente), et REFUSE en `INSCRIPTIONS_OUVERTES` — elle
  *  exige `COMPLET`, `CHECK_IN` ou `PRET` (en-tête de `tournament_autopair`),
@@ -1018,9 +1194,45 @@ export function generateTournamentRound(tournamentId: string): Promise<Tournamen
 /** LA rotation de classement — la dernière, celle qui fige les places et rend
  *  `stakes` (l'enjeu de chaque terrain : quelles places s'y jouent). Seule
  *  appelante légitime du second argument de `tournament_generate_round`,
- *  qu'elle passe elle-même — cette fonction-ci n'en prend aucun. */
+ *  qu'elle passe elle-même — cette fonction-ci n'en prend aucun.
+ *
+ *  ⚠️ `stakes` N'EST DISPONIBLE QUE DANS CETTE RÉPONSE — aucune table ni RPC
+ *  ne le réexpose ensuite (`fn_tournament_final_slots`, qui le calcule, est
+ *  révoquée de `authenticated` : c'est un helper interne, jamais un chemin de
+ *  lecture). Seul l'ORGANISATEUR appelle cette fonction (Task 10, admin.tsx) :
+ *  c'est donc lui, et lui seul, qui peut voir `stakes` — et seulement dans la
+ *  même session, entre cet appel et le moment où il quitte l'écran. Ni
+ *  l'écran organisateur après un rechargement, ni la fiche d'un joueur
+ *  quelconque, n'ont de chemin légitime pour le retrouver : le recalculer
+ *  côté client redupliquerait `fn_tournament_final_slots` (byes, binômes
+ *  partis, paliers troués) en TypeScript, exactement ce que ce fichier
+ *  s'interdit ailleurs. `stakeLabel` ci-dessous ne fait que TRADUIRE la ligne
+ *  déjà tranchée par le serveur — jamais recalculer un rang. */
 export function generateFinalTournamentRound(tournamentId: string): Promise<TournamentResult> {
   return callTournamentRpc('tournament_final_round', { p_tournament: tournamentId });
+}
+
+/** Une ligne de `stakes`, rendue par `tournament_final_round` : l'enjeu d'UN
+ *  terrain de la rotation de classement. `rank_win`/`rank_lose` NULS pour un
+ *  bye qui partage son palier avec un match : ce terrain-là ne dispute
+ *  aucune place, `stakeLabel` ne dit alors rien plutôt que d'inventer un
+ *  enjeu. */
+export interface TournamentStake {
+  match_id: string;
+  court_no: number;
+  team_a: string;
+  team_b: string | null;
+  rank_win: number | null;
+  rank_lose: number | null;
+}
+
+/** « Places 3 et 4 en jeu » — la traduction d'UNE ligne de `stakes`, jamais un
+ *  calcul de rang. `null` quand le serveur n'a rien à annoncer pour ce
+ *  terrain (bye au même palier qu'un match). */
+export function stakeLabel(s: Pick<TournamentStake, 'rank_win' | 'rank_lose'>): string | null {
+  if (s.rank_win != null && s.rank_lose != null) return `Places ${s.rank_win} et ${s.rank_lose} en jeu`;
+  if (s.rank_win != null) return `Place ${s.rank_win} en jeu`;
+  return null;
 }
 
 /** Trancher un litige. MÊME CONTRAT D'ORIENTATION que `enterTournamentScore` :

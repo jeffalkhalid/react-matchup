@@ -70,9 +70,13 @@ export function StandingsTable({ rows }: { rows: StandingRowData[] }) {
               }}>
                 {names[0]} · {names[1]}
               </Text>
+              {/* Même mot que partout ailleurs pour cet événement (CourtRow,
+                  ScoreSheet, admin.tsx « Forfait d'un binôme ») — jamais
+                  « Abandon » ici et « Forfait » là, deux noms pour la même
+                  colonne `tournament_teams.withdrawn`. */}
               {s.withdrawn && (
                 <View style={{ marginTop: 3, alignSelf: 'flex-start' }}>
-                  <Pill variant="danger">Abandon</Pill>
+                  <Pill variant="danger">Forfait</Pill>
                 </View>
               )}
             </View>
