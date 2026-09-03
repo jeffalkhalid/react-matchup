@@ -219,6 +219,14 @@ CREATE TABLE IF NOT EXISTS public.tournament_results (
   player_id     uuid NOT NULL REFERENCES public.players(id),
   final_rank    int  NOT NULL,
   played        int  NOT NULL,
+  -- Victoires du binome sur le tournoi. Elle ne se DEDUIT d'aucune autre
+  -- colonne -- ni de `played`, ni des jeux, ni du rang, ni des points : les
+  -- recalculer supposerait de rejouer tout le classement d'un tournoi clos,
+  -- alors que cette table existe precisement pour ne plus avoir a le faire.
+  -- Les DEFAITES, elles, se deduisent : `played - wins`, donc pas de colonne.
+  -- DEFAULT 0 : la table est un agregat de fin de soiree, `tournament_close`
+  -- ecrit toujours la valeur.
+  wins          int  NOT NULL DEFAULT 0,
   games_won     int  NOT NULL,
   games_lost    int  NOT NULL,
   points        int  NOT NULL,
