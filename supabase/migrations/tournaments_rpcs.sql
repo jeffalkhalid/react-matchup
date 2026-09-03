@@ -572,9 +572,20 @@ REVOKE ALL ON FUNCTION public.fn_tournament_close_pending_requests(uuid, uuid, u
 -- ----------------------------------------------------------------------------
 -- Helper interne : LA FILE AVANCE.
 --
--- Appele des qu'un siege se libere. Regle du brief : « quand des places se
--- liberent, la file avance a concurrence des places disponibles », dans
--- l'ORDRE.
+-- Appele apres TOUTE mutation d'inscription -- pas seulement apres un retrait.
+-- Un siege peut se liberer sans que personne ne parte : il suffit qu'un
+-- binome, trop grand pour le dernier siege, aille en file et laisse ce siege
+-- au solo suivant. N'appeler la promotion que sur le chemin du retrait
+-- laissait ce siege vide pour de bon.
+--
+-- Elle est IDEMPOTENTE : sans siege vide, ou sans file, elle ne fait rien.
+-- L'appeler « pour rien » ne coute qu'une lecture, alors qu'oublier de
+-- l'appeler coute un joueur au tournoi. Elle finit toujours par
+-- `fn_tournament_sync_capacity_status`, donc un appelant qui l'invoque N'A PAS
+-- a synchroniser le statut ensuite.
+--
+-- Regle du brief : « quand des places se liberent, la file avance a
+-- concurrence des sieges disponibles », dans l'ORDRE.
 --
 -- Un GROUPE est l'unite qui avance : un joueur seul, ou les DEUX membres d'un
 -- binome. Un binome ne se coupe jamais en deux -- un joueur assis dont le
@@ -811,10 +822,17 @@ BEGIN
     IF p_partner IS NOT NULL THEN
       -- MEME position que moi, et non v_last + 2 : un binome occupe UN rang
       -- dans la file et avance en bloc (cf. fn_tournament_align_waitlist).
-      -- `DEFAULT` pour open_to_join : aucune declaration faite en son nom.
+      --
+      -- open_to_join = FALSE, explicitement, et NON le defaut de la colonne :
+      -- il n'a rien demande, et le defaut sur est FERME. Ouvert, il serait
+      -- joignable en un geste par n'importe qui des que ce binome se defait --
+      -- un consentement qu'il n'a jamais donne, a un tournoi dont il n'a
+      -- meme pas encore ete prevenu (cf. le bloc [PLACE VACANTE] ci-dessous).
+      -- Il l'ouvre lui-meme, quand il veut, par
+      -- `tournament_set_open_to_join`.
       INSERT INTO public.tournament_registrations
              (tournament_id, player_id, side, open_to_join, waitlist_position)
-      VALUES (p_tournament, p_partner, 'both', DEFAULT,
+      VALUES (p_tournament, p_partner, 'both', false,
               CASE WHEN v_seated THEN NULL ELSE v_last + 1 END);
 
       -- Le declencheur de tournaments.sql remplit tournament_participants et
@@ -838,7 +856,12 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'partner_already_registered');
   END;
 
-  PERFORM public.fn_tournament_sync_capacity_status(p_tournament);
+  -- APRES l'ecriture, jamais avant. Une inscription peut LIBERER un siege pour
+  -- quelqu'un d'autre : un binome qui ne tient pas dans le dernier siege part
+  -- en file, et ce siege revient alors au premier solo qui attend. Sans cet
+  -- appel, il restait vide jusqu'au coup d'envoi.
+  -- (La promotion synchronise le statut elle-meme : pas de second appel.)
+  PERFORM public.fn_tournament_promote_waitlist(p_tournament);
 
   RETURN jsonb_build_object(
     'ok', true,
@@ -996,6 +1019,13 @@ BEGIN
     PERFORM public.fn_tournament_align_waitlist(p_tournament, v_me, p_player);
 
     v_closed := public.fn_tournament_close_pending_requests(p_tournament, v_me, p_player);
+
+    -- Meme regle que partout : toute mutation d'inscription fait tourner la
+    -- file. Ce chemin-ci ne libere aucun siege, donc l'appel ne fera
+    -- probablement rien -- mais « toujours » se retient, « sauf ici » s'oublie,
+    -- et c'est un oubli de ce genre qui laissait un siege vide.
+    PERFORM public.fn_tournament_promote_waitlist(p_tournament);
+
     RETURN jsonb_build_object('ok', true, 'mode', 'team',
                               'team_id', v_team, 'requests_closed', v_closed);
   END IF;
@@ -1175,6 +1205,8 @@ BEGIN
      SET status = 'accepted', responded_at = now()
    WHERE id = v_req.id;
 
+  PERFORM public.fn_tournament_promote_waitlist(v_req.tournament_id);
+
   RETURN jsonb_build_object('ok', true, 'accepted', true, 'team_id', v_team,
                             'requests_closed', greatest(v_closed - 1, 0));
 END;
@@ -1276,6 +1308,11 @@ BEGIN
   -- `open_to_join`, qui n'appartient qu'a son proprietaire.
   DELETE FROM public.tournament_teams WHERE id = v_team;
 
+  -- Ici l'appel n'est PAS decoratif : un binome en attente qui se defait
+  -- devient deux candidats de taille 1, et un siege qui ne pouvait pas
+  -- accueillir le binome peut accueillir l'un d'eux.
+  PERFORM public.fn_tournament_promote_waitlist(p_tournament);
+
   RETURN jsonb_build_object('ok', true, 'team_id', v_team, 'partner_id', v_mate);
 END;
 $$;
@@ -1372,13 +1409,11 @@ BEGIN
   DELETE FROM public.tournament_registrations
    WHERE tournament_id = p_tournament AND player_id = v_me;
 
-  -- Une place ne se libere que si j'en occupais une. Partir depuis la file ne
-  -- libere rien, et la promotion serait alors un pur gaspillage d'ecriture.
-  IF v_reg.waitlist_position IS NULL THEN
-    v_promoted := public.fn_tournament_promote_waitlist(p_tournament);
-  ELSE
-    PERFORM public.fn_tournament_sync_capacity_status(p_tournament);
-  END IF;
+  -- Une seule regle, sans exception a retenir : apres toute mutation
+  -- d'inscription, la file tourne. Partir depuis la file ne libere aucun
+  -- siege, la promotion ne fera alors rien -- et elle synchronise le statut
+  -- dans tous les cas.
+  v_promoted := public.fn_tournament_promote_waitlist(p_tournament);
 
   RETURN jsonb_build_object('ok', true,
                             'was_waitlisted', v_reg.waitlist_position IS NOT NULL,
@@ -1467,6 +1502,91 @@ REVOKE ALL ON FUNCTION public.tournament_check_in(uuid) FROM PUBLIC, anon, authe
 GRANT EXECUTE ON FUNCTION public.tournament_check_in(uuid) TO authenticated;
 
 -- ============================================================================
+-- tournament_set_open_to_join(p_tournament, p_open)
+--
+-- Changer SON mode de consentement : « on peut me prendre d'un geste » (true)
+-- ou « il me faut mon accord » (false).
+--
+-- Sans cette fonction, la regle « seul le joueur change `open_to_join` » n'etait
+-- tenue qu'au negatif : plus rien ne l'ecrasait, mais son proprietaire n'avait
+-- aucun moyen d'y toucher apres l'inscription. Un partenaire invite (inscrit
+-- ferme, cf. `tournament_register`) serait reste ferme a vie.
+--
+-- AUCUN parametre `p_player` -- volontairement. Le sujet est toujours
+-- `auth.uid()`, et il n'existe donc aucun chemin par lequel quelqu'un change
+-- le consentement d'un autre. C'est la meme raison qui fait que ce fichier n'a
+-- pas de `tournament_register_someone_else`.
+--
+-- `already_in_team` quand le joueur a deja un partenaire : le mode ne decrit
+-- que la facon dont on peut ME PRENDRE comme partenaire, et il n'y a rien a
+-- decrire quand je n'en cherche plus. Refuser plutot qu'ecrire sans effet
+-- evite qu'un ecran affiche un interrupteur qui ne change rien de visible.
+--
+-- Refus : feature_disabled, not_authenticated, tournament_not_found,
+--         tournament_not_open, already_in_team, not_registered.
+-- Appelable par : tout joueur connecte, POUR LUI-MEME uniquement.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.tournament_set_open_to_join(
+  p_tournament uuid, p_open boolean)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me     uuid := public.current_player_id();
+  v_status text;
+  v_rows   int;
+BEGIN
+  IF NOT public.fn_tournaments_enabled() THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'feature_disabled');
+  END IF;
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_authenticated');
+  END IF;
+
+  -- Pas de FOR UPDATE : ce chemin ne touche aucun siege, aucune position de
+  -- file, aucun binome -- seulement une colonne de ma propre ligne.
+  SELECT t.status INTO v_status
+    FROM public.tournaments t WHERE t.id = p_tournament;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+  -- Le mode ne sert qu'a se faire trouver un partenaire : passe le lancement,
+  -- il ne veut plus rien dire.
+  IF v_status NOT IN ('INSCRIPTIONS_OUVERTES','COMPLET','CHECK_IN','PRET') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_open');
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.tournament_participants tp
+              WHERE tp.tournament_id = p_tournament AND tp.player_id = v_me) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'already_in_team');
+  END IF;
+
+  -- L'unique ecriture, et elle n'ecrit rien si la ligne n'existe pas : un
+  -- UPDATE a zero ligne ne laisse aucune trace derriere lui, la discipline
+  -- « tout controle precede toute ecriture » reste entiere.
+  -- `coalesce(p_open, false)` : un appelant qui n'envoie rien n'a rien demande,
+  -- et la direction sure d'un consentement est FERMEE -- la meme que pour le
+  -- partenaire invite dans `tournament_register`. Ouvrir sur une absence de
+  -- valeur serait consentir a la place de quelqu'un.
+  UPDATE public.tournament_registrations
+     SET open_to_join = coalesce(p_open, false)
+   WHERE tournament_id = p_tournament AND player_id = v_me;
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_registered');
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'open_to_join', coalesce(p_open, false));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.tournament_set_open_to_join(uuid, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.tournament_set_open_to_join(uuid, boolean) TO authenticated;
+
+-- ============================================================================
 -- tournament_autopair(p_tournament)
 --
 -- Apparier, au lancement, les joueurs restes seuls : NIVEAUX PROCHES et COTES
@@ -1497,6 +1617,12 @@ GRANT EXECUTE ON FUNCTION public.tournament_check_in(uuid) TO authenticated;
 -- Les joueurs EN LISTE D'ATTENTE ne sont pas apparies : ils n'ont pas de
 -- place, et un binome sans place est precisement le piege signale en tete de
 -- fichier.
+--
+-- `open_to_join` n'est PAS lu ici, et ce n'est pas un oubli : ce mode dit
+-- « peut-on me prendre d'un geste, ou faut-il mon accord », et l'accord a deja
+-- ete donne -- en s'inscrivant a un tournoi dont l'appariement automatique au
+-- coup d'envoi est la regle. Le respecter ici laisserait sur le carreau, sans
+-- partenaire et sans tournoi, exactement les joueurs les plus prudents.
 --
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
 --         not_the_organizer, tournament_not_open, matches_already_generated,

@@ -95,8 +95,12 @@ CREATE TABLE IF NOT EXISTS public.tournament_registrations (
 -- trigger on tournament_teams (fn_tournament_teams_sync_participants), not written
 -- by application code. The PK (tournament_id, player_id) enforces the uniqueness
 -- at the database level, rejecting any duplicate on INSERT or UPDATE.
--- Withdrawal is final: once a player record exists here (as part of a team),
--- that (tournament_id, player_id) slot cannot be reused.
+-- Ces lignes ne survivent PAS a l'equipe : defaire un binome supprime la ligne
+-- de tournament_teams, et le ON DELETE CASCADE ci-dessous emporte les deux
+-- lignes de participants -- c'est ce qui permet a tournament_leave_team de
+-- rendre les deux joueurs seuls, et a un joueur desinscrit de se reinscrire
+-- (il repart alors en FIN de file, max(waitlist_position) + 1). La garantie
+-- portee ici est « un joueur, UN SEUL binome A LA FOIS », pas « a jamais ».
 --
 -- Regle #2 (distincte de la regle #1 portee par tournament_registrations
 -- ci-dessus) : un joueur n'appartient qu'a UN binome par tournoi. Cette table
