@@ -136,7 +136,10 @@ CREATE OR REPLACE FUNCTION public.fn_tournament_a_won(
 RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
-SECURITY DEFINER
+-- PAS de SECURITY DEFINER, contrairement au reste du fichier : cette fonction
+-- est PURE -- aucun acces a une table, aucune ligne a lire sous les droits de
+-- personne. Le definer n'y apporterait rien et elargirait la surface pour rien.
+-- `SET search_path` reste : il fige la resolution des noms.
 SET search_path = public
 AS $$
   SELECT CASE
@@ -426,10 +429,11 @@ REVOKE ALL ON FUNCTION public.fn_tournament_ladder(uuid, int) FROM PUBLIC, anon,
 --   * `tournament_withdraw(uuid)` ne peut pas etre remplacee par CREATE OR
 --     REPLACE -- Postgres refuse de renommer un parametre d'entree
 --     (p_team -> p_tournament) et la migration echouerait a l'application.
--- ⚠️ Le forfait EN COURS de tournoi reste a ecrire (tache « deroulement ») :
---    il lui faut son propre nom, `tournament_forfeit(p_team)`, et il doit
---    passer par `tournament_matches.forfeited_team` + `tournaments.forfeit_games`,
---    jamais par un 0-6 code en dur.
+-- Le forfait EN COURS de tournoi a depuis ete ecrit, sous son propre nom et
+-- avec sa propre signature : `tournament_forfeit(p_tournament, p_team)`, plus
+-- bas dans la section « deroulement d'une rotation ». Il passe par
+-- `tournament_matches.forfeited_team` + `tournaments.forfeit_games`, jamais par
+-- un 0-6 code en dur.
 DROP FUNCTION IF EXISTS public.tournament_register(uuid, uuid);
 DROP FUNCTION IF EXISTS public.tournament_withdraw(uuid);
 
@@ -2115,6 +2119,18 @@ GRANT EXECUTE ON FUNCTION public.tournament_start(uuid) TO authenticated;
 -- `tournament_match_entries`, corrigeable (l'UNIQUE (match_id, player_id) en
 -- fait une mise a jour, jamais un empilement).
 --
+-- ⚠️ CONTRAT D'ORIENTATION DU SCORE, SANS EXCEPTION :
+--   `p_games_a` est TOUJOURS le score de `team_a` DU MATCH, et `p_games_b`
+--   celui de `team_b` DU MATCH -- quel que soit le joueur qui saisit, et quel
+--   que soit son camp.
+-- Rien dans ce SQL ne peut le verifier : deux adversaires qui inversent tous
+-- les deux saisissent le MEME score a l'envers, concordent, et acquierent un
+-- resultat inverse que personne ne verra jamais. La garantie est donc a la
+-- charge de l'ECRAN de saisie, et c'est une exigence dure : il nomme les deux
+-- camps (les binomes, tels que le match les porte) et n'ecrit JAMAIS
+-- « vous / eux », ni ne reordonne les colonnes pour mettre le joueur en
+-- premier. Vaut pour l'ecran de saisie comme pour l'ecran d'organisation.
+--
 -- L'ACQUISITION est automatique et n'a pas d'etape a elle : des que deux
 -- joueurs de binomes OPPOSES ont saisi le MEME score, le match est acquis
 -- (`games_a`, `games_b`, `confirmed_at`). C'est pourquoi il n'y a plus de
@@ -2133,10 +2149,17 @@ GRANT EXECUTE ON FUNCTION public.tournament_start(uuid) TO authenticated;
 -- ici, l'amont. Le FORFAIT, qui ecrit legitimement 0-0, ne passe pas par cette
 -- fonction : il a la sienne.
 --
+-- LE SCORE EST BORNE DES DEUX COTES. En dessous : un jeu negatif n'existe pas
+-- (`invalid_score`). Au-dessus : 20 jeux par camp (`score_out_of_range`),
+-- largement au-dessus de tout ce qu'une rotation de quinze minutes produit. Ce
+-- plafond n'est pas du zele -- un `66-3` fauté au clavier devient ACQUIS des
+-- que l'adversaire saisit la meme chose, et ne se defait plus que par
+-- `tournament_reopen_match`, qui detruit toutes les rotations posterieures.
+--
 -- Refus : feature_disabled, not_authenticated, match_not_found,
 --         tournament_not_found, tournament_not_live, bye_match,
 --         already_confirmed, not_a_participant, invalid_score,
---         draw_not_allowed.
+--         score_out_of_range, draw_not_allowed.
 -- Appelable par : les quatre joueurs des deux binomes du match.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_enter_score(p_match uuid, p_games_a int, p_games_b int)
@@ -2208,6 +2231,13 @@ BEGIN
 
   IF p_games_a IS NULL OR p_games_b IS NULL OR p_games_a < 0 OR p_games_b < 0 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_score');
+  END IF;
+  -- Le plafond : 20 jeux par camp. Une rotation de quinze minutes n'en produit
+  -- jamais plus de neuf ou dix ; 20 laisse toute la marge utile et arrete la
+  -- faute de frappe, qui coute une reouverture de tour a la reparer.
+  IF p_games_a > 20 OR p_games_b > 20 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'score_out_of_range',
+                              'max_games', 20);
   END IF;
   IF p_games_a = p_games_b THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'draw_not_allowed');
@@ -2292,10 +2322,15 @@ GRANT EXECUTE ON FUNCTION public.tournament_enter_score(uuid, int, int) TO authe
 -- comme une saisie -- l'organisateur n'est pas forcement inscrit au tournoi,
 -- et `tournament_match_entries` n'accepte que des inscrits (cle etrangere).
 --
+-- ⚠️ MEME CONTRAT D'ORIENTATION que `tournament_enter_score` : `p_games_a` est
+-- le score de `team_a` DU MATCH, `p_games_b` celui de `team_b` DU MATCH. Ici
+-- plus qu'ailleurs -- c'est une decision d'arbitre, elle ne sera contredite
+-- par personne. Et meme plafond de 20 jeux par camp.
+--
 -- Refus : feature_disabled, not_authenticated, match_not_found,
 --         tournament_not_found, not_the_organizer, tournament_not_live,
 --         bye_match, already_confirmed, no_dispute, invalid_score,
---         draw_not_allowed.
+--         score_out_of_range, draw_not_allowed.
 -- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_resolve_dispute(
@@ -2357,6 +2392,10 @@ BEGIN
 
   IF p_games_a IS NULL OR p_games_b IS NULL OR p_games_a < 0 OR p_games_b < 0 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_score');
+  END IF;
+  IF p_games_a > 20 OR p_games_b > 20 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'score_out_of_range',
+                              'max_games', 20);
   END IF;
   IF p_games_a = p_games_b THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'draw_not_allowed');
@@ -2504,9 +2543,17 @@ GRANT EXECUTE ON FUNCTION public.tournament_confirm_score(uuid) TO authenticated
 -- defaire supposerait de rendre au binome son palier, ce que seule une
 -- reouverture de tour saurait faire proprement.
 --
+-- ⚠️ LE BINOME DOIT AVOIR UNE PLACE (`team_not_seated`). Lire
+-- `tournament_teams` pour verifier qu'il existe NE SUFFIT PAS : deux joueurs en
+-- LISTE D'ATTENTE qui s'apparient y ont une ligne parfaitement reelle, et
+-- indiscernable de celle d'un binome assis (cf. l'invariant en tete de
+-- fichier). C'est la seule fonction de cette section qui ECRIT a partir d'un
+-- identifiant de binome fourni par l'appelant, donc la seule ou l'oubli se paie
+-- comptant.
+--
 -- Refus : feature_disabled, not_authenticated, tournament_not_found,
 --         not_the_organizer, tournament_not_live, team_not_found,
---         already_withdrawn.
+--         already_withdrawn, team_not_seated.
 -- Appelable par : l'ORGANISATEUR (tournaments.created_by) seul.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.tournament_forfeit(p_tournament uuid, p_team uuid)
@@ -2557,6 +2604,19 @@ BEGIN
   END IF;
   IF v_with THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'already_withdrawn');
+  END IF;
+  -- ⚠️ INVARIANT DE LECTURE DE `tournament_teams`. La lecture ci-dessus prouve
+  -- que le binome EXISTE, pas qu'il a une PLACE : un binome forme par deux
+  -- joueurs en liste d'attente a une ligne tout aussi reelle. Sans ce
+  -- controle, un identifiant de ce genre poserait `withdrawn = true` --
+  -- IRREVERSIBLEMENT, defaire un forfait n'existe pas dans cette surface --
+  -- sur un binome qui n'est jamais entre dans le tournoi, ne solderait aucun
+  -- match, et la fonction repondrait `ok:true` sur un non-evenement.
+  IF NOT EXISTS (SELECT 1
+                   FROM public.fn_tournament_seated_teams(p_tournament)
+                          AS s(s_team, s_p1, s_p2, s_start, s_level)
+                  WHERE s.s_team = p_team) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'team_not_seated');
   END IF;
 
   ---------------------------------------------------------------------------
@@ -2984,6 +3044,11 @@ BEGIN
      SET current_round = v_m.round_no,
          status        = 'EN_COURS'
    WHERE id = v_tid;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'tournament_reopen_match: le tournoi % a disparu sous le verrou',
+      v_tid;
+  END IF;
 
   RETURN jsonb_build_object('ok', true, 'round', v_m.round_no,
                             'deleted_matches', v_deleted,
@@ -2997,6 +3062,64 @@ GRANT EXECUTE ON FUNCTION public.tournament_reopen_match(uuid) TO authenticated;
 
 -- ============================================================================
 -- tournament_standings(p_tournament, p_max_round DEFAULT NULL) RETURNS jsonb
+--
+-- ⚠️⚠️ GELEE. A REECRIRE PAR LA TACHE « classement, rotation finale, cloture ».
+-- CE QUI SUIT EST LA LISTE EXACTE DE CE QUI EST FAUX. Le commentaire d'origine
+-- (« Port EXACT de standings() ») est conserve dessous parce qu'il documente
+-- l'INTENTION, mais il ne decrit plus le comportement du moteur : NE PAS s'y
+-- fier.
+--
+--   1. ⚠️ LE SIGNE DU PALIER EST INVERSE, ET C'EST LE PLUS GRAVE. Le corps
+--      calcule `highest_court = max(court_no)` et trie dessus en DESC. C'etait
+--      juste sous la convention abandonnee, ou le DERNIER terrain etait le
+--      meilleur. Depuis le redressement des paliers (tache « deroulement »),
+--      LE TERRAIN 1 EST LE MEILLEUR : le moteur calcule
+--      `bestCourt = Math.min(court)` et trie CROISSANT. Tel quel, ce SQL place
+--      le binome qui gagne tout et atteint le Terrain 1 DERRIERE celui qui perd
+--      tout et reste au Terrain 4. A remplacer par un `min(court_no)` trie ASC.
+--
+--   2. ⚠️ LE PALIER N'EST PLUS UN DEPARTAGE, C'EST LA PREMIERE CLE. Le SQL
+--      trie : jeux gagnes -> difference -> confrontation -> palier. Le moteur
+--      trie : palier -> VICTOIRES -> difference -> jeux gagnes ->
+--      confrontation -> id. La hierarchie entiere est a refaire, pas a
+--      retoucher.
+--
+--   3. ⚠️ IL N'Y A AUCUN COMPTAGE DE VICTOIRES. `Standing.wins` n'a pas
+--      d'equivalent ici -- ni colonne, ni cle de tri. C'est un critere ENTIER
+--      qui manque, en DEUXIEME position. (Et c'est aussi pourquoi le defaut de
+--      forfait corrige dans `fn_tournament_ladder` n'existe PAS ici : ce corps
+--      ne deduit aucun vainqueur de `games_a > games_b`. Le jour ou les
+--      victoires seront comptees, elles devront passer par
+--      `fn_tournament_a_won` -- `forfeited_team` d'abord, les jeux ensuite --
+--      sans quoi un forfait 0-0 crediterait la victoire au camp B quel que
+--      soit le forfaitaire.)
+--
+--   4. ⚠️ IL LIT `tournament_teams` EN DIRECT, sans la jointure a
+--      `tournament_registrations` avec `waitlist_position IS NULL` sur les DEUX
+--      joueurs -- l'invariant en tete de fichier. Un binome forme par deux
+--      joueurs en LISTE D'ATTENTE apparaitrait au classement, avec `played = 0`.
+--      `fn_tournament_seated_teams` existe desormais pour ca. Attention : il
+--      exclut aussi `withdrawn`, alors que le classement doit GARDER les
+--      forfaits (le moteur part de `teams`) -- la tache 5 aura besoin de la
+--      jointure sans ce filtre-la.
+--
+--   5. La sentinelle du palier : le moteur donne `bestCourt = Infinity` a un
+--      binome qui n'a joue AUCUN match reel, pour qu'il ne se retrouve pas
+--      premier faute d'avoir jamais ete note. Le SQL ecrit `COALESCE(..., 0)`,
+--      qui sous un tri croissant le mettrait DEVANT tout le monde.
+--
+--   6. Le groupe d'ex aequo de la confrontation directe (`dense_rank()`) porte
+--      sur deux cles (jeux gagnes, difference). Le moteur en utilise QUATRE :
+--      palier, victoires, difference, jeux gagnes -- exactement celles qui
+--      precedent la confrontation. Un groupe trop large fait entrer dans
+--      l'agregat des matchs sans rapport avec le duel reellement lie.
+--
+-- Ce qui reste VRAI dans le commentaire d'origine ci-dessous : la confrontation
+-- directe AGREGE toutes les rencontres (durement acquis, a garder), les byes
+-- n'entrent pas au classement, et `p_max_round` BORNE sans rien supprimer.
+--
+-- ---------------------------------------------------------------------------
+-- Commentaire d'origine, conserve pour l'intention :
 --
 -- Port EXACT de `standings()` de `lib/tournament.ts`.
 --   * une ligne par binome INSCRIT, forfaits compris (le TypeScript part de
@@ -3300,6 +3423,12 @@ GRANT EXECUTE ON FUNCTION public.tournament_close(uuid) TO authenticated;
 --     hierarchie de classement (jeux gagnes d'abord, palier le plus HAUT
 --     comme dernier critere) et contre les statuts 'live' / 'finished', que la
 --     contrainte CHECK de `tournaments` refuse.
+--     ⚠️ LA LISTE EXACTE DE CE QUI EST FAUX DANS `tournament_standings` est
+--     ecrite juste au-dessus de sa definition, en six points -- dont un que la
+--     tache « deroulement » a CREE en redressant les paliers : `highest_court`
+--     y est un `max(court_no)` trie DESC, alors que le Terrain 1 est desormais
+--     le meilleur. La lire AVANT d'y toucher : elle dit aussi ce qui n'est PAS
+--     casse, pour ne pas partir corriger un fantome.
 --
 -- Elles s'installent sans erreur (plpgsql ne verifie pas les identifiants a la
 -- creation) mais echoueraient des le premier appel -- avec une erreur SQL
