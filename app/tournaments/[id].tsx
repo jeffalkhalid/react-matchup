@@ -663,7 +663,16 @@ export default function TournamentDetailScreen() {
                         forfeitedTeamId={m.forfeited_team}
                         status={status}
                         stakeText={stakeByMatch.get(m.id)}
-                        onPress={m.team_b ? () => setScoreSheetMatchId(m.id) : undefined}
+                        // La saisie n'existe qu'en EN_COURS : `tournament_enter_score`
+                        // refuse tout autre statut (`tournament_not_live`). Sur un
+                        // tournoi annulé ou terminé, le tableau reste lisible mais
+                        // n'est plus tapable — sinon on ouvre une feuille de saisie
+                        // pour se faire répondre « Impossible » après coup.
+                        onPress={
+                          t.status === 'EN_COURS' && m.team_b
+                            ? () => setScoreSheetMatchId(m.id)
+                            : undefined
+                        }
                       />
                     );
                   })}
