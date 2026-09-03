@@ -1255,6 +1255,10 @@ function SettingsTab() {
   const [liveOn, setLiveOn] = useState(false);
   // Défaut `true` : clé absente = activé, même convention que fn_watch_enabled().
   const [watchOn, setWatchOn] = useState(true);
+  // Défaut `false`, à l'inverse de la montre : fn_tournaments_enabled() traite la
+  // clé absente comme éteinte. La fonctionnalité est neuve, elle s'allume quand
+  // on le décide — surtout pas parce qu'une clé manque.
+  const [tournamentsOn, setTournamentsOn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -1266,6 +1270,8 @@ function SettingsTab() {
     setLiveOn(live?.value === 'true');
     const { data: watch } = await supabase.from('app_config').select('value').eq('key', 'watch_pairing_enabled').maybeSingle();
     setWatchOn(watch?.value !== 'false');
+    const { data: tournois } = await supabase.from('app_config').select('value').eq('key', 'tournaments_enabled').maybeSingle();
+    setTournamentsOn(tournois?.value === 'true');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -1333,6 +1339,30 @@ function SettingsTab() {
             const { error } = await supabase.from('app_config')
               .upsert({ key: 'watch_pairing_enabled', value: v ? 'true' : 'false', updated_at: new Date().toISOString() }, { onConflict: 'key' });
             if (error) { setWatchOn(!v); Alert.alert('Erreur', error.message); }
+          }} />
+        </View>
+      </View>
+
+      <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, gap: 10 }}>
+        <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Tournois montante / descente</Text>
+        <Text style={{ fontSize: 12, color: Colors.textMuted, lineHeight: 17 }}>
+          Soirées à huit binômes sur quatre terrains, six rotations de quinze minutes, où
+          l'on monte vers le Terrain 1. Éteint, la fonctionnalité est totalement invisible :
+          ni onglet Tournois ici, ni entrée dans le menu des joueurs, ni écran atteignable
+          par un lien — et le serveur refuse chaque appel, même si quelqu'un l'a en cache.
+          C'est un vrai coupe-circuit, il agit sans publier de mise à jour.
+        </Text>
+        <Text style={{ fontSize: 12, color: Colors.textMuted, lineHeight: 17 }}>
+          Rallumer ne détruit rien : les tournois déjà créés, les inscriptions et les
+          classements figés réapparaissent tels quels.
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{tournamentsOn ? 'Activé' : 'Désactivé'}</Text>
+          <Switch value={tournamentsOn} onValueChange={async (v) => {
+            setTournamentsOn(v);
+            const { error } = await supabase.from('app_config')
+              .upsert({ key: 'tournaments_enabled', value: v ? 'true' : 'false', updated_at: new Date().toISOString() }, { onConflict: 'key' });
+            if (error) { setTournamentsOn(!v); Alert.alert('Erreur', error.message); }
           }} />
         </View>
       </View>
