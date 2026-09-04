@@ -1370,6 +1370,11 @@ export async function fetchTournamentMatches(tournamentId: string): Promise<Tour
 // La carte montre LA PROCHAINE soirée à venir, et dit où j'en suis dessus :
 // pas encore inscrit, inscrit, ou en liste d'attente.
 //
+// Une seule carte, même quand plusieurs tournois sont annoncés : l'accueil dit
+// « ce qui vient », il n'est pas une liste. Mais il compte les autres et le
+// dit — sans ça, un joueur déjà inscrit à jeudi ne verrait jamais depuis
+// l'accueil qu'une seconde soirée cherche encore des joueurs.
+//
 // Première version : elle disparaissait dès l'inscription, au nom de « ne
 // montrer que ce sur quoi il y a à agir ». C'était une erreur — on perdait de
 // vue qu'on joue jeudi. Ce n'est pas la PRÉSENCE de la carte qui doit être
@@ -1387,6 +1392,10 @@ export interface HomeTournamentPick {
   /** Places libres au sens du serveur : zéro dès qu'une file existe. */
   free: number;
   state: HomeTournamentState;
+  /** Les AUTRES soirées à venir. Zéro la plupart du temps, mais dès qu'il y en
+   *  a, la carte doit le dire : sinon un second tournoi où il reste des places
+   *  n'existe nulle part depuis l'accueil. */
+  others: number;
 }
 
 /**
@@ -1412,7 +1421,12 @@ export function homeTournamentPick(
   const state: HomeTournamentState =
     !moi ? 'open' : moi.waitlist_position != null ? 'waitlisted' : 'registered';
 
-  return { tournament: t, free: freePlaces(regs, t.court_count), state };
+  return {
+    tournament: t,
+    free: freePlaces(regs, t.court_count),
+    state,
+    others: candidats.length - 1,
+  };
 }
 
 // ── Sélection de la date et de l'heure (formulaire de création) ─────────────

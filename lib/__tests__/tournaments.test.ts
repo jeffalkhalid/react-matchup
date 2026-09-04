@@ -678,3 +678,34 @@ describe('bareme par rang — autant de rangs que de binomes', () => {
     expect(Object.keys(moins).length).toBe(6);  // les rangs 7 et 8 disparaissent
   });
 });
+
+describe("carte d'accueil — plusieurs tournois annonces", () => {
+  it('montre le plus proche et COMPTE les autres', () => {
+    const a = tournoi('A', '2026-09-10T18:00:00Z');
+    const b = tournoi('B', '2026-09-17T18:00:00Z');
+    const c = tournoi('C', '2026-09-24T18:00:00Z');
+    const pick = homeTournamentPick([c, a, b], new Map(), 'moi');
+    expect(pick?.tournament.id).toBe('A');
+    expect(pick?.others).toBe(2);
+  });
+
+  it('un seul tournoi : aucun autre a signaler', () => {
+    const a = tournoi('A', '2026-09-10T18:00:00Z');
+    expect(homeTournamentPick([a], new Map(), 'moi')?.others).toBe(0);
+  });
+
+  it('ne compte QUE les soirees a venir', () => {
+    const a = tournoi('A', '2026-09-10T18:00:00Z');
+    const fini = tournoi('FINI', '2026-09-17T18:00:00Z', 'TERMINE');
+    const encours = tournoi('LIVE', '2026-09-18T18:00:00Z', 'EN_COURS');
+    expect(homeTournamentPick([a, fini, encours], new Map(), 'moi')?.others).toBe(0);
+  });
+
+  it('le cas qui motive tout : inscrit a jeudi, un autre cherche des joueurs', () => {
+    const jeudi = tournoi('JEUDI', '2026-09-10T18:00:00Z');
+    const autre = tournoi('AUTRE', '2026-09-17T18:00:00Z');
+    const pick = homeTournamentPick([jeudi, autre], new Map([['JEUDI', [reg('moi')]]]), 'moi');
+    expect(pick?.state).toBe('registered');
+    expect(pick?.others).toBe(1);   // sans ca, AUTRE serait invisible depuis l'accueil
+  });
+});

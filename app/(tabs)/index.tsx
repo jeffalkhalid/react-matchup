@@ -475,7 +475,9 @@ export default function HomeScreen() {
                     tournament={tourPick.tournament}
                     free={tourPick.free}
                     state={tourPick.state}
+                    others={tourPick.others}
                     onPress={() => router.push(`/tournaments/${tourPick.tournament.id}` as any)}
+                    onSeeAll={() => router.push('/tournaments' as any)}
                   />
                 </View>
               )}

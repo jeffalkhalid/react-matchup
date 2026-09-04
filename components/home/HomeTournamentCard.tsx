@@ -18,13 +18,17 @@ import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { formatTournamentDate, type Tournament, type HomeTournamentState } from '../../lib/tournaments';
 
-export function HomeTournamentCard({ tournament, free, state, onPress }: {
+export function HomeTournamentCard({ tournament, free, state, others, onPress, onSeeAll }: {
   tournament: Tournament;
   /** Places libres au sens du serveur : zéro dès qu'une file d'attente existe. */
   free: number;
   /** Où j'en suis : pas inscrit, inscrit, ou en liste d'attente. */
   state: HomeTournamentState;
+  /** Combien d'AUTRES soirées sont annoncées — 0 la plupart du temps. */
+  others: number;
   onPress: () => void;
+  /** Ouvre la liste complète, quand il y a d'autres soirées. */
+  onSeeAll: () => void;
 }) {
   const complet = free === 0;
   // Seul l'état « pas encore inscrit ET il reste de la place » réclame quelque
@@ -87,12 +91,21 @@ export function HomeTournamentCard({ tournament, free, state, onPress }: {
             déjà la date, l'heure et l'état, et « Tournoi · » devant l'aurait
             fait tronquer sur un écran étroit. Ici, le mot est toujours lu en
             premier et ne dispute la place à rien. */}
-        <Text style={{
-          fontSize: 9, fontFamily: Fonts.uiBlack, letterSpacing: 1.6,
-          color: secondaire, marginBottom: 1,
-        }}>
-          TOURNOI
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 1 }}>
+          <Text style={{ fontSize: 9, fontFamily: Fonts.uiBlack, letterSpacing: 1.6, color: secondaire }}>
+            TOURNOI
+          </Text>
+          {/* Les autres soirées annoncées. Sans ce rappel, un joueur déjà
+              inscrit à jeudi ne verrait jamais depuis l'accueil qu'une seconde
+              soirée cherche encore des joueurs. */}
+          {others > 0 && (
+            <TouchableOpacity onPress={onSeeAll} hitSlop={8}>
+              <Text style={{ fontSize: 9, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: secondaire }}>
+                +{others} AUTRE{others > 1 ? 'S' : ''}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: texte }}>
           {tournament.name}
         </Text>
