@@ -14,6 +14,8 @@ import {
 } from '../../lib/elo';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { DisputeEvidence } from '../../components/admin/DisputeEvidence';
+import { AdminJournal } from '../../components/admin/AdminJournal';
+import { fetchAdminLog, nextCursor, type AdminAction } from '../../lib/adminLog';
 import {
   initialSets, parseRawSets, counterNeedsFlip, flipSets, liveSets,
   buildEvidence, evidenceVerdict, reversesWinner, campTrust,
@@ -55,7 +57,7 @@ import { StandingsTable, type StandingRowData } from '../../components/tournamen
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { Pill } from '../../components/Pill';
 
-type AdminTab = 'queue' | 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
+type AdminTab = 'queue' | 'journal' | 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -800,6 +802,14 @@ export default function AdminScreen() {
   const [disputes, setDisputes] = useState<any[]>([]);
   // Les sessions live des matchs en litige, indexees par match_id.
   const [liveScores, setLiveScores] = useState<Record<string, any>>({});
+  // Journal d'arbitrage. La pagination se fait par CURSEUR (la date de la
+  // derniere ligne recue) : le journal grandit par le haut, un offset ferait
+  // sauter ou repeter des lignes des qu'une decision tombe pendant la lecture.
+  const [journal, setJournal] = useState<AdminAction[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalMore, setJournalMore] = useState(false);
+  const [journalHasMore, setJournalHasMore] = useState(false);
+  const [journalSearch, setJournalSearch] = useState('');
   const [editedScores, setEditedScores] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -964,6 +974,49 @@ export default function AdminScreen() {
       } catch { setLiveScores({}); }
     }
   }, []);
+
+  // ── Journal d'arbitrage ─────────────────────────────────────
+  const JOURNAL_PAGE = 40;
+
+  const loadJournal = useCallback(async (q: string) => {
+    setJournalLoading(true);
+    try {
+      const rows = await fetchAdminLog({ limit: JOURNAL_PAGE, search: q || null });
+      setJournal(rows);
+      // Une page pleine ne PROUVE pas qu'il y a une suite, mais une page
+      // incomplete prouve qu'il n'y en a pas : c'est le seul test qui ne
+      // demande pas une requete de comptage a chaque page.
+      setJournalHasMore(rows.length === JOURNAL_PAGE);
+    } catch {
+      // Tant que admin_actions_log.sql n'est pas applique, la RPC n'existe
+      // pas : l'onglet montre « aucune decision » au lieu de casser le panel.
+      setJournal([]);
+      setJournalHasMore(false);
+    } finally {
+      setJournalLoading(false);
+    }
+  }, []);
+
+  const loadMoreJournal = useCallback(async () => {
+    if (journalMore || journal.length === 0) return;
+    setJournalMore(true);
+    try {
+      const rows = await fetchAdminLog({
+        limit: JOURNAL_PAGE, before: nextCursor(journal), search: journalSearch || null,
+      });
+      setJournal(prev => [...prev, ...rows]);
+      setJournalHasMore(rows.length === JOURNAL_PAGE);
+    } catch { /* on garde ce qui est deja affiche */ }
+    finally { setJournalMore(false); }
+  }, [journal, journalSearch, journalMore]);
+
+  // Charge a l'ouverture de l'onglet, et relance apres une pause de frappe :
+  // une requete par caractere saisi ferait travailler le serveur pour rien.
+  useEffect(() => {
+    if (tab !== 'journal') return;
+    const t = setTimeout(() => loadJournal(journalSearch), journalSearch ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [tab, journalSearch, loadJournal]);
 
   const loadFrmt = useCallback(async () => {
     setFrmtLoading(true);
@@ -1273,6 +1326,7 @@ export default function AdminScreen() {
           {([
             { title: 'À traiter', items: [
               { key: 'queue' as AdminTab, label: '📋 La file', badge: queueItems.length },
+              { key: 'journal' as AdminTab, label: '📖 Journal', badge: 0 },
             ] },
             { title: 'Modération', items: [
               { key: 'disputes' as AdminTab, label: '⚖️ Litiges',     badge: disputes.length },
@@ -1358,6 +1412,18 @@ export default function AdminScreen() {
           </View>
         )}
 
+        {tab === 'journal' && (
+          <AdminJournal
+            actions={journal}
+            loading={journalLoading}
+            loadingMore={journalMore}
+            hasMore={journalHasMore}
+            search={journalSearch}
+            onSearch={setJournalSearch}
+            onMore={loadMoreJournal}
+            onSubject={id => router.push(`/player/${id}` as any)}
+          />
+        )}
         {tab === 'disputes' && (
           <DisputesTab
             matches={disputes}
