@@ -54,6 +54,7 @@ import { StandingsTable, type StandingRowData } from '../../components/tournamen
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { TournamentShareCard } from '../../components/tournaments/TournamentShareCard';
 import { LiveHero, ResultHero, RoundBanner, RegistrationCard, StickyActionBar } from '../../components/tournaments/FicheHeros';
+import { RegisteredStrip } from '../../components/tournaments/RegisteredStrip';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
@@ -271,6 +272,7 @@ export default function TournamentDetailScreen() {
   // simplement rien, comme pour n'importe quel autre tour.
   const [finalStakes, setFinalStakes] = useState<TournamentStake[]>([]);
   const [liveTab, setLiveTab] = useState<'tableau' | 'classement'>('tableau');
+  const [howToOpen, setHowToOpen] = useState(false);
   const [scoreSheetMatchId, setScoreSheetMatchId] = useState<string | null>(null);
   const [scoreBusy, setScoreBusy] = useState(false);
 
@@ -810,19 +812,37 @@ export default function TournamentDetailScreen() {
           />
         )}
 
-        {/* ── Comment ça marche ── */}
-        <View style={[cs.card, { padding: 14, gap: 8 }]}>
-          <SectionTitle>Comment ça marche</SectionTitle>
-          {[
-            `${teamCount(t.court_count)} binômes se répartissent sur ${t.court_count} terrains, les mieux classés au Terrain 1.`,
-            `${t.round_count} rotations de ${ROUND_MINUTES} minutes s’enchaînent : un match court, un résultat, on bouge.`,
-            'Le binôme qui gagne MONTE d’un terrain (vers le Terrain 1, le plus fort), celui qui perd descend d’un.',
-            'La dernière rotation ne fait plus bouger personne : elle classe.',
-            'Le classement départage au terrain atteint, puis aux victoires, puis à la différence de jeux.',
+        {/* ── Comment ça marche (handoff design : REPLIE par defaut) ──
+            Cinq lignes de regles ouvertes en permanence poussaient tout le
+            reste vers le bas. Celui qui connait le format n'a pas a les
+            relire a chaque visite ; celui qui les decouvre les deplie. */}
+        <View style={[cs.card, { padding: 14, gap: howToOpen ? 10 : 0 }]}>
+          <TouchableOpacity
+            onPress={() => setHowToOpen(o => !o)}
+            activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+          >
+            <Icon name="medal" size={14} color={Colors.brandDeep} stroke={2.3} />
+            <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.textPrimary }}>
+              COMMENT ÇA MARCHE
+            </Text>
+            <Icon name="chevronRight" size={16} rotate={howToOpen ? -90 : 90} color={Colors.textMuted} stroke={2.4} />
+          </TouchableOpacity>
+          {howToOpen && [
+            `Tu viens en binôme, ou seul — l’organisateur t’apparie avant le départ.`,
+            `${t.round_count} rotations de ${ROUND_MINUTES} min. Tu gagnes, tu montes d’un terrain. Tu perds, tu descends.`,
+            `Terrain 1 = le plus fort. Le classement de la soirée sort à la dernière rotation.`,
           ].map((line, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 8 }}>
-              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.brandDeep, width: 14 }}>{i + 1}</Text>
-              <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>{line}</Text>
+            <View key={i} style={{ flexDirection: 'row', gap: 9 }}>
+              <View style={{
+                width: 18, height: 18, borderRadius: 6, backgroundColor: Colors.primary,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.brand }}>{i + 1}</Text>
+              </View>
+              <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
+                {line}
+              </Text>
             </View>
           ))}
         </View>
@@ -1033,6 +1053,24 @@ export default function TournamentDetailScreen() {
             </View>
           )}
         </View>
+
+        {/* ── Qui est deja la (handoff design) ──
+            « Qui vient » est la question qu'on se pose avant de s'inscrire, et
+            elle n'avait aucune reponse : seuls les joueurs SANS binome etaient
+            listes, tout en bas. Le bandeau ne s'affiche que tant qu'on peut
+            encore s'inscrire -- une fois la soiree lancee, c'est le tableau
+            des terrains qui dit qui est la. */}
+        {!started && (
+          <RegisteredStrip
+            people={regs.map(r => ({
+              id: r.player_id,
+              name: displayName(byId.get(r.player_id)?.player, 'player'),
+              waiting: r.waitlist_position != null,
+              mine: r.player_id === player?.id,
+            }))}
+            total={total}
+          />
+        )}
 
         {/* ── Les joueurs seuls ── */}
         <View style={{ gap: 10 }}>
