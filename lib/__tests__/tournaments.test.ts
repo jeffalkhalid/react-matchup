@@ -12,8 +12,9 @@ import {
   computeCareerTotals,
   nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, pointsScaleValid,
   DEFAULT_POINTS_SCALE, statusLabel, statusTone, canOpenCheckIn, stakeLabel,
-  groupResultsByTeam, dateBucket, formatTournamentDate, homeTournamentPick,
+  groupResultsByTeam, dateBucket, formatTournamentDate,
   monthMatrix, isoDay, timeSlots, defaultPointsScale, resizePointsScale,
+  daysUntilLabel, shortFormatLabel, homeTournamentList,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
   type TournamentMissingMatch, type TournamentResultTeamRow, type Tournament,
 } from '../tournaments';
@@ -518,63 +519,6 @@ const tournoi = (id: string, starts_at: string, status: TournamentStatus = 'INSC
      court_count: 4, round_count: 6, price_mad: 0, forfeit_games: 0, status,
      current_round: 0, created_by: 'orga', created_at: starts_at } as Tournament);
 
-describe("carte d'accueil — n'apparaît que s'il y a quelque chose à faire", () => {
-  it('propose le tournoi a venir auquel je ne suis pas inscrit', () => {
-    const t = tournoi('T1', '2026-09-10T18:00:00Z');
-    const pick = homeTournamentPick([t], new Map([['T1', [reg('autre')]]]), 'moi');
-    expect(pick?.tournament.id).toBe('T1');
-    expect(pick?.free).toBe(15); // 4 terrains x 4 places, un siege pris
-    expect(pick?.state).toBe('open');
-  });
-
-  it('RESTE quand je suis inscrit, et le dit — sinon on oublie qu on joue jeudi', () => {
-    const t = tournoi('T1', '2026-09-10T18:00:00Z');
-    const pick = homeTournamentPick([t], new Map([['T1', [reg('moi')]]]), 'moi');
-    expect(pick?.tournament.id).toBe('T1');
-    expect(pick?.state).toBe('registered');
-  });
-
-  it('distingue la liste d attente de l inscription', () => {
-    const t = tournoi('T1', '2026-09-10T18:00:00Z');
-    expect(homeTournamentPick([t], new Map([['T1', [reg('moi', 1)]]]), 'moi')?.state).toBe('waitlisted');
-  });
-
-  it('ignore ce qui n est pas a venir : en cours, termine, annule', () => {
-    const encours = tournoi('T1', '2026-09-10T18:00:00Z', 'EN_COURS');
-    const termine = tournoi('T2', '2026-09-11T18:00:00Z', 'TERMINE');
-    const annule  = tournoi('T3', '2026-09-12T18:00:00Z', 'ANNULE');
-    expect(homeTournamentPick([encours, termine, annule], new Map(), 'moi')).toBeNull();
-  });
-
-  it('prend le PLUS PROCHE, pas le premier de la liste', () => {
-    const tard = tournoi('TARD', '2026-09-20T18:00:00Z');
-    const tot  = tournoi('TOT',  '2026-09-11T18:00:00Z');
-    expect(homeTournamentPick([tard, tot], new Map(), 'moi')?.tournament.id).toBe('TOT');
-  });
-
-  it('le plus proche gagne, meme si je suis deja inscrit dessus', () => {
-    // C est « ce qui vient » qui compte, pas « ce sur quoi il reste a agir ».
-    const tot  = tournoi('TOT',  '2026-09-11T18:00:00Z');
-    const tard = tournoi('TARD', '2026-09-20T18:00:00Z');
-    const pick = homeTournamentPick([tard, tot], new Map([['TOT', [reg('moi')]]]), 'moi');
-    expect(pick?.tournament.id).toBe('TOT');
-    expect(pick?.state).toBe('registered');
-  });
-
-  it('reste affiche quand c est complet : entrer en file est encore une action', () => {
-    const t = tournoi('T1', '2026-09-10T18:00:00Z', 'COMPLET');
-    const pleins = Array.from({ length: 16 }, (_, i) => reg(`p${i}`));
-    const pick = homeTournamentPick([t], new Map([['T1', pleins]]), 'moi');
-    expect(pick?.tournament.id).toBe('T1');
-    expect(pick?.free).toBe(0);
-  });
-
-  it('rend null quand il n y a aucun tournoi', () => {
-    expect(homeTournamentPick([], new Map(), 'moi')).toBeNull();
-  });
-});
-
-// ── Calendrier et créneaux horaires ────────────────────────────────────────
 describe('grille du mois — semaines commençant le lundi', () => {
   it('septembre 2026 commence un mardi : une seule case vide avant le 1er', () => {
     // 2026-09-01 est un mardi -> lundi = 0, mardi = 1, donc un décalage de 1.
@@ -679,33 +623,62 @@ describe('bareme par rang — autant de rangs que de binomes', () => {
   });
 });
 
-describe("carte d'accueil — plusieurs tournois annonces", () => {
-  it('montre le plus proche et COMPTE les autres', () => {
+describe('pastille d echeance', () => {
+  const now = new Date(2026, 8, 4, 10, 0, 0);   // ven. 4 sept. 2026, 10h
+
+  it('ce soir, demain, puis J-N en JOURS DE CALENDRIER', () => {
+    expect(daysUntilLabel(new Date(2026, 8, 4, 19, 0).toISOString(), now)).toBe('CE SOIR');
+    // Demain 9h = dans 23 h : « DEMAIN », pas « J-0 ».
+    expect(daysUntilLabel(new Date(2026, 8, 5, 9, 0).toISOString(), now)).toBe('DEMAIN');
+    expect(daysUntilLabel(new Date(2026, 8, 11, 19, 0).toISOString(), now)).toBe('J-7');
+  });
+
+  it('une soiree passee ne dit pas J-négatif', () => {
+    expect(daysUntilLabel(new Date(2026, 8, 1, 19, 0).toISOString(), now)).toBe('PASSÉ');
+  });
+});
+
+describe('libelle de format court', () => {
+  it('reprend la forme de la maquette', () => {
+    expect(shortFormatLabel(3, 5)).toBe('DOUBLE · NIV. 3-5');
+    expect(shortFormatLabel(3, null)).toBe('DOUBLE · NIV. 3+');
+    expect(shortFormatLabel(null, 5)).toBe('DOUBLE · NIV. 5 MAX');
+    expect(shortFormatLabel(null, null)).toBe('DOUBLE · TOUS NIVEAUX');
+  });
+
+  it('garde la decimale quand il y en a une', () => {
+    expect(shortFormatLabel(3.5, 5)).toBe('DOUBLE · NIV. 3.5-5');
+  });
+});
+
+describe('liste des soirees pour l accueil', () => {
+  it('les rend TOUTES, de la plus proche a la plus lointaine', () => {
     const a = tournoi('A', '2026-09-10T18:00:00Z');
     const b = tournoi('B', '2026-09-17T18:00:00Z');
-    const c = tournoi('C', '2026-09-24T18:00:00Z');
-    const pick = homeTournamentPick([c, a, b], new Map(), 'moi');
-    expect(pick?.tournament.id).toBe('A');
-    expect(pick?.others).toBe(2);
+    const l = homeTournamentList([b, a], new Map(), 'moi');
+    expect(l.map(e => e.tournament.id)).toEqual(['A', 'B']);
   });
 
-  it('un seul tournoi : aucun autre a signaler', () => {
+  it('compte les places en JOUEURS, pas en binomes', () => {
+    // 4 terrains = 16 places joueurs (8 binomes). La maquette montrait 6/8,
+    // en binomes : c est l unite de toute l app qui gagne, pas la maquette.
+    const t = tournoi('T', '2026-09-10T18:00:00Z');
+    const l = homeTournamentList([t], new Map([['T', [reg('a'), reg('b'), reg('c')]]]), 'moi');
+    expect(l[0].taken).toBe(3);
+    expect(l[0].total).toBe(16);
+  });
+
+  it('dit ou j en suis sur chacune', () => {
     const a = tournoi('A', '2026-09-10T18:00:00Z');
-    expect(homeTournamentPick([a], new Map(), 'moi')?.others).toBe(0);
+    const b = tournoi('B', '2026-09-17T18:00:00Z');
+    const l = homeTournamentList([a, b], new Map([['A', [reg('moi')]], ['B', [reg('moi', 2)]]]), 'moi');
+    expect(l[0].state).toBe('registered');
+    expect(l[1].state).toBe('waitlisted');
   });
 
-  it('ne compte QUE les soirees a venir', () => {
-    const a = tournoi('A', '2026-09-10T18:00:00Z');
-    const fini = tournoi('FINI', '2026-09-17T18:00:00Z', 'TERMINE');
-    const encours = tournoi('LIVE', '2026-09-18T18:00:00Z', 'EN_COURS');
-    expect(homeTournamentPick([a, fini, encours], new Map(), 'moi')?.others).toBe(0);
-  });
-
-  it('le cas qui motive tout : inscrit a jeudi, un autre cherche des joueurs', () => {
-    const jeudi = tournoi('JEUDI', '2026-09-10T18:00:00Z');
-    const autre = tournoi('AUTRE', '2026-09-17T18:00:00Z');
-    const pick = homeTournamentPick([jeudi, autre], new Map([['JEUDI', [reg('moi')]]]), 'moi');
-    expect(pick?.state).toBe('registered');
-    expect(pick?.others).toBe(1);   // sans ca, AUTRE serait invisible depuis l'accueil
+  it('ecarte ce qui n est pas a venir', () => {
+    const fini = tournoi('F', '2026-09-10T18:00:00Z', 'TERMINE');
+    const live = tournoi('L', '2026-09-11T18:00:00Z', 'EN_COURS');
+    expect(homeTournamentList([fini, live], new Map(), 'moi')).toEqual([]);
   });
 });

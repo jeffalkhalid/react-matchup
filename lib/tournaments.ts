@@ -1367,68 +1367,6 @@ export async function fetchTournamentMatches(tournamentId: string): Promise<Tour
 
 // ── Accueil : quel tournoi mérite une place sur l'écran d'accueil ───────────
 //
-// La carte montre LA PROCHAINE soirée à venir, et dit où j'en suis dessus :
-// pas encore inscrit, inscrit, ou en liste d'attente.
-//
-// Une seule carte, même quand plusieurs tournois sont annoncés : l'accueil dit
-// « ce qui vient », il n'est pas une liste. Mais il compte les autres et le
-// dit — sans ça, un joueur déjà inscrit à jeudi ne verrait jamais depuis
-// l'accueil qu'une seconde soirée cherche encore des joueurs.
-//
-// Première version : elle disparaissait dès l'inscription, au nom de « ne
-// montrer que ce sur quoi il y a à agir ». C'était une erreur — on perdait de
-// vue qu'on joue jeudi. Ce n'est pas la PRÉSENCE de la carte qui doit être
-// rare, c'est son INSISTANCE : plein jaune quand il faut s'inscrire, discrète
-// une fois qu'on est dedans.
-//
-// Un tournoi complet reste affiché lui aussi : entrer en liste d'attente est
-// encore une action. C'est le libellé qui le dit, pas la disparition.
-
-/** Où j'en suis sur ce tournoi — c'est l'état, pas la présence, qui varie. */
-export type HomeTournamentState = 'open' | 'registered' | 'waitlisted';
-
-export interface HomeTournamentPick {
-  tournament: Tournament;
-  /** Places libres au sens du serveur : zéro dès qu'une file existe. */
-  free: number;
-  state: HomeTournamentState;
-  /** Les AUTRES soirées à venir. Zéro la plupart du temps, mais dès qu'il y en
-   *  a, la carte doit le dire : sinon un second tournoi où il reste des places
-   *  n'existe nulle part depuis l'accueil. */
-  others: number;
-}
-
-/**
- * Le prochain tournoi à venir auquel `myId` n'est PAS inscrit, ou `null`.
- *
- * « À venir » au sens de `tournamentPhase` : inscriptions ouvertes, complet,
- * pointage ou prêt — pas un tournoi en cours, terminé ou annulé.
- */
-export function homeTournamentPick(
-  tournaments: Tournament[],
-  regsByTournament: Map<string, TournamentRegistration[]>,
-  myId: string,
-): HomeTournamentPick | null {
-  const candidats = tournaments
-    .filter(t => tournamentPhase(t.status) === 'upcoming')
-    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-
-  const t = candidats[0];
-  if (!t) return null;
-
-  const regs = regsByTournament.get(t.id) ?? [];
-  const moi = regs.find(r => r.player_id === myId);
-  const state: HomeTournamentState =
-    !moi ? 'open' : moi.waitlist_position != null ? 'waitlisted' : 'registered';
-
-  return {
-    tournament: t,
-    free: freePlaces(regs, t.court_count),
-    state,
-    others: candidats.length - 1,
-  };
-}
-
 // ── Sélection de la date et de l'heure (formulaire de création) ─────────────
 //
 // Deux fonctions pures, ici plutôt que dans le composant : ce sont elles qui
@@ -1522,4 +1460,77 @@ export function resizePointsScale(
     out[rang] = actuel[rang] ?? String(base[rang]);
   }
   return out;
+}
+
+// ── Section « Tournois ouverts » de l'accueil (handoff design 1C) ───────────
+
+/** Où j'en suis sur une soirée — c'est l'état qui change ce que dit la carte. */
+export type HomeTournamentState = 'open' | 'registered' | 'waitlisted';
+
+/**
+ * « J-7 », « DEMAIN », « CE SOIR » — la pastille d'échéance de la maquette.
+ *
+ * Le compte est en JOURS DE CALENDRIER, pas en multiples de 24 h : un tournoi
+ * demain à 9h est « DEMAIN », même s'il est dans 15 heures.
+ */
+export function daysUntilLabel(iso: string, now: Date = new Date()): string {
+  const bucket = dateBucket(iso, now);
+  if (bucket === 'today') return 'CE SOIR';
+  if (bucket === 'tomorrow') return 'DEMAIN';
+
+  const a = new Date(now); a.setHours(0, 0, 0, 0);
+  const b = new Date(iso); b.setHours(0, 0, 0, 0);
+  const jours = Math.round((b.getTime() - a.getTime()) / 86_400_000);
+  return jours > 0 ? `J-${jours}` : 'PASSÉ';
+}
+
+/**
+ * « DOUBLE · NIV. 3-5 » — la ligne de format de la carte, en majuscules.
+ * Version courte de `levelRangeLabel`, qui est faite pour une phrase.
+ */
+export function shortFormatLabel(min: number | null, max: number | null): string {
+  const f = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  const niv =
+    min != null && max != null ? `NIV. ${f(min)}-${f(max)}`
+    : min != null ? `NIV. ${f(min)}+`
+    : max != null ? `NIV. ${f(max)} MAX`
+    : 'TOUS NIVEAUX';
+  return `DOUBLE · ${niv}`;
+}
+
+/** Une soirée telle que la section d'accueil la consomme. */
+export interface HomeTournamentEntry {
+  tournament: Tournament;
+  /** Places PRISES et TOTAL, en joueurs — l'unité de toute l'app. */
+  taken: number;
+  total: number;
+  state: HomeTournamentState;
+}
+
+/**
+ * Les soirées à venir, de la plus proche à la plus lointaine, avec où j'en
+ * suis sur chacune.
+ *
+ * Contrairement à la première version de l'accueil, on ne réduit plus à une
+ * seule : la maquette montre un carrousel, et un joueur déjà inscrit à jeudi
+ * doit voir qu'une autre soirée cherche des joueurs.
+ */
+export function homeTournamentList(
+  tournaments: Tournament[],
+  regsByTournament: Map<string, TournamentRegistration[]>,
+  myId: string,
+): HomeTournamentEntry[] {
+  return tournaments
+    .filter(t => tournamentPhase(t.status) === 'upcoming')
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+    .map(t => {
+      const regs = regsByTournament.get(t.id) ?? [];
+      const moi = regs.find(r => r.player_id === myId);
+      return {
+        tournament: t,
+        taken: seatsTaken(regs),
+        total: seatCount(t.court_count),
+        state: (!moi ? 'open' : moi.waitlist_position != null ? 'waitlisted' : 'registered') as HomeTournamentState,
+      };
+    });
 }

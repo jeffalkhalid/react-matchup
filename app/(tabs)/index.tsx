@@ -21,10 +21,10 @@ import { HomeProfileCard } from '../../components/home/HomeProfileCard';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
-import { HomeTournamentCard } from '../../components/home/HomeTournamentCard';
+import { HomeTournaments } from '../../components/home/HomeTournaments';
 import {
-  getTournamentsEnabled, fetchTournaments, fetchRegistrationsFor, homeTournamentPick,
-  type HomeTournamentPick,
+  getTournamentsEnabled, fetchTournaments, fetchRegistrationsFor, homeTournamentList,
+  type HomeTournamentEntry,
 } from '../../lib/tournaments';
 import { registerTourAnchor } from '../../lib/tourAnchors';
 import type { OpenGame } from '../../types';
@@ -159,18 +159,18 @@ export default function HomeScreen() {
   // auquel cas on ne lit rien du tout et la carte n'existe pas. Une panne ici ne
   // doit jamais abîmer le reste de l'accueil, d'où le catch qui se contente de
   // ne rien proposer.
-  const [tourPick, setTourPick] = useState<HomeTournamentPick | null>(null);
+  const [tournois, setTournois] = useState<HomeTournamentEntry[]>([]);
   useFocusEffect(useCallback(() => {
     let annule = false;
     (async () => {
       if (!player) return;
       try {
-        if (!(await getTournamentsEnabled())) { if (!annule) setTourPick(null); return; }
-        const tournois = await fetchTournaments();
-        const regs = await fetchRegistrationsFor(tournois.map(t => t.id));
-        if (!annule) setTourPick(homeTournamentPick(tournois, regs, player.id));
+        if (!(await getTournamentsEnabled())) { if (!annule) setTournois([]); return; }
+        const liste = await fetchTournaments();
+        const regs = await fetchRegistrationsFor(liste.map(t => t.id));
+        if (!annule) setTournois(homeTournamentList(liste, regs, player.id));
       } catch {
-        if (!annule) setTourPick(null);
+        if (!annule) setTournois([]);
       }
     })();
     return () => { annule = true; };
@@ -463,20 +463,16 @@ export default function HomeScreen() {
                 />
               </View>
 
-              {/* C bis. Prochaine soirée — ~0,9/7,6, dès qu'un tournoi est
-                  annoncé : la carte dit où j'en suis (à s'inscrire, inscrit,
-                  en liste d'attente). Les hauteurs étant relatives,
-                  cette part se prend sur l'ensemble : rien n'est rogné au hero
-                  en particulier, et l'accueil retrouve exactement ses
-                  proportions d'origine dès que la carte disparaît. */}
-              {tourPick && (
-                <View style={{ flex: 1.05, minHeight: compact ? 68 : 74 }}>
-                  <HomeTournamentCard
-                    tournament={tourPick.tournament}
-                    free={tourPick.free}
-                    state={tourPick.state}
-                    others={tourPick.others}
-                    onPress={() => router.push(`/tournaments/${tourPick.tournament.id}` as any)}
+              {/* C bis. Section « Tournois ouverts » (handoff design 1C) — une
+                  carte pleine largeur s'il n'y en a qu'une, un carrousel au-delà.
+                  Le conteneur lui-même n'est PAS rendu quand la liste est vide :
+                  sinon sa part de hauteur réserverait de la place pour rien, et l'accueil
+                  ne retrouverait pas ses proportions d'origine. */}
+              {tournois.length > 0 && (
+                <View style={{ flex: 1.5, minHeight: compact ? 124 : 136 }}>
+                  <HomeTournaments
+                    entries={tournois}
+                    onOpen={(id) => router.push(`/tournaments/${id}` as any)}
                     onSeeAll={() => router.push('/tournaments' as any)}
                   />
                 </View>
