@@ -15,6 +15,8 @@ import {
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { DisputeEvidence } from '../../components/admin/DisputeEvidence';
 import { AdminJournal } from '../../components/admin/AdminJournal';
+import { SearchBar, SearchResults } from '../../components/admin/GlobalSearch';
+import { searchAll, MIN_QUERY } from '../../lib/adminSearch';
 import { fetchAdminLog, nextCursor, type AdminAction } from '../../lib/adminLog';
 import {
   initialSets, parseRawSets, counterNeedsFlip, flipSets, liveSets,
@@ -810,6 +812,10 @@ export default function AdminScreen() {
   const [journalMore, setJournalMore] = useState(false);
   const [journalHasMore, setJournalHasMore] = useState(false);
   const [journalSearch, setJournalSearch] = useState('');
+  // Recherche globale. Elle porte sur ce que le panel a DEJA en memoire :
+  // pas de requete a chaque touche, et le repli des accents devient possible
+  // (ILIKE en base les distingue, cf. lib/adminSearch).
+  const [globalSearch, setGlobalSearch] = useState('');
   const [editedScores, setEditedScores] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -974,6 +980,16 @@ export default function AdminScreen() {
       } catch { setLiveScores({}); }
     }
   }, []);
+
+  // Les resultats de la recherche globale, sur les listes deja chargees.
+  const searchHits = useMemo(
+    () => searchAll(globalSearch, {
+      players: playersList.length > 0 ? playersList : allPlayers,
+      games,
+      tournaments: queueTournaments as any,
+    }),
+    [globalSearch, playersList, allPlayers, games, queueTournaments],
+  );
 
   // ── Journal d'arbitrage ─────────────────────────────────────
   const JOURNAL_PAGE = 40;
@@ -1156,6 +1172,16 @@ export default function AdminScreen() {
   useEffect(() => { if (tab === 'gender' && player?.is_admin) loadGenderReqs(); }, [tab, player, loadGenderReqs]);
   useEffect(() => { if (tab === 'reports' && player?.is_admin) loadReports(); }, [tab, player, loadReports]);
 
+  // La recherche porte sur des listes chargees par les onglets. Sans ca, un
+  // joueur cherche avant d'avoir ouvert l'onglet Joueurs ne remonterait
+  // rien — un echec SILENCIEUX, qui ressemble a « ce joueur n'existe pas ».
+  // On charge donc a la premiere frappe, une seule fois.
+  useEffect(() => {
+    if (globalSearch.trim().length < MIN_QUERY) return;
+    if (playersList.length === 0) loadPlayers();
+    if (games.length === 0) loadGames();
+  }, [globalSearch, playersList.length, games.length, loadPlayers, loadGames]);
+
   const handleResolveReport = async (report: any, status: 'actioned' | 'dismissed') => {
     if (!player) return;
     setResolvingId(report.id);
@@ -1321,6 +1347,12 @@ export default function AdminScreen() {
           )}
         </View>
 
+        {/* La recherche est AU-DESSUS des onglets : on cherche avant de savoir
+            dans quel onglet regarder — c'est tout l'interet. */}
+        <View style={{ marginBottom: 14 }}>
+          <SearchBar value={globalSearch} onChange={setGlobalSearch} />
+        </View>
+
         {/* Tab bar — blocs de groupes (titre + sous-onglets dessous), wrap si étroit */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
           {([
@@ -1376,6 +1408,25 @@ export default function AdminScreen() {
 
       {/* Content */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+        {/* Une recherche est une parenthese : ses resultats RECOUVRENT
+            l'onglet au lieu de s'y inserer, et le vider rend l'onglet
+            exactement ou on l'avait laisse. */}
+        {globalSearch.trim().length > 0 ? (
+          <SearchResults
+            query={globalSearch}
+            hits={searchHits}
+            onPick={h => {
+              setGlobalSearch('');
+              if (h.kind === 'player') router.push(`/player/${h.id}` as any);
+              else if (h.kind === 'tournament') router.push(`/tournaments/${h.id}` as any);
+              // Il n'existe pas d'ecran par partie : elles se gerent dans
+              // l'onglet Parties du panel. On y renvoie plutot que d'ouvrir
+              // une route qui n'existe pas.
+              else setTab('games');
+            }}
+          />
+        ) : (
+        <>
         {tab === 'queue' && (
           <View style={{ gap: 12 }}>
             <QueueCounters
@@ -1489,6 +1540,8 @@ export default function AdminScreen() {
         {tab === 'settings' && <SettingsTab onTournamentsToggled={setTournamentsEnabled} />}
         {tab === 'tournaments' && tournamentsEnabled && player && (
           <TournamentsTab myPlayerId={player.id} />
+        )}
+        </>
         )}
       </ScrollView>
     </View>
