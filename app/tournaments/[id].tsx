@@ -53,7 +53,7 @@ import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/Court
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { TournamentShareCard } from '../../components/tournaments/TournamentShareCard';
-import { LiveHero, ResultHero, RoundBanner } from '../../components/tournaments/FicheHeros';
+import { LiveHero, ResultHero, RoundBanner, RegistrationCard, StickyActionBar } from '../../components/tournaments/FicheHeros';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
@@ -66,6 +66,18 @@ const cs = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 }, elevation: 1,
   },
 });
+
+// « VEN. 11 SEPT » / « 19:00 » — le bloc horaire de la carte d'ouverture veut
+// le jour et l'heure separes, la ou `formatTournamentDate` les rend en phrase.
+function dayLabel(iso: string): string {
+  return new Date(iso)
+    .toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
+    .toUpperCase();
+}
+function timeLabel(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -606,8 +618,14 @@ export default function TournamentDetailScreen() {
         )}
       </View>
 
+      {/* La barre fixe flotte AU-DESSUS du defilement : d'ou la reserve en bas
+          du contenu, sans laquelle la derniere section passe dessous. */}
       <ScrollView
-        contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 32, gap: 14 }}
+        contentContainerStyle={{
+          padding: 14,
+          paddingBottom: insets.bottom + (canRegister && !playerLoading ? 108 : 32),
+          gap: 14,
+        }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
         {/* ── Un tournoi ANNULÉ est un tournoi MORT : le dire clairement,
@@ -772,41 +790,25 @@ export default function TournamentDetailScreen() {
           </View>
         )}
 
-        {/* ── Les places, en JOUEURS ── */}
-        <View style={[cs.card, { padding: 14 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <View>
-              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                Places
-              </Text>
-              <Text style={{ fontSize: 30, lineHeight: 36, fontFamily: Fonts.uiBlack, color: free > 0 ? Colors.textPrimary : Colors.danger }}>
-                {seatsLabel(regs, t.court_count)}
-              </Text>
-            </View>
-            <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary, textAlign: 'right', flex: 1, marginLeft: 12 }}>
-              joueurs · {teamCount(t.court_count)} binômes{'\n'}
-              {waiting > 0 ? `${waiting} en liste d’attente` : free > 0 ? `${free} place${free > 1 ? 's' : ''} libre${free > 1 ? 's' : ''}` : 'complet'}
-            </Text>
-          </View>
-          {/* Jauge */}
-          <View style={{ height: 8, borderRadius: 999, backgroundColor: Colors.bg, marginTop: 12, overflow: 'hidden' }}>
-            <View style={{
-              width: `${Math.min(100, total > 0 ? (taken / total) * 100 : 0)}%`,
-              height: '100%', borderRadius: 999,
-              backgroundColor: free > 0 ? Colors.brand : Colors.danger,
-            }} />
-          </View>
-        </View>
-
-        {/* ── Le format ── */}
-        <View style={[cs.card, { paddingHorizontal: 14, paddingVertical: 4 }]}>
-          <InfoLine icon="calendar" label="Date" value={formatTournamentDate(t.starts_at)} />
-          <InfoLine icon="mapPin"   label="Club" value={t.club?.name ?? 'À confirmer'} />
-          <InfoLine icon="racket"   label="Format" value={`${t.court_count} terrains · ${t.round_count} rotations`} />
-          <InfoLine icon="clock"    label="Rotation" value={`${ROUND_MINUTES} min`} />
-          <InfoLine icon="trendingUp" label="Niveau" value={levelRangeLabel(t.level_min, t.level_max)} />
-          <InfoLine icon="gem"      label="Prix" value={priceLabel(t.price_mad)} tone={t.price_mad > 0 ? Colors.brandDeep : undefined} />
-        </View>
+        {/* ── Quand, où, combien de places (handoff design, chantier 1) ──
+            Remplace deux cartes empilees (« Les places » et « Le format »)
+            qui repetaient la date et le club deja presents dans l'en-tete.
+            Ne reste ici que ce qui decide d'y aller ou non. Le bloc n'a de
+            sens que tant qu'on peut encore s'inscrire : une fois la soiree
+            lancee, c'est le tableau des terrains qui compte. */}
+        {!started && (
+          <RegistrationCard
+            dayLabel={dayLabel(t.starts_at)}
+            timeLabel={timeLabel(t.starts_at)}
+            clubLine={t.club?.name ? `${t.club.name}${t.club.city ? ` · ${t.club.city}` : ''}` : 'Club à confirmer'}
+            taken={taken}
+            total={total}
+            free={free}
+            waiting={waiting}
+            courts={t.court_count}
+            priceLabel={priceLabel(t.price_mad)}
+          />
+        )}
 
         {/* ── Comment ça marche ── */}
         <View style={[cs.card, { padding: 14, gap: 8 }]}>
@@ -839,7 +841,10 @@ export default function TournamentDetailScreen() {
                       : 'Le tournoi est complet : ton inscription entrera en liste d’attente.'}
                   </Notice>
                 )}
-                <PrimaryButton label="M’inscrire" onPress={() => setSheetOpen(true)} />
+                {/* Le geste principal vit dans la barre fixe en pied
+                    d'ecran (handoff design) : ici, plus qu'un rappel du
+                    contexte -- un bouton qui se merite au defilement n'est
+                    pas un bouton principal. */}
               </View>
             ) : (
               <Notice tone="info">Les inscriptions sont fermées pour ce tournoi.</Notice>
@@ -1097,6 +1102,20 @@ export default function TournamentDetailScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Barre d'action fixe (handoff design, chantier 1) : le geste principal
+          etait enterre APRES cinq sections. Elle n'apparait que s'il y a
+          vraiment quelque chose a faire -- pas de barre morte en pied d'ecran
+          sur un tournoi ou l'on n'a rien a decider. */}
+      {canRegister && !playerLoading && (
+        <StickyActionBar
+          priceLine={t.price_mad > 0 ? priceLabel(t.price_mad) : null}
+          priceNote={t.price_mad > 0 ? 'Payé sur place' : null}
+          label={free === 0 ? 'REJOINDRE LA LISTE' : 'M’INSCRIRE'}
+          onPress={() => setSheetOpen(true)}
+          insetBottom={insets.bottom}
+        />
+      )}
 
       {sheetOpen && player && (
         <RegisterSheet

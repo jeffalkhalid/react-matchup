@@ -239,3 +239,159 @@ export function ResultHero({ rank, total, partner, climbs, wins, losses, gamesWo
     </View>
   );
 }
+
+// ── Avant la soirée ────────────────────────────────────────────────────────
+
+/**
+ * Le bloc d'ouverture d'un tournoi qui prend encore des inscriptions : quand,
+ * où, combien de places — et rien d'autre.
+ *
+ * Il remplace deux cartes empilées (« Les places » et « Le format ») qui
+ * répétaient la date et le club déjà présents dans l'en-tête. Ce qui reste ici
+ * est ce qui décide : la date, le lieu, et s'il reste de la place.
+ */
+export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price }: {
+  /** « VEN. 11 SEPT » */
+  dayLabel: string;
+  /** « 19:00 » */
+  timeLabel: string;
+  /** « Padel Nation · Casablanca » */
+  clubLine: string;
+  taken: number; total: number; free: number; waiting: number;
+  courts: number;
+  priceLabel: string;
+}) {
+  const ratio = total > 0 ? Math.min(1, taken / total) : 0;
+  const plein = free === 0;
+
+  return (
+    <View style={{
+      backgroundColor: Colors.bgCard, borderRadius: 18, overflow: 'hidden',
+      borderWidth: 1, borderColor: Colors.border,
+      shadowColor: '#0A0A0A', shadowOpacity: 0.04, shadowRadius: 4,
+      shadowOffset: { width: 0, height: 1 }, elevation: 1,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 }}>
+        {/* Bloc horaire, même grammaire que les cartes de partie du Lobby. */}
+        <View style={{
+          backgroundColor: Colors.heroBg, borderRadius: 14,
+          paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', minWidth: 84,
+        }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{
+            fontSize: 9, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.brand,
+          }}>
+            {dayLabel}
+          </Text>
+          <Text style={{ fontSize: 21, lineHeight: 25, fontFamily: Fonts.display, color: '#FFFFFF', marginTop: 1 }}>
+            {timeLabel}
+          </Text>
+        </View>
+
+        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Icon name="mapPin" size={12} color={Colors.textMuted} stroke={2.2} />
+            <Text numberOfLines={1} style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+              {clubLine}
+            </Text>
+          </View>
+
+          {/* Les places se comptent en JOUEURS — l'unité de toute l'app. */}
+          <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+            <Text style={{ fontSize: 22, fontFamily: Fonts.display, color: plein ? Colors.danger : Colors.textPrimary }}>
+              {taken}
+            </Text>
+            {'  '}joueurs sur {total}
+          </Text>
+
+          <View style={{ height: 6, borderRadius: 999, backgroundColor: Colors.bg, overflow: 'hidden' }}>
+            <View style={{
+              width: `${ratio * 100}%`, height: '100%', borderRadius: 999,
+              backgroundColor: plein ? Colors.danger : Colors.brand,
+            }} />
+          </View>
+        </View>
+      </View>
+
+      {/* Pied : ce qui reste, la taille du plateau, le prix. */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 14, paddingVertical: 11, gap: 8,
+        backgroundColor: Colors.bg, borderTopWidth: 1, borderTopColor: Colors.borderLight,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+          <Icon name="users" size={12} color={plein ? Colors.danger : Colors.textSecondary} stroke={2.2} />
+          <Text numberOfLines={1} style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+            <Text style={{ fontFamily: Fonts.uiBlack, color: plein ? Colors.danger : Colors.textPrimary }}>
+              {plein ? 'Complet' : `${free} place${free > 1 ? 's' : ''}`}
+            </Text>
+            {waiting > 0 ? ` · ${waiting} en attente` : ''}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="racket" size={12} color={Colors.textSecondary} stroke={2.2} />
+          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+            {courts} terrain{courts > 1 ? 's' : ''}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="gem" size={12} color={Colors.textSecondary} stroke={2.2} />
+          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+            {price}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * La barre d'action fixée en pied d'écran, tant qu'il reste quelque chose à
+ * faire. Elle remplace un bouton enterré après cinq sections : le geste
+ * principal ne doit pas se mériter au défilement.
+ */
+export function StickyActionBar({ priceLine, priceNote, label, disabled, busy, onPress, insetBottom }: {
+  priceLine: string | null;
+  priceNote: string | null;
+  label: string;
+  disabled?: boolean;
+  busy?: boolean;
+  onPress: () => void;
+  insetBottom: number;
+}) {
+  return (
+    <View style={{
+      position: 'absolute', left: 0, right: 0, bottom: 0,
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 16, paddingTop: 12, paddingBottom: insetBottom + 12,
+      backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.border,
+      shadowColor: '#0A0A0A', shadowOpacity: 0.08, shadowRadius: 12,
+      shadowOffset: { width: 0, height: -4 }, elevation: 12,
+    }}>
+      {priceLine && (
+        <View style={{ minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ fontSize: 19, fontFamily: Fonts.welcome, color: Colors.textPrimary }}>
+            {priceLine}
+          </Text>
+          {priceNote && (
+            <Text numberOfLines={1} style={{ fontSize: 10.5, fontFamily: Fonts.uiSemi, color: Colors.textMuted }}>
+              {priceNote}
+            </Text>
+          )}
+        </View>
+      )}
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={disabled || busy}
+        activeOpacity={0.85}
+        style={{
+          flex: 1, backgroundColor: Colors.heroBg, borderRadius: 16,
+          paddingVertical: 15, alignItems: 'center', opacity: disabled || busy ? 0.55 : 1,
+        }}
+      >
+        <Text style={{ fontSize: 15.5, fontFamily: Fonts.welcome, letterSpacing: 0.5, color: Colors.textOnDark }}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
