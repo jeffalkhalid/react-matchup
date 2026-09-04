@@ -13,6 +13,11 @@ import {
   type EloSimResult,
 } from '../../lib/elo';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
+import { DisputeEvidence } from '../../components/admin/DisputeEvidence';
+import {
+  initialSets, parseRawSets, counterNeedsFlip, flipSets, liveSets,
+  buildEvidence, evidenceVerdict, reversesWinner, campTrust,
+} from '../../lib/disputeEvidence';
 import { displayName } from '../../lib/players';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { Icon } from '../../components/community/icons';
@@ -108,8 +113,10 @@ function EloSimCard({ sim }: { sim: EloSimResult }) {
 }
 
 // ─── Disputes tab ─────────────────────────────────────────────
-function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForceValidate, onCancel }: {
+function DisputesTab({ matches, liveScores, editedScores, setEditedScores, loadingId, onForceValidate, onCancel }: {
   matches: any[];
+  /** Les sessions marquees en direct, indexees par match_id. */
+  liveScores: Record<string, any>;
   editedScores: Record<string, string>;
   setEditedScores: (s: Record<string, string>) => void;
   loadingId: string | null;
@@ -136,6 +143,21 @@ function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForc
           ...(match.loser_2 ? [{ id: match.loser_2.id, name: match.loser_2.name, elo_score: match.loser_2.elo_score ?? 1000, win_count: match.loser_2.win_count ?? 0, loss_count: match.loser_2.loss_count ?? 0, last_match_at: match.loser_2.last_match_at ?? null, fiability_pct: match.loser_2.fiability_pct ?? 50, isWinner: false }] : []),
         ], match.score_text) : null;
 
+        // Les trois versions du score, ramenees dans UN repere : le camp du
+        // vainqueur enregistre est toujours a gauche. Sans ca, « 6-3 » et
+        // « 3-6 » se confondraient — sur le genre de litige ou c'est
+        // precisement la question. Detail et tests : lib/disputeEvidence.
+        const live = liveScores[match.id];
+        const iniSets = initialSets(match.score_text);
+        const conRaw  = parseRawSets(match.counter_score_text);
+        const conSets = counterNeedsFlip(match) ? flipSets(conRaw) : conRaw;
+        const livSets = live
+          ? liveSets(live.current_state, live.team1_ids ?? [], live.team2_ids ?? [], match.winner_id ?? null)
+          : null;
+        const rows = buildEvidence(iniSets, conSets, livSets);
+        const verdict = evidenceVerdict(rows);
+        const camp = (a: any, b: any) => [a?.name, b?.name].filter(Boolean).join(' & ') || '—';
+
         return (
           <View key={match.id} style={sty.disputeCard}>
             <View style={sty.disputeTag}><Text style={sty.disputeTagText}>⚠ LITIGE</Text></View>
@@ -144,16 +166,31 @@ function DisputesTab({ matches, editedScores, setEditedScores, loadingId, onForc
               Saisi par <Text style={{ color: Colors.brand, fontWeight: '800' }}>{match.creator?.name ?? '—'}</Text>
             </Text>
 
+            {/* Les deux scores etaient donnes en deux lignes de texte, a
+                comparer de tete. Le tableau les met en colonnes, set par set,
+                et ajoute le score enregistre en direct — la seule piece que
+                personne n'a pu reecrire apres le match. */}
             {match.counter_score_text && (
+              <View style={{ marginBottom: 10 }}>
+                <DisputeEvidence
+                  rows={rows}
+                  verdict={verdict}
+                  winnerSide={camp(match.winner, match.winner_2)}
+                  loserSide={camp(match.loser, match.loser_2)}
+                  winnerTrust={campTrust([match.winner, match.winner_2])}
+                  loserTrust={campTrust([match.loser, match.loser_2])}
+                  hasLive={!!livSets}
+                  counterReverses={reversesWinner(conSets)}
+                  liveReverses={reversesWinner(livSets ?? [])}
+                  onUse={t => setEditedScores({ ...editedScores, [match.id]: t })}
+                />
+              </View>
+            )}
+
+            {/* Les mots des deux camps restent : le tableau dit OU ils ne sont
+                pas d'accord, ces phrases disent POURQUOI. */}
+            {(match.counter_reason || match.dispute_reason) && (
               <View style={sty.counterBox}>
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 3 }}>
-                  <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '900', textTransform: 'uppercase' }}>Initial :</Text>
-                  <Text style={{ fontSize: 12, color: Colors.textSecondary, textDecorationLine: 'line-through' }}>{match.score_text}</Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: match.counter_reason ? 3 : 0 }}>
-                  <Text style={{ fontSize: 10, color: Colors.warning, fontWeight: '900', textTransform: 'uppercase' }}>Contesté :</Text>
-                  <Text style={{ fontSize: 12, color: Colors.textPrimary, fontWeight: '900' }}>{match.counter_score_text}</Text>
-                </View>
                 {match.counter_reason && (
                   <Text style={{ fontSize: 11, color: Colors.textMuted, fontStyle: 'italic' }}>Contestataire : "{match.counter_reason}"</Text>
                 )}
@@ -761,6 +798,8 @@ export default function AdminScreen() {
 
   // Disputes
   const [disputes, setDisputes] = useState<any[]>([]);
+  // Les sessions live des matchs en litige, indexees par match_id.
+  const [liveScores, setLiveScores] = useState<Record<string, any>>({});
   const [editedScores, setEditedScores] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -906,6 +945,24 @@ export default function AdminScreen() {
     const init: Record<string, string> = {};
     m.forEach((match: any) => { init[match.id] = match.counter_score_text || match.score_text || ''; });
     setEditedScores(init);
+
+    // Le score enregistre EN DIRECT est la seule piece neutre du dossier :
+    // ecrite point par point pendant le match, personne ne peut la reecrire
+    // apres coup. La RLS de live_match_sessions ne l'ouvre qu'aux quatre
+    // joueurs, d'ou la RPC dediee (admin_dispute_live_score.sql).
+    //
+    // Best-effort : tant que la migration n'est pas appliquee, la colonne
+    // « Direct » reste vide et la carte le dit, au lieu de casser l'onglet.
+    if (m.length > 0) {
+      try {
+        const { data: live } = await supabase.rpc('admin_live_scores', {
+          p_match_ids: m.map((x: any) => x.id),
+        });
+        const byMatch: Record<string, any> = {};
+        for (const row of (live ?? [])) if (row?.match_id) byMatch[row.match_id] = row;
+        setLiveScores(byMatch);
+      } catch { setLiveScores({}); }
+    }
   }, []);
 
   const loadFrmt = useCallback(async () => {
@@ -1304,6 +1361,7 @@ export default function AdminScreen() {
         {tab === 'disputes' && (
           <DisputesTab
             matches={disputes}
+            liveScores={liveScores}
             editedScores={editedScores}
             setEditedScores={setEditedScores}
             loadingId={loadingId}
