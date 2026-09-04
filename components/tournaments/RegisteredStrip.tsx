@@ -7,8 +7,13 @@
 // fiche — les inscrits n'apparaissaient nulle part, seuls les joueurs SANS
 // binôme étaient listés, tout en bas.
 //
-// Les initiales empilées suffisent à répondre d'un coup d'œil ; « Voir les N »
-// déplie la liste complète sur place, sans écran ni modale de plus.
+// Les initiales empilées SUIVIES DES PRÉNOMS répondent d'un coup d'œil ;
+// « Voir les N » déplie la liste complète sur place, sans écran ni modale.
+//
+// Première version : seules les initiales, et le lien de dépliage n'apparaissait
+// qu'au-delà de cinq inscrits. À deux inscrits, on voyait donc deux ronds gris
+// et aucun moyen de savoir qui c'était — la question même à laquelle ce bloc
+// existe pour répondre.
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
@@ -69,7 +74,7 @@ export function RegisteredStrip({ people, total, children }: {
           DÉJÀ INSCRITS
         </Text>
         <View style={{ flex: 1 }} />
-        {people.length > apercu.length && (
+        {people.length > 0 && (
           <TouchableOpacity onPress={() => setOpen(o => !o)} hitSlop={8}>
             <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
               {open ? 'Réduire' : `Voir les ${people.length}`}
@@ -100,10 +105,15 @@ export function RegisteredStrip({ people, total, children }: {
               </View>
             )}
           </View>
-          <View style={{ flex: 1 }} />
-          <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
-            {assis.length} sur {total}
-            {enFile.length > 0 ? ` · ${enFile.length} en attente` : ''}
+          {/* Les NOMS, pas seulement des initiales : « qui est inscrit » est
+              la question, et deux ronds gris n'y repondent pas. Ils se
+              tronquent proprement des que la liste s'allonge, et le
+              depliage prend alors le relais. */}
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+            {people.map(p => p.name.split(' ')[0]).join(' · ')}
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+            {assis.length}/{total}
           </Text>
         </View>
       ) : (

@@ -581,10 +581,18 @@ export default function TournamentDetailScreen() {
         paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 18,
         borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
       }}>
-        <TouchableOpacity onPress={() => router.back()} style={{ alignSelf: 'flex-start' }}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Icon name="chevronLeft" size={22} color={Colors.textOnDark} stroke={2.2} />
-        </TouchableOpacity>
+        {/* Meme en-tete que la liste : retour a gauche, logo centre. La fiche
+            ne le portait pas, on ne savait plus dans quelle app on etait. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => router.back()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon name="chevronLeft" size={22} color={Colors.textOnDark} stroke={2.2} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginRight: 22 }}>
+            <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
+            <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 100, height: 22, marginLeft: -7 }} resizeMode="contain" />
+          </View>
+        </View>
         {/* Titre Fonts.welcome à contenu DYNAMIQUE : segment unique (pas de
             <Text> imbriqué, qui rendrait adjustsFontSizeToFit inopérant sur
             Android), numberOfLines=1 + adjustsFontSizeToFit + paddingRight
