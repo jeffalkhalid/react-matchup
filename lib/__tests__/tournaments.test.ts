@@ -13,7 +13,7 @@ import {
   nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, pointsScaleValid,
   DEFAULT_POINTS_SCALE, statusLabel, statusTone, canOpenCheckIn, stakeLabel,
   groupResultsByTeam, dateBucket, formatTournamentDate, homeTournamentPick,
-  monthMatrix, isoDay, timeSlots,
+  monthMatrix, isoDay, timeSlots, defaultPointsScale, resizePointsScale,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
   type TournamentMissingMatch, type TournamentResultTeamRow, type Tournament,
 } from '../tournaments';
@@ -608,5 +608,61 @@ describe('date et heure du formulaire', () => {
     const d = new Date(`${isoDay(2026, 8, 4)}T${timeSlots()[22]}`);
     expect(isNaN(d.getTime())).toBe(false);
     expect(d.getHours()).toBe(19);
+  });
+});
+
+// ── Le barème s'adapte au nombre de terrains ───────────────────────────────
+describe('bareme par rang — autant de rangs que de binomes', () => {
+  it('huit binomes : exactement le bareme du reglement', () => {
+    expect(defaultPointsScale(8)).toEqual(DEFAULT_POINTS_SCALE);
+  });
+
+  it('trois terrains = six binomes : six rangs, pas huit', () => {
+    const b = defaultPointsScale(6);
+    expect(Object.keys(b)).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(b['6']).toBe(35);
+  });
+
+  it('cinq terrains = dix binomes : dix rangs, et AUCUN ex aequo', () => {
+    // Le defaut : fn_tournament_points retombe sur le dernier seuil, donc un
+    // bareme a huit entrees donnait 15 points aux 8e, 9e et 10e.
+    const b = defaultPointsScale(10);
+    expect(Object.keys(b).length).toBe(10);
+    expect(b['8']).toBe(15);
+    expect(b['9']).toBe(14);
+    expect(b['10']).toBe(13);
+  });
+
+  it('chaque rang vaut STRICTEMENT moins que le precedent, jusqu au rang 22', () => {
+    for (const n of [4, 6, 8, 10, 12, 16, 22]) {
+      const b = defaultPointsScale(n);
+      for (let r = 2; r <= n; r++) expect(b[String(r)]).toBeLessThan(b[String(r - 1)]);
+    }
+  });
+
+  it('au-dela, ex aequo assumes : aucun bareme strict n existe sous 15 points', () => {
+    // Le serveur accepte 20 terrains = 40 binomes. Sous 15 il ne reste que
+    // quatorze entiers positifs : la stricte decroissance est impossible.
+    const b = defaultPointsScale(40);
+    expect(b['22']).toBe(1);
+    expect(b['40']).toBe(1);
+    for (let r = 2; r <= 40; r++) expect(b[String(r)]).toBeLessThanOrEqual(b[String(r - 1)]);
+  });
+
+  it('jamais zero ni negatif, meme tres loin', () => {
+    const b = defaultPointsScale(24);
+    for (const v of Object.values(b)) expect(v).toBeGreaterThan(0);
+  });
+
+  it('redimensionner GARDE ce que l organisateur a deja saisi', () => {
+    const saisi = { '1': '150', '2': '80', '3': '65', '4': '55', '5': '45', '6': '35', '7': '25', '8': '15' };
+    const plus = resizePointsScale(saisi, 10);
+    expect(plus['1']).toBe('150');          // sa valeur a lui, pas le defaut
+    expect(plus['9']).toBe('14');           // les rangs neufs prennent le defaut
+    expect(Object.keys(plus).length).toBe(10);
+
+    const moins = resizePointsScale(saisi, 6);
+    expect(moins['1']).toBe('150');
+    expect(Object.keys(moins).length).toBe(6);  // les rangs 7 et 8 disparaissent
   });
 });

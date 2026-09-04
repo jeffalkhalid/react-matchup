@@ -34,7 +34,8 @@ import {
   seatsLabel, seatsTaken, seatCount, waitlistCount, soloRegistrations, seatedTeams,
   statusLabel, statusTone, levelRangeLabel, priceLabel, formatTournamentDate, formatLabel, ROUND_MINUTES,
   nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, stakeLabel, groupResultsByTeam,
-  validateTournamentScore, matchLiveStatus, pointsScaleValid, DEFAULT_POINTS_SCALE,
+  validateTournamentScore, matchLiveStatus, pointsScaleValid,
+  defaultPointsScale, resizePointsScale, teamCount,
 } from '../../lib/tournaments';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
@@ -2035,9 +2036,20 @@ function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
   const [roundCount, setRoundCount] = useState('6');
   const [priceMad, setPriceMad] = useState('0');
   const [scale, setScale] = useState<Record<string, string>>(
-    Object.fromEntries(Object.entries(DEFAULT_POINTS_SCALE).map(([k, v]) => [k, String(v)])),
+    Object.fromEntries(Object.entries(defaultPointsScale(teamCount(4))).map(([k, v]) => [k, String(v)])),
   );
   const [saving, setSaving] = useState(false);
+
+  // Le barème suit le nombre de terrains : autant de rangs que de binômes.
+  // Sans ça, un tournoi à cinq terrains (dix binômes) laissait les rangs 9 et
+  // 10 hors barème, et `fn_tournament_points` leur donnait les points du rang
+  // 8 — trois ex æquo créés en silence. Ce que l'organisateur a déjà saisi est
+  // conservé pour les rangs qui subsistent.
+  useEffect(() => {
+    const n = parseInt(courtCount, 10);
+    if (!Number.isInteger(n) || n <= 0 || n > 20) return;
+    setScale(prev => resizePointsScale(prev, teamCount(n)));
+  }, [courtCount]);
 
   useEffect(() => {
     // Sans `error` lu, un refus réseau laissait `clubs` vide EN SILENCE — le
@@ -2198,7 +2210,7 @@ function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
           un tournoi classe, il ne punit pas.
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {Object.keys(DEFAULT_POINTS_SCALE).map(rank => (
+          {Object.keys(scale).map(rank => (
             <View key={rank} style={{ width: 70 }}>
               <Text style={sty.fieldLabel}>Rang {rank}</Text>
               <TextInput

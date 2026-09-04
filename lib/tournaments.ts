@@ -1451,3 +1451,50 @@ export function timeSlots(fromHour = 8, toHour = 23, stepMin = 30): string[] {
   }
   return out;
 }
+
+/**
+ * Le barème par défaut pour `teams` binômes — `teamCount(court_count)`.
+ *
+ * Les huit premières valeurs sont celles du règlement (100 → 15) et ne bougent
+ * pas : c'est le format de référence. Au-delà, la décroissance continue de 1
+ * en 1 — donc STRICTEMENT décroissante jusqu'au rang 22, soit onze terrains.
+ *
+ * Elle ne peut pas l'être plus loin : le serveur accepte 20 terrains (40
+ * binômes), et sous 15 points il ne reste que quatorze entiers positifs. Un
+ * barème de 40 rangs strictement décroissant sous un plafond de 15 n'existe
+ * pas. Au-delà du rang 22 tout le monde vaut 1 point — un format qui n'a
+ * jamais existé, et l'organisateur peut de toute façon tout réécrire.
+ *
+ * Pourquoi ça compte : `fn_tournament_points` retient le plus grand rang du
+ * barème inférieur ou égal au rang obtenu. Un barème à huit entrées sur un
+ * tournoi à dix binômes donnait donc 15 points aux 8ᵉ, 9ᵉ ET 10ᵉ — trois ex
+ * æquo créés en silence, sans que rien ne le signale.
+ */
+export function defaultPointsScale(teams: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (let rang = 1; rang <= Math.max(1, teams); rang++) {
+    out[String(rang)] = rang <= 8
+      ? DEFAULT_POINTS_SCALE[String(rang)]
+      : Math.max(1, 15 - (rang - 8));
+  }
+  return out;
+}
+
+/**
+ * Le barème redimensionné quand l'organisateur change le nombre de terrains,
+ * en gardant ce qu'il a déjà saisi pour les rangs qui existent encore.
+ *
+ * Les valeurs sont des chaînes : c'est l'état du formulaire, pas le barème
+ * envoyé au serveur.
+ */
+export function resizePointsScale(
+  actuel: Record<string, string>,
+  teams: number,
+): Record<string, string> {
+  const base = defaultPointsScale(teams);
+  const out: Record<string, string> = {};
+  for (const rang of Object.keys(base)) {
+    out[rang] = actuel[rang] ?? String(base[rang]);
+  }
+  return out;
+}
