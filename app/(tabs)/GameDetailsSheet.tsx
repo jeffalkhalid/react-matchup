@@ -7,12 +7,14 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
-import { Colors, formatPadelLevel, Fonts } from '../../lib/theme';
-import { lobbyGameLink } from '../../lib/community';
-import { isInviteActive, spotsLabel } from '../../lib/games';
+import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
+import { buildGameShareMessage } from '../../lib/community';
+import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange } from '../../lib/games';
 import { openInMaps, hasMapTarget } from '../../lib/maps';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
 import { Icon } from '../../components/community/icons';
+import { LiveLobbyBlock } from '../../components/live/LiveLobbyBlock';
+import { getLiveScoringEnabled, fetchLiveSession, type LiveSession } from '../../lib/liveSession';
 import type { OpenGame } from '../../types';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -244,28 +246,25 @@ function openCalendar(game: EnrichedGame) {
 
 async function shareGame(game: EnrichedGame) {
   if (!game.match_date) return;
-  const d = new Date(game.match_date);
-  const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const typeLabel = game.is_challenge ? 'Défi' : (game as any).game_format === 'friendly' ? 'Amical' : 'Compétitif';
-  const minLv = formatPadelLevel(game.min_elo ?? 0);
-  const maxLv = formatPadelLevel(game.max_elo ?? 1750);
-  // Libellé partagé (lib/games) : places dérivées des vrais joueurs, et jamais
-  // « Complet » si des invitations sont encore en attente de réponse.
-  const spotsText = spotsLabel(game);
   const creatorObj = game.creator as any;
-  const creatorLv = creatorObj ? ` (Niv. ${formatPadelLevel(creatorObj.elo_score ?? 1000)})` : '';
-  const creatorLabel = `${creatorObj?.name ?? ''}${creatorLv}`;
-  const others = (game.participants ?? [])
-    .filter((p: any) => p.status === 'accepted')
-    .map((p: any) => {
-      const pl = p.player as any;
-      const lv = pl ? ` (Niv. ${formatPadelLevel(pl.elo_score ?? 1000)})` : '';
-      return `${pl?.name ?? ''}${lv}`;
-    }).filter(Boolean);
-  const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
-  const url = lobbyGameLink(game.id);
-  const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
+  // Confirmés (hors doublon créateur) puis invitations en cours (⏳ nominatif).
+  const accepted = (game.participants ?? [])
+    .filter((p: any) => p.status === 'accepted' && p.player_id !== game.creator_id)
+    .map((p: any) => ({ name: (p.player as any)?.name, elo: (p.player as any)?.elo_score }));
+  const invited = (game.participants ?? [])
+    .filter((p: any) => isInviteActive(p) && p.player_id !== game.creator_id)
+    .map((p: any) => ({ name: (p.player as any)?.name, elo: (p.player as any)?.elo_score, pending: true }));
+  const msg = buildGameShareMessage({
+    gameId: game.id,
+    location: game.location,
+    matchDate: new Date(game.match_date),
+    kind: game.is_challenge ? 'challenge' : (game as any).game_format === 'friendly' ? 'friendly' : 'competitive',
+    stake: (game as any).stake_multiplier,
+    players: [{ name: creatorObj?.name, elo: creatorObj?.elo_score }, ...accepted, ...invited],
+    freeSpots: freeSpots(game),
+    // Même fourchette que les cartes/fiche (gameEloRange) — jamais de faux 1.0–6.0.
+    eloRange: gameEloRange(game),
+  });
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
 
@@ -290,8 +289,22 @@ export default function GameDetailsSheet({
   // dans les états « en attente / invité »). Sert à réserver le bon espace bas dans le
   // ScrollView pour que la dernière section (Les joueurs) ne reste pas sous la barre.
   const [ctaH, setCtaH] = useState(0);
+  // Score en direct : désignation du scoreur (colonne non typée dans OpenGame,
+  // comme gender_pref/stake_multiplier plus bas) + session live éventuelle.
+  const [liveScorerId, setLiveScorerId] = useState<string | null>((game as any).live_scorer_id ?? null);
+  const [liveSession, setLiveSession] = useState<LiveSession | null>(null);
+  const [liveScoringEnabled, setLiveScoringEnabled] = useState(false);
 
   useEffect(() => { setMySlot(null); }, [game.id]);
+
+  useEffect(() => { setLiveScorerId((game as any).live_scorer_id ?? null); }, [game.id, (game as any).live_scorer_id]);
+
+  // Refetch ciblé (juste la colonne live_scorer_id) après désignation/désistement
+  // du scoreur par le bloc — pas besoin de recharger toute la fiche pour ça.
+  const refetchLiveScorer = async () => {
+    const { data } = await supabase.from('open_games').select('live_scorer_id').eq('id', game.id).maybeSingle();
+    setLiveScorerId((data as any)?.live_scorer_id ?? null);
+  };
 
   const theme = getGameTheme(game);
 
@@ -330,6 +343,21 @@ export default function GameDetailsSheet({
   // une place tenue par une invitation en cours peut encore se libérer.
   // isFull continue de bloquer la jonction (anti-overbooking), lui seul.
   const confirmedFull  = isFull && invitedPlayers.length === 0;
+  // Score en direct — je ne suis concerné que si la partie est complète (4
+  // confirmés) et que j'y participe : évite toute requête live_match_sessions
+  // superflue (visiteurs, parties incomplètes) et respecte le flag admin
+  // AVANT de taper la table (jamais de requête quand le flag est éteint).
+  const liveEligible = confirmedFull && isConfirmedInGame(game, playerId);
+  useEffect(() => {
+    if (!liveEligible) { setLiveScoringEnabled(false); setLiveSession(null); return; }
+    let cancelled = false;
+    getLiveScoringEnabled().then(enabled => {
+      if (cancelled) return;
+      setLiveScoringEnabled(enabled);
+      if (enabled) fetchLiveSession(game.id).then(s => { if (!cancelled) setLiveSession(s); });
+    });
+    return () => { cancelled = true; };
+  }, [game.id, liveEligible]);
   const waitlistCount  = (game.participants ?? []).filter((p: any) => p.status === 'waitlist').length;
   const requiredVotes  = Math.min(1 + acceptedCount, 3);
 
@@ -353,8 +381,18 @@ export default function GameDetailsSheet({
   const gameDate = game.match_date ? new Date(game.match_date) : null;
   const dateStr  = gameDate ? gameDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
   const timeStr  = gameDate ? gameDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+  // minLvl/maxLvl = contrainte EXPLICITE (avertissement « hors fourchette »,
+  // jamais atteint quand la contrainte est absente : fit vaut alors 'fit').
   const minLvl   = formatPadelLevel(game.min_elo ?? 0);
   const maxLvl   = formatPadelLevel(game.max_elo ?? 1750);
+  // Fourchette AFFICHÉE : source unique gameEloRange — défi ciblé sans
+  // contrainte → dérivée des joueurs confirmés, pas de faux « 1.0 – 6.0 ».
+  const eloRange = gameEloRange(game);
+  const rangeLabel = eloRange
+    ? (formatPadelLevel(eloRange.min) === formatPadelLevel(eloRange.max)
+        ? `Niv. ${formatPadelLevel(eloRange.min)}`
+        : `Niv. ${formatPadelLevel(eloRange.min)} – ${formatPadelLevel(eloRange.max)}`)
+    : null;
   const typeLabel = game.is_challenge ? 'Défi' : (game.game_format as string) === 'friendly' ? 'Amical' : 'Compétitif';
 
   const courtHint = confirmedFull
@@ -583,10 +621,12 @@ export default function GameDetailsSheet({
             </TouchableOpacity>
             {/* Meta strip */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success }} />
-                <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '600' }}>Niv. {minLvl} – {maxLvl}</Text>
-              </View>
+              {rangeLabel && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success }} />
+                  <Text style={{ color: Colors.textMuted, fontSize: 11, fontWeight: '600' }}>{rangeLabel}</Text>
+                </View>
+              )}
               {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
                 <View style={{ backgroundColor: 'rgba(255,193,26,0.16)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
                   <Text style={{ color: '#FFC11A', fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
@@ -969,6 +1009,39 @@ export default function GameDetailsSheet({
                     );
                   })}
                 </View>
+              </View>
+            )}
+
+            {/* ── Score en direct — participants confirmés d'une partie complète ── */}
+            {/* Session 'finished' ou 'abandoned' : le live est clos, c'est le flux
+                d'après-match qui prend le relais. Ni « Suivre », ni lobby live
+                (un redémarrage échouerait sur session_already_closed). */}
+            {liveEligible && liveScoringEnabled && !(liveSession && liveSession.status !== 'live') && (
+              <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
+                {liveSession && liveSession.status === 'live' ? (
+                  <TouchableOpacity
+                    // La sheet est une <Modal> native : fermer AVANT de pousser,
+                    // sinon l'écran live monte DERRIÈRE la modale (même pattern
+                    // que openProfile).
+                    onPress={() => { onClose(); router.push(`/live/${liveSession.id}` as any); }}
+                    activeOpacity={0.8}
+                    style={{ backgroundColor: Colors.primary, borderRadius: Radius.md, padding: 14, alignItems: 'center' }}
+                  >
+                    <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontFamily: Fonts.uiBlack }}>▶ Suivre le match en direct</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <LiveLobbyBlock
+                    gameId={game.id}
+                    meId={playerId}
+                    meName={filled.find(f => f.player.id === playerId)?.player.name ?? ''}
+                    matchDate={game.match_date ?? null}
+                    liveScorerId={liveScorerId}
+                    isComplete={confirmedFull}
+                    participants={filled.map(({ player }) => ({ id: player.id, name: player.name }))}
+                    onChanged={refetchLiveScorer}
+                    onCloseSheet={onClose}
+                  />
+                )}
               </View>
             )}
 

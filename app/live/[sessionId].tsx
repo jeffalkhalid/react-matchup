@@ -636,13 +636,13 @@ export default function LiveScoreScreen() {
             <TouchableOpacity onPress={() => onScoreTap(1)} disabled={watchHasControl}
               style={[sty.gameBtn, watchHasControl && { opacity: 0.4 }]} activeOpacity={0.85}>
               <Text style={sty.gameBtnTxt} numberOfLines={1}>
-                🎾 {scoringMode === 'points' ? 'Point' : 'Jeu'} {label1}
+                + {scoringMode === 'points' ? 'Point' : 'Jeu'} {label1}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => onScoreTap(2)} disabled={watchHasControl}
               style={[sty.gameBtn, sty.gameBtnAlt, watchHasControl && { opacity: 0.4 }]} activeOpacity={0.85}>
               <Text style={[sty.gameBtnTxt, sty.gameBtnTxtAlt]} numberOfLines={1}>
-                🎾 {scoringMode === 'points' ? 'Point' : 'Jeu'} {label2}
+                + {scoringMode === 'points' ? 'Point' : 'Jeu'} {label2}
               </Text>
             </TouchableOpacity>
 
@@ -712,7 +712,10 @@ const sty = StyleSheet.create({
   // Rangée « jeu en cours » (mode points) — rendue DANS la carte blanche.
   gameRow: { alignItems: 'center', gap: 2, borderTopWidth: 1, borderTopColor: PM.divider, paddingTop: 10 },
   gameRowLabel: { fontSize: 9, fontWeight: '900', color: PM.muted, letterSpacing: 1.2, fontFamily: Fonts.uiBlack },
-  gamePoints: { fontSize: 40, lineHeight: 46, color: PM.ink, fontFamily: Fonts.welcome, paddingRight: 6 },
+  // alignSelf stretch + textAlign center : largeur CONSTANTE (celle de la carte).
+  // Sans ça, Android ne re-mesure pas le texte quand le contenu s'élargit
+  // (« 15 » → « 30 ») et coupe la fin de la ligne — le score adverse disparaissait.
+  gamePoints: { fontSize: 40, lineHeight: 46, color: PM.ink, fontFamily: Fonts.welcome, paddingRight: 6, alignSelf: 'stretch', textAlign: 'center' },
   goldenTxt: { fontSize: FontSize.xs, fontWeight: '900', color: '#A16207', fontFamily: Fonts.uiBlack },
   withdrawTxt: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '700', textDecorationLine: 'underline' },
 

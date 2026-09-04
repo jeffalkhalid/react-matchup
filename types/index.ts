@@ -74,6 +74,8 @@ export interface Match {
   loser_2?: Player;
   // Mise du défi, copiée du open_game à la saisie du score (pastille des cartes)
   stake_multiplier?: number | null;
+  // Score saisi en direct (finalize_live_session) → pastille 🔴 LIVE
+  scored_live?: boolean | null;
   game?: { location: string | null; match_date: string | null; creator_id?: string | null } | null;
 }
 

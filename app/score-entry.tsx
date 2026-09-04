@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Alert, Modal, TextInput,
+  View, Text, ScrollView, TouchableOpacity, Alert, TextInput,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -8,18 +8,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { usePlayer } from '../hooks/usePlayer';
 import { supabase } from '../lib/supabase';
-import { Colors, formatPadelLevel, Fonts } from '../lib/theme';
+import { Colors, formatPadelLevel, Fonts, eloToLevel } from '../lib/theme';
 import { Pill, type PillVariant } from '../components/Pill';
 import { CreatorCrownBadge } from '../components/CreatorCrownBadge';
 import { notifyPlayers } from '../lib/notify';
 import { isGameReadyToScore } from '../lib/games';
+import { getLiveScoringEnabled, fetchLiveSession } from '../lib/liveSession';
 import { BadgePill } from '../components/profile/BadgePill';
 import { useActiveVoteBadges } from '../components/profile/BadgeDefsProvider';
 import type { VoteBadge } from '../lib/badges';
+import { matchToView } from '../lib/matchView';
+import { MatchCard as MatchScoreCard, Avatar, LevelPill } from '../components/profile/components';
+import { PM, ACCENT, accentOf, PFonts } from '../components/profile/theme';
+import type { Match } from '../types';
 
 // ─── Constants ────────────────────────────────────────────────
-const SCORE_OPTS = [0, 1, 2, 3, 4, 5, 6, 7];
-
 type GameType = 'all' | 'competitive' | 'friendly' | 'challenge';
 
 interface SetScore { t1: number | null; t2: number | null }
@@ -80,82 +83,104 @@ function validateSet(set: SetScore): string | null {
   return null;
 }
 
-// ─── Score dropdown ───────────────────────────────────────────
-function ScoreDropdown({ label, value, onChange }: {
-  label: string; value: number | null; onChange: (v: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const insets = useSafeAreaInsets();
-  return (
-    <View style={{ alignItems: 'center', gap: 4 }}>
-      <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
-      <TouchableOpacity onPress={() => setOpen(true)} activeOpacity={0.75} style={sty.dropTrigger}>
-        <Text style={[sty.dropValue, value === null && { color: Colors.border }]}>
-          {value !== null ? String(value) : '–'}
-        </Text>
-        <Text style={{ fontSize: 9, color: Colors.textMuted, lineHeight: 10 }}>▾</Text>
-      </TouchableOpacity>
+// ─── Saisie au format carte historique ────────────────────────
+// Même visuel que la carte de match du profil/historique (équipes à gauche,
+// grille de score à droite), mais les cases de la grille sont des champs :
+// on tape le chiffre (0-7) et le focus saute à la case suivante.
+// Ligne du haut = mon équipe ; la ligne qui mène est surlignée comme sur la carte.
+const AC = accentOf(ACCENT);
+const CELL_W = 46;
 
-      <Modal visible={open} transparent animationType="fade" statusBarTranslucent>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} activeOpacity={1} onPress={() => setOpen(false)} />
-        <View style={[sty.dropSheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 14 }} />
-          <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.textSecondary, textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.8, marginBottom: 14 }}>
-            {label}
+function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, canRemoveLast }: {
+  sets: SetScore[]; meId: string;
+  myTeam: Participant[]; oppTeam: Participant[];
+  onCell: (setIdx: number, row: 0 | 1, v: number | null) => void;
+  onRemoveLast: () => void; canRemoveLast: boolean;
+}) {
+  const inputs = useRef<Record<string, TextInput | null>>({});
+
+  // Équipe qui mène = plus de sets gagnés (complets et valides uniquement).
+  let w0 = 0, w1 = 0;
+  sets.forEach(s => {
+    if (s.t1 === null || s.t2 === null || validateSet(s)) return;
+    if (s.t1 > s.t2) w0++; else w1++;
+  });
+  const leadRow: 0 | 1 | null = w0 === w1 ? null : w0 > w1 ? 0 : 1;
+
+  const focusNext = (i: number, row: 0 | 1) => {
+    inputs.current[row === 0 ? `${i}-1` : `${i + 1}-0`]?.focus();
+  };
+
+  const renderPlayer = (p: Participant, team: 0 | 1) => {
+    const me = p.id === meId;
+    return (
+      <View key={p.id} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+        <Avatar name={p.name} size={28} me={me} team={team} />
+        <View style={{ minWidth: 0, gap: 2 }}>
+          <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: me ? '800' : '600', color: PM.text, maxWidth: 90 }}>
+            {p.name.split(' ')[0]}
           </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
-            {SCORE_OPTS.map(n => {
-              const sel = value === n;
-              return (
-                <TouchableOpacity key={n} onPress={() => { onChange(n); setOpen(false); }}
-                  style={[sty.dropItem, sel && sty.dropItemSel]} activeOpacity={0.75}>
-                  <Text style={[sty.dropItemTxt, sel && sty.dropItemTxtSel]}>{n}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <LevelPill lvl={p.elo_score ? eloToLevel(p.elo_score) : undefined} />
         </View>
-      </Modal>
-    </View>
-  );
-}
+      </View>
+    );
+  };
 
-// ─── Score set input ──────────────────────────────────────────
-function SetRow({ idx, set, onChange, onRemove, canRemove }: {
-  idx: number; set: SetScore;
-  onChange: (s: SetScore) => void;
-  onRemove: () => void; canRemove: boolean;
-}) {
-  const err = validateSet(set);
-  const complete = set.t1 !== null && set.t2 !== null;
-  const valid = complete && !err;
+  const renderCell = (i: number, row: 0 | 1) => {
+    const v = row === 0 ? sets[i].t1 : sets[i].t2;
+    const lead = leadRow === row;
+    return (
+      <TextInput
+        key={`${i}-${row}`}
+        ref={r => { inputs.current[`${i}-${row}`] = r; }}
+        value={v === null ? '' : String(v)}
+        onChangeText={txt => {
+          const d = txt.replace(/[^0-7]/g, '').slice(-1);
+          if (d === '') { onCell(i, row, null); return; }
+          onCell(i, row, Number(d));
+          focusNext(i, row);
+        }}
+        keyboardType="number-pad"
+        selectTextOnFocus
+        placeholder="–"
+        placeholderTextColor={PM.faint}
+        style={{
+          width: CELL_W, paddingVertical: 10, textAlign: 'center',
+          fontFamily: PFonts.anton, fontSize: 19,
+          color: lead ? ACCENT : PM.muted,
+          backgroundColor: lead ? AC.soft : 'transparent',
+          borderRightWidth: i < sets.length - 1 ? 1 : 0, borderRightColor: PM.divider,
+          borderBottomWidth: row === 0 ? 1 : 0, borderBottomColor: PM.divider,
+        }}
+      />
+    );
+  };
 
   return (
-    <View style={{ marginBottom: 8 }}>
-      <View style={[
-        sty.setRow,
-        complete && (valid ? { borderColor: '#6ee7b7' } : { borderColor: '#fca5a5' }),
-      ]}>
-        <Text style={sty.setLabel}>Set {idx + 1}</Text>
-        <View style={sty.setPickersWrap}>
-          <ScoreDropdown label="Vous" value={set.t1} onChange={v => onChange({ ...set, t1: v })} />
-          <Text style={sty.dash}>–</Text>
-          <ScoreDropdown label="Adv." value={set.t2} onChange={v => onChange({ ...set, t2: v })} />
-        </View>
-        {valid
-          ? <Text style={{ fontSize: 16, color: Colors.success }}>✓</Text>
-          : canRemove
-            ? <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ color: Colors.border, fontSize: 16, fontWeight: '700' }}>✕</Text>
+    <View style={{ backgroundColor: PM.card, borderRadius: 18, borderWidth: 1, borderColor: PM.border, padding: 12 }}>
+      {/* Libellés des sets, alignés sur les colonnes de la grille */}
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 4, paddingRight: 1 }}>
+        {sets.map((_, i) => (
+          <View key={i} style={{ width: CELL_W, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+            <Text style={{ fontSize: 8.5, fontWeight: '900', letterSpacing: 0.4, color: PM.faint }}>SET {i + 1}</Text>
+            {canRemoveLast && i === sets.length - 1 && (
+              <TouchableOpacity onPress={onRemoveLast} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
+                <Text style={{ fontSize: 10, fontWeight: '900', color: PM.faint }}>✕</Text>
               </TouchableOpacity>
-            : null
-        }
+            )}
+          </View>
+        ))}
       </View>
-      {err && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginLeft: 6 }}>
-          <Text style={{ fontSize: 12, color: Colors.danger, fontWeight: '700' }}>⚠ {err}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>{myTeam.map(p => renderPlayer(p, 0))}</View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>{oppTeam.map(p => renderPlayer(p, 1))}</View>
         </View>
-      )}
+        <View style={{ borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: PM.border, backgroundColor: '#FBFBFA' }}>
+          <View style={{ flexDirection: 'row' }}>{sets.map((_, i) => renderCell(i, 0))}</View>
+          <View style={{ flexDirection: 'row' }}>{sets.map((_, i) => renderCell(i, 1))}</View>
+        </View>
+      </View>
     </View>
   );
 }
@@ -210,6 +235,12 @@ export default function ScoreEntryScreen() {
 
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
+  // gameId -> session id, uniquement pour les sessions live actives (flag
+  // live_scoring_enabled). Flag éteint ⇒ jamais peuplé, jamais de requête.
+  const [liveSessionByGame, setLiveSessionByGame] = useState<Record<string, string>>({});
+  // gameId -> brouillon de sets issu d'une session live ABANDONNÉE : le travail
+  // du scoreur n'est pas perdu, il est pré-rempli dans la saisie classique.
+  const [abandonedSetsByGame, setAbandonedSetsByGame] = useState<Record<string, { t1: number; t2: number }[]>>({});
   // Badges votables = badge_defs actifs (source unique, pilotée par l'admin) ; MVP exclu du vote.
   const badges = useActiveVoteBadges().filter(b => b.key !== 'MVP');
   const [search, setSearch] = useState('');
@@ -233,6 +264,9 @@ export default function ScoreEntryScreen() {
   const [sets, setSets] = useState<SetScore[]>([{ t1: null, t2: null }]);
   const [votes, setVotes] = useState<Record<string, string[]>>({});
   const [contestReason, setContestReason] = useState('');
+  // Mode contestation : ligne `matches` complète du score contesté, pour le
+  // rappel du match via la carte standard (source unique matchToView + <MatchCard>).
+  const [contestMatch, setContestMatch] = useState<Match | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const fetchGames = useCallback(async () => {
@@ -306,18 +340,44 @@ export default function ScoreEntryScreen() {
 
     setGames(enriched);
     setLoading(false);
+
+    // Masquage des parties en live actif — derrière le flag : zéro requête
+    // live_match_sessions si désactivé.
+    setLiveSessionByGame({});
+    setAbandonedSetsByGame({});
+    if (await getLiveScoringEnabled()) {
+      const sessions = await Promise.all(enriched.map(g => fetchLiveSession(g.id)));
+      const byGame: Record<string, string> = {};
+      const draftByGame: Record<string, { t1: number; t2: number }[]> = {};
+      sessions.forEach((s, i) => {
+        if (s?.status === 'live') { byGame[enriched[i].id] = s.id; return; }
+        if (s?.status !== 'abandoned') return;
+        // Sets terminés + set courant s'il n'est pas vierge, plafonnés au max
+        // de l'UI (3 sets).
+        const all = s.current_state?.sets ?? [];
+        const done = all.slice(0, -1);
+        const cur = all[all.length - 1];
+        const draft = [...done, ...(cur && (cur.t1 > 0 || cur.t2 > 0) ? [cur] : [])].slice(0, 3);
+        if (draft.length > 0) draftByGame[enriched[i].id] = draft.map(x => ({ t1: x.t1, t2: x.t2 }));
+      });
+      setLiveSessionByGame(byGame);
+      setAbandonedSetsByGame(draftByGame);
+    }
   }, [player]);
 
   const loadContestGame = useCallback(async () => {
     if (!player || !contestMatchId) return;
     setLoading(true);
+    // Mêmes jointures que le lobby (MATCH_SELECT) : la ligne complète alimente
+    // le rappel du match (matchToView) ET la construction du Game ci-dessous.
     const { data: match } = await supabase
       .from('matches')
-      .select('game_id, game_format, is_challenge, winner:winner_id(id, name, elo_score), winner_2:winner_id_2(id, name, elo_score), loser:loser_id(id, name, elo_score), loser_2:loser_id_2(id, name, elo_score)')
+      .select('*, winner:winner_id(id, name, deleted_at, elo_score), winner_2:winner_id_2(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score), game:game_id(location, match_date, creator_id)')
       .eq('id', contestMatchId)
       .single();
 
     if (match) {
+      setContestMatch(match as unknown as Match);
       // team_side synthétique : vainqueurs = équipe A, perdants = équipe B, pour
       // que defaultPartnerId retrouve le bon coéquipier en mode contestation.
       const SIDES: Record<number, string> = { 0: 'A_GAU', 1: 'A_DRO', 2: 'B_GAU', 3: 'B_DRO' };
@@ -325,16 +385,8 @@ export default function ScoreEntryScreen() {
         .map((p: any, i: number) => (p ? { id: p.id, name: p.name ?? '?', elo_score: p.elo_score ?? 0, team_side: SIDES[i] } : null))
         .filter(Boolean) as Participant[];
 
-      let location = '—';
-      let match_date = new Date().toISOString();
-      if ((match as any).game_id) {
-        const { data: game } = await supabase
-          .from('open_games')
-          .select('location, match_date')
-          .eq('id', (match as any).game_id)
-          .single();
-        if (game) { location = game.location ?? '—'; match_date = game.match_date; }
-      }
+      const location = (match as any).game?.location ?? '—';
+      const match_date = (match as any).game?.match_date ?? (match as any).created_at ?? new Date().toISOString();
 
       setGames([{
         id: (match as any).game_id ?? contestMatchId,
@@ -383,7 +435,11 @@ export default function ScoreEntryScreen() {
     setScoringId(game.id);
     setPartnerId(defaultPartnerId(game, player?.id ?? ''));
     setPartnerChanged(false);
-    setSets([{ t1: null, t2: null }, { t1: null, t2: null }]);
+    // Suivi live abandonné : on repart du score déjà saisi jeu par jeu.
+    const draft = abandonedSetsByGame[game.id];
+    setSets(draft && draft.length > 0
+      ? draft.map(s => ({ t1: s.t1, t2: s.t2 } as SetScore))
+      : [{ t1: null, t2: null }, { t1: null, t2: null }]);
     setVotes({});
     setContestReason('');
   };
@@ -621,6 +677,17 @@ export default function ScoreEntryScreen() {
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 32 }}>
 
+        {/* Mode contestation : rappel du match contesté via la carte standard
+            (source unique matchToView + <MatchCard>) — score soumis, joueurs, lieu, date. */}
+        {!loading && !!contestMatchId && !!contestMatch && !!player && (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={sty.sectionLabel}>📋 Score soumis — c'est lui que tu contestes</Text>
+            <View style={{ marginTop: 8 }}>
+              <MatchScoreCard m={matchToView(contestMatch, player.id)} showDelta={false} showActions={false} />
+            </View>
+          </View>
+        )}
+
         {loading ? (
           <View style={sty.emptyBox}>
             <ActivityIndicator color={Colors.primary} />
@@ -636,12 +703,26 @@ export default function ScoreEntryScreen() {
             </Text>
           </View>
         ) : filteredGames.map(game => {
+          const liveSessionId = liveSessionByGame[game.id];
+          if (liveSessionId) {
+            return (
+              <TouchableOpacity
+                key={game.id}
+                style={[sty.gameCard, { padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }]}
+                activeOpacity={0.8}
+                onPress={() => router.push(`/live/${liveSessionId}` as any)}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '800', color: Colors.textPrimary, fontFamily: Fonts.uiBold, flex: 1 }} numberOfLines={1}>
+                  🔴 Score en direct en cours — {game.location}
+                </Text>
+              </TouchableOpacity>
+            );
+          }
           const isScoring = scoringId === game.id;
           const others = game.participants.filter(p => p.id !== player?.id);
           const partner = game.participants.find(p => p.id === partnerId);
           const oppCount = others.filter(p => p.id !== partnerId).length;
           const activeSets = sets.filter(s => s.t1 !== null && s.t2 !== null) as { t1: number; t2: number }[];
-          const scorePreview = activeSets.map(s => `${s.t1}-${s.t2}`).join(' / ');
           // Doubles obligatoire : partenaire sélectionné + exactement 2 adversaires
           const canSubmit = activeSets.length >= 2 && !!partnerId && oppCount === 2 && !submitting;
 
@@ -771,10 +852,10 @@ export default function ScoreEntryScreen() {
                     )}
                   </View>
 
-                  {/* Score sets */}
+                  {/* Score — saisie directe dans la carte au format historique */}
                   <View style={{ marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <Text style={sty.sectionLabel}>Score (tes points en premier)</Text>
+                      <Text style={sty.sectionLabel}>Score — remplis les cases</Text>
                       {sets.length < 3 && (
                         <TouchableOpacity onPress={() => setSets(prev => [...prev, { t1: null, t2: null }])}
                           style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
@@ -782,22 +863,27 @@ export default function ScoreEntryScreen() {
                         </TouchableOpacity>
                       )}
                     </View>
-                    {sets.map((s, i) => (
-                      <SetRow key={i} idx={i} set={s}
-                        onChange={ns => setSets(prev => prev.map((x, j) => j === i ? ns : x))}
-                        onRemove={() => setSets(prev => prev.filter((_, j) => j !== i))}
-                        canRemove={sets.length > 1}
-                      />
-                    ))}
+                    <ScoreCardEntry
+                      sets={sets}
+                      meId={player?.id ?? ''}
+                      myTeam={[
+                        ...(player ? [{ id: player.id, name: player.name, elo_score: player.elo_score ?? 0 }] : []),
+                        ...(partner ? [partner] : []),
+                      ]}
+                      oppTeam={others.filter(p => p.id !== partnerId)}
+                      onCell={(i, row, v) => setSets(prev => prev.map((s, j) => j === i ? (row === 0 ? { ...s, t1: v } : { ...s, t2: v }) : s))}
+                      onRemoveLast={() => setSets(prev => prev.slice(0, -1))}
+                      canRemoveLast={sets.length > 1}
+                    />
+                    {sets.map((s, i) => {
+                      const err = validateSet(s);
+                      return err ? (
+                        <Text key={i} style={{ fontSize: 12, color: Colors.danger, fontWeight: '700', marginTop: 6, marginLeft: 6 }}>
+                          ⚠ Set {i + 1} : {err}
+                        </Text>
+                      ) : null;
+                    })}
                   </View>
-
-                  {/* Score preview */}
-                  {scorePreview && (
-                    <View style={sty.previewBox}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: 2 }}>Score</Text>
-                      <Text style={{ fontSize: 22, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.5, fontFamily: Fonts.uiBlack }}>{scorePreview}</Text>
-                    </View>
-                  )}
 
                   {/* Badges */}
                   {others.length > 0 && badges.length > 0 && (
@@ -882,35 +968,6 @@ const sty = StyleSheet.create({
     padding: 16,
   },
   sectionLabel: { fontSize: 11, fontWeight: '900', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, fontFamily: Fonts.uiBlack },
-  setRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.bgCard, borderRadius: 14, padding: 12,
-    marginBottom: 8, borderWidth: 1, borderColor: Colors.border,
-  },
-  setLabel: { fontSize: 11, fontWeight: '800', color: Colors.textMuted, width: 36 },
-  setPickersWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, justifyContent: 'center' },
-  dash: { fontSize: 20, fontWeight: '900', color: Colors.border },
-  dropTrigger: {
-    width: 58, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, gap: 2,
-  },
-  dropValue: { fontSize: 24, fontWeight: '900', color: Colors.textPrimary, lineHeight: 28 },
-  dropSheet: {
-    backgroundColor: Colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 24, paddingTop: 16,
-    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -4 }, elevation: 12,
-  },
-  dropItem: {
-    width: 64, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.bg, borderWidth: 1.5, borderColor: Colors.border,
-  },
-  dropItemSel: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  dropItemTxt: { fontSize: 22, fontWeight: '900', color: Colors.textSecondary },
-  dropItemTxtSel: { color: Colors.textOnDark },
-  previewBox: {
-    backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.primary,
-    padding: 14, alignItems: 'center', marginBottom: 16,
-  },
   partnerChip: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
@@ -924,9 +981,10 @@ const sty = StyleSheet.create({
     padding: 12, marginBottom: 10,
   },
   badgeBtn: {
-    alignItems: 'center', gap: 4, padding: 10, borderRadius: 14,
+    alignItems: 'center', gap: 4, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 14,
     borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.bgCard,
-    width: 72,
+    // 4 colonnes (2 lignes pour 8 badges) : largeur relative au conteneur, gap 8 absorbé.
+    flexBasis: '22%', flexGrow: 1, maxWidth: '23.5%',
   },
   badgeBtnSel: { borderColor: Colors.brand, backgroundColor: 'rgba(255,193,26,0.14)' },
   badgeTxt: { fontSize: 8, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', textAlign: 'center', letterSpacing: 0.3, fontFamily: Fonts.uiBlack },

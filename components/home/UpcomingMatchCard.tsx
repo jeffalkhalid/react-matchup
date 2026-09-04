@@ -4,13 +4,16 @@
 // NB : l'occupation des places dérive des participants via occupiesSpot
 // (jamais de check de status brut — cf. project_status_checks_isinviteactive) ;
 // spots_available (compteur fragile) n'est pas utilisé ici.
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
-import { occupiesSpot } from '../../lib/games';
+import { occupiesSpot, gameEloRange } from '../../lib/games';
 import { matchNature } from '../../lib/matchView';
 import { NaturePill } from '../profile/components';
 import { Icon } from '../community/icons';
+import { getLiveScoringEnabled, fetchLiveSession } from '../../lib/liveSession';
+import { LiveDot } from '../live/LiveDot';
 import type { OpenGame } from '../../types';
 
 const VIOLET = '#8B5CF6';
@@ -104,14 +107,43 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
   onFindGame: () => void;      // état vide → Explorer
   compact?: boolean;           // petits écrans : typo/paddings réduits pour tenir sans scroll
 }) {
+  const router = useRouter();
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
+
+  // Badge « 🔴 LIVE » : uniquement si le flag est actif ET qu'une session live
+  // existe pour cette partie. Flag éteint ⇒ aucune requête live_match_sessions.
+  useEffect(() => {
+    let cancelled = false;
+    setLiveSessionId(null);
+    const gameId = game?.id;
+    if (!gameId) return;
+    (async () => {
+      const enabled = await getLiveScoringEnabled();
+      if (!enabled || cancelled) return;
+      const session = await fetchLiveSession(gameId);
+      if (cancelled) return;
+      setLiveSessionId(session?.status === 'live' ? session.id : null);
+    })();
+    return () => { cancelled = true; };
+  }, [game?.id]);
+
   const date = game?.match_date ? new Date(game.match_date) : null;
   const teams = game ? buildTeams(game) : null;
+  // Fourchette de niveau — même source unique que les cartes lobby / fiche
+  // (gameEloRange) : contrainte explicite si présente, sinon dérivée des
+  // joueurs confirmés (défi ciblé). Bornes égales → valeur seule.
+  const range = game ? gameEloRange(game) : null;
+  const rangeLabel = range
+    ? (eloToLevel(range.min).toFixed(1) === eloToLevel(range.max).toFixed(1)
+        ? `Niv. ${eloToLevel(range.min).toFixed(1)}`
+        : `Niv. ${eloToLevel(range.min).toFixed(1)} – ${eloToLevel(range.max).toFixed(1)}`)
+    : null;
   const slots = (team: SlotPlayer[], size: number): (SlotPlayer | null)[] =>
     [...team, ...Array(Math.max(0, size - team.length)).fill(null)];
 
   return (
     <TouchableOpacity
-      onPress={game ? onOpenDetails : onFindGame}
+      onPress={game ? (liveSessionId ? () => router.push(`/live/${liveSessionId}` as any) : onOpenDetails) : onFindGame}
       activeOpacity={0.9}
       style={{
         backgroundColor: Colors.bgCard, borderRadius: 22,
@@ -166,8 +198,14 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
                 {game.location || 'Lieu à définir'}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, alignSelf: 'flex-start' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, alignSelf: 'flex-start' }}>
+                {liveSessionId && <LiveDot />}
                 <NaturePill {...matchNature(game)} />
+                {rangeLabel && (
+                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: Colors.textMuted }}>
+                    {rangeLabel}
+                  </Text>
+                )}
               </View>
             </View>
 

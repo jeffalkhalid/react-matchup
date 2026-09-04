@@ -11,20 +11,21 @@ import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, padelLevelToElo, getLeague, Fonts } from '../../lib/theme';
 import { notifyPlayers } from '../../lib/notify';
-import { notifyMatchingAlerts, lobbyGameLink, playerStoryLink, SHARE_LABEL } from '../../lib/community';
+import { notifyMatchingAlerts, lobbyGameLink, playerStoryLink, SHARE_LABEL, buildGameShareMessage } from '../../lib/community';
 import { getHiddenPlayerIds } from '../../lib/moderation';
 import { displayName } from '../../lib/players';
 import { buildStoryMatch } from '../../components/story/storyTheme';
 import StoryComposerV2 from '../../components/StoryComposerV2';
 import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
 import type { OpenGame, Match } from '../../types';
-import { MatchCard as MatchScoreCard } from '../../components/profile/components';
+import { MatchCard as MatchScoreCard, MatchTeamsScore } from '../../components/profile/components';
 import { matchToView } from '../../lib/matchView';
 import GameDetailsSheet from './GameDetailsSheet';
 import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
+import { LiveDot } from '../../components/live/LiveDot';
 import { HeaderActions } from '../../components/HeaderActions';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, SCORE_WINDOW_MS } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { openInMaps } from '../../lib/maps';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
@@ -65,17 +66,9 @@ function getGameType(game: OpenGame): 'challenge' | 'friendly' | 'competitive' {
   return 'competitive';
 }
 
-// Places libres = dérivées des vrais joueurs (créateur + acceptés/invités, sur 4
-// au padel), PAS du compteur stocké open_games.spots_available qui peut dériver
-// (le décrément était oublié sur l'approbation pending→accepted). Auto-réparant :
-// colle toujours aux slots affichés. Repli sur le compteur si participants absents.
-function freeSpots(game: OpenGame): number {
-  if (!game.participants) return game.spots_available ?? 0;
-  const occupied = 1 + game.participants.filter(
-    (p: any) => occupiesSpot(p) && p.player_id !== game.creator_id,
-  ).length;
-  return Math.max(0, 4 - occupied);
-}
+// Places libres : lib/games.freeSpots (source unique, dérivée des vrais joueurs
+// — jamais du compteur spots_available). L'ancienne copie locale identique a
+// été supprimée au profit de l'import.
 
 function fmtLevel(elo: number): string {
   return eloToLevel(elo).toFixed(1);
@@ -268,7 +261,7 @@ function SegmentControl<T extends string>({ options, value, onChange }: {
             {o.icon && active && (
               <Icon name={o.icon} size={13} color={Colors.textOnDark} stroke={2.2} />
             )}
-            <Text numberOfLines={1} style={{
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{
               color: active ? Colors.textOnDark : Colors.textPrimary,
               fontFamily: Fonts.uiExtraBold, fontSize: 12,
             }}>
@@ -618,28 +611,25 @@ function openCalendar(game: EnrichedGame) {
 
 async function shareGame(game: EnrichedGame) {
   if (!game.match_date) return;
-  const d = new Date(game.match_date);
-  const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const typeLabel = game.is_challenge ? 'Défi' : (game as any).game_format === 'friendly' ? 'Amical' : 'Compétitif';
-  const minLv = fmtLevel(game.min_elo ?? 0);
-  const maxLv = fmtLevel(game.max_elo ?? 1750);
-  // Libellé partagé (lib/games) : jamais « Complet » si des invitations sont
-  // encore en attente de réponse — cf. spotsLabel.
-  const spotsText = spotsLabel(game);
   const creatorObj = game.creator as any;
-  const creatorLv = creatorObj ? ` (Niv. ${fmtLevel(creatorObj.elo_score ?? 1000)})` : '';
-  const creatorLabel = `${creatorObj?.name ?? ''}${creatorLv}`;
-  const others = (game.participants ?? [])
-    .filter(p => p.status === 'accepted')
-    .map(p => {
-      const pl = p.player as any;
-      const lv = pl ? ` (Niv. ${fmtLevel(pl.elo_score ?? 1000)})` : '';
-      return `${pl?.name ?? ''}${lv}`;
-    }).filter(Boolean);
-  const playersLine = others.length ? `\n👥 ${others.join(', ')}` : '';
-  const url = lobbyGameLink(game.id);
-  const msg = `Match Padel – ${typeLabel}\n👤 Organisé par ${creatorLabel}${playersLine}\n📅 ${dateStr} à ${timeStr}\n📍 ${game.location ?? ''}\n📊 Niveau : ${minLv} – ${maxLv}\n🟢 ${spotsText}\n🔗 ${url}`;
+  // Confirmés (hors doublon créateur) puis invitations en cours (⏳ nominatif).
+  const accepted = (game.participants ?? [])
+    .filter(p => p.status === 'accepted' && p.player_id !== game.creator_id)
+    .map(p => ({ name: (p.player as any)?.name, elo: (p.player as any)?.elo_score }));
+  const invited = (game.participants ?? [])
+    .filter(p => isInviteActive(p) && p.player_id !== game.creator_id)
+    .map(p => ({ name: (p.player as any)?.name, elo: (p.player as any)?.elo_score, pending: true }));
+  const msg = buildGameShareMessage({
+    gameId: game.id,
+    location: game.location,
+    matchDate: new Date(game.match_date),
+    kind: game.is_challenge ? 'challenge' : (game as any).game_format === 'friendly' ? 'friendly' : 'competitive',
+    stake: (game as any).stake_multiplier,
+    players: [{ name: creatorObj?.name, elo: creatorObj?.elo_score }, ...accepted, ...invited],
+    freeSpots: freeSpots(game),
+    // Même fourchette que les cartes/fiche (gameEloRange) — jamais de faux 1.0–6.0.
+    eloRange: gameEloRange(game),
+  });
   try { await Share.share({ message: msg }); } catch { /* cancelled */ }
 }
 
@@ -677,10 +667,21 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
       return nm && p.player_id !== game.creator_id ? [{ id: p.player_id, name: nm, team: teamOf((p as any).team_side) }] : [];
     }),
   ];
-  const levelRange = (game.min_elo || game.max_elo)
-    ? `${fmtLevel(game.min_elo ?? 0)} – ${fmtLevel(game.max_elo ?? 9999)}`
+  // Fourchette via gameEloRange (source unique) : défi ciblé sans contrainte →
+  // fourchette dérivée des joueurs confirmés. Bornes égales → valeur seule.
+  const eloRange = gameEloRange(game);
+  const levelRange = eloRange
+    ? (fmtLevel(eloRange.min) === fmtLevel(eloRange.max)
+        ? fmtLevel(eloRange.min)
+        : `${fmtLevel(eloRange.min)} – ${fmtLevel(eloRange.max)}`)
     : null;
   const dt = game.match_date ? splitDate(game.match_date) : null;
+
+  // Voyant « EN COURS » : match en train de se jouer, entre l'heure de début
+  // et +90 min (même fenêtre que le maintien dans « À venir »).
+  const startMs = game.match_date ? new Date(game.match_date).getTime() : null;
+  const isOngoing = variant === 'upcoming' && startMs != null
+    && Date.now() >= startMs && Date.now() < startMs + 90 * 60_000;
 
   const showInlineSlots = variant !== 'history' && !!playerId;
 
@@ -749,6 +750,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
         )}
         <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 8, paddingVertical: 10, gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+          {isOngoing && <LiveDot s={ps} />}
           <TypePill game={game} s={ps} />
           {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
             <CardTag bg={Colors.brand} fg={Colors.textOnBrand} s={ps}
@@ -1029,46 +1031,56 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
             ) : visible.map(m => {
               const isValidated = validatedIds.has(m.id);
               const isValidating = validatingId === m.id;
-              const won = m.winner_id === playerId || m.winner_id_2 === playerId;
-
-              // Contexte du match (lieu · date) — pour savoir QUELLE partie on valide.
-              const loc = m.game?.location;
-              const md = m.game?.match_date;
-              const metaLine = (loc || md) ? (
-                <Text style={{ fontSize: 11, fontWeight: '600', color: Colors.textMuted, marginBottom: 10 }} numberOfLines={1}>
-                  {loc ? `📍 ${loc}` : ''}{loc && md ? '  ·  ' : ''}{md ? `📅 ${formatDate(md)}` : ''}
-                </Text>
-              ) : null;
 
               // ── Score contesté que J'AI soumis : résolution (accepter / litige) ──
+              // Rappel du match via la MÊME carte que l'historique (source unique
+              // matchToView + <MatchCard>) : lieu, date et les 4 joueurs visibles.
               if (!isValidated && matchNeedsMyAction(m, playerId) === 'resolve') {
                 const iWonCounter = m.counter_winner_id === playerId || m.counter_winner_id_2 === playerId;
+                // Auteur de la contestation (counter_by) — forcément l'un des 4
+                // joueurs déjà joints sur la ligne match.
+                const contester = [m.winner, m.winner_2, m.loser, m.loser_2]
+                  .find(p => p?.id === m.counter_by);
+                const contesterName = contester ? displayName(contester, 'opponent') : null;
                 return (
-                  <View key={m.id} style={{
-                    backgroundColor: Colors.bgCard,
-                    borderWidth: 1, borderColor: 'rgba(245,158,11,0.55)',
-                    borderRadius: 14, padding: 14, marginBottom: 10,
-                  }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <View key={m.id} style={{ marginBottom: 10 }}>
+                  <MatchScoreCard
+                    m={matchToView(m, playerId)}
+                    showDelta={false}
+                    footer={
+                  <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Pill variant="warning">⚠️ Score contesté</Pill>
+                      <Text style={{ flex: 1, fontSize: 10, fontWeight: '600', color: Colors.textMuted }} numberOfLines={1}>
+                        La grille ci-dessus = ton score
+                      </Text>
                     </View>
-                    {metaLine}
-                    <View style={{ gap: 8, marginBottom: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary }}>Ton score</Text>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: won ? '#047857' : '#B91C1C' }}>
-                          {m.score_text} · {won ? 'victoire' : 'défaite'}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary }}>Leur version</Text>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: iWonCounter ? '#047857' : '#B91C1C' }}>
-                          {m.counter_score_text} · {iWonCounter ? 'victoire' : 'défaite'}
-                        </Text>
-                      </View>
+                    <View style={{ gap: 8 }}>
+                      {/* Leur version au MÊME format que la carte : noms des joueurs
+                          + grille, mon-équipe-en-haut (via matchToView du contre-score). */}
+                      {(() => {
+                        const cv = matchToView(applyCounterLocally(m), playerId);
+                        return (
+                          <View style={{ gap: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textSecondary }} numberOfLines={1}>
+                                {contesterName ? `Version de ${contesterName}` : 'Leur version'}
+                              </Text>
+                              {/* Résultat DU LECTEUR selon le contre-score — le
+                                  contestataire peut ne contester que les sets. */}
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: iWonCounter ? '#047857' : '#B91C1C' }}>
+                                {iWonCounter ? 'Victoire pour toi' : 'Défaite pour toi'}
+                              </Text>
+                            </View>
+                            <MatchTeamsScore m={cv} />
+                          </View>
+                        );
+                      })()}
                       {!!m.counter_reason && (
                         <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: 2 }}>Motif de la contestation</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: 2 }}>
+                            Motif de la contestation{contesterName ? ` — ${contesterName}` : ''}
+                          </Text>
                           <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.textPrimary, fontStyle: 'italic' }}>
                             « {m.counter_reason} »
                           </Text>
@@ -1121,6 +1133,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                         </View>
                       </View>
                     ) : (
+                      <>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity
                           onPress={() => handleResolveAccept(m)}
@@ -1147,7 +1160,15 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                           <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#B91C1C' }}>⚖️ Maintenir (litige)</Text>
                         </TouchableOpacity>
                       </View>
+                      {/* Miroir du cron auto_accept_counter_scores (24 h) — tenir synchro. */}
+                      <Text style={{ fontSize: 10.5, color: Colors.textMuted, fontWeight: '600', textAlign: 'center' }}>
+                        Sans réponse sous 24 h, le score corrigé sera accepté automatiquement.
+                      </Text>
+                      </>
                     )}
+                  </View>
+                    }
+                  />
                   </View>
                 );
               }
@@ -1600,14 +1621,25 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         </ModePill>
       </ScrollView>
 
-      {/* Type chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 12, gap: 8 }}>
-        <TypeChip active={typeFilter === 'all'} onPress={() => setTypeFilter('all')}>Tous</TypeChip>
-        <TypeChip active={typeFilter === 'competitive'} onPress={() => setTypeFilter('competitive')}>Compétitif</TypeChip>
-        <TypeChip active={typeFilter === 'friendly'} onPress={() => setTypeFilter('friendly')}>Amical</TypeChip>
-        <TypeChip active={typeFilter === 'challenge'} onPress={() => setTypeFilter('challenge')}>Défi</TypeChip>
-      </ScrollView>
+      {/* Type de match — segmenté Tous / Compétitif / Amical / Défi */}
+      <View style={{ marginBottom: 14 }}>
+        <Text style={{
+          fontSize: 11, fontWeight: '900', color: Colors.textPrimary,
+          letterSpacing: 1.5, textTransform: 'uppercase',
+          paddingHorizontal: 14, marginBottom: 8,
+        }}>
+          Type de match
+        </Text>
+        <SegmentControl<TypeFilter>
+          value={typeFilter} onChange={setTypeFilter}
+          options={[
+            { v: 'all',         label: 'Tous' },
+            { v: 'competitive', label: 'Compétitif' },
+            { v: 'friendly',    label: 'Amical' },
+            { v: 'challenge',   label: 'Défi', icon: 'swords' },
+          ]}
+        />
+      </View>
 
       {/* Niveau des parties — segmenté Mon niveau / Hors mon niveau / Tous */}
       <View style={{ marginBottom: 14 }}>
@@ -1618,7 +1650,14 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
         }}>
           Niveau des parties
         </Text>
-        <LevelSegment value={levelFilter} onChange={setLevelFilter} />
+        <SegmentControl<LevelFilter>
+          value={levelFilter} onChange={setLevelFilter}
+          options={[
+            { v: 'mine',    label: 'Mon niveau', icon: 'racket' },
+            { v: 'outside', label: 'Hors mon niveau' },
+            { v: 'all',     label: 'Tous' },
+          ]}
+        />
       </View>
 
       {/* "Pour toi" — pile verticale des parties à ton niveau */}
@@ -2287,10 +2326,18 @@ export default function LobbyScreen() {
     // pas déjà scoré, et j'y ai joué (créateur ou accepté).
     const readyToScore = (g: EnrichedGame) => isGameReadyToScore(g, player.id, scoredGameIds);
 
+    // Fenêtre étendue à match_date + 1 h 30 : pendant le match, la partie reste
+    // dans « À venir » (accès à la fiche → score en direct) ; à +1 h 30,
+    // readyToScore la bascule dans « Le score ». Couper à l'heure pile la
+    // rendait introuvable pendant qu'on la joue.
+    // Score déjà soumis (live finalisé ou saisie classique) ⇒ la partie quitte
+    // « À venir » immédiatement, sans attendre le cap +1 h 30 : elle vit
+    // désormais côté « Le score » (validation / contestation).
     setUpcomingGames(allUpcoming.filter(g =>
       (g as any).status !== 'cancelled' &&
       !readyToScore(g) &&
-      (!g.match_date || new Date(g.match_date) >= now)
+      !scoredGameIds.has(g.id) &&
+      (!g.match_date || new Date(g.match_date).getTime() + 90 * 60_000 >= now.getTime())
     ));
     setPastCompleteGames(allUpcoming.filter(readyToScore));
     const deltas: Record<string, number> = {};

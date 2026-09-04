@@ -148,6 +148,9 @@ export function usePushNotifications() {
           if (data.gameId) router.push(`/(tabs)/lobby?gameId=${data.gameId}` as any);
           else router.push('/(tabs)/lobby');
           break;
+        case 'live':
+          if (data.sessionId) router.push(`/live/${data.sessionId}` as any);
+          break;
         case 'bilan':
           track('notif_bilan_tapped', { month: data.month });
           router.push((data.month ? `/bilan/${data.month}` : '/bilan/last') as any);
