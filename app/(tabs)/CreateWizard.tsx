@@ -8,10 +8,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
-import { lobbyGameLink } from '../../lib/community';
+import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
 import { consumePickedVenue } from '../../lib/venuePicker';
+import { loadClubFavorites } from '../../lib/clubFavorites';
+import { Avatar as ClubAvatar } from '../../components/community/Avatar';
 import { ClubsMapModal } from '../../components/ClubsMapModal';
+import { ManageClubsModal } from '../../components/ManageClubsModal';
 import { Pill } from '../../components/Pill';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
 import { Icon } from '../../components/community/icons';
@@ -58,7 +61,7 @@ const TIMES = [
   '08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30',
   '12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30',
   '16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30',
-  '20:00','20:30','21:00','21:30','22:00','22:30',
+  '20:00','20:30','21:00','21:30','22:00','22:30','23:00','23:30',
 ];
 // Fenêtre d'anti-chevauchement (identique au pre-check du publish dans lobby.tsx).
 // Un match occupe sa durée de jeu + une marge déplacement/repos ; deux matchs
@@ -254,6 +257,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   // Data
   const [clubsList,   setClubsList]   = useState<string[]>([]);
+  const [clubFavs,    setClubFavs]    = useState<string[]>([]);
+  const [manageClubsOpen, setManageClubsOpen] = useState(false);
   const [freqPlayers, setFreqPlayers] = useState<Array<{ id: string; name: string; elo_score: number }>>([]);
   const [searchQ,     setSearchQ]     = useState('');
   const [searchRes,   setSearchRes]   = useState<any[]>([]);
@@ -297,7 +302,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     useCallback(() => {
       const v = consumePickedVenue();
       if (v) set('location', v);
-    }, []),
+      // Recharge les favoris à chaque focus (retour de « Gérer mes clubs » inclus).
+      if (player?.id) loadClubFavorites(player.id).then(setClubFavs).catch(() => {});
+    }, [player?.id]),
   );
 
   // Reset on open
@@ -527,13 +534,22 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   // ─── Partage + Ajout au calendrier (écran "Partie publiée") ────
   async function shareCreatedGame() {
     const start = new Date(`${form.day}T${form.time}:00`);
-    const dateStr = start.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    const link = publishedGameId ? `\n🔗 ${lobbyGameLink(publishedGameId)}` : '';
-    const msg =
-      `Match Padel – ${form.gameType}\n` +
-      `📅 ${dateStr} à ${form.time}\n` +
-      `📍 ${form.location}\n` +
-      `📊 Niveau : ${form.minLevel.toFixed(2)} – ${form.maxLevel.toFixed(2)}${link}`;
+    // Créateur confirmé (🟢), invités du wizard pas encore acceptés (⏳ nominatif),
+    // le reste en places libres — même gabarit que lobby/fiche (buildGameShareMessage).
+    const invited = Object.values(form.invites) as { name?: string; elo_score?: number }[];
+    const msg = buildGameShareMessage({
+      gameId: publishedGameId,
+      location: form.location,
+      matchDate: start,
+      kind: form.gameType === 'Défi' ? 'challenge' : form.gameType === 'Amical' ? 'friendly' : 'competitive',
+      stake: form.gameType === 'Défi' ? form.stakeMultiplier : 1,
+      players: [
+        ...(player ? [{ name: player.name, elo: player.elo_score }] : []),
+        ...invited.map(p => ({ name: p.name, elo: p.elo_score, pending: true })),
+      ],
+      freeSpots: Math.max(0, 4 - 1 - invited.length),
+      eloRange: { min: padelLevelToElo(form.minLevel), max: padelLevelToElo(form.maxLevel) },
+    });
     try { await Share.share({ message: msg }); } catch { /* cancelled */ }
   }
 
@@ -566,7 +582,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   // ─── Step 0: When & Where ──────────────────────────────────
   function renderStep0() {
-    const filteredClubs = clubsList.filter(c => c.toLowerCase().includes(venueSearch.toLowerCase()));
+    // Favoris en tête de liste (dans leur ordre), puis le reste alphabétique.
+    const favRank = (c: string) => { const i = clubFavs.indexOf(c); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+    const filteredClubs = clubsList
+      .filter(c => c.toLowerCase().includes(venueSearch.toLowerCase()))
+      .sort((a, b) => favRank(a) - favRank(b) || a.localeCompare(b));
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Venue */}
@@ -586,6 +606,52 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </View>
         </TouchableOpacity>
 
+        {/* Clubs favoris : sélection en 1 tap + lien vers l'écran de gestion */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '900', letterSpacing: 0.8, color: Colors.textMuted }}>CLUBS FAVORIS</Text>
+          <Icon name="star" size={12} color={Colors.brand} fill={Colors.brand} stroke={2} />
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={() => setManageClubsOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+            <Text style={{ fontSize: 12, fontWeight: '900', color: Colors.textSecondary }}>Gérer</Text>
+            <Icon name="chevronRight" size={13} color={Colors.textSecondary} stroke={2.5} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
+          {clubFavs.map(club => {
+            const active = form.location === club;
+            return (
+              <TouchableOpacity key={club} onPress={() => { set('location', active ? '' : club); setVenueOpen(false); setVenueSearch(''); }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingLeft: 6, paddingRight: 12, paddingVertical: 6, borderRadius: 999,
+                  borderWidth: 1.5, borderColor: active ? t.eloBorder : Colors.border,
+                  backgroundColor: active ? t.selectBg : Colors.bgCard,
+                }}>
+                <ClubAvatar name={club} size={24} radius={999} mono="black" />
+                <Text style={{ fontSize: 12, fontWeight: '900', color: active ? t.selectColor : Colors.textPrimary }} numberOfLines={1}>
+                  {club}
+                </Text>
+                {active && <Icon name="check" size={12} color={t.accent} stroke={3} />}
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity onPress={() => setManageClubsOpen(true)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+              borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed', backgroundColor: Colors.bg,
+            }}>
+            <Icon name="plus" size={12} color={Colors.textSecondary} stroke={2.5} />
+            <Text style={{ fontSize: 12, fontWeight: '800', color: Colors.textSecondary }}>
+              {clubFavs.length === 0 ? 'Ajouter des favoris' : 'Ajouter'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Séparateur OU */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 8 }}>
+          <View style={{ flex: 1, height: 1, backgroundColor: Colors.border }} />
+          <Text style={{ fontSize: 10, fontWeight: '900', letterSpacing: 1.5, color: Colors.textMuted }}>OU</Text>
+          <View style={{ flex: 1, height: 1, backgroundColor: Colors.border }} />
+        </View>
+
         {/* Venue picker + bouton Plan à côté */}
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
           <View style={{ flex: 1 }}>
@@ -598,7 +664,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             <Icon name="mapPin" size={14} color={form.location ? Colors.textOnDark : Colors.textSecondary} stroke={2.2} />
           </View>
           <Text style={{ flex: 1, fontSize: 13, fontWeight: form.location ? '900' : '500', color: form.location ? t.selectColor : Colors.textMuted }}>
-            {form.location || 'Choisir un terrain…'}
+            {form.location || 'Voir tous les clubs…'}
           </Text>
           <Text style={{ color: Colors.textMuted, fontSize: 12 }}>{venueOpen ? '▲' : '▼'}</Text>
         </TouchableOpacity>
@@ -627,6 +693,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   <TouchableOpacity key={club} onPress={() => { set('location', club); setVenueOpen(false); setVenueSearch(''); }}
                     style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.bg, backgroundColor: active ? t.selectBg : Colors.bgCard }}>
                     <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: active ? t.selectColor : Colors.textPrimary }}>{club}</Text>
+                    {!active && clubFavs.includes(club) && <Icon name="star" size={12} color={Colors.brand} fill={Colors.brand} stroke={2} />}
                     {active && <Icon name="check" size={14} color={t.accent} stroke={2.5} />}
                   </TouchableOpacity>
                 );
@@ -661,6 +728,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             visible={mapOpen}
             onClose={() => setMapOpen(false)}
             onPick={(name) => { set('location', name); setMapOpen(false); setVenueOpen(false); setVenueSearch(''); }}
+          />
+          {/* Modal natif (comme la carte) : un router.push passerait DERRIÈRE le
+              Modal du wizard et n'apparaîtrait qu'à sa fermeture. */}
+          <ManageClubsModal
+            visible={manageClubsOpen}
+            playerId={player?.id ?? null}
+            onClose={(favs) => { setClubFavs(favs); setManageClubsOpen(false); }}
           />
         </View>
 
