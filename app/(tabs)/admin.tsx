@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   Alert, ActivityIndicator, FlatList, LayoutAnimation, Modal, StyleSheet, Switch,
@@ -40,11 +40,15 @@ import {
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
 import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
+import {
+  sortQueue, type QueueItem, type QueueKind,
+} from '../../lib/refereeQueue';
+import { QueueCounters, QueueCard, QueueEmpty } from '../../components/admin/RefereeQueue';
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { Pill } from '../../components/Pill';
 
-type AdminTab = 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
+type AdminTab = 'queue' | 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -749,7 +753,9 @@ export default function AdminScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [tab, setTab] = useState<AdminTab>('disputes');
+  // La file ouvre le panel : elle dit CE QU'IL Y A A FAIRE, la ou les neuf
+  // onglets demandaient de chercher. Les onglets restent, en dessous.
+  const [tab, setTab] = useState<AdminTab>('queue');
 
   // Disputes
   const [disputes, setDisputes] = useState<any[]>([]);
@@ -783,7 +789,100 @@ export default function AdminScreen() {
   // Tournois — l'interrupteur (fn_tournaments_enabled) : éteint par défaut,
   // la section n'apparaît alors NULLE PART dans ce panel, pas même l'onglet.
   const [tournamentsEnabled, setTournamentsEnabled] = useState(false);
+
+  // ── La file de travail (handoff panel arbitre) ────────────────────────────
+  // Quatre sources agregees ; le tri vit dans lib/refereeQueue.ts avec ses
+  // tests. FRMT n'y entre PAS : les entrees non liees sont celles que le
+  // rattachement automatique n'a pas su apparier -- souvent des joueurs
+  // absents de l'app. Elles feraient un compteur permanent et non actionnable.
+  const [queueTournaments, setQueueTournaments] = useState<Tournament[]>([]);
+
+  const queueItems = useMemo<QueueItem[]>(() => {
+    const out: QueueItem[] = [];
+
+    for (const m of disputes) {
+      const camp = (a: any, b: any) => [a?.name, b?.name].filter(Boolean).join(' & ') || '?';
+      out.push({
+        id: `d-${m.id}`,
+        kind: 'dispute',
+        title: `${camp(m.winner, m.winner_2)} vs ${camp(m.loser, m.loser_2)}`,
+        summary: m.dispute_reason
+          ? String(m.dispute_reason)
+          : m.counter_score_text
+            ? `Score contesté : ${m.score_text} → ${m.counter_score_text}`
+            : 'Score contesté.',
+        context: [m.creator?.name ? `Saisi par ${m.creator.name}` : null, fmtDate(m.created_at)]
+          .filter(Boolean).join(' · '),
+        createdAt: m.created_at,
+        targetTab: 'disputes',
+        targetId: m.id,
+      });
+    }
+
+    for (const r of reports) {
+      out.push({
+        id: `r-${r.id}`,
+        kind: 'report',
+        title: r.reported?.name ? `Signalement — ${r.reported.name}` : 'Contenu signalé',
+        summary: r.reason ? `« ${r.reason} »` : 'Sans motif précisé.',
+        context: [r.target_type, r.reporter?.name ? `par ${r.reporter.name}` : null, fmtDate(r.created_at)]
+          .filter(Boolean).join(' · '),
+        createdAt: r.created_at,
+        targetTab: 'reports',
+        targetId: r.id,
+      });
+    }
+
+    for (const g of genderReqs) {
+      out.push({
+        id: `g-${g.id}`,
+        kind: 'gender',
+        title: `${g.player?.name ?? 'Joueur'} — ${g.current_gender} vers ${g.requested_gender}`,
+        summary: g.reason ? `« ${g.reason} »` : 'Sans motif précisé.',
+        context: fmtDate(g.created_at),
+        createdAt: g.created_at,
+        targetTab: 'gender',
+        targetId: g.id,
+      });
+    }
+
+    // Un tournoi entre dans la file quand l'organisateur a quelque chose a
+    // faire dessus : ouvrir le pointage, tirer un tour, cloturer. Un tournoi
+    // qui roule tout seul n'est pas un dossier.
+    for (const t of queueTournaments) {
+      const aFaire =
+        t.status === 'EN_COURS' && t.current_round === 0 ? 'Le premier tour n’a pas été tiré.'
+        : t.status === 'TERMINE' ? 'Classement figé, en attente de validation.'
+        : canOpenCheckIn(t.status) ? 'Le pointage n’est pas ouvert.'
+        : null;
+      if (!aFaire) continue;
+      out.push({
+        id: `t-${t.id}`,
+        kind: 'tournament',
+        title: t.name,
+        summary: aFaire,
+        context: [formatTournamentDate(t.starts_at), t.club?.name].filter(Boolean).join(' · '),
+        createdAt: t.created_at,
+        targetTab: 'tournaments',
+        targetId: t.id,
+      });
+    }
+
+    return sortQueue(out);
+  }, [disputes, reports, genderReqs, queueTournaments]);
   useEffect(() => { getTournamentsEnabled().then(setTournamentsEnabled); }, []);
+
+  // Les tournois de la file. Chargés à part des autres onglets : si le
+  // drapeau est éteint, on ne lit rien du tout, et un échec ne prive pas la
+  // file de ses trois autres sources.
+  useEffect(() => {
+    if (!tournamentsEnabled) { setQueueTournaments([]); return; }
+    let annule = false;
+    fetchTournaments()
+      .then(l => { if (!annule) setQueueTournaments(l); })
+      .catch(() => { if (!annule) setQueueTournaments([]); });
+    return () => { annule = true; };
+  }, [tournamentsEnabled]);
 
   // Auth guard
   useEffect(() => {
@@ -1095,7 +1194,13 @@ export default function AdminScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome, paddingRight: 5 }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
-            <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>🛡️ Administration</Text>
+            {/* Le compte des dossiers remplace « Administration » : le panel
+                dit ce qu'il y a a faire avant meme qu'on choisisse un onglet. */}
+            <Text style={{ fontSize: 11, color: queueItems.length > 0 ? Colors.brandDeep : Colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>
+              {queueItems.length > 0
+                ? `${queueItems.length} dossier${queueItems.length > 1 ? 's' : ''} à traiter`
+                : '🛡️ Administration'}
+            </Text>
           </View>
           {disputes.length > 0 && (
             <View style={{ backgroundColor: Colors.danger, borderRadius: 999, minWidth: 22, height: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 }}>
@@ -1107,6 +1212,9 @@ export default function AdminScreen() {
         {/* Tab bar — blocs de groupes (titre + sous-onglets dessous), wrap si étroit */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
           {([
+            { title: 'À traiter', items: [
+              { key: 'queue' as AdminTab, label: '📋 La file', badge: queueItems.length },
+            ] },
             { title: 'Modération', items: [
               { key: 'disputes' as AdminTab, label: '⚖️ Litiges',     badge: disputes.length },
               { key: 'reports'  as AdminTab, label: '🚩 Signalements', badge: reports.length },
@@ -1155,6 +1263,42 @@ export default function AdminScreen() {
 
       {/* Content */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+        {tab === 'queue' && (
+          <View style={{ gap: 12 }}>
+            <QueueCounters
+              items={queueItems}
+              onPick={(k) => setTab(
+                k === 'dispute' ? 'disputes'
+                : k === 'report' ? 'reports'
+                : k === 'gender' ? 'gender'
+                : k === 'tournament' ? 'tournaments'
+                : 'frmt',
+              )}
+            />
+            {queueItems.length === 0 ? (
+              <QueueEmpty />
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, letterSpacing: 1, color: Colors.textMuted }}>
+                    FILE PRIORISÉE
+                  </Text>
+                  <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+                    · par urgence
+                  </Text>
+                </View>
+                {queueItems.map(it => (
+                  <QueueCard
+                    key={it.id}
+                    item={it}
+                    onPress={() => setTab(it.targetTab as AdminTab)}
+                  />
+                ))}
+              </>
+            )}
+          </View>
+        )}
+
         {tab === 'disputes' && (
           <DisputesTab
             matches={disputes}
