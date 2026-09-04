@@ -470,7 +470,7 @@ export default function HomeScreen() {
                   en particulier, et l'accueil retrouve exactement ses
                   proportions d'origine dès que la carte disparaît. */}
               {tourPick && (
-                <View style={{ flex: 0.9, minHeight: compact ? 56 : 60 }}>
+                <View style={{ flex: 1.05, minHeight: compact ? 68 : 74 }}>
                   <HomeTournamentCard
                     tournament={tourPick.tournament}
                     free={tourPick.free}

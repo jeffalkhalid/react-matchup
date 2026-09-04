@@ -83,6 +83,16 @@ export function HomeTournamentCard({ tournament, free, state, onPress }: {
       </View>
 
       <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Surtitre plutôt qu'un mot glissé dans le sous-titre : celui-ci porte
+            déjà la date, l'heure et l'état, et « Tournoi · » devant l'aurait
+            fait tronquer sur un écran étroit. Ici, le mot est toujours lu en
+            premier et ne dispute la place à rien. */}
+        <Text style={{
+          fontSize: 9, fontFamily: Fonts.uiBlack, letterSpacing: 1.6,
+          color: secondaire, marginBottom: 1,
+        }}>
+          TOURNOI
+        </Text>
         <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: texte }}>
           {tournament.name}
         </Text>
