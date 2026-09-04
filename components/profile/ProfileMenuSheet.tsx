@@ -71,7 +71,7 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Row icon="pencil" label="Modifier le profil" onPress={() => act(onEdit)} />
           <Row icon="message" label="Qui peut commenter" onPress={() => act(onComments)} />
           <Row icon="mail" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
-          {watchOn && <Row icon="clock" label="Connecter ma montre" onPress={() => nav('/watch-link')} />}
+          {watchOn && <Row icon="clock" label="Ma montre" onPress={() => nav('/watch-link')} />}
 
           <Group title="Raccourcis" />
           <Row icon="trophy" label="Classement" onPress={() => nav('/ranking')} />
