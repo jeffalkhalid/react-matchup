@@ -15,6 +15,7 @@ import {
   groupResultsByTeam, dateBucket, formatTournamentDate,
   monthMatrix, isoDay, timeSlots, defaultPointsScale, resizePointsScale,
   daysUntilLabel, shortFormatLabel, homeTournamentList,
+  levelAccepted, isThisWeekend, filterTournaments, bestFilterToDrop, activeFilterCount, NO_FILTERS,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
   type TournamentMissingMatch, type TournamentResultTeamRow, type Tournament,
 } from '../tournaments';
@@ -680,5 +681,81 @@ describe('liste des soirees pour l accueil', () => {
     const fini = tournoi('F', '2026-09-10T18:00:00Z', 'TERMINE');
     const live = tournoi('L', '2026-09-11T18:00:00Z', 'EN_COURS');
     expect(homeTournamentList([fini, live], new Map(), 'moi')).toEqual([]);
+  });
+});
+
+// ── Filtres de la liste ────────────────────────────────────────────────────
+const withLevel = (id: string, iso: string, min: number | null, max: number | null, club: string | null = null) =>
+  ({ ...tournoi(id, iso), level_min: min, level_max: max, club_id: club } as Tournament);
+
+describe('filtres de la liste', () => {
+  const now = new Date(2026, 8, 9, 12, 0);   // mercredi 9 sept. 2026
+
+  it('« mon niveau » : une borne absente n exclut personne', () => {
+    expect(levelAccepted(withLevel('A', '2026-09-11T18:00:00Z', 3, 5), 4)).toBe(true);
+    expect(levelAccepted(withLevel('A', '2026-09-11T18:00:00Z', 3, 5), 2)).toBe(false);
+    expect(levelAccepted(withLevel('A', '2026-09-11T18:00:00Z', 3, null), 9)).toBe(true);
+    expect(levelAccepted(withLevel('A', '2026-09-11T18:00:00Z', null, null), 1)).toBe(true);
+    // Niveau inconnu : le filtre ne peut rien affirmer, il ne masque rien.
+    expect(levelAccepted(withLevel('A', '2026-09-11T18:00:00Z', 3, 5), null)).toBe(true);
+  });
+
+  it('« ce week-end » ne prend que samedi et dimanche qui viennent', () => {
+    expect(isThisWeekend(new Date(2026, 8, 12, 19, 0).toISOString(), now)).toBe(true);  // samedi
+    expect(isThisWeekend(new Date(2026, 8, 13, 19, 0).toISOString(), now)).toBe(true);  // dimanche
+    expect(isThisWeekend(new Date(2026, 8, 11, 19, 0).toISOString(), now)).toBe(false); // vendredi
+    expect(isThisWeekend(new Date(2026, 8, 26, 19, 0).toISOString(), now)).toBe(false); // samedi d'apres
+  });
+
+  it('les filtres se CUMULENT, et le masque dit le PREMIER qui recale', () => {
+    const entries = [
+      { tournament: withLevel('OK',    '2026-09-12T18:00:00Z', 3, 5, 'c1') },
+      { tournament: withLevel('NIV',   '2026-09-12T18:00:00Z', 6, 8, 'c1') },
+      { tournament: withLevel('SEM',   '2026-09-11T18:00:00Z', 3, 5, 'c1') },
+      { tournament: withLevel('CLUB',  '2026-09-12T18:00:00Z', 3, 5, 'c2') },
+    ];
+    const ctx = { myLevel: 4, freeById: new Map(entries.map(e => [e.tournament.id, 8])), now };
+    const out = filterTournaments(entries, { level: true, weekend: true, clubId: 'c1', free: false }, ctx);
+    expect(out.kept.map(e => e.tournament.id)).toEqual(['OK']);
+    expect(out.hidden.map(h => h.reason)).toEqual(['level', 'weekend', 'clubId']);
+  });
+
+  it('« places libres » masque ce qui est plein', () => {
+    const entries = [
+      { tournament: withLevel('LIBRE', '2026-09-12T18:00:00Z', null, null) },
+      { tournament: withLevel('PLEIN', '2026-09-12T18:00:00Z', null, null) },
+    ];
+    const ctx = { myLevel: 4, freeById: new Map([['LIBRE', 4], ['PLEIN', 0]]), now };
+    const out = filterTournaments(entries, { ...NO_FILTERS, free: true }, ctx);
+    expect(out.kept.map(e => e.tournament.id)).toEqual(['LIBRE']);
+    expect(out.hidden[0].reason).toBe('free');
+  });
+
+  it('propose de retirer le filtre qui REVELE LE PLUS — jamais un cul-de-sac', () => {
+    const entries = [
+      { tournament: withLevel('A', '2026-09-12T18:00:00Z', 3, 5, 'c2') },
+      { tournament: withLevel('B', '2026-09-12T18:00:00Z', 3, 5, 'c2') },
+      { tournament: withLevel('C', '2026-09-12T18:00:00Z', 3, 5, 'c2') },
+      { tournament: withLevel('D', '2026-09-11T18:00:00Z', 3, 5, 'c1') },
+    ];
+    const ctx = { myLevel: 4, freeById: new Map(entries.map(e => [e.tournament.id, 8])), now };
+    // Filtre club c1 + week-end : rien ne passe. Retirer « club » revele 3,
+    // retirer « week-end » n en revele qu un : c est « club » qu on propose.
+    const best = bestFilterToDrop(entries, { level: false, weekend: true, clubId: 'c1', free: false }, ctx);
+    expect(best?.key).toBe('clubId');
+    expect(best?.unlocked).toBe(3);
+  });
+
+  it('ne propose jamais de retirer un filtre INACTIF, ni un retrait sans gain', () => {
+    const entries = [{ tournament: withLevel('A', '2026-09-12T18:00:00Z', 3, 5, 'c1') }];
+    const ctx = { myLevel: 4, freeById: new Map([['A', 8]]), now };
+    expect(bestFilterToDrop(entries, NO_FILTERS, ctx)).toBeNull();
+    // Le filtre est actif mais tout passe deja : rien a gagner.
+    expect(bestFilterToDrop(entries, { ...NO_FILTERS, level: true }, ctx)).toBeNull();
+  });
+
+  it('compte les filtres actifs', () => {
+    expect(activeFilterCount(NO_FILTERS)).toBe(0);
+    expect(activeFilterCount({ level: true, weekend: true, clubId: 'c1', free: true })).toBe(4);
   });
 });

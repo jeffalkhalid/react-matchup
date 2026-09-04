@@ -1534,3 +1534,117 @@ export function homeTournamentList(
       };
     });
 }
+
+// ── Filtres de la liste (handoff design, chantier 3) ───────────────────────
+//
+// Tout se fait CÔTÉ CLIENT : `fetchTournaments` remonte déjà tout, trié par
+// date. Aucun changement serveur, et les filtres se combinent sans aller-retour.
+
+export interface TournamentFilters {
+  /** Ne garder que les soirées dont la plage de niveau m'accepte. */
+  level: boolean;
+  /** Samedi et dimanche qui viennent. */
+  weekend: boolean;
+  /** L'identifiant d'un club, ou null. */
+  clubId: string | null;
+  /** Ne garder que celles où il reste une place immédiate. */
+  free: boolean;
+}
+
+export const NO_FILTERS: TournamentFilters = { level: false, weekend: false, clubId: null, free: false };
+
+export function activeFilterCount(f: TournamentFilters): number {
+  return (f.level ? 1 : 0) + (f.weekend ? 1 : 0) + (f.clubId ? 1 : 0) + (f.free ? 1 : 0);
+}
+
+/** Le libellé du filtre, tel qu'on le montre quand on propose de le retirer. */
+export function filterLabel(key: keyof TournamentFilters, clubName?: string | null): string {
+  if (key === 'level') return 'Mon niveau';
+  if (key === 'weekend') return 'Ce week-end';
+  if (key === 'clubId') return clubName ?? 'Ce club';
+  return 'Places libres';
+}
+
+/** Vrai si `level` tombe dans la plage du tournoi — une borne absente n'exclut rien. */
+export function levelAccepted(t: Tournament, level: number | null): boolean {
+  if (level == null) return true;
+  if (t.level_min != null && level < t.level_min) return false;
+  if (t.level_max != null && level > t.level_max) return false;
+  return true;
+}
+
+/** Samedi ou dimanche de la semaine en cours (au plus 7 jours devant). */
+export function isThisWeekend(iso: string, now: Date = new Date()): boolean {
+  const d = new Date(iso);
+  const jour = d.getDay();               // 0 = dimanche, 6 = samedi
+  if (jour !== 0 && jour !== 6) return false;
+  const dans = (d.getTime() - now.getTime()) / 86_400_000;
+  return dans >= -1 && dans <= 7;
+}
+
+export interface FilterContext {
+  /** Mon niveau, pour le filtre « Mon niveau ». */
+  myLevel: number | null;
+  /** Les places libres par tournoi — zéro dès qu'une file existe. */
+  freeById: Map<string, number>;
+  now?: Date;
+}
+
+/** Pourquoi un tournoi est masqué — le PREMIER filtre qui le recale. */
+export type HiddenReason = 'level' | 'weekend' | 'clubId' | 'free';
+
+export function tournamentPassesFilters(
+  t: Tournament, f: TournamentFilters, ctx: FilterContext,
+): HiddenReason | null {
+  if (f.level && !levelAccepted(t, ctx.myLevel)) return 'level';
+  if (f.weekend && !isThisWeekend(t.starts_at, ctx.now)) return 'weekend';
+  if (f.clubId && t.club_id !== f.clubId) return 'clubId';
+  if (f.free && (ctx.freeById.get(t.id) ?? 0) <= 0) return 'free';
+  return null;
+}
+
+export interface FilterOutcome<T> {
+  kept: T[];
+  hidden: { item: T; reason: HiddenReason }[];
+}
+
+export function filterTournaments<T extends { tournament: Tournament }>(
+  entries: T[], f: TournamentFilters, ctx: FilterContext,
+): FilterOutcome<T> {
+  const kept: T[] = [];
+  const hidden: { item: T; reason: HiddenReason }[] = [];
+  for (const e of entries) {
+    const reason = tournamentPassesFilters(e.tournament, f, ctx);
+    if (reason) hidden.push({ item: e, reason }); else kept.push(e);
+  }
+  return { kept, hidden };
+}
+
+/**
+ * Le filtre qui, retiré SEUL, révèle le plus de soirées — et combien.
+ *
+ * C'est ce qui permet de ne jamais laisser l'utilisateur dans un cul-de-sac :
+ * plutôt qu'un « aucun résultat », on lui montre la sortie la plus rentable.
+ * `null` quand aucun retrait ne révèle rien.
+ */
+export function bestFilterToDrop<T extends { tournament: Tournament }>(
+  entries: T[], f: TournamentFilters, ctx: FilterContext,
+): { key: keyof TournamentFilters; unlocked: number } | null {
+  const base = filterTournaments(entries, f, ctx).kept.length;
+  let best: { key: keyof TournamentFilters; unlocked: number } | null = null;
+
+  const essais: { key: keyof TournamentFilters; sans: TournamentFilters }[] = [
+    { key: 'level',   sans: { ...f, level: false } },
+    { key: 'weekend', sans: { ...f, weekend: false } },
+    { key: 'clubId',  sans: { ...f, clubId: null } },
+    { key: 'free',    sans: { ...f, free: false } },
+  ];
+
+  for (const { key, sans } of essais) {
+    // Ne proposer que le retrait d'un filtre RÉELLEMENT actif.
+    if (key === 'clubId' ? !f.clubId : !f[key as 'level' | 'weekend' | 'free']) continue;
+    const gain = filterTournaments(entries, sans, ctx).kept.length - base;
+    if (gain > 0 && (!best || gain > best.unlocked)) best = { key, unlocked: gain };
+  }
+  return best;
+}

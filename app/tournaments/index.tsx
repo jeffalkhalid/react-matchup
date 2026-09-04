@@ -17,13 +17,19 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
-import { Colors, Fonts } from '../../lib/theme';
+import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Icon } from '../../components/community/icons';
 import { TournamentCard } from '../../components/tournaments/TournamentCard';
 import {
   fetchTournaments, fetchRegistrationsFor, getTournamentsEnabled,
-  tournamentPhase, type Tournament, type TournamentRegistration, type TournamentPhase,
+  tournamentPhase, freePlaces, dateBucket,
+  filterTournaments, bestFilterToDrop, activeFilterCount, filterLabel, isThisWeekend,
+  NO_FILTERS, type TournamentFilters,
+  type Tournament, type TournamentRegistration, type TournamentPhase,
 } from '../../lib/tournaments';
+import {
+  FilterBar, FilterCounter, FilterDeadEnd, GroupHeader, type FilterChip,
+} from '../../components/tournaments/ListFilters';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 
 type TabKey = Extract<TournamentPhase, 'upcoming' | 'live' | 'past'>;
@@ -81,6 +87,7 @@ export default function TournamentsScreen() {
   // un écran vide qui se referme serait déjà une entrée visible.
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [tab, setTab] = useState<TabKey>('upcoming');
+  const [filters, setFilters] = useState<TournamentFilters>(NO_FILTERS);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [regs, setRegs] = useState<Map<string, TournamentRegistration[]>>(new Map());
   // Distinct d'une liste simplement VIDE — cf. `ErrorNotice` ci-dessus.
@@ -146,6 +153,62 @@ export default function TournamentsScreen() {
     return (regs.get(id) ?? []).some(r => r.player_id === player.id);
   }, [regs, player]);
 
+  // ── Filtres, epinglage et groupement (handoff design, chantier 3) ─────────
+  // La liste etait plate : a sept tournois ca passe, a vingt mes inscriptions
+  // se noient -- elles ne se distinguaient que par une pastille « Inscrit ».
+  const ctx = useMemo(() => ({
+    myLevel: player ? eloToLevel(player.elo_score) : null,
+    freeById: new Map(tournaments.map(t => [t.id, freePlaces(regs.get(t.id) ?? [], t.court_count)])),
+  }), [player, tournaments, regs]);
+
+  // Le club le plus represente parmi les soirees a venir : c'est LUI que le
+  // filtre « club » propose, plutot qu'une liste deroulante de plus.
+  const topClub = useMemo(() => {
+    const compte = new Map<string, { name: string; n: number }>();
+    for (const t of byPhase.upcoming) {
+      if (!t.club_id) continue;
+      const e = compte.get(t.club_id);
+      if (e) e.n += 1;
+      else compte.set(t.club_id, { name: t.club?.name ?? 'Ce club', n: 1 });
+    }
+    let best: { id: string; name: string; n: number } | null = null;
+    for (const [id, v] of compte) if (!best || v.n > best.n) best = { id, name: v.name, n: v.n };
+    return best;
+  }, [byPhase.upcoming]);
+
+  const entries = useMemo(() => byPhase[tab].map(t => ({ tournament: t })), [byPhase, tab]);
+  const outcome = useMemo(() => filterTournaments(entries, filters, ctx), [entries, filters, ctx]);
+  const escape = useMemo(
+    () => (outcome.kept.length === 0 ? bestFilterToDrop(entries, filters, ctx) : null),
+    [outcome.kept.length, entries, filters, ctx],
+  );
+
+  // Mes inscriptions d'abord, puis par echeance. Le groupement ne s'applique
+  // qu'a « a venir » : « en cours » et « passes » ont leur propre ordre.
+  const groups = useMemo(() => {
+    const kept = outcome.kept.map(e => e.tournament);
+    if (tab !== 'upcoming') return [{ label: null as string | null, tone: undefined, items: kept }];
+    const miennes = kept.filter(t => isMine(t.id));
+    const autres  = kept.filter(t => !isMine(t.id));
+    const semaine = autres.filter(t => dateBucket(t.starts_at) !== 'other' || isThisWeekend(t.starts_at));
+    const plusTard = autres.filter(t => !semaine.includes(t));
+    return [
+      { label: 'MES INSCRIPTIONS', tone: 'success' as const, items: miennes },
+      { label: 'CETTE SEMAINE', tone: 'brand' as const, items: semaine },
+      { label: 'PLUS TARD', tone: undefined, items: plusTard },
+    ].filter(g => g.items.length > 0);
+  }, [outcome.kept, tab, isMine]);
+
+  const chips: FilterChip[] = [
+    { key: 'level', label: 'Mon niveau', active: filters.level, onToggle: () => setFilters(f => ({ ...f, level: !f.level })) },
+    { key: 'weekend', label: 'Ce week-end', active: filters.weekend, onToggle: () => setFilters(f => ({ ...f, weekend: !f.weekend })) },
+    ...(topClub ? [{
+      key: 'clubId' as const, label: topClub.name, active: filters.clubId === topClub.id,
+      onToggle: () => setFilters(f => ({ ...f, clubId: f.clubId === topClub.id ? null : topClub.id })),
+    }] : []),
+    { key: 'free', label: 'Places libres', active: filters.free, onToggle: () => setFilters(f => ({ ...f, free: !f.free })) },
+  ];
+
   if (enabled !== true) {
     // Ni écran vide, ni message : un fond neutre le temps de savoir, puis on
     // s'efface. Le spinner ne s'affiche que pendant l'attente réelle.
@@ -156,7 +219,6 @@ export default function TournamentsScreen() {
     );
   }
 
-  const shown = byPhase[tab];
   const empty = EMPTY[tab];
 
   return (
@@ -226,16 +288,49 @@ export default function TournamentsScreen() {
               l'écran, avec ce bandeau au-dessus plutôt qu'à sa place. */}
           {loadError && <ErrorNotice message={loadError} />}
 
-          {shown.length === 0
+          {/* Les filtres n'ont de sens que sur « a venir » : sur les soirees
+              en cours ou passees, il n'y a rien a arbitrer. */}
+          {tab === 'upcoming' && entries.length > 0 && <FilterBar chips={chips} />}
+          {tab === 'upcoming' && activeFilterCount(filters) > 0 && (
+            <FilterCounter
+              kept={outcome.kept.length}
+              total={entries.length}
+              count={activeFilterCount(filters)}
+              onClear={() => setFilters(NO_FILTERS)}
+            />
+          )}
+
+          {entries.length === 0
             ? (loadError ? null : <EmptyState text={empty.text} sub={empty.sub} />)
-            : shown.map(t => (
-                <TournamentCard
-                  key={t.id}
-                  tournament={t}
-                  registrations={regs.get(t.id) ?? []}
-                  mine={isMine(t.id)}
-                  onPress={() => router.push(`/tournaments/${t.id}` as any)}
-                />
+            : outcome.kept.length === 0
+            ? (
+                /* Jamais un cul-de-sac : on nomme le filtre dont le retrait
+                   revele le plus, et on propose de l'enlever d'un tap. */
+                escape ? (
+                  <FilterDeadEnd
+                    unlocked={escape.unlocked}
+                    filterName={filterLabel(escape.key, topClub?.name)}
+                    onDrop={() => setFilters(f => (
+                      escape.key === 'clubId' ? { ...f, clubId: null } : { ...f, [escape.key]: false }
+                    ))}
+                  />
+                ) : (
+                  <EmptyState text="Aucun tournoi ne correspond" sub="Retire un filtre pour en voir davantage." />
+                )
+              )
+            : groups.map((g, gi) => (
+                <View key={g.label ?? `g${gi}`} style={{ gap: 10 }}>
+                  {g.label && <GroupHeader label={g.label} count={g.items.length} tone={g.tone} />}
+                  {g.items.map(t => (
+                    <TournamentCard
+                      key={t.id}
+                      tournament={t}
+                      registrations={regs.get(t.id) ?? []}
+                      mine={isMine(t.id)}
+                      onPress={() => router.push(`/tournaments/${t.id}` as any)}
+                    />
+                  ))}
+                </View>
               ))}
         </ScrollView>
       )}
