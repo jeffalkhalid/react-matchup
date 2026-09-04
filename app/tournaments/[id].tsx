@@ -53,6 +53,7 @@ import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/Court
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { TournamentShareCard } from '../../components/tournaments/TournamentShareCard';
+import { LiveHero, ResultHero, RoundBanner } from '../../components/tournaments/FicheHeros';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
@@ -534,6 +535,30 @@ export default function TournamentDetailScreen() {
   // montre le badge que si `stakeText` est fourni pour CE match.
   const stakeByMatch = new Map(finalStakes.map(s => [s.match_id, stakeLabel(s)]));
 
+  // ── Mon match de la rotation en cours (handoff design, chantier 1) ─────────
+  // Pendant une soiree, la premiere question est « sur quel terrain je joue ».
+  // Elle se cherchait sous quatre cartes de brochure ; elle passe en tete.
+  const myMatch = me.team
+    ? matches.find(m => m.team_a === me.team!.id || m.team_b === me.team!.id) ?? null
+    : null;
+  const myOpponentTeam = myMatch && me.team
+    ? (myMatch.team_a === me.team.id
+        ? (myMatch.team_b ? teamById.get(myMatch.team_b) ?? null : null)
+        : teamById.get(myMatch.team_a) ?? null)
+    : null;
+  const myMovement = me.team ? movementByTeam.get(me.team.id) ?? null : null;
+  // D'ou je viens : le mouvement porte le terrain d'origine quand il y en a un.
+  const myMovedFrom = me.team
+    ? (movements.find(mv => mv.team_id === me.team!.id)?.court_before ?? null)
+    : null;
+  const myMatchStatus = myMatch ? matchStatuses.get(myMatch.id) ?? 'awaiting' : null;
+  // « Toi · Jean-Marc » : dans SON bloc, le joueur se lit « Toi » et non son
+  // propre nom -- c'est ce qui fait qu'on repere sa ligne d'un coup d'oeil.
+  const pairLabel = (a: string, b: string, meFirst: boolean): string => {
+    const [na, nb] = namesOf(a, b);
+    return meFirst ? `Toi · ${a === player?.id ? nb : na}` : `${na} · ${nb}`;
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* ── En-tête sombre ── */}
@@ -571,6 +596,14 @@ export default function TournamentDetailScreen() {
           <Pill variant="neutral">{levelRangeLabel(t.level_min, t.level_max)}</Pill>
           <Pill variant="neutral">{priceLabel(t.price_mad)}</Pill>
         </View>
+
+        {/* Pendant la soiree, l'en-tete porte l'avancement (handoff design) :
+            ou on en est des rotations, d'un coup d'oeil, sans defiler. */}
+        {t.status === 'EN_COURS' && t.current_round > 0 && (
+          <View style={{ marginTop: 14 }}>
+            <RoundBanner current={t.current_round} total={t.round_count} minutes={ROUND_MINUTES} />
+          </View>
+        )}
       </View>
 
       <ScrollView
@@ -587,28 +620,31 @@ export default function TournamentDetailScreen() {
           <Notice tone="danger">Ce tournoi a été annulé par l’organisateur. Il ne se jouera pas.</Notice>
         )}
 
-        {/* ── Mon résultat — dès que le tournoi est clos, LE fait de la
-            soirée : « tu finis Xe, +Y points ». Séparé de « La soirée »
-            ci-dessous pour ne jamais se confondre avec le tableau du dernier
-            tour ou le classement vivant (défaut n°3 de la relecture). */}
-        {closed && me.team && (
+        {/* ── Mon résultat, en tête et en grand (handoff design, chantier 1) ──
+            Une fois la soirée close, c'est LE fait que le joueur vient
+            chercher : son rang, ses chiffres, de quoi partager. Il passe
+            avant le tableau et le classement, qui deviennent le détail.
+            Séparé de « La soirée » pour ne jamais se confondre avec le
+            classement vivant, qui donne un autre rang. */}
+        {closed && me.team && myFinalResult && (
+          <ResultHero
+            rank={myFinalResult.final_rank}
+            total={finalStandingRows.length}
+            partner={me.partnerId ? (byId.get(me.partnerId)?.player?.name ?? null) : null}
+            climbs={null}
+            wins={myFinalResult.wins}
+            losses={myFinalResult.played - myFinalResult.wins}
+            gamesWon={myFinalResult.games_won}
+            diff={myFinalResult.games_won - myFinalResult.games_lost}
+            onShare={() => setLiveTab('classement')}
+          />
+        )}
+        {closed && me.team && !myFinalResult && (
           <View style={[cs.card, { padding: 14, gap: 4 }]}>
             <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
               Mon résultat
             </Text>
-            {myFinalResult ? (
-              <>
-                <Text style={{ fontSize: 22, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
-                  {myFinalResult.final_rank === 1 ? '🏆 1er' : `${myFinalResult.final_rank}e`} place
-                  {t.status === 'CLASSEMENT_VALIDE' ? ` · +${myFinalResult.points} points` : ''}
-                </Text>
-                {t.status === 'TERMINE' && (
-                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
-                    {myFinalResult.points} points en attente de validation par l’organisateur.
-                  </Text>
-                )}
-              </>
-            ) : finalResultsError ? (
+            {finalResultsError ? (
               <Notice tone="warning">{finalResultsError}</Notice>
             ) : (
               <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
@@ -616,6 +652,22 @@ export default function TournamentDetailScreen() {
               </Text>
             )}
           </View>
+        )}
+
+        {/* ── Mon match de la rotation en cours (handoff design, chantier 1) ──
+            Pendant la soirée, la première question est « sur quel terrain je
+            joue » : terrain, mouvement, adversaires, saisie. Elle passe donc
+            AVANT le tableau, qui devient le détail des autres terrains. */}
+        {t.status === 'EN_COURS' && t.current_round > 0 && myMatch && me.team && (
+          <LiveHero
+            courtNo={myMatch.court_no}
+            movement={myMovement}
+            movedFrom={myMovedFrom}
+            mine={pairLabel(me.team.player1_id, me.team.player2_id, true)}
+            theirs={myOpponentTeam ? pairLabel(myOpponentTeam.player1_id, myOpponentTeam.player2_id, false) : null}
+            canScore={!!myMatch.team_b && myMatchStatus !== 'confirmed' && myMatchStatus !== 'forfeited'}
+            onScore={() => setScoreSheetMatchId(myMatch.id)}
+          />
         )}
 
         {/* ── La soirée : tableau des terrains + classement ── */}

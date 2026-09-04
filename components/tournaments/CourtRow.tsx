@@ -118,7 +118,7 @@ export function CourtRow({ courtNo, isTopCourt, teamA, teamB, gamesA, gamesB, fo
       {stakeText && (
         <View style={{ paddingHorizontal: 12, paddingBottom: 2 }}>
           <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>
-            🏆 {stakeText}
+            <Icon name="medal" size={11} color={Colors.brandDeep} stroke={2.4} /> {stakeText}
           </Text>
         </View>
       )}
