@@ -1910,6 +1910,7 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
 // (« Ouvrir le pointage », « Marquer absent » par ligne d'inscrit).
 
 function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
+  const router = useRouter();
   const [list, setList] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -1961,8 +1962,18 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
 
   return (
     <View style={{ gap: 12 }}>
-      <TouchableOpacity onPress={() => setCreating(true)} activeOpacity={0.85} style={sty.btnBrand}>
+      {/* L'assistant (app/tournaments/create.tsx) remplace le formulaire en
+          pile de champs : il montre en direct ce qu'on publie -- terrains ->
+          binomes -> places joueurs -> duree. L'ancien formulaire reste
+          accessible juste en dessous le temps qu'on soit sur de l'assistant ;
+          il partira quand il aura fait ses preuves. */}
+      <TouchableOpacity onPress={() => router.push('/tournaments/create' as any)} activeOpacity={0.85} style={sty.btnBrand}>
         <Text style={sty.btnBrandText}>+ Créer un tournoi</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => setCreating(true)} activeOpacity={0.85} hitSlop={6} style={{ alignSelf: 'center' }}>
+        <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+          Ancien formulaire
+        </Text>
       </TouchableOpacity>
 
       {loading ? (
