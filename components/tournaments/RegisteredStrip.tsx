@@ -48,10 +48,12 @@ function Initials({ name, mine, size = 34, overlap }: {
   );
 }
 
-export function RegisteredStrip({ people, total, children }: {
+export function RegisteredStrip({ people, total, onPlayerPress, children }: {
   people: RegisteredPerson[];
   /** Le nombre de places, en joueurs — pour lire « 12 sur 16 » d'un coup. */
   total: number;
+  /** Ouvre le profil d'un inscrit — on veut savoir à qui on a affaire. */
+  onPlayerPress?: (playerId: string) => void;
   /** La liste des joueurs seuls, rendue par l'écran sous le bandeau. */
   children?: React.ReactNode;
 }) {
@@ -91,7 +93,14 @@ export function RegisteredStrip({ people, total, children }: {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             {apercu.map((p, i) => (
-              <Initials key={p.id} name={p.name} mine={p.mine} overlap={i > 0} />
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => onPlayerPress?.(p.id)}
+                disabled={!onPlayerPress}
+                activeOpacity={0.7}
+              >
+                <Initials name={p.name} mine={p.mine} overlap={i > 0} />
+              </TouchableOpacity>
             ))}
             {reste > 0 && (
               <View style={{
@@ -119,7 +128,13 @@ export function RegisteredStrip({ people, total, children }: {
       ) : (
         <View style={{ gap: 8 }}>
           {people.map(p => (
-            <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TouchableOpacity
+              key={p.id}
+              onPress={() => onPlayerPress?.(p.id)}
+              disabled={!onPlayerPress}
+              activeOpacity={0.7}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 2 }}
+            >
               <Initials name={p.name} mine={p.mine} size={30} />
               <Text numberOfLines={1} style={{
                 flex: 1, fontSize: 13,
@@ -133,7 +148,10 @@ export function RegisteredStrip({ people, total, children }: {
                   EN ATTENTE
                 </Text>
               )}
-            </View>
+              {onPlayerPress && (
+                <Icon name="chevronRight" size={15} color={Colors.textMuted} stroke={2.2} />
+              )}
+            </TouchableOpacity>
           ))}
         </View>
       )}

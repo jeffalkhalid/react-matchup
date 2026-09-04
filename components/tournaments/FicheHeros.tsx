@@ -250,7 +250,7 @@ export function ResultHero({ rank, total, partner, climbs, wins, losses, gamesWo
  * répétaient la date et le club déjà présents dans l'en-tête. Ce qui reste ici
  * est ce qui décide : la date, le lieu, et s'il reste de la place.
  */
-export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price }: {
+export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price, onDirections }: {
   /** « VEN. 11 SEPT » */
   dayLabel: string;
   /** « 19:00 » */
@@ -260,6 +260,8 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
   taken: number; total: number; free: number; waiting: number;
   courts: number;
   priceLabel: string;
+  /** Ouvre l'itinéraire vers le club. Absent quand il n'y a pas de club. */
+  onDirections?: () => void;
 }) {
   const ratio = total > 0 ? Math.min(1, taken / total) : 0;
   const plein = free === 0;
@@ -288,12 +290,24 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
         </View>
 
         <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <Icon name="mapPin" size={12} color={Colors.textMuted} stroke={2.2} />
-            <Text numberOfLines={1} style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+          {/* Le club mene a l'itineraire : on va y aller en voiture, et
+              chercher l'adresse ailleurs est un aller-retour de trop. Le
+              geocodage des clubs vit deja dans lib/maps. */}
+          <TouchableOpacity
+            onPress={onDirections}
+            disabled={!onDirections}
+            activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+          >
+            <Icon name="mapPin" size={12} color={onDirections ? Colors.brandDeep : Colors.textMuted} stroke={2.2} />
+            <Text numberOfLines={1} style={{
+              flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBold,
+              color: onDirections ? Colors.brandDeep : Colors.textSecondary,
+            }}>
               {clubLine}
             </Text>
-          </View>
+            {onDirections && <Icon name="arrowRight" size={13} color={Colors.brandDeep} stroke={2.4} />}
+          </TouchableOpacity>
 
           {/* Les places se comptent en JOUEURS — l'unité de toute l'app. */}
           <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>

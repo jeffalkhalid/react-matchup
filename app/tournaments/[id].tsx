@@ -31,6 +31,7 @@ import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Pill } from '../../components/Pill';
 import { Icon } from '../../components/community/icons';
 import { displayName, isDeleted } from '../../lib/players';
+import { openInMaps, hasMapTarget } from '../../lib/maps';
 import {
   fetchTournament, fetchRegistrations, fetchTeams, fetchMyJoinRequests,
   getTournamentsEnabled, registerToTournament, joinTournamentPlayer,
@@ -817,6 +818,7 @@ export default function TournamentDetailScreen() {
             waiting={waiting}
             courts={t.court_count}
             priceLabel={priceLabel(t.price_mad)}
+            onDirections={hasMapTarget(t.club?.name) ? () => openInMaps(t.club?.name) : undefined}
           />
         )}
 
@@ -1085,6 +1087,7 @@ export default function TournamentDetailScreen() {
               mine: r.player_id === player?.id,
             }))}
             total={total}
+            onPlayerPress={(id) => router.push(`/player/${id}` as any)}
           />
         )}
 
@@ -1107,7 +1110,14 @@ export default function TournamentDetailScreen() {
               const canAsk = !!me.registration && !me.team && !isMe && canPair && sameQueue;
               return (
                 <View key={r.player_id} style={[cs.card, { padding: 12, gap: 8 }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {/* Le joueur mene a son profil : avant de proposer un
+                      binome a quelqu'un, on veut voir son niveau et son
+                      historique. */}
+                  <TouchableOpacity
+                    onPress={() => router.push(`/player/${r.player_id}` as any)}
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                  >
                     <Avatar name={displayName(r.player, 'player')} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
@@ -1121,7 +1131,7 @@ export default function TournamentDetailScreen() {
                     </View>
                     {/* Le côté, pour qu'on cherche un complément. */}
                     <Pill variant={r.side === 'both' ? 'neutral' : 'ink'}>{sideLabel(r.side)}</Pill>
-                  </View>
+                  </TouchableOpacity>
 
                   {!isMe && canAsk && warn && <Notice tone="warning">{warn}</Notice>}
 
