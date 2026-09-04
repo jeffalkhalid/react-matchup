@@ -812,42 +812,13 @@ export default function TournamentDetailScreen() {
           />
         )}
 
-        {/* ── Comment ça marche (handoff design : REPLIE par defaut) ──
-            Cinq lignes de regles ouvertes en permanence poussaient tout le
-            reste vers le bas. Celui qui connait le format n'a pas a les
-            relire a chaque visite ; celui qui les decouvre les deplie. */}
-        <View style={[cs.card, { padding: 14, gap: howToOpen ? 10 : 0 }]}>
-          <TouchableOpacity
-            onPress={() => setHowToOpen(o => !o)}
-            activeOpacity={0.7}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
-          >
-            <Icon name="medal" size={14} color={Colors.brandDeep} stroke={2.3} />
-            <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.textPrimary }}>
-              COMMENT ÇA MARCHE
-            </Text>
-            <Icon name="chevronRight" size={16} rotate={howToOpen ? -90 : 90} color={Colors.textMuted} stroke={2.4} />
-          </TouchableOpacity>
-          {howToOpen && [
-            `Tu viens en binôme, ou seul — l’organisateur t’apparie avant le départ.`,
-            `${t.round_count} rotations de ${ROUND_MINUTES} min. Tu gagnes, tu montes d’un terrain. Tu perds, tu descends.`,
-            `Terrain 1 = le plus fort. Le classement de la soirée sort à la dernière rotation.`,
-          ].map((line, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 9 }}>
-              <View style={{
-                width: 18, height: 18, borderRadius: 6, backgroundColor: Colors.primary,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.brand }}>{i + 1}</Text>
-              </View>
-              <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
-                {line}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* ── Où j'en suis ── */}
+        {/* ── Où j'en suis ──
+            EN TETE, mais SEULEMENT quand je suis inscrit : « suis-je dedans,
+            avec qui, de quel cote » est ce que je viens verifier, et c'est ce
+            qui doit ouvrir la fiche. Quand je ne le suis pas, le bloc ne dit
+            rien que la carte de date ne dise deja, et c'est la barre fixe en
+            pied d'ecran qui porte le geste -- il n'a alors pas lieu d'etre. */}
+        {(me.registration || (!canRegister && acceptsRegistrations(t.status) === false && !closed)) && (
         <View style={{ gap: 10 }}>
           <SectionTitle>Mon inscription</SectionTitle>
 
@@ -1052,6 +1023,43 @@ export default function TournamentDetailScreen() {
               })}
             </View>
           )}
+        </View>
+
+        )}
+
+        {/* ── Comment ça marche (handoff design : REPLIE par defaut) ──
+            Cinq lignes de regles ouvertes en permanence poussaient tout le
+            reste vers le bas. Celui qui connait le format n'a pas a les
+            relire a chaque visite ; celui qui les decouvre les deplie. */}
+        <View style={[cs.card, { padding: 14, gap: howToOpen ? 10 : 0 }]}>
+          <TouchableOpacity
+            onPress={() => setHowToOpen(o => !o)}
+            activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+          >
+            <Icon name="medal" size={14} color={Colors.brandDeep} stroke={2.3} />
+            <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.textPrimary }}>
+              COMMENT ÇA MARCHE
+            </Text>
+            <Icon name="chevronRight" size={16} rotate={howToOpen ? -90 : 90} color={Colors.textMuted} stroke={2.4} />
+          </TouchableOpacity>
+          {howToOpen && [
+            `Tu viens en binôme, ou seul — l’organisateur t’apparie avant le départ.`,
+            `${t.round_count} rotations de ${ROUND_MINUTES} min. Tu gagnes, tu montes d’un terrain. Tu perds, tu descends.`,
+            `Terrain 1 = le plus fort. Le classement de la soirée sort à la dernière rotation.`,
+          ].map((line, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: 9 }}>
+              <View style={{
+                width: 18, height: 18, borderRadius: 6, backgroundColor: Colors.primary,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, color: Colors.brand }}>{i + 1}</Text>
+              </View>
+              <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
+                {line}
+              </Text>
+            </View>
+          ))}
         </View>
 
         {/* ── Qui est deja la (handoff design) ──
