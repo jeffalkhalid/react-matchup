@@ -463,8 +463,9 @@ export default function HomeScreen() {
                 />
               </View>
 
-              {/* C bis. Tournoi à venir — ~0,9/7,6, et SEULEMENT s'il y en a un
-                  auquel je ne suis pas inscrit. Les hauteurs étant relatives,
+              {/* C bis. Prochaine soirée — ~0,9/7,6, dès qu'un tournoi est
+                  annoncé : la carte dit où j'en suis (à s'inscrire, inscrit,
+                  en liste d'attente). Les hauteurs étant relatives,
                   cette part se prend sur l'ensemble : rien n'est rogné au hero
                   en particulier, et l'accueil retrouve exactement ses
                   proportions d'origine dès que la carte disparaît. */}
@@ -473,6 +474,7 @@ export default function HomeScreen() {
                   <HomeTournamentCard
                     tournament={tourPick.tournament}
                     free={tourPick.free}
+                    state={tourPick.state}
                     onPress={() => router.push(`/tournaments/${tourPick.tournament.id}` as any)}
                   />
                 </View>

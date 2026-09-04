@@ -1367,20 +1367,26 @@ export async function fetchTournamentMatches(tournamentId: string): Promise<Tour
 
 // ── Accueil : quel tournoi mérite une place sur l'écran d'accueil ───────────
 //
-// La carte d'accueil n'apparaît QUE quand il y a quelque chose à faire : une
-// soirée à venir à laquelle je ne suis pas inscrit. Dès que je m'inscris, elle
-// disparaît. C'est un choix délibéré contre l'idée d'un bandeau permanent qui
-// clignote : un tournoi annoncé trois semaines à l'avance clignoterait trois
-// semaines. La rareté d'apparition attire mieux l'œil qu'une animation, et
-// elle se limite toute seule.
+// La carte montre LA PROCHAINE soirée à venir, et dit où j'en suis dessus :
+// pas encore inscrit, inscrit, ou en liste d'attente.
 //
-// Un tournoi complet reste affiché : il y a encore quelque chose à faire —
-// entrer en liste d'attente. C'est le libellé qui le dit, pas la disparition.
+// Première version : elle disparaissait dès l'inscription, au nom de « ne
+// montrer que ce sur quoi il y a à agir ». C'était une erreur — on perdait de
+// vue qu'on joue jeudi. Ce n'est pas la PRÉSENCE de la carte qui doit être
+// rare, c'est son INSISTANCE : plein jaune quand il faut s'inscrire, discrète
+// une fois qu'on est dedans.
+//
+// Un tournoi complet reste affiché lui aussi : entrer en liste d'attente est
+// encore une action. C'est le libellé qui le dit, pas la disparition.
+
+/** Où j'en suis sur ce tournoi — c'est l'état, pas la présence, qui varie. */
+export type HomeTournamentState = 'open' | 'registered' | 'waitlisted';
 
 export interface HomeTournamentPick {
   tournament: Tournament;
   /** Places libres au sens du serveur : zéro dès qu'une file existe. */
   free: number;
+  state: HomeTournamentState;
 }
 
 /**
@@ -1396,12 +1402,17 @@ export function homeTournamentPick(
 ): HomeTournamentPick | null {
   const candidats = tournaments
     .filter(t => tournamentPhase(t.status) === 'upcoming')
-    .filter(t => !(regsByTournament.get(t.id) ?? []).some(r => r.player_id === myId))
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
 
   const t = candidats[0];
   if (!t) return null;
-  return { tournament: t, free: freePlaces(regsByTournament.get(t.id) ?? [], t.court_count) };
+
+  const regs = regsByTournament.get(t.id) ?? [];
+  const moi = regs.find(r => r.player_id === myId);
+  const state: HomeTournamentState =
+    !moi ? 'open' : moi.waitlist_position != null ? 'waitlisted' : 'registered';
+
+  return { tournament: t, free: freePlaces(regs, t.court_count), state };
 }
 
 // ── Sélection de la date et de l'heure (formulaire de création) ─────────────

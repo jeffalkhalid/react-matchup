@@ -1,41 +1,63 @@
-// Carte « un tournoi vous attend » de l'accueil.
+// Carte de la prochaine soirée, sur l'accueil.
 //
-// Elle n'est PAS permanente : `homeTournamentPick` ne la propose que s'il y a
-// une soirée à venir à laquelle je ne suis pas inscrit, et elle disparaît dès
-// que je m'inscris. C'est ce qui lui donne le droit de prendre de la place —
-// et ce qui remplace une animation clignotante, qui aurait clignoté pendant
-// les trois semaines séparant l'annonce de la soirée.
+// Elle apparaît dès qu'un tournoi est annoncé et dit OÙ J'EN SUIS : à
+// s'inscrire, inscrit, ou en liste d'attente. Elle ne disparaît pas une fois
+// qu'on est dedans — c'était la première version, et on perdait de vue qu'on
+// joue jeudi.
 //
-// Conventions reprises de HomeShortcutCard : carte blanche rayon 18, bordure,
-// ombre légère, icône sur pastille teintée. L'accent de marque (jaune) la
-// distingue des raccourcis gris sans en faire un bandeau publicitaire.
+// Ce qui varie, c'est l'INSISTANCE, pas la présence : plein jaune quand il
+// reste quelque chose à faire, sombre le reste du temps. C'est ce qui remplace
+// une animation clignotante, qui aurait clignoté pendant les trois semaines
+// séparant l'annonce de la soirée.
+//
+// Relief et rayon repris des CTA principaux (HomePrimaryActions) : la carte
+// appartient à la famille des actions, pas à celle des cartes d'information.
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
-import { formatTournamentDate, type Tournament } from '../../lib/tournaments';
+import { formatTournamentDate, type Tournament, type HomeTournamentState } from '../../lib/tournaments';
 
-export function HomeTournamentCard({ tournament, free, onPress }: {
+export function HomeTournamentCard({ tournament, free, state, onPress }: {
   tournament: Tournament;
   /** Places libres au sens du serveur : zéro dès qu'une file d'attente existe. */
   free: number;
+  /** Où j'en suis : pas inscrit, inscrit, ou en liste d'attente. */
+  state: HomeTournamentState;
   onPress: () => void;
 }) {
   const complet = free === 0;
+  // Seul l'état « pas encore inscrit ET il reste de la place » réclame quelque
+  // chose. Les deux autres informent : je suis dedans, ou j'attends mon tour.
+  const aAgir = state === 'open' && !complet;
 
-  // La COULEUR porte l'information, avant même qu'on lise le texte : plein
-  // jaune quand il reste de la place — même famille que « Trouver un match »,
-  // c'est-à-dire « ceci est une action » — et sombre quand c'est complet, où
-  // l'on n'entre plus qu'en liste d'attente.
+  // La COULEUR porte l'information avant même qu'on lise : plein jaune quand
+  // il faut s'inscrire — même famille que « Trouver un match », c'est-à-dire
+  // « ceci est une action » — et sombre dès qu'on n'a plus rien à faire.
   //
-  // Surtout, la carte ne peut PAS être blanche : l'accueil a un haut coloré
-  // (grande carte sombre, deux boutons jaune et noir) et un bas blanc. Une
-  // carte blanche tombe dans le groupe du bas et disparaît — c'est ce qui
-  // s'est passé à la première version.
-  const fond      = complet ? Colors.heroBg : Colors.brand;
-  const texte     = complet ? Colors.textOnDark : Colors.textOnBrand;
-  const secondaire = complet ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.62)';
-  const pastille  = complet ? 'rgba(255,255,255,0.12)' : Colors.primary;
+  // Ce n'est PAS la présence de la carte qui doit être rare, c'est son
+  // insistance. La première version la faisait disparaître à l'inscription :
+  // on perdait de vue qu'on joue jeudi.
+  //
+  // Et elle ne peut pas être blanche : l'accueil a un haut coloré (grande
+  // carte sombre, deux boutons jaune et noir) et un bas blanc — une carte
+  // blanche tombe dans le groupe du bas et disparaît.
+  const fond       = aAgir ? Colors.brand : Colors.heroBg;
+  const texte      = aAgir ? Colors.textOnBrand : Colors.textOnDark;
+  const secondaire = aAgir ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.65)';
+  const pastille   = aAgir ? Colors.primary : 'rgba(255,255,255,0.12)';
+
+  const etat =
+    state === 'registered' ? 'Tu es inscrit'
+    : state === 'waitlisted' ? 'Tu es en liste d’attente'
+    : complet ? 'complet — liste d’attente'
+    : `${free} place${free > 1 ? 's' : ''}`;
+
+  const bouton =
+    state === 'registered' ? 'Voir'
+    : state === 'waitlisted' ? 'Voir'
+    : complet ? 'Voir'
+    : 'S’inscrire';
 
   return (
     <TouchableOpacity
@@ -47,7 +69,7 @@ export function HomeTournamentCard({ tournament, free, onPress }: {
         paddingVertical: 11, paddingHorizontal: 12,
         flexDirection: 'row', alignItems: 'center', gap: 10,
         // Même relief que les CTA principaux, pour appartenir à leur famille.
-        shadowColor: complet ? '#000' : Colors.brandDeep,
+        shadowColor: aAgir ? Colors.brandDeep : '#000',
         shadowOpacity: 0.25, shadowRadius: 12,
         shadowOffset: { width: 0, height: 6 }, elevation: 5,
       }}
@@ -57,7 +79,7 @@ export function HomeTournamentCard({ tournament, free, onPress }: {
         backgroundColor: pastille,
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Icon name="medal" size={19} color={complet ? Colors.textOnDark : Colors.brand} stroke={2.3} />
+        <Icon name="medal" size={19} color={aAgir ? Colors.brand : Colors.textOnDark} stroke={2.3} />
       </View>
 
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -68,18 +90,16 @@ export function HomeTournamentCard({ tournament, free, onPress }: {
         <Text numberOfLines={1} style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: secondaire, marginTop: 1 }}>
           {formatTournamentDate(tournament.starts_at)}
           {' · '}
-          {complet
-            ? 'complet — liste d’attente'
-            : `${free} place${free > 1 ? 's' : ''}`}
+          {etat}
         </Text>
       </View>
 
       <View style={{
-        backgroundColor: complet ? 'rgba(255,255,255,0.14)' : Colors.primary,
+        backgroundColor: aAgir ? Colors.primary : 'rgba(255,255,255,0.14)',
         borderRadius: 999, paddingHorizontal: 13, paddingVertical: 7,
       }}>
         <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 11.5, color: Colors.textOnDark }}>
-          {complet ? 'Voir' : 'S’inscrire'}
+          {bouton}
         </Text>
       </View>
     </TouchableOpacity>

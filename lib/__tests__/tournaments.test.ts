@@ -524,16 +524,19 @@ describe("carte d'accueil — n'apparaît que s'il y a quelque chose à faire", 
     const pick = homeTournamentPick([t], new Map([['T1', [reg('autre')]]]), 'moi');
     expect(pick?.tournament.id).toBe('T1');
     expect(pick?.free).toBe(15); // 4 terrains x 4 places, un siege pris
+    expect(pick?.state).toBe('open');
   });
 
-  it('disparait des que je suis inscrit — c est la regle centrale', () => {
+  it('RESTE quand je suis inscrit, et le dit — sinon on oublie qu on joue jeudi', () => {
     const t = tournoi('T1', '2026-09-10T18:00:00Z');
-    expect(homeTournamentPick([t], new Map([['T1', [reg('moi')]]]), 'moi')).toBeNull();
+    const pick = homeTournamentPick([t], new Map([['T1', [reg('moi')]]]), 'moi');
+    expect(pick?.tournament.id).toBe('T1');
+    expect(pick?.state).toBe('registered');
   });
 
-  it('disparait aussi si je suis en liste d attente', () => {
+  it('distingue la liste d attente de l inscription', () => {
     const t = tournoi('T1', '2026-09-10T18:00:00Z');
-    expect(homeTournamentPick([t], new Map([['T1', [reg('moi', 1)]]]), 'moi')).toBeNull();
+    expect(homeTournamentPick([t], new Map([['T1', [reg('moi', 1)]]]), 'moi')?.state).toBe('waitlisted');
   });
 
   it('ignore ce qui n est pas a venir : en cours, termine, annule', () => {
@@ -547,6 +550,15 @@ describe("carte d'accueil — n'apparaît que s'il y a quelque chose à faire", 
     const tard = tournoi('TARD', '2026-09-20T18:00:00Z');
     const tot  = tournoi('TOT',  '2026-09-11T18:00:00Z');
     expect(homeTournamentPick([tard, tot], new Map(), 'moi')?.tournament.id).toBe('TOT');
+  });
+
+  it('le plus proche gagne, meme si je suis deja inscrit dessus', () => {
+    // C est « ce qui vient » qui compte, pas « ce sur quoi il reste a agir ».
+    const tot  = tournoi('TOT',  '2026-09-11T18:00:00Z');
+    const tard = tournoi('TARD', '2026-09-20T18:00:00Z');
+    const pick = homeTournamentPick([tard, tot], new Map([['TOT', [reg('moi')]]]), 'moi');
+    expect(pick?.tournament.id).toBe('TOT');
+    expect(pick?.state).toBe('registered');
   });
 
   it('reste affiche quand c est complet : entrer en file est encore une action', () => {
