@@ -227,7 +227,12 @@ export default function HomeScreen() {
 
   const matchCount = player.win_count + player.loss_count;
   const now = new Date();
-  const visibleUpcoming = upcomingGames.filter(g => !g.match_date || new Date(g.match_date) > now);
+  // Une partie reste visible 1 h 30 APRÈS son heure de début (durée du match) :
+  // c'est la fenêtre du score en direct (démarrage possible jusqu'à H+2h), et
+  // « Le score » ne prend le relais qu'à match_date + 1 h 30 (isGameReadyToScore).
+  // Couper à l'heure pile rendait la partie introuvable pendant qu'on la joue.
+  const visibleUpcoming = upcomingGames.filter(g =>
+    !g.match_date || new Date(g.match_date).getTime() + 90 * 60_000 > now.getTime());
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F7F7F7' }}>
