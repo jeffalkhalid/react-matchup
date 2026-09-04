@@ -1648,3 +1648,47 @@ export function bestFilterToDrop<T extends { tournament: Tournament }>(
   }
   return best;
 }
+
+
+// ── L'action du moment sur un tournoi (panel arbitre) ──────────────────────
+
+/**
+ * Ce qu'il reste à faire sur un tournoi, et le libellé du geste.
+ *
+ * PUR à dessein : c'est la règle qui décide de ce que l'organisateur voit en
+ * premier, et un libellé faux l'enverrait faire le mauvais geste. Le sous-titre
+ * dit toujours POURQUOI l'action est proposée.
+ */
+export function nextTournamentAction(t: Tournament, seatedTeams: number): {
+  label: string; tone: 'brand' | 'dark'; subtitle: string;
+} | { label: null; subtitle: string } {
+  const format = `${teamCount(t.court_count)} binômes · ${t.court_count} terrains · ${t.round_count} rotations de ${ROUND_MINUTES} min`;
+
+  switch (t.status) {
+    case 'INSCRIPTIONS_OUVERTES':
+      return {
+        label: 'Relancer les inscrits', tone: 'dark',
+        subtitle: `${seatedTeams} binôme${seatedTeams > 1 ? 's' : ''} sur ${teamCount(t.court_count)} · check-in non ouvert`,
+      };
+    case 'COMPLET':
+      return { label: 'Ouvrir le pointage', tone: 'brand', subtitle: format };
+    case 'CHECK_IN':
+    case 'PRET':
+      return { label: 'Démarrer le tournoi', tone: 'brand', subtitle: format };
+    case 'EN_COURS':
+      return t.current_round === 0
+        ? { label: 'Générer le tour 1', tone: 'brand', subtitle: format }
+        : {
+            label: `Générer le tour ${t.current_round + 1}`, tone: 'brand',
+            subtitle: `Rotation ${t.current_round} sur ${t.round_count} jouée`,
+          };
+    case 'TERMINE':
+      return { label: 'Valider le classement', tone: 'brand', subtitle: 'Classement figé, points en attente.' };
+    case 'CLASSEMENT_VALIDE':
+      return { label: 'Voir le classement', tone: 'dark', subtitle: 'Classement validé, points crédités.' };
+    case 'ANNULE':
+      return { label: null, subtitle: 'Tournoi annulé.' };
+    default:
+      return { label: null, subtitle: format };
+  }
+}

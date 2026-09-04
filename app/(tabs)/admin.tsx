@@ -33,6 +33,7 @@ import {
   validateTournament, openCheckIn, markNoShow, canOpenCheckIn, acceptsCheckIn,
   seatsLabel, seatsTaken, seatCount, waitlistCount, soloRegistrations, seatedTeams,
   statusLabel, statusTone, levelRangeLabel, priceLabel, formatTournamentDate, formatLabel, ROUND_MINUTES,
+  nextTournamentAction,
   nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, stakeLabel, groupResultsByTeam,
   validateTournamentScore, matchLiveStatus, pointsScaleValid,
   defaultPointsScale, resizePointsScale, teamCount,
@@ -44,6 +45,7 @@ import {
   sortQueue, type QueueItem, type QueueKind,
 } from '../../lib/refereeQueue';
 import { QueueCounters, QueueCard, QueueEmpty } from '../../components/admin/RefereeQueue';
+import { TournamentToRun, CreateTournamentCard } from '../../components/admin/TournamentToRun';
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { Pill } from '../../components/Pill';
@@ -2106,14 +2108,11 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
 
   return (
     <View style={{ gap: 12 }}>
-      {/* L'assistant (app/tournaments/create.tsx) remplace le formulaire en
-          pile de champs : il montre en direct ce qu'on publie -- terrains ->
-          binomes -> places joueurs -> duree. L'ancien formulaire reste
-          accessible juste en dessous le temps qu'on soit sur de l'assistant ;
-          il partira quand il aura fait ses preuves. */}
-      <TouchableOpacity onPress={() => router.push('/tournaments/create' as any)} activeOpacity={0.85} style={sty.btnBrand}>
-        <Text style={sty.btnBrandText}>+ Créer un tournoi</Text>
-      </TouchableOpacity>
+      {/* L'invite de creation, puis les soirees a conduire -- chacune avec
+          LA seule action du moment (handoff panel arbitre). L'organisateur
+          n'a plus a ouvrir chaque tournoi pour decouvrir qu'il n'y a rien a
+          y faire, ou qu'un tour attend depuis une heure. */}
+      <CreateTournamentCard onPress={() => router.push('/tournaments/create' as any)} />
       <TouchableOpacity onPress={() => setCreating(true)} activeOpacity={0.85} hitSlop={6} style={{ alignSelf: 'center' }}>
         <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
           Ancien formulaire
@@ -2130,26 +2129,28 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
           </Text>
         </View>
       ) : (
-        <View style={{ gap: 8 }}>
-          {list.map(t => (
-            <TouchableOpacity key={t.id} onPress={() => setSelectedId(t.id)} activeOpacity={0.85} style={sty.frmtRow}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                  <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>
-                    {t.name}
-                  </Text>
-                  {t.created_by === myPlayerId && <Pill variant="brand">Toi</Pill>}
-                </View>
-                <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>
-                  {formatTournamentDate(t.starts_at)} · {statusLabel(t.status)}
-                </Text>
-                <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: '600', marginTop: 2 }}>
-                  {formatLabel(t.court_count, t.round_count)}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 18, color: Colors.textMuted }}>›</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={{ gap: 10 }}>
+          <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 1.2, color: Colors.textMuted }}>
+            À CONDUIRE
+          </Text>
+          {list.map(t => {
+            const next = nextTournamentAction(t, 0);
+            return (
+              <TournamentToRun
+                key={t.id}
+                tournament={t}
+                subtitle={next.subtitle}
+                action={next.label ? {
+                  label: next.label,
+                  tone: (next as { tone: 'brand' | 'dark' }).tone,
+                  // Le geste s'execute dans la fiche de conduite, qui porte
+                  // deja tous les gardes et toutes les confirmations.
+                  onPress: () => setSelectedId(t.id),
+                } : null}
+                onDetails={() => setSelectedId(t.id)}
+              />
+            );
+          })}
         </View>
       )}
     </View>
