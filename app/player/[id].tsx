@@ -669,7 +669,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     const [matchesRes, historyRes, repRes, favRes, rankRes, ambRes] = await Promise.all([
       supabase
         .from('matches')
-        .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, status, game_id,
+        .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, scored_live, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),

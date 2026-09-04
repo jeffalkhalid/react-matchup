@@ -145,9 +145,12 @@ export default function NotificationsScreen() {
         >
           <Icon name="chevronLeft" size={20} color={Colors.textPrimary} stroke={2.5} />
         </TouchableOpacity>
+        {/* Segment unique obligatoire : adjustsFontSizeToFit est un no-op Android
+            dès qu'un <Text> imbriqué est présent → le titre passait à la ligne
+            (« Tes » seul visible) quand le badge + « Effacer les infos » rognent la largeur. */}
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
-          style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5, paddingRight: 5 }}>
-          Tes <Text style={{ color: Colors.brand }}>notifications</Text>
+          style={{ fontSize: 26, lineHeight: 34, color: Colors.brand, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5, paddingRight: 5 }}>
+          Tes notifications
         </Text>
         {items.length > 0 && (
           <View style={{

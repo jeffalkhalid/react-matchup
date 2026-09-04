@@ -942,25 +942,43 @@ export default function MatchmakingScreen() {
                   </DefiGameCard>
                 ) : null)}
 
-                {/* Mes candidatures : en cours (attente de mon binôme) OU en file d'attente. */}
-                {myApplications.map(a => {
-                  const g = defiGameWithMyBinome(a);   // injecte MON binôme (transparent) sur Team B si pending/open
+                {/* Mes candidatures : en cours (attente de mon binôme) OU en file d'attente.
+                    REGROUPÉES par match : un joueur peut avoir deux binômes vivants sur le
+                    même défi (initiateur de l'un + partenaire de l'autre) → UNE seule carte,
+                    avec une ligne par binôme. */}
+                {Array.from(
+                  myApplications.reduce((m, a) => {
+                    if (!a.game_id || !a.game) return m;
+                    m.set(a.game_id, [...(m.get(a.game_id) ?? []), a]);
+                    return m;
+                  }, new Map<string, typeof myApplications>()).values()
+                ).map(apps => {
+                  // Superposition Team B : depuis une candidature 'pending' si possible
+                  // (defiGameWithMyBinome n'injecte que pending + défi open).
+                  const base = apps.find(a => a.status === 'pending') ?? apps[0];
+                  const g = defiGameWithMyBinome(base);
                   if (!g) return null;
-                  const mate = a.initiator_id === player.id ? a.partner : a.initiator;   // mon coéquipier
-                  const others = (a.game_id && otherBinomeCounts[a.game_id]) || 0;
+                  const others = otherBinomeCounts[g.id] || 0;
                   return (
-                    <DefiGameCard key={'app-' + a.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(a.game!.id)}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
-                        <Pill variant="warning">{a.status === 'queued' ? '⏳ En file d\'attente' : '⏳ Candidature en cours'}</Pill>
-                        {others > 0 && <Pill variant="neutral">+{others} binôme{others > 1 ? 's' : ''}</Pill>}
-                        <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
-                          avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{mate?.name ?? '?'}</Text>
-                          {a.status === 'queued' ? ' — promus si libre' : ''}
-                        </Text>
-                        <TouchableOpacity onPress={() => handleWithdrawApp(a)} disabled={binomeBusy.has(a.id)}
-                          style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, borderColor: Colors.border, opacity: binomeBusy.has(a.id) ? 0.5 : 1 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.danger }}>Retirer</Text>
-                        </TouchableOpacity>
+                    <DefiGameCard key={'app-' + g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                      <View style={{ gap: 8 }}>
+                        {apps.map((a, i) => {
+                          const mate = a.initiator_id === player.id ? a.partner : a.initiator;   // mon coéquipier
+                          return (
+                            <View key={a.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                              <Pill variant="warning">{a.status === 'queued' ? '⏳ En file d\'attente' : '⏳ Candidature en cours'}</Pill>
+                              {i === 0 && others > 0 && <Pill variant="neutral">+{others} binôme{others > 1 ? 's' : ''}</Pill>}
+                              <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={1}>
+                                avec <Text style={{ fontWeight: '900', color: Colors.textPrimary }}>{mate?.name ?? '?'}</Text>
+                                {a.status === 'queued' ? ' — promus si libre' : ''}
+                              </Text>
+                              <TouchableOpacity onPress={() => handleWithdrawApp(a)} disabled={binomeBusy.has(a.id)}
+                                style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, borderColor: Colors.border, opacity: binomeBusy.has(a.id) ? 0.5 : 1 }}>
+                                <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.danger }}>Retirer</Text>
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
                       </View>
                     </DefiGameCard>
                   );

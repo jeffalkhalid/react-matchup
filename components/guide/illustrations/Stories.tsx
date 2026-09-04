@@ -23,7 +23,7 @@ export function IllustStories() {
           backgroundColor: 'rgba(219,39,119,0.30)' }} />
 
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, padding: 13 }}>
-          <Pill variant="brand" fontSize={7.5}>🎾 Victoire</Pill>
+          <Pill variant="brand" fontSize={7.5}>🏆 Victoire</Pill>
           <View style={{ flex: 1 }} />
           <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, textTransform: 'uppercase', color: '#fff' }}>
             Karim{'\n'}gagne 6-3 6-4

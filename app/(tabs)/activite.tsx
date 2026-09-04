@@ -116,7 +116,7 @@ export default function ActiviteTab() {
 
   const pingFriend = (f: SocialPlayer) => {
     if (!player) return;
-    notifyPlayers({ playerIds: [f.id], title: `${player.name} veut jouer 🎾`, body: 'Propose-lui une partie cette semaine !', data: { type: 'ping' } });
+    notifyPlayers({ playerIds: [f.id], title: `${player.name} veut jouer 🔥`, body: 'Propose-lui une partie cette semaine !', data: { type: 'ping' } });
     Alert.alert('Envoyé', `${f.name.split(' ')[0]} a reçu ton ping.`);
   };
 

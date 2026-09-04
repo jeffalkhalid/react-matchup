@@ -25,7 +25,7 @@ export function IllustChats() {
         <View style={{ marginLeft: 7 }}>
           <View style={{ backgroundColor: '#F4F2EF', borderTopLeftRadius: 14, borderTopRightRadius: 14,
             borderBottomRightRadius: 14, borderBottomLeftRadius: 4, paddingVertical: 8, paddingHorizontal: 11, maxWidth: 168 }}>
-            <Text style={{ fontFamily: Fonts.ui, fontSize: 11.5, color: '#0A0A0A' }}>On se cale à 10h au club ? 🎾</Text>
+            <Text style={{ fontFamily: Fonts.ui, fontSize: 11.5, color: '#0A0A0A' }}>On se cale à 10h au club ? 💪</Text>
           </View>
           {/* badge réaction */}
           <View style={{ position: 'absolute', bottom: -8, left: 8, backgroundColor: '#fff', borderWidth: 1,

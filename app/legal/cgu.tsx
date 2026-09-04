@@ -19,7 +19,7 @@ export default function CguScreen() {
       sub="Les règles qui rendent l'expérience juste et agréable pour toute la communauté padel."
       updated={LEGAL.lastUpdate}
     >
-      <Section n={1} icon="🎾" title="Le Service">
+      <Section n={1} icon="🏟️" title="Le Service">
         <P>
           <B>{LEGAL.brand}</B> met en relation les joueurs de padel : organisation de parties,
           matchmaking, classement ELO, défis, messagerie et communauté. Nous facilitons l'organisation

@@ -172,3 +172,32 @@ export function spotsLabel(game: {
   if (pending > 0) return `${pending} place${pending > 1 ? 's' : ''} en attente de réponse`;
   return 'Complet';
 }
+
+// ─── Source de vérité UNIQUE : fourchette de niveau affichable ───────────────
+// (cartes lobby + fiche détail + messages de partage). Défi CIBLÉ : min/max_elo
+// sont null (aucune contrainte d'accès) — un fallback 0/1750 afficherait un faux
+// « 1.0 – 6.0 ». On dérive alors la fourchette des ELO réels de TOUS les
+// occupants du match (créateur + acceptés + invités non expirés, cf.
+// occupiesSpot) : les invités d'un défi ciblé SONT le match — les exclure
+// donnait une fourchette absurde (ex. « 5.03 - 5.04 » sur 2 confirmés alors
+// que les invités vont de 4.14 à 4.74). null = vraiment rien à afficher.
+export function gameEloRange(game: {
+  creator_id: string;
+  min_elo?: number | null; max_elo?: number | null;
+  creator?: { elo_score?: number | null } | null;
+  participants?: { player_id: string; status: string; invite_expires_at?: string | null; player?: { elo_score?: number | null } | null }[] | null;
+}): { min: number; max: number; derived: boolean } | null {
+  if (game.min_elo != null || game.max_elo != null) {
+    return { min: game.min_elo ?? 0, max: game.max_elo ?? 9999, derived: false };
+  }
+  const elos: number[] = [];
+  const creatorElo = game.creator?.elo_score;
+  if (typeof creatorElo === 'number') elos.push(creatorElo);
+  for (const p of game.participants ?? []) {
+    if (!occupiesSpot(p) || p.player_id === game.creator_id) continue;
+    const e = p.player?.elo_score;
+    if (typeof e === 'number') elos.push(e);
+  }
+  if (elos.length === 0) return null;
+  return { min: Math.min(...elos), max: Math.max(...elos), derived: true };
+}

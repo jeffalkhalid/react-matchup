@@ -128,6 +128,25 @@ export function NaturePill({ kind, stake }: { kind: 'defi' | 'competitif' | 'ami
 }
 
 // ── Carte d'un match ──────────────────────────────────────────────────
+// ── Équipes + grille de score (bloc central de MatchCard) ─────────────
+// Exporté pour réutilisation hors carte — ex. « Leur version » d'un score
+// contesté dans le lobby, affichée au même format noms + grille.
+export function MatchTeamsScore({ m, onPlayerPress }: { m: MatchView; onPlayerPress?: (id: string) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {m.teams[0].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={0} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {m.teams[1].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={1} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
+        </View>
+      </View>
+      <View><ScoreGrid sets={m.sets} winnerRow={m.winnerRow} /></View>
+    </View>
+  );
+}
+
 export function MatchCard({ m, onShare, compact = false, onPress, footer, showActions = true, showDelta = true, onPlayerPress }: {
   m: MatchView; onShare?: () => void; compact?: boolean;
   onPress?: () => void; footer?: React.ReactNode; showActions?: boolean; showDelta?: boolean;
@@ -169,17 +188,7 @@ export function MatchCard({ m, onShare, compact = false, onPress, footer, showAc
       </View>
 
       {/* Équipes + score */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {m.teams[0].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={0} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
-          </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {m.teams[1].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={1} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
-          </View>
-        </View>
-        <View><ScoreGrid sets={m.sets} winnerRow={m.winnerRow} /></View>
-      </View>
+      <MatchTeamsScore m={m} onPlayerPress={onPlayerPress} />
 
       {/* Actions / footer personnalisable */}
       {footer ? footer : showActions ? (
@@ -623,7 +632,7 @@ export function ProfileHeader(props: {
           marginTop: 8, borderRadius: 999, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
           paddingVertical: 11, alignItems: 'center', justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Proposer comme binôme</Text>
+          <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#fff' }}>Choisir comme binôme</Text>
         </TouchableOpacity>
       )}
 

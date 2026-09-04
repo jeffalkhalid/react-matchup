@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { notifyPlayers } from './notify';
 import { isBadgeVisible } from './badges';
-import { getLeague, eloToLevel } from './theme';
+import { getLeague, eloToLevel, formatPadelLevel } from './theme';
 import type {
   Player, SocialPlayer, ActivityEvent, GameAlert, ReferralStats, League, ActivityComment,
 } from '../types';
@@ -239,7 +239,7 @@ export async function getActivityFeed(myId: string, limit = 50, includeSelf = fa
     matchIds.length
       ? supabase.from('matches').select(`
           id, winner_id, loser_id, winner_id_2, loser_id_2, score_text, created_at,
-          game_format, is_challenge, stake_multiplier,
+          game_format, is_challenge, stake_multiplier, scored_live,
           winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
           winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
           game:game_id(location, match_date, creator_id)`).in('id', matchIds)
@@ -460,6 +460,45 @@ export function referralQRValue(code: string): string {
 // Lien de partage d'une partie ouverte → écran lobby (pagmatch://lobby?gameId=).
 export function lobbyGameLink(gameId: string): string {
   return `${SHARE_BASE}/g/${encodeURIComponent(gameId)}`;
+}
+
+// ─── Message de partage d'une partie (texto/WhatsApp) ────────
+// Mise en forme UNIQUE — lobby, fiche détail ET wizard « Partie publiée »
+// passent par ici (avant : 3 gabarits copiés-collés qui divergeaient).
+// Format inspiré des partages PadelGo : titre club, date, type, fourchette,
+// puis un joueur par ligne — 🟢 confirmé, ⏳ invitation en attente, et une
+// ligne « ⏳ ... » par place encore libre — lien de la partie en pied.
+export function buildGameShareMessage(g: {
+  gameId?: string | null;
+  location?: string | null;
+  matchDate: Date;
+  kind: 'competitive' | 'friendly' | 'challenge';
+  stake?: number | null;
+  /** Créateur en premier ; `pending` = invitation pas encore acceptée. */
+  players: { name?: string | null; elo?: number | null; pending?: boolean }[];
+  /** Places réellement libres (lib/games.freeSpots) → lignes « ⏳ ... ». */
+  freeSpots: number;
+  /** Fourchette en ELO (lib/games.gameEloRange) — omise si rien à afficher. */
+  eloRange?: { min: number; max: number } | null;
+}): string {
+  const dateStr = g.matchDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const timeStr = g.matchDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+  const stake = g.stake && g.stake > 1 ? ` ×${g.stake % 1 === 0 ? g.stake : g.stake.toFixed(1)}` : '';
+  const typeLine = g.kind === 'friendly' ? '🤝 Match amical'
+    : g.kind === 'challenge' ? `⚡ Défi${stake}`
+    : '🏆 Match compétitif';
+
+  const lines: string[] = [`Match à ${g.location || 'Padel'}`, '', `📅 ${dateStr}, ${timeStr}`, typeLine];
+  if (g.eloRange) lines.push(`📊 Niveau ${formatPadelLevel(g.eloRange.min)} - ${formatPadelLevel(g.eloRange.max)}`);
+  lines.push('');
+  for (const p of g.players) {
+    if (!p.name) continue;
+    const lv = p.elo != null ? ` (Niv. ${formatPadelLevel(p.elo)})` : '';
+    lines.push(`${p.pending ? '⏳' : '🟢'} ${p.name}${lv}`);
+  }
+  for (let i = 0; i < Math.max(0, g.freeSpots); i++) lines.push('⏳ ...');
+  if (g.gameId) lines.push('', `Rejoindre le match : ${lobbyGameLink(g.gameId)}`);
+  return lines.join('\n');
 }
 
 // QR/lien d'une fiche joueur partagée en story → écran player (pagmatch://player/<id>).
