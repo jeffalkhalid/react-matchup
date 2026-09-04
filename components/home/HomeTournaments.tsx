@@ -36,6 +36,11 @@ import {
 } from '../../lib/tournaments';
 
 const CARD_W = 258;
+const CARD_GAP = 10;
+// La marge horizontale de la colonne de l'accueil (app/(tabs)/index.tsx) : le
+// carrousel doit la franchir pour que la carte suivante depasse au lieu d'etre
+// coupee. Si cette valeur change la-bas, elle doit changer ici.
+const EDGE = 20;
 
 function ctaLabel(e: HomeTournamentEntry): string {
   if (e.state === 'registered') return 'INSCRIT ✓';
@@ -219,12 +224,24 @@ export function HomeTournaments({ entries, onOpen, onSeeAll }: {
       {seul ? (
         <WideCard entry={entries[0]} onOpen={() => onOpen(entries[0].tournament.id)} />
       ) : (
+        // Le carrousel SORT de la colonne a marges de l'accueil (marginHorizontal
+        // negatif + padding equivalent dans le contenu) : enferme dedans, la
+        // carte suivante etait tranchee net au bord, ce qui se lit comme un
+        // defaut d'affichage et non comme « ca continue ».
+        //
+        // `snapToInterval` la fait s'arreter carte par carte plutot que de
+        // finir n'importe ou : on voit toujours une carte entiere, et un
+        // fragment de la suivante qui INVITE a pousser.
         <FlatList
           horizontal
           data={entries}
           keyExtractor={e => e.tournament.id}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 10 }}
+          decelerationRate="fast"
+          snapToInterval={CARD_W + CARD_GAP}
+          snapToAlignment="start"
+          style={{ marginHorizontal: -EDGE }}
+          contentContainerStyle={{ paddingHorizontal: EDGE, gap: CARD_GAP }}
           renderItem={({ item, index }) => (
             <CarouselCard
               entry={item}

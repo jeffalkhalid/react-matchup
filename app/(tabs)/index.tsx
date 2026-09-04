@@ -60,7 +60,13 @@ export default function HomeScreen() {
   // de police SYSTÈME (fontScale) qui gonfle tous les textes. Trois étages :
   // grand écran = proportions pleines · écran/police serrés = mode compact ·
   // extrême (petit + grande police) = le ScrollView de secours prend le relais.
-  const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48;
+  // La section Tournois, quand elle est rendue, prend ~140 dp qu'il faut
+  // RETIRER du budget avant de comparer : sinon on reste en proportions
+  // pleines, la colonne deborde, et l'accueil se met a defiler -- ce qu'il ne
+  // faisait pas avant. C'est ce que le handoff demandait et que j'avais omis.
+  const [tournois, setTournois] = useState<HomeTournamentEntry[]>([]);
+  const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48
+    - (tournois.length > 0 ? 140 : 0);
   const compact = availableH < 575 * Math.max(1, fontScale);
 
   const fetchData = useCallback(async () => {
@@ -159,7 +165,6 @@ export default function HomeScreen() {
   // auquel cas on ne lit rien du tout et la carte n'existe pas. Une panne ici ne
   // doit jamais abîmer le reste de l'accueil, d'où le catch qui se contente de
   // ne rien proposer.
-  const [tournois, setTournois] = useState<HomeTournamentEntry[]>([]);
   useFocusEffect(useCallback(() => {
     let annule = false;
     (async () => {
