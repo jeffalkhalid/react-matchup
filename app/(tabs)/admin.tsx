@@ -23,7 +23,7 @@ import {
 import { fetchAdminLog, nextCursor, type AdminAction } from '../../lib/adminLog';
 import {
   initialSets, parseRawSets, counterNeedsFlip, flipSets, liveSets,
-  buildEvidence, evidenceVerdict, reversesWinner, campTrust,
+  buildEvidence, evidenceVerdict, reversesWinner, campTrust, campHistory, historyLabel,
 } from '../../lib/disputeEvidence';
 import { displayName } from '../../lib/players';
 import { formatFrmtRanking } from '../../lib/frmt-match';
@@ -120,10 +120,12 @@ function EloSimCard({ sim }: { sim: EloSimResult }) {
 }
 
 // ─── Disputes tab ─────────────────────────────────────────────
-function DisputesTab({ matches, liveScores, editedScores, setEditedScores, loadingId, onForceValidate, onCancel }: {
+function DisputesTab({ matches, liveScores, pastDisputes, editedScores, setEditedScores, loadingId, onForceValidate, onCancel }: {
   matches: any[];
   /** Les sessions marquees en direct, indexees par match_id. */
   liveScores: Record<string, any>;
+  /** Les matchs ayant deja connu une contestation, pour l'historique. */
+  pastDisputes: any[];
   editedScores: Record<string, string>;
   setEditedScores: (s: Record<string, string>) => void;
   loadingId: string | null;
@@ -186,6 +188,8 @@ function DisputesTab({ matches, liveScores, editedScores, setEditedScores, loadi
                   loserSide={camp(match.loser, match.loser_2)}
                   winnerTrust={campTrust([match.winner, match.winner_2])}
                   loserTrust={campTrust([match.loser, match.loser_2])}
+                  winnerHistory={historyLabel(campHistory(pastDisputes, [match.winner_id, match.winner_id_2], match.id))}
+                  loserHistory={historyLabel(campHistory(pastDisputes, [match.loser_id, match.loser_id_2], match.id))}
                   hasLive={!!livSets}
                   counterReverses={reversesWinner(conSets)}
                   liveReverses={reversesWinner(livSets ?? [])}
@@ -807,6 +811,8 @@ export default function AdminScreen() {
   const [disputes, setDisputes] = useState<any[]>([]);
   // Les sessions live des matchs en litige, indexees par match_id.
   const [liveScores, setLiveScores] = useState<Record<string, any>>({});
+  // Les matchs deja contestes, pour l'historique des deux camps d'un litige.
+  const [pastDisputes, setPastDisputes] = useState<any[]>([]);
   // Journal d'arbitrage. La pagination se fait par CURSEUR (la date de la
   // derniere ligne recue) : le journal grandit par le haut, un offset ferait
   // sauter ou repeter des lignes des qu'une decision tombe pendant la lecture.
@@ -981,6 +987,20 @@ export default function AdminScreen() {
         for (const row of (live ?? [])) if (row?.match_id) byMatch[row.match_id] = row;
         setLiveScores(byMatch);
       } catch { setLiveScores({}); }
+
+      // L'historique des deux camps. On lit les matchs AYANT CONNU une
+      // contestation (counter_by non nul), quel qu'en soit le denouement :
+      // une fois le litige tranche, `status` redevient validated/cancelled et
+      // ne garde aucune trace — `counter_by`, lui, reste.
+      try {
+        const { data: passe } = await supabase
+          .from('matches')
+          .select('id, counter_by, winner_id, winner_id_2, loser_id, loser_id_2')
+          .not('counter_by', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(400);
+        setPastDisputes(passe ?? []);
+      } catch { setPastDisputes([]); }
     }
   }, []);
 
@@ -1503,6 +1523,7 @@ export default function AdminScreen() {
           <DisputesTab
             matches={disputes}
             liveScores={liveScores}
+            pastDisputes={pastDisputes}
             editedScores={editedScores}
             setEditedScores={setEditedScores}
             loadingId={loadingId}

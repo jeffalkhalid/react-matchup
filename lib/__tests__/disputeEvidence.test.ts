@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseRawSets, flipSets, counterNeedsFlip, liveNeedsFlip, liveSets,
   buildEvidence, evidenceVerdict, setsToText, reversesWinner, initialSets, campTrust,
+  campHistory, historyLabel,
 } from '../disputeEvidence';
 
 const S = (a: number, b: number) => ({ a, b });
@@ -218,5 +219,52 @@ describe('confiance d un camp', () => {
   it('rend null quand personne n a de valeur, jamais 0', () => {
     expect(campTrust([null, undefined])).toBe(null);
     expect(campTrust([])).toBe(null);
+  });
+});
+
+describe('historique d un camp', () => {
+  const M = (id: string, by: string | null, joueurs: string[]) => ({
+    id, counter_by: by,
+    winner_id: joueurs[0] ?? null, winner_id_2: joueurs[1] ?? null,
+    loser_id: joueurs[2] ?? null, loser_id_2: joueurs[3] ?? null,
+  });
+
+  it('separe AVOIR CONTESTE de AVOIR ETE CONTESTE', () => {
+    // Les additionner melangerait celui qui conteste tout et celui que tout
+    // le monde conteste : ce ne sont pas les memes joueurs.
+    const passe = [
+      M('m1', 'A', ['A', 'B', 'X', 'Y']),   // A a conteste
+      M('m2', 'Z', ['A', 'B', 'Z', 'W']),   // A s'est fait contester
+      M('m3', 'A', ['A', 'B', 'P', 'Q']),   // A a conteste
+    ];
+    expect(campHistory(passe, ['A', 'B'], 'encours')).toEqual({ contested: 2, wasContested: 1 });
+  });
+
+  it('EXCLUT le litige en cours', () => {
+    // Sans exclusion, tout litige afficherait « a deja conteste une fois » en
+    // parlant de celui qu'on est en train de lire.
+    const passe = [M('encours', 'A', ['A', 'B', 'X', 'Y'])];
+    expect(campHistory(passe, ['A', 'B'], 'encours')).toEqual({ contested: 0, wasContested: 0 });
+  });
+
+  it('ignore les matchs ou le camp n a pas joue', () => {
+    const passe = [M('m1', 'X', ['X', 'Y', 'Z', 'W'])];
+    expect(campHistory(passe, ['A', 'B'], 'encours')).toEqual({ contested: 0, wasContested: 0 });
+  });
+
+  it('ignore les matchs sans contestation', () => {
+    const passe = [M('m1', null, ['A', 'B', 'X', 'Y'])];
+    expect(campHistory(passe, ['A', 'B'], 'encours')).toEqual({ contested: 0, wasContested: 0 });
+  });
+
+  it('un simple (un seul joueur) compte comme son camp', () => {
+    const passe = [M('m1', 'A', ['A', null as any, 'X', null as any])];
+    expect(campHistory(passe, ['A', null], 'encours')).toEqual({ contested: 1, wasContested: 0 });
+  });
+
+  it('le libelle accorde le singulier et se TAIT quand il n y a rien', () => {
+    expect(historyLabel({ contested: 0, wasContested: 0 })).toBe('');
+    expect(historyLabel({ contested: 1, wasContested: 0 })).toBe('a contesté une fois');
+    expect(historyLabel({ contested: 2, wasContested: 1 })).toBe('a contesté 2 fois · contesté une fois');
   });
 });

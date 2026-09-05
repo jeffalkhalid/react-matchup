@@ -245,3 +245,71 @@ export function campTrust(players: ({ fiability_pct?: number | null } | null | u
   if (vals.length === 0) return null;
   return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
+
+// ── L'historique des deux camps ───────────────────────────────────────────
+//
+// Le dernier morceau demandé par le handoff pour la fiche de litige. La
+// confiance dit ce qu'un joueur vaut en général ; l'historique dit ce qu'il
+// fait DANS CETTE SITUATION-LÀ — et ce n'est pas la même information.
+//
+// On distingue deux choses que rien ne confondait jusqu'ici :
+//  - AVOIR CONTESTÉ : le joueur a lui-même remis en cause un score. Répété,
+//    c'est un signe.
+//  - AVOIR ÉTÉ CONTESTÉ : ses saisies sont remises en cause par d'autres.
+//    Répété, c'est un autre signe, et il ne désigne pas le même coupable.
+//
+// Les additionner en un seul « 4 litiges » mélangerait celui qui conteste
+// tout et celui que tout le monde conteste.
+
+/** Un match qui a connu une contestation, quel qu'en soit le dénouement. */
+export interface PastDispute {
+  id: string;
+  counter_by?: string | null;
+  winner_id?: string | null;
+  winner_id_2?: string | null;
+  loser_id?: string | null;
+  loser_id_2?: string | null;
+}
+
+export interface CampHistory {
+  /** Fois où ce camp a contesté le score de quelqu'un d'autre. */
+  contested: number;
+  /** Fois où le score de ce camp a été contesté. */
+  wasContested: number;
+}
+
+/**
+ * L'historique d'un camp, le litige en cours EXCLU.
+ *
+ * `excludeId` n'est pas un détail : le dossier ouvert est lui-même un match
+ * contesté. Sans l'exclure, tout litige afficherait « a déjà contesté 1 fois »
+ * en parlant de celui qu'on est en train de lire.
+ */
+export function campHistory(
+  past: PastDispute[],
+  camp: (string | null | undefined)[],
+  excludeId: string,
+): CampHistory {
+  const ids = new Set(camp.filter((x): x is string => !!x));
+  let contested = 0, wasContested = 0;
+  for (const m of past) {
+    if (m.id === excludeId) continue;
+    if (!m.counter_by) continue;
+    const joue = [m.winner_id, m.winner_id_2, m.loser_id, m.loser_id_2]
+      .some(x => !!x && ids.has(x));
+    if (!joue) continue;
+    if (ids.has(m.counter_by)) contested += 1;
+    else wasContested += 1;
+  }
+  return { contested, wasContested };
+}
+
+/** « a contesté 2 fois · contesté une fois ». Vide quand il n'y a rien à dire —
+ *  un camp sans passé ne doit pas hériter d'une ligne qui suggère un dossier. */
+export function historyLabel(h: CampHistory): string {
+  const fois = (n: number) => (n === 1 ? 'une fois' : `${n} fois`);
+  const bouts: string[] = [];
+  if (h.contested > 0) bouts.push(`a contesté ${fois(h.contested)}`);
+  if (h.wasContested > 0) bouts.push(`contesté ${fois(h.wasContested)}`);
+  return bouts.join(' · ');
+}

@@ -59,6 +59,28 @@ function Trust({ value }: { value: number | null }) {
   );
 }
 
+/**
+ * Le passé du camp en matière de contestation.
+ *
+ * La confiance dit ce qu'un joueur vaut en général ; ceci dit ce qu'il fait
+ * DANS CETTE SITUATION-LÀ. Un camp sans passé n'affiche RIEN : une ligne
+ * « aucun antécédent » suggérerait qu'on a ouvert un dossier sur lui.
+ */
+function History({ text, align }: { text: string; align?: 'right' }) {
+  if (!text) return null;
+  return (
+    <Text
+      numberOfLines={1}
+      style={{
+        fontSize: 8.5, fontFamily: Fonts.uiBold, color: Colors.textMuted,
+        textAlign: align === 'right' ? 'right' : 'left',
+      }}
+    >
+      {text}
+    </Text>
+  );
+}
+
 /** Un bouton « retenir cette version », qui remplit le champ de score. */
 function UseButton({ label, text, reverses, onUse }: {
   label: string; text: string; reverses: boolean; onUse: (t: string) => void;
@@ -93,7 +115,8 @@ function UseButton({ label, text, reverses, onUse }: {
 }
 
 export function DisputeEvidence({
-  rows, verdict, winnerSide, loserSide, winnerTrust, loserTrust, hasLive,
+  rows, verdict, winnerSide, loserSide, winnerTrust, loserTrust,
+  winnerHistory, loserHistory, hasLive,
   counterReverses, liveReverses, onUse,
 }: {
   rows: EvidenceRow[];
@@ -104,6 +127,9 @@ export function DisputeEvidence({
   /** La confiance moyenne de chaque camp. `null` = pas de valeur connue. */
   winnerTrust: number | null;
   loserTrust: number | null;
+  /** Le passé de chaque camp en matière de contestation. Vide = rien à dire. */
+  winnerHistory: string;
+  loserHistory: string;
   hasLive: boolean;
   counterReverses: boolean;
   liveReverses: boolean;
@@ -145,6 +171,7 @@ export function DisputeEvidence({
             {winnerSide}
           </Text>
           <Trust value={winnerTrust} />
+          <History text={winnerHistory} />
         </View>
         <Text style={{ fontSize: 9.5, fontFamily: Fonts.uiBold, color: Colors.textMuted, marginTop: 1 }}>
           à gauche · à droite
@@ -154,6 +181,7 @@ export function DisputeEvidence({
             {loserSide}
           </Text>
           <Trust value={loserTrust} />
+          <History text={loserHistory} align="right" />
         </View>
       </View>
 
