@@ -201,3 +201,67 @@ export function gameEloRange(game: {
   if (elos.length === 0) return null;
   return { min: Math.min(...elos), max: Math.max(...elos), derived: true };
 }
+
+// ─── Le filtre « Urgent » de l'Explorer ──────────────────────────────────────
+//
+// Une partie est urgente quand IL MANQUE UNE PERSONNE et que ça se joue
+// bientôt. Deux conditions, et rien d'autre.
+//
+// POURQUOI CE PRÉDICAT VIT ICI : il était écrit DEUX FOIS dans lobby.tsx — une
+// fois pour la liste, une fois pour le compteur de la pastille — alors que le
+// commentaire au-dessus de la fonction de filtrage affirmait le contraire
+// (« factorisé pour que le badge ET la liste utilisent EXACTEMENT la même
+// logique »). Les deux copies étaient identiques, donc rien ne se voyait. Le
+// jour où l'une change, la pastille annonce un nombre que la liste ne montre
+// pas — sans erreur, sans alerte.
+
+/** La fenêtre au-delà de laquelle une partie n'est plus « urgente ». */
+export const URGENT_WINDOW_MINUTES = 6 * 60;
+
+/** Minutes jusqu'au coup d'envoi. Négatif si c'est déjà commencé. */
+export function minutesUntil(iso: string, now: Date = new Date()): number {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return Number.NaN;
+  return (t - now.getTime()) / 60_000;
+}
+
+/**
+ * Cette partie est-elle urgente ?
+ *
+ * EXACTEMENT une place libre : à deux places manquantes, la partie n'est pas à
+ * un message de se compléter, elle est à deux — ce n'est plus le même geste.
+ *
+ * LE COMPTE SE FAIT EN MINUTES, et c'est le correctif. Il se faisait en heures
+ * ARRONDIES : une partie dans 20 minutes donnait « 0 heure », la condition
+ * exigeait « plus de 0 », et la partie disparaissait du filtre — au moment
+ * précis où elle était la plus urgente. Tout ce qui commençait dans moins de
+ * trente minutes tombait dans ce trou.
+ *
+ * Une partie sans date n'est jamais urgente : rien ne presse tant qu'aucune
+ * heure n'est fixée.
+ */
+export function isUrgentGame(
+  game: Parameters<typeof freeSpots>[0] & { match_date?: string | null },
+  now: Date = new Date(),
+): boolean {
+  if (freeSpots(game) !== 1) return false;
+  if (!game.match_date) return false;
+  const m = minutesUntil(game.match_date, now);
+  if (Number.isNaN(m)) return false;
+  return m > 0 && m <= URGENT_WINDOW_MINUTES;
+}
+
+/**
+ * Le délai affiché sur la pastille urgente : « 20 min », « 2 h ».
+ *
+ * L'ancienne carte affichait `{hoursUntil()}h`, donc « 🔥 0h » pour une partie
+ * dans vingt minutes — la plus pressante de toutes annonçait zéro. En dessous
+ * d'une heure on compte en minutes, au-dessus en heures pleines.
+ */
+export function urgentDelayLabel(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return '';
+  const m = minutesUntil(iso, now);
+  if (Number.isNaN(m) || m <= 0) return '';
+  if (m < 60) return `${Math.max(1, Math.round(m))} min`;
+  return `${Math.floor(m / 60)} h`;
+}

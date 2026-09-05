@@ -25,7 +25,7 @@ import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
 import { LiveDot } from '../../components/live/LiveDot';
 import { HeaderActions } from '../../components/HeaderActions';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { openInMaps } from '../../lib/maps';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
@@ -83,10 +83,6 @@ function formatDate(iso: string): string {
   if (d.toDateString() === today.toDateString()) return `Aujourd'hui · ${hh}h${mm}`;
   if (d.toDateString() === tom.toDateString()) return `Demain · ${hh}h${mm}`;
   return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) + ` · ${hh}h${mm}`;
-}
-
-function hoursUntil(iso: string): number {
-  return Math.round((new Date(iso).getTime() - Date.now()) / 3600000);
 }
 
 // Décompose la date en label (« AUJOURD'HUI » / « DEMAIN » / date courte) + heure
@@ -654,9 +650,12 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   // sur les écrans plus étroits (Android 360) pour tenir 4 pastilles par ligne.
   const ps = Math.min(1, Math.max(0.85, winW / 392));
   const fit = getEloFit(game, myElo);
-  const hoursLeft = game.match_date ? hoursUntil(game.match_date) : 0;
   const spotsLeft = freeSpots(game);
-  const isUrgent = spotsLeft === 1 && hoursLeft > 0 && hoursLeft <= 6;
+  // TROISIEME copie de la regle, corrigee : la carte decidait elle aussi de
+  // son marqueur urgent avec des heures arrondies. Une partie dans vingt
+  // minutes n'etait donc ni dans le filtre, ni comptee, ni marquee.
+  const isUrgent = isUrgentGame(game);
+  const urgentDelay = urgentDelayLabel(game.match_date);
   const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
   const creatorObj = game.creator as { id?: string; name: string } | undefined;
   const teamOf = (side?: string): 'A' | 'B' | undefined => side ? (side.startsWith('B') ? 'B' : 'A') : undefined;
@@ -758,7 +757,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               ×{(+(game as any).stake_multiplier).toFixed(1)}
             </CardTag>
           )}
-          {isUrgent && <CardTag bg={Colors.bgCard} fg={pillAccent('danger')} border="rgba(239,68,68,0.45)" s={ps}>🔥 {hoursLeft}h</CardTag>}
+          {isUrgent && <CardTag bg={Colors.bgCard} fg={pillAccent('danger')} border="rgba(239,68,68,0.45)" s={ps}>🔥 {urgentDelay}</CardTag>}
           {(game as any).gender_pref === 'men'   && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Hommes</CardTag>}
           {(game as any).gender_pref === 'women' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Femmes</CardTag>}
           {(game as any).gender_pref === 'mixed' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Mixte</CardTag>}
@@ -1482,10 +1481,7 @@ function filterExploreGames(
   search: string, myElo: number,
 ): EnrichedGame[] {
   let arr = games;
-  if (filterMode === 'urgent') arr = arr.filter(g => {
-    const h = g.match_date ? hoursUntil(g.match_date) : 0;
-    return freeSpots(g) === 1 && h > 0 && h <= 6;
-  });
+  if (filterMode === 'urgent') arr = arr.filter(g => isUrgentGame(g));
   if (typeFilter !== 'all') arr = arr.filter(g => getGameType(g) === typeFilter);
   // Niveau : « Mon niveau » = mon ELO dans la fourchette de la partie (fit),
   // « Hors mon niveau » = tout le reste (limite incluse). Même prédicat que la
@@ -1542,10 +1538,14 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
   const resetFilters = () => { setFilterMode('all'); setTypeFilter('all'); setLevelFilter('all'); setSearch(''); };
 
   const recommended = useMemo(() => games.filter(g => getEloFit(g, myElo) === 'fit'), [games, myElo]);
-  const urgentCount = useMemo(() => games.filter(g => {
-    const h = g.match_date ? hoursUntil(g.match_date) : 0;
-    return freeSpots(g) === 1 && h > 0 && h <= 6;
-  }).length, [games]);
+  // Le compteur passe par la MEME fonction que la liste, avec les memes autres
+  // filtres actifs. Il reecrivait la regle une seconde fois, et il ignorait le
+  // type, le niveau et la recherche : avec « Competitif » actif, la pastille
+  // pouvait annoncer « Urgent (3) » et n'en montrer qu'une au clic.
+  const urgentCount = useMemo(
+    () => filterExploreGames(games, 'urgent', typeFilter, levelFilter, search, myElo).length,
+    [games, typeFilter, levelFilter, search, myElo],
+  );
 
   // "Pour toi" is shown above the main list; drop those games from the main
   // list so the same match never appears twice. Masqué dès qu'un filtre est
