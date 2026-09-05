@@ -39,10 +39,32 @@ de zéro :
 Sans cette ligne, les fichiers sont présents mais React Native ne les voit pas :
 le remplissage automatique cesse de fonctionner **sans aucune erreur visible**.
 
+3. Rouvrir `android/app/build.gradle` et remettre, dans le bloc
+   `dependencies { }`, les deux lignes dont `CredentialManagerModule.kt` a
+   besoin :
+
+   ```gradle
+   implementation("androidx.credentials:credentials:1.3.0")
+   implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+   ```
+
+   Cette étape a été **oubliée** lors de la montée en Expo 57 : les trois
+   fichiers avaient bien été recopiés et la ligne d'enregistrement remise,
+   mais `app/build.gradle` avait été refabriqué depuis le gabarit Expo, sans
+   ces dépendances. La compilation s'est arrêtée sur trente-cinq
+   « Unresolved reference » de `androidx.credentials`, après dix-neuf minutes
+   de build.
+
+   L'échec est brutal et lisible, contrairement à celui de l'étape 2 — mais
+   il n'apparaît qu'à la toute fin. Les deux versions sont celles qui
+   fonctionnaient avant la régénération ; elles sont déjà dans le cache
+   Gradle local, la remise en état ne demande donc pas de réseau.
+
 ## La solution durable, le jour où ça vaudra la peine
 
 La réponse prévue par Expo pour du code natif maison dans un projet où
 `android/` est régénéré, c'est un **plugin de configuration** : un bout de
-JavaScript qui recopie ces fichiers et ajoute la ligne automatiquement à chaque
-`prebuild`. Tant que ce plugin n'existe pas, la manœuvre ci-dessus est à refaire
-à la main après chaque régénération.
+JavaScript qui recopie ces fichiers, ajoute la ligne d'enregistrement ET les
+deux dépendances Gradle, automatiquement, à chaque `prebuild`. Tant que ce
+plugin n'existe pas, les trois étapes ci-dessus sont à refaire à la main après
+chaque régénération — et l'expérience montre qu'on en oublie une.
