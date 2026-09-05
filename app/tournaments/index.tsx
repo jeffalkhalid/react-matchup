@@ -20,6 +20,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Icon } from '../../components/community/icons';
 import { TournamentCard } from '../../components/tournaments/TournamentCard';
+import { HiddenByFilters } from '../../components/tournaments/HiddenByFilters';
 import {
   fetchTournaments, fetchRegistrationsFor, getTournamentsEnabled,
   tournamentPhase, freePlaces, dateBucket,
@@ -300,6 +301,33 @@ export default function TournamentsScreen() {
             />
           )}
 
+          {/* « Passes » ouvre sur MON PARCOURS. L'ecran existait deja mais
+              n'etait atteignable que par le menu burger : personne ne va
+              chercher son historique de tournois dans un menu de reglages.
+              Il est ici, en tete de l'onglet ou l'on vient justement
+              regarder derriere soi. */}
+          {tab === 'past' && (
+            <TouchableOpacity
+              onPress={() => router.push('/tournaments/parcours' as any)}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                backgroundColor: Colors.primary, borderRadius: 16, padding: 15,
+              }}
+            >
+              <Icon name="trendingUp" size={19} color={Colors.brand} stroke={2.4} />
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Text style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                  Mon parcours
+                </Text>
+                <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textOnDark, opacity: 0.75 }}>
+                  Tes résultats, tes rangs et tes points, soirée par soirée.
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={16} color={Colors.textOnDark} stroke={2.4} />
+            </TouchableOpacity>
+          )}
+
           {entries.length === 0
             ? (loadError ? null : <EmptyState text={empty.text} sub={empty.sub} />)
             : outcome.kept.length === 0
@@ -332,6 +360,18 @@ export default function TournamentsScreen() {
                   ))}
                 </View>
               ))}
+
+          {/* Le compteur disait COMBIEN on cache, jamais QUOI. Un filtre coche
+              puis oublie ecarte une soiree du bon soir au bon club, et rien ne
+              le montrait. En gris, replie, avec la raison — et tapable : voir
+              un tournoi hors filtre ne doit pas empecher d'y aller. */}
+          {tab === 'upcoming' && outcome.kept.length > 0 && (
+            <HiddenByFilters
+              hidden={outcome.hidden.map(h => ({ tournament: h.item.tournament, reason: h.reason }))}
+              clubName={topClub?.name}
+              onPress={id => router.push(`/tournaments/${id}` as any)}
+            />
+          )}
         </ScrollView>
       )}
     </View>
