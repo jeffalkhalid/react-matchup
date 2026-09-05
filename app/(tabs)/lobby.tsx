@@ -34,6 +34,7 @@ import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/Explore
 import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
+import { loadClubFavorites } from '../../lib/clubFavorites';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { openInMaps } from '../../lib/maps';
@@ -1512,12 +1513,13 @@ function exploreCtx(myElo: number, villeDuClub: (n: string) => string | null): E
   };
 }
 
-function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
   saved: SavedFilter[];
   myGender: PlayerGender;
+  favorites: string[];
   onSaveFilter: (name: string, criteria: ExploreFilters, alert: boolean) => void;
   onDeleteFilter: (id: string) => void;
   onOpenGame: (g: EnrichedGame) => void;
@@ -1563,6 +1565,24 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     () => [...new Set(games.map(g => (g.location ?? '').trim()).filter(Boolean))],
     [games],
   );
+  // Le compte par lieu : une ligne de la liste dit tout de suite si le choix
+  // vaut la peine. Zero parties se lit avant de cocher, pas apres.
+  const gameCountByClub = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const g of games) {
+      const l = (g.location ?? '').trim();
+      if (l) m[l] = (m[l] ?? 0) + 1;
+    }
+    return m;
+  }, [games]);
+  const gameCountByCity = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const [nom, n] of Object.entries(gameCountByClub)) {
+      const v = villeDuClub(nom);
+      if (v) m[v] = (m[v] ?? 0) + n;
+    }
+    return m;
+  }, [gameCountByClub, villeDuClub]);
 
   const mainListAll = useMemo(
     () => filterExplore(games, filters, ctx).kept,
@@ -1745,6 +1765,9 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         clubs={clubs}
         activeClubNames={activeClubNames}
         myGender={myGender}
+        favorites={favorites}
+        gameCountByClub={gameCountByClub}
+        gameCountByCity={gameCountByCity}
         saved={saved}
         onUseSaved={sf => { setFilters(sf.criteria); setSheetOpen(false); }}
         onDeleteSaved={onDeleteFilter}
@@ -2169,12 +2192,20 @@ export default function LobbyScreen() {
   // qu'on retrouve la ville.
   const [clubs, setClubs] = useState<ClubRef[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
+  // Les clubs favoris viennent de la MEME source que le wizard et « Gerer mes
+  // clubs » (lib/clubFavorites) : le joueur les a deja choisis, on ne le fait
+  // pas recommencer.
+  const [favoriteClubs, setFavoriteClubs] = useState<string[]>([]);
   const reloadSaved = useCallback(async () => {
     // Best-effort : tant que saved_filters.sql n'est pas applique, la table
     // n'existe pas et la rangee reste simplement vide.
     try { setSavedFilters(await listSavedFilters()); } catch { setSavedFilters([]); }
   }, []);
   useEffect(() => { reloadSaved(); }, [reloadSaved]);
+  useEffect(() => {
+    if (!player?.id) return;
+    loadClubFavorites(player.id).then(setFavoriteClubs).catch(() => setFavoriteClubs([]));
+  }, [player?.id]);
   const clubCity = useMemo(() => new Map(clubs.map(c => [c.name, c.city])), [clubs]);
   useEffect(() => {
     supabase.from('clubs').select('name, city').order('name').then(({ data }) => {
@@ -3359,6 +3390,7 @@ export default function LobbyScreen() {
               clubs={clubs}
               saved={savedFilters}
               myGender={(player as any).gender ?? null}
+              favorites={favoriteClubs}
               onSaveFilter={async (name, criteria, alert) => {
                 try { await createSavedFilter(player.id, name, criteria, alert); await reloadSaved(); }
                 catch (e: any) { Alert.alert('Erreur', String(e?.message ?? e)); }

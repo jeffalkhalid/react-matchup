@@ -86,12 +86,90 @@ function Row({ children }: { children: React.ReactNode }) {
   return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View>;
 }
 
+export interface PickRow {
+  key: string;
+  label: string;
+  sub?: string;
+  /** Combien de parties à cet endroit — un choix qui ne rend rien se voit. */
+  count?: number;
+}
+
+/**
+ * Une LISTE à cocher, et non des pastilles.
+ *
+ * Les villes et les clubs se comptent en dizaines : en pastilles, ils
+ * formaient un mur où l'œil ne trouvait rien. Une liste s'aligne, se lit de
+ * haut en bas, garde une largeur constante quel que soit le nom, et laisse
+ * la place au compte de parties — qui dit tout de suite si le choix vaut la
+ * peine.
+ */
+function PickList({ rows, isOn, onToggle }: {
+  rows: PickRow[];
+  isOn: (key: string) => boolean;
+  onToggle: (key: string) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <View style={{
+      backgroundColor: Colors.bgCard, borderRadius: 14,
+      borderWidth: 1, borderColor: Colors.border, overflow: 'hidden',
+    }}>
+      {rows.map((r, i) => {
+        const on = isOn(r.key);
+        return (
+          <TouchableOpacity
+            key={r.key}
+            onPress={() => onToggle(r.key)}
+            activeOpacity={0.75}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+              paddingVertical: 11, paddingHorizontal: 12,
+              borderTopWidth: i > 0 ? 1 : 0, borderTopColor: Colors.borderLight,
+              backgroundColor: on ? Colors.brand + '14' : 'transparent',
+            }}
+          >
+            <View style={{
+              width: 19, height: 19, borderRadius: 6,
+              alignItems: 'center', justifyContent: 'center',
+              backgroundColor: on ? Colors.brand : 'transparent',
+              borderWidth: 1.5, borderColor: on ? Colors.brand : Colors.border,
+            }}>
+              {on && <Icon name="check" size={12} color={Colors.primary} stroke={3} />}
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={{
+                fontSize: 13, fontFamily: on ? Fonts.uiBlack : Fonts.uiBold, color: Colors.textPrimary,
+              }}>
+                {r.label}
+              </Text>
+              {!!r.sub && (
+                <Text numberOfLines={1} style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.textMuted, marginTop: 1 }}>
+                  {r.sub}
+                </Text>
+              )}
+            </View>
+            {r.count !== undefined && (
+              <Text style={{
+                fontSize: 11.5, fontFamily: Fonts.uiBlack,
+                color: r.count > 0 ? Colors.textSecondary : Colors.borderDark,
+              }}>
+                {r.count}
+              </Text>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 const jourCourt = (d: Date) =>
   d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 
 export function ExploreFilterSheet({
   visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
-  clubs, activeClubNames, myGender, resultCount, onApply, onClose,
+  clubs, activeClubNames, myGender, favorites, gameCountByClub, gameCountByCity,
+  resultCount, onApply, onClose,
 }: {
   visible: boolean;
   initial: ExploreFilters;
@@ -106,6 +184,11 @@ export function ExploreFilterSheet({
   activeClubNames: string[];
   /** Le genre du joueur — on ne propose pas un filtre qui ne rend rien. */
   myGender: PlayerGender;
+  /** Les clubs favoris du joueur, deja choisis ailleurs. */
+  favorites: string[];
+  /** Combien de parties visibles par club, et par ville. */
+  gameCountByClub: Record<string, number>;
+  gameCountByCity: Record<string, number>;
   /** Combien de parties passent le brouillon en cours — calculé par l'écran. */
   resultCount: (draft: ExploreFilters) => number;
   onApply: (f: ExploreFilters) => void;
@@ -277,57 +360,101 @@ export function ExploreFilterSheet({
             </Section>
 
             <Section title="Lieu" icon="mapPin">
-              <Row>
-                <Chip label="Toutes les villes" active={draft.cities.length === 0} onPress={() => set('cities', [])} />
-                {villes.map(v => (
-                  <Chip
-                    key={v}
-                    label={v}
-                    active={draft.cities.includes(v)}
-                    onPress={() => set('cities', toggleIn(draft.cities, v))}
+              {/* MES CLUBS D'ABORD. Le joueur les a déjà choisis ailleurs
+                  (wizard, « Gérer mes clubs ») : les redemander ici serait lui
+                  faire refaire un travail fait. Ils portent le nom du club,
+                  comme les parties — même clé, aucune correspondance à
+                  inventer. */}
+              {favorites.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
+                    MES CLUBS
+                  </Text>
+                  <PickList
+                    rows={favorites.map(nom => ({
+                      key: nom,
+                      label: nom,
+                      sub: clubs.find(c => c.name === nom)?.city ?? undefined,
+                      count: gameCountByClub[nom] ?? 0,
+                    }))}
+                    isOn={k => draft.clubs.includes(k)}
+                    onToggle={k => set('clubs', toggleIn(draft.clubs, k))}
                   />
-                ))}
-              </Row>
+                </View>
+              )}
 
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 8,
-                backgroundColor: Colors.bgCard, borderRadius: 12,
-                borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12,
-              }}>
-                <Icon name="search" size={14} color={Colors.textMuted} stroke={2.3} />
-                <TextInput
-                  value={clubSearch}
-                  onChangeText={setClubSearch}
-                  placeholder="Chercher un club…"
-                  placeholderTextColor={Colors.textMuted}
-                  autoCorrect={false}
-                  style={{ flex: 1, paddingVertical: 10, fontSize: 13, color: Colors.textPrimary }}
-                />
-                {clubSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setClubSearch('')} hitSlop={10}>
-                    <Icon name="x" size={14} color={Colors.textMuted} stroke={2.4} />
-                  </TouchableOpacity>
+              <View style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ flex: 1, fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
+                    VILLE
+                  </Text>
+                  {draft.cities.length > 0 && (
+                    <TouchableOpacity onPress={() => set('cities', [])} hitSlop={8}>
+                      <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+                        Toutes
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {villes.length === 0 ? (
+                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted }}>
+                    Aucune partie programmée pour l’instant.
+                  </Text>
+                ) : (
+                  <PickList
+                    rows={villes.map(v => ({ key: v, label: v, count: gameCountByCity[v] ?? 0 }))}
+                    isOn={k => draft.cities.includes(k)}
+                    onToggle={k => set('cities', toggleIn(draft.cities, k))}
+                  />
                 )}
               </View>
 
-              <Row>
-                {clubsVisibles.map(c => (
-                  <Chip
-                    key={c.name}
-                    label={c.name}
-                    sub={c.city ?? undefined}
-                    active={draft.clubs.includes(c.name)}
-                    onPress={() => set('clubs', toggleIn(draft.clubs, c.name))}
-                  />
-                ))}
-              </Row>
-              {draft.clubs.length > 0 && (
-                <TouchableOpacity onPress={() => set('clubs', [])} activeOpacity={0.75}>
-                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
-                    Retirer les {draft.clubs.length} clubs choisis
+              <View style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ flex: 1, fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
+                    CLUB
                   </Text>
-                </TouchableOpacity>
-              )}
+                  {draft.clubs.length > 0 && (
+                    <TouchableOpacity onPress={() => set('clubs', [])} hitSlop={8}>
+                      <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+                        Tous
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  backgroundColor: Colors.bgCard, borderRadius: 12,
+                  borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12,
+                }}>
+                  <Icon name="search" size={14} color={Colors.textMuted} stroke={2.3} />
+                  <TextInput
+                    value={clubSearch}
+                    onChangeText={setClubSearch}
+                    placeholder="Chercher un club…"
+                    placeholderTextColor={Colors.textMuted}
+                    autoCorrect={false}
+                    style={{ flex: 1, paddingVertical: 10, fontSize: 13, color: Colors.textPrimary }}
+                  />
+                  {clubSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => setClubSearch('')} hitSlop={10}>
+                      <Icon name="x" size={14} color={Colors.textMuted} stroke={2.4} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <PickList
+                  rows={clubsVisibles.map(c => ({
+                    key: c.name,
+                    label: c.name,
+                    sub: c.city ?? undefined,
+                    count: gameCountByClub[c.name] ?? 0,
+                  }))}
+                  isOn={k => draft.clubs.includes(k)}
+                  onToggle={k => set('clubs', toggleIn(draft.clubs, k))}
+                />
+              </View>
             </Section>
 
             <Section title="Type de match" icon="swords">
