@@ -25,9 +25,9 @@ import {
   alertCoverage, canAlert, suggestFilterName, type SavedFilter,
 } from '../../lib/savedFilters';
 import {
-  NO_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates,
+  NO_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates, allowedGenderFilters,
   type ExploreFilters, type DatePreset, type TimeSlot,
-  type TypeFilter, type LevelFilter, type GenderFilter,
+  type TypeFilter, type LevelFilter, type GenderFilter, type PlayerGender,
 } from '../../lib/exploreFilters';
 
 export interface ClubRef { name: string; city: string | null }
@@ -91,7 +91,7 @@ const jourCourt = (d: Date) =>
 
 export function ExploreFilterSheet({
   visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
-  clubs, resultCount, onApply, onClose,
+  clubs, activeClubNames, myGender, resultCount, onApply, onClose,
 }: {
   visible: boolean;
   initial: ExploreFilters;
@@ -102,6 +102,10 @@ export function ExploreFilterSheet({
   onSave: (name: string, criteria: ExploreFilters, alert: boolean) => void;
   /** Les clubs connus, pour les pastilles de club et de ville. */
   clubs: ClubRef[];
+  /** Les lieux qui accueillent AU MOINS une partie visible en ce moment. */
+  activeClubNames: string[];
+  /** Le genre du joueur — on ne propose pas un filtre qui ne rend rien. */
+  myGender: PlayerGender;
   /** Combien de parties passent le brouillon en cours — calculé par l'écran. */
   resultCount: (draft: ExploreFilters) => number;
   onApply: (f: ExploreFilters) => void;
@@ -129,24 +133,35 @@ export function ExploreFilterSheet({
     liste.includes(v) ? liste.filter(x => x !== v) : [...liste, v];
 
   const [samedi, dimanche] = weekendDates();
+  // Seules les villes qui ACCUEILLENT des parties. Lister les trente villes du
+  // referentiel donnait un mur de pastilles dont vingt-cinq rendaient une liste
+  // vide — un filtre qui ne peut rien rendre n'est pas un filtre.
   const villes = useMemo(() => {
+    const actifs = new Set(activeClubNames);
     const v = new Set<string>();
-    for (const c of clubs) if (c.city) v.add(c.city);
+    for (const c of clubs) if (c.city && actifs.has(c.name)) v.add(c.city);
+    // Une ville deja cochee reste visible meme si plus aucune partie ne s'y
+    // joue : sinon on ne peut plus la decocher.
+    for (const x of draft.cities) v.add(x);
     return [...v].sort((a, b) => a.localeCompare(b, 'fr'));
-  }, [clubs]);
+  }, [clubs, activeClubNames, draft.cities]);
 
   const clubsVisibles = useMemo(() => {
     const q = clubSearch.trim().toLowerCase();
+    // Sans recherche, on ne montre QUE les clubs ou il se passe quelque chose.
+    // Les 108 du referentiel restent atteignables en tapant leur nom.
+    const actifs = new Set(activeClubNames);
+    const socle = q ? clubs : clubs.filter(c => actifs.has(c.name));
     const base = draft.cities.length > 0
-      ? clubs.filter(c => c.city && draft.cities.includes(c.city))
-      : clubs;
+      ? socle.filter(c => c.city && draft.cities.includes(c.city))
+      : socle;
     const filtres = q ? base.filter(c => c.name.toLowerCase().includes(q)) : base;
     // Les clubs déjà cochés restent visibles même si la recherche ne les
     // ramène plus : sinon on décoche à l'aveugle.
     const coches = clubs.filter(c => draft.clubs.includes(c.name));
     const vus = new Set(filtres.map(c => c.name));
-    return [...filtres.slice(0, q ? 40 : 12), ...coches.filter(c => !vus.has(c.name))];
-  }, [clubs, clubSearch, draft.cities, draft.clubs]);
+    return [...filtres.slice(0, q ? 40 : 20), ...coches.filter(c => !vus.has(c.name))];
+  }, [clubs, activeClubNames, clubSearch, draft.cities, draft.clubs]);
 
   const n = resultCount(draft);
   const actifs = activeExploreFilterCount(draft);
@@ -335,7 +350,8 @@ export function ExploreFilterSheet({
 
             <Section title="Genre" icon="users">
               <Row>
-                {([['all', 'Tous'], ['men', 'Hommes'], ['women', 'Femmes'], ['mixed', 'Mixte']] as [GenderFilter, string][])
+                {(([['all', 'Tous'], ['men', 'Hommes'], ['women', 'Femmes'], ['mixed', 'Mixte']] as [GenderFilter, string][])
+                  .filter(([v]) => allowedGenderFilters(myGender).includes(v)))
                   .map(([v, l]) => (
                     <Chip key={v} label={l} active={draft.gender === v} onPress={() => set('gender', v)} />
                   ))}

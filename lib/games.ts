@@ -122,8 +122,35 @@ export async function joinGame(
     p_join_waitlist: joinWaitlist,
     p_note: note ?? null,
   });
-  if (error) throw error;
+  if (error) throw new Error(joinErrorLabel(error.message));
   return data as string; // 'accepted' | 'pending' | 'waitlist'
+}
+
+/**
+ * Les refus de `join_game`, en français.
+ *
+ * La RPC lève des messages techniques en anglais. Sans traduction, un joueur
+ * qui tente une partie réservée lisait « gender not allowed » — un message
+ * qui ne dit ni ce qui s'est passé, ni quoi faire.
+ */
+export function joinErrorLabel(raw: string | null | undefined): string {
+  const m = (raw ?? '').toLowerCase();
+  if (m.includes('gender not allowed')) {
+    return 'Cette partie est réservée à un autre genre.';
+  }
+  if (m.includes('gender not set')) {
+    return 'Renseigne ton genre dans ton profil pour rejoindre cette partie.';
+  }
+  if (m.includes('defi requires binome')) {
+    return 'Un défi se relève à deux : passe par l’onglet Défi.';
+  }
+  if (m.includes('game not found')) {
+    return 'Cette partie n’existe plus.';
+  }
+  if (m.includes('not authenticated')) {
+    return 'Reconnecte-toi pour rejoindre une partie.';
+  }
+  return raw || 'La demande a échoué.';
 }
 
 export async function withdrawInvitation(gameId: string, playerId: string): Promise<void> {

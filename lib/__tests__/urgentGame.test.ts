@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 // loin de `freeSpots`, dont il depend.
 vi.mock('../supabase', () => ({ supabase: {} }));
 
-import { isUrgentGame, minutesUntil, urgentDelayLabel, URGENT_WINDOW_MINUTES } from '../games';
+import { isUrgentGame, minutesUntil, urgentDelayLabel, joinErrorLabel, URGENT_WINDOW_MINUTES } from '../games';
 
 const now = new Date(2026, 8, 5, 12, 0, 0);
 const dans = (minutes: number) => new Date(now.getTime() + minutes * 60_000).toISOString();
@@ -97,5 +97,21 @@ describe('le delai affiche sur la pastille', () => {
     expect(urgentDelayLabel(dans(-5), now)).toBe('');
     expect(urgentDelayLabel(null, now)).toBe('');
     expect(urgentDelayLabel('bof', now)).toBe('');
+  });
+});
+
+describe('refus de join_game, en francais', () => {
+  it('traduit le refus de mixite en disant ce qui se passe', () => {
+    expect(joinErrorLabel('gender not allowed')).toContain('réservée à un autre genre');
+  });
+
+  it('DIT QUOI FAIRE quand le genre n est pas renseigne', () => {
+    // Un message qui constate sans indiquer la sortie ne sert a rien.
+    expect(joinErrorLabel('gender not set')).toContain('profil');
+  });
+
+  it('laisse passer un message inconnu plutot que de l avaler', () => {
+    expect(joinErrorLabel('something odd')).toBe('something odd');
+    expect(joinErrorLabel(null)).toBe('La demande a échoué.');
   });
 });

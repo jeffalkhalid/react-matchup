@@ -27,8 +27,8 @@ import { LiveDot } from '../../components/live/LiveDot';
 import { HeaderActions } from '../../components/HeaderActions';
 import {
   filterExplore, activeExploreFilterCount, bestExploreFilterToDrop,
-  NO_EXPLORE_FILTERS, REASON_LABEL,
-  type ExploreFilters, type ExploreContext, type ExploreReason,
+  NO_EXPLORE_FILTERS, REASON_LABEL, visibleGames,
+  type ExploreFilters, type ExploreContext, type ExploreReason, type PlayerGender,
 } from '../../lib/exploreFilters';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
 import {
@@ -1512,11 +1512,12 @@ function exploreCtx(myElo: number, villeDuClub: (n: string) => string | null): E
   };
 }
 
-function ExploreTab({ games, myElo, filters, setFilters, clubs, saved, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
   saved: SavedFilter[];
+  myGender: PlayerGender;
   onSaveFilter: (name: string, criteria: ExploreFilters, alert: boolean) => void;
   onDeleteFilter: (id: string) => void;
   onOpenGame: (g: EnrichedGame) => void;
@@ -1544,12 +1545,24 @@ function ExploreTab({ games, myElo, filters, setFilters, clubs, saved, onSaveFil
       </TouchableOpacity>
     );
   };
+  // LA REGLE AVANT LES FILTRES : une partie reservee a un genre n'est pas
+  // « masquee par un filtre », elle est hors d'atteinte. Elle ne doit donc
+  // jamais etre proposee comme « retire ce filtre pour la voir » — d'ou ce
+  // tri en amont, separe de exploreRefusal. Le verrou reel est serveur
+  // (gender_access.sql) : ceci evite seulement de promettre l'inaccessible.
+  const games = useMemo(() => visibleGames(allGames, myGender), [allGames, myGender]);
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const villeDuClub = useMemo(() => {
     const m = new Map(clubs.map(c => [c.name, c.city]));
     return (n: string) => m.get(n) ?? null;
   }, [clubs]);
   const ctx = useMemo(() => exploreCtx(myElo, villeDuClub), [myElo, villeDuClub]);
+  // Les lieux ou il se passe quelque chose : le volet n'offre que ceux-la.
+  const activeClubNames = useMemo(
+    () => [...new Set(games.map(g => (g.location ?? '').trim()).filter(Boolean))],
+    [games],
+  );
 
   const mainListAll = useMemo(
     () => filterExplore(games, filters, ctx).kept,
@@ -1730,6 +1743,8 @@ function ExploreTab({ games, myElo, filters, setFilters, clubs, saved, onSaveFil
         visible={sheetOpen}
         initial={filters}
         clubs={clubs}
+        activeClubNames={activeClubNames}
+        myGender={myGender}
         saved={saved}
         onUseSaved={sf => { setFilters(sf.criteria); setSheetOpen(false); }}
         onDeleteSaved={onDeleteFilter}
@@ -3343,6 +3358,7 @@ export default function LobbyScreen() {
               filters={exploreFilters} setFilters={setExploreFilters}
               clubs={clubs}
               saved={savedFilters}
+              myGender={(player as any).gender ?? null}
               onSaveFilter={async (name, criteria, alert) => {
                 try { await createSavedFilter(player.id, name, criteria, alert); await reloadSaved(); }
                 catch (e: any) { Alert.alert('Erreur', String(e?.message ?? e)); }

@@ -244,3 +244,52 @@ export function bestExploreFilterToDrop<T extends ExploreGame>(
   }
   return best;
 }
+
+// ─── Mixité : une RÈGLE, pas un filtre ───────────────────────────────────────
+//
+// `gender_pref` n'était qu'une étiquette : rien ne l'appliquait, et un homme
+// pouvait rejoindre une partie annoncée « Femmes ». Le verrou est côté serveur
+// (gender_access.sql) — c'est le seul passage obligatoire.
+//
+// Ce qui suit ne verrouille rien : ça évite de MONTRER une partie qu'on ne
+// pourra pas rejoindre. Un filtre se contourne ; il ne remplace pas la règle,
+// il l'accompagne. C'est pour ça que cette fonction est séparée de
+// `exploreRefusal` : une partie écartée ici ne doit JAMAIS être proposée
+// comme « retire ce filtre pour la voir ».
+
+export type PlayerGender = 'male' | 'female' | null | undefined;
+
+/**
+ * Ce joueur peut-il voir cette partie ?
+ *
+ * Les parties mixtes et sans préférence sont ouvertes à tous. Une partie
+ * genrée ne se montre qu'aux joueurs du genre correspondant — y compris pour
+ * un joueur qui n'a pas déclaré le sien : le serveur le refuserait, la lui
+ * montrer serait une promesse en l'air.
+ */
+export function canPlayerSee(g: { gender_pref?: string | null }, me: PlayerGender): boolean {
+  const p = g.gender_pref;
+  if (p !== 'men' && p !== 'women') return true;
+  if (!me) return false;
+  return (p === 'men' && me === 'male') || (p === 'women' && me === 'female');
+}
+
+/** Les parties que ce joueur a le droit de voir. */
+export function visibleGames<T extends { gender_pref?: string | null }>(
+  games: T[], me: PlayerGender,
+): T[] {
+  return games.filter(g => canPlayerSee(g, me));
+}
+
+/**
+ * Les valeurs du filtre Genre que ce joueur peut choisir.
+ *
+ * Proposer « Femmes » à un homme afficherait une liste vide en permanence —
+ * un filtre qui ne peut rien rendre n'est pas un filtre, c'est un piège.
+ */
+export function allowedGenderFilters(me: PlayerGender): GenderFilter[] {
+  if (me === 'male') return ['all', 'men', 'mixed'];
+  if (me === 'female') return ['all', 'women', 'mixed'];
+  // Genre non déclaré : seules les parties ouvertes à tous sont accessibles.
+  return ['all', 'mixed'];
+}

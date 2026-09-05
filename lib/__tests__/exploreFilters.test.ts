@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, matchesDatePreset, matchesTimeSlot,
   gameType, exploreRefusal, filterExplore, bestExploreFilterToDrop,
+  canPlayerSee, visibleGames, allowedGenderFilters,
   type ExploreFilters, type ExploreContext, type ExploreGame,
 } from '../exploreFilters';
 
@@ -208,5 +209,46 @@ describe('partage garde / masque', () => {
     const a = bestExploreFilterToDrop(jeu, f({ date: 'tomorrow' }), ctx());
     const b = bestExploreFilterToDrop(jeu, f({ date: 'tomorrow' }), ctx());
     expect(a).toEqual(b);
+  });
+});
+
+describe('mixite : une regle, pas un filtre', () => {
+  const mixte = { gender_pref: 'mixed' };
+  const hommes = { gender_pref: 'men' };
+  const femmes = { gender_pref: 'women' };
+
+  it('un HOMME ne voit pas les parties reservees aux femmes', () => {
+    expect(canPlayerSee(hommes, 'male')).toBe(true);
+    expect(canPlayerSee(femmes, 'male')).toBe(false);
+  });
+
+  it('une FEMME ne voit pas les parties reservees aux hommes', () => {
+    expect(canPlayerSee(femmes, 'female')).toBe(true);
+    expect(canPlayerSee(hommes, 'female')).toBe(false);
+  });
+
+  it('les parties mixtes ou sans preference sont ouvertes a tous', () => {
+    for (const me of ['male', 'female', null] as const) {
+      expect(canPlayerSee(mixte, me)).toBe(true);
+      expect(canPlayerSee({}, me)).toBe(true);
+      expect(canPlayerSee({ gender_pref: null }, me)).toBe(true);
+    }
+  });
+
+  it('un genre NON DECLARE ne donne acces a aucune partie genree', () => {
+    // Le serveur le refuserait : la lui montrer serait une promesse en l'air.
+    expect(canPlayerSee(hommes, null)).toBe(false);
+    expect(canPlayerSee(femmes, undefined)).toBe(false);
+  });
+
+  it('le tri s applique sur une liste entiere', () => {
+    expect(visibleGames([mixte, hommes, femmes], 'male')).toEqual([mixte, hommes]);
+  });
+
+  it('on ne PROPOSE pas un filtre qui ne peut rien rendre', () => {
+    // « Femmes » offert a un homme afficherait une liste vide en permanence.
+    expect(allowedGenderFilters('male')).toEqual(['all', 'men', 'mixed']);
+    expect(allowedGenderFilters('female')).toEqual(['all', 'women', 'mixed']);
+    expect(allowedGenderFilters(null)).toEqual(['all', 'mixed']);
   });
 });
