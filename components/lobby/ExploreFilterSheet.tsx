@@ -16,7 +16,7 @@
 // lib/exploreFilters avec ses tests. Ici, il n'y a que du rendu.
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Switch,
+  View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Switch, FlatList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
@@ -26,6 +26,7 @@ import {
 } from '../../lib/savedFilters';
 import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates, allowedGenderFilters,
+  selectionSummary,
   type ExploreFilters, type DatePreset, type TimeSlot,
   type TypeFilter, type LevelFilter, type GenderFilter, type PlayerGender,
 } from '../../lib/exploreFilters';
@@ -95,71 +96,172 @@ export interface PickRow {
 }
 
 /**
- * Une LISTE à cocher, et non des pastilles.
+ * Un champ REPLIÉ : le libellé, ce qui est choisi, un chevron.
  *
- * Les villes et les clubs se comptent en dizaines : en pastilles, ils
- * formaient un mur où l'œil ne trouvait rien. Une liste s'aligne, se lit de
- * haut en bas, garde une largeur constante quel que soit le nom, et laisse
- * la place au compte de parties — qui dit tout de suite si le choix vaut la
- * peine.
+ * Trois listes de vingt lignes empilées dans un volet qui défile déjà, c'était
+ * un couloir sans fin — et ça empire à chaque club qui s'ajoute. Replié, un
+ * choix tient sur une ligne quel que soit le nombre d'options.
  */
-function PickList({ rows, isOn, onToggle }: {
+function SelectField({ label, summary, active, onPress }: {
+  label: string; summary: string; active: boolean; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: Colors.bgCard, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12,
+        borderWidth: 1, borderColor: active ? Colors.brand : Colors.border,
+      }}
+    >
+      <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>
+        {label}
+      </Text>
+      <Text numberOfLines={1} style={{
+        flex: 1, textAlign: 'right', fontSize: 13,
+        fontFamily: active ? Fonts.uiBlack : Fonts.uiBold,
+        color: active ? Colors.textPrimary : Colors.textMuted,
+      }}>
+        {summary}
+      </Text>
+      <Icon name="chevronRight" size={15} color={Colors.textMuted} stroke={2.3} />
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * Le sélecteur, dans sa propre fenêtre.
+ *
+ * Une `FlatList` et non une `ScrollView` : à cent huit clubs, seules les
+ * lignes visibles sont rendues. Et une fenêtre à part plutôt qu'un dépliage
+ * sur place — imbriquer un défilement dans un autre se comporte mal sur
+ * Android, et on perdrait la barre de recherche de vue en descendant.
+ */
+function PickerModal({ visible, title, rows, isOn, onToggle, onClear, onClose, searchable }: {
+  visible: boolean;
+  title: string;
   rows: PickRow[];
   isOn: (key: string) => boolean;
   onToggle: (key: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+  searchable?: boolean;
 }) {
-  if (rows.length === 0) return null;
+  const insets = useSafeAreaInsets();
+  const [q, setQ] = useState('');
+  React.useEffect(() => { if (visible) setQ(''); }, [visible]);
+
+  const vues = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (!t) return rows;
+    return rows.filter(r =>
+      r.label.toLowerCase().includes(t) || (r.sub ?? '').toLowerCase().includes(t));
+  }, [rows, q]);
+
   return (
-    <View style={{
-      backgroundColor: Colors.bgCard, borderRadius: 14,
-      borderWidth: 1, borderColor: Colors.border, overflow: 'hidden',
-    }}>
-      {rows.map((r, i) => {
-        const on = isOn(r.key);
-        return (
-          <TouchableOpacity
-            key={r.key}
-            onPress={() => onToggle(r.key)}
-            activeOpacity={0.75}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-              paddingVertical: 11, paddingHorizontal: 12,
-              borderTopWidth: i > 0 ? 1 : 0, borderTopColor: Colors.borderLight,
-              backgroundColor: on ? Colors.brand + '14' : 'transparent',
-            }}
-          >
-            <View style={{
-              width: 19, height: 19, borderRadius: 6,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: on ? Colors.brand : 'transparent',
-              borderWidth: 1.5, borderColor: on ? Colors.brand : Colors.border,
-            }}>
-              {on && <Icon name="check" size={12} color={Colors.primary} stroke={3} />}
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{
-                fontSize: 13, fontFamily: on ? Fonts.uiBlack : Fonts.uiBold, color: Colors.textPrimary,
-              }}>
-                {r.label}
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'flex-end' }}>
+        <View style={{
+          backgroundColor: Colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22,
+          height: '80%', paddingBottom: insets.bottom + 8,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 }}>
+            <Text style={{ flex: 1, fontSize: 19, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+              {title}
+            </Text>
+            <TouchableOpacity onPress={onClear} hitSlop={8} activeOpacity={0.75}>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+                Tout effacer
               </Text>
-              {!!r.sub && (
-                <Text numberOfLines={1} style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.textMuted, marginTop: 1 }}>
-                  {r.sub}
-                </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} hitSlop={10} activeOpacity={0.75}>
+              <Icon name="x" size={19} color={Colors.textPrimary} stroke={2.4} />
+            </TouchableOpacity>
+          </View>
+
+          {searchable && (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 10,
+              backgroundColor: Colors.bgCard, borderRadius: 12,
+              borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12,
+            }}>
+              <Icon name="search" size={14} color={Colors.textMuted} stroke={2.3} />
+              <TextInput
+                value={q}
+                onChangeText={setQ}
+                placeholder="Chercher…"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                style={{ flex: 1, paddingVertical: 10, fontSize: 13, color: Colors.textPrimary }}
+              />
+              {q.length > 0 && (
+                <TouchableOpacity onPress={() => setQ('')} hitSlop={10}>
+                  <Icon name="x" size={14} color={Colors.textMuted} stroke={2.4} />
+                </TouchableOpacity>
               )}
             </View>
-            {r.count !== undefined && (
-              <Text style={{
-                fontSize: 11.5, fontFamily: Fonts.uiBlack,
-                color: r.count > 0 ? Colors.textSecondary : Colors.borderDark,
-              }}>
-                {r.count}
+          )}
+
+          <FlatList
+            data={vues}
+            keyExtractor={r => r.key}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
+            ListEmptyComponent={
+              <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', paddingVertical: 24 }}>
+                Rien ne correspond.
               </Text>
-            )}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
+            }
+            renderItem={({ item, index }) => {
+              const on = isOn(item.key);
+              return (
+                <TouchableOpacity
+                  onPress={() => onToggle(item.key)}
+                  activeOpacity={0.75}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 10,
+                    paddingVertical: 12, paddingHorizontal: 12,
+                    borderTopWidth: index > 0 ? 1 : 0, borderTopColor: Colors.borderLight,
+                    backgroundColor: on ? Colors.brand + '14' : 'transparent',
+                    borderRadius: on ? 10 : 0,
+                  }}
+                >
+                  <View style={{
+                    width: 19, height: 19, borderRadius: 6,
+                    alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: on ? Colors.brand : 'transparent',
+                    borderWidth: 1.5, borderColor: on ? Colors.brand : Colors.border,
+                  }}>
+                    {on && <Icon name="check" size={12} color={Colors.primary} stroke={3} />}
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1} style={{
+                      fontSize: 13.5, fontFamily: on ? Fonts.uiBlack : Fonts.uiBold, color: Colors.textPrimary,
+                    }}>
+                      {item.label}
+                    </Text>
+                    {!!item.sub && (
+                      <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted, marginTop: 1 }}>
+                        {item.sub}
+                      </Text>
+                    )}
+                  </View>
+                  {item.count !== undefined && (
+                    <Text style={{
+                      fontSize: 12, fontFamily: Fonts.uiBlack,
+                      color: item.count > 0 ? Colors.textSecondary : Colors.borderDark,
+                    }}>
+                      {item.count}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -200,15 +302,17 @@ export function ExploreFilterSheet({
   // On travaille sur un BROUILLON : fermer sans appliquer doit laisser la liste
   // exactement comme on l'a trouvée.
   const [draft, setDraft] = useState<ExploreFilters>(initial);
-  const [clubSearch, setClubSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveAlert, setSaveAlert] = useState(true);
+  // Quel selecteur est ouvert. Un seul a la fois : deux fenetres empilees ne
+  // se referment jamais dans le bon ordre.
+  const [picker, setPicker] = useState<null | 'city' | 'club' | 'player'>(null);
 
   // Le volet se rouvre sur les filtres réellement actifs, pas sur le brouillon
   // abandonné la fois d'avant.
   React.useEffect(() => {
-    if (visible) { setDraft(initial); setClubSearch(''); setSaving(false); }
+    if (visible) { setDraft(initial); setSaving(false); setPicker(null); }
   }, [visible, initial]);
 
   const set = <K extends keyof ExploreFilters>(k: K, v: ExploreFilters[K]) =>
@@ -231,22 +335,18 @@ export function ExploreFilterSheet({
     return [...v].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [clubs, activeClubNames, draft.cities]);
 
-  const clubsVisibles = useMemo(() => {
-    const q = clubSearch.trim().toLowerCase();
-    // Sans recherche, on ne montre QUE les clubs ou il se passe quelque chose.
-    // Les 108 du referentiel restent atteignables en tapant leur nom.
+
+  // Le selecteur voit TOUS les clubs, actifs en tete : la recherche doit
+  // pouvoir atteindre un club ou rien ne se joue encore, sans le noyer dans
+  // les cent huit du referentiel.
+  const clubsPourSelecteur = useMemo(() => {
     const actifs = new Set(activeClubNames);
-    const socle = q ? clubs : clubs.filter(c => actifs.has(c.name));
-    const base = draft.cities.length > 0
-      ? socle.filter(c => c.city && draft.cities.includes(c.city))
-      : socle;
-    const filtres = q ? base.filter(c => c.name.toLowerCase().includes(q)) : base;
-    // Les clubs déjà cochés restent visibles même si la recherche ne les
-    // ramène plus : sinon on décoche à l'aveugle.
-    const coches = clubs.filter(c => draft.clubs.includes(c.name));
-    const vus = new Set(filtres.map(c => c.name));
-    return [...filtres.slice(0, q ? 40 : 20), ...coches.filter(c => !vus.has(c.name))];
-  }, [clubs, activeClubNames, clubSearch, draft.cities, draft.clubs]);
+    const favoris = new Set(favorites);
+    // Trois rangs : mes clubs, ceux ou il se passe quelque chose, puis les
+    // autres — atteignables par la recherche.
+    const rang = (c: ClubRef) => (favoris.has(c.name) ? 0 : actifs.has(c.name) ? 1 : 2);
+    return [...clubs].sort((a, b) => rang(a) - rang(b) || a.name.localeCompare(b.name, 'fr'));
+  }, [clubs, activeClubNames, favorites]);
 
   const n = resultCount(draft);
   const actifs = activeExploreFilterCount(draft);
@@ -362,101 +462,22 @@ export function ExploreFilterSheet({
             </Section>
 
             <Section title="Lieu" icon="mapPin">
-              {/* MES CLUBS D'ABORD. Le joueur les a déjà choisis ailleurs
-                  (wizard, « Gérer mes clubs ») : les redemander ici serait lui
-                  faire refaire un travail fait. Ils portent le nom du club,
-                  comme les parties — même clé, aucune correspondance à
-                  inventer. */}
-              {favorites.length > 0 && (
-                <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
-                    MES CLUBS
-                  </Text>
-                  <PickList
-                    rows={favorites.map(nom => ({
-                      key: nom,
-                      label: nom,
-                      sub: clubs.find(c => c.name === nom)?.city ?? undefined,
-                      count: gameCountByClub[nom] ?? 0,
-                    }))}
-                    isOn={k => draft.clubs.includes(k)}
-                    onToggle={k => set('clubs', toggleIn(draft.clubs, k))}
-                  />
-                </View>
-              )}
-
-              <View style={{ gap: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ flex: 1, fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
-                    VILLE
-                  </Text>
-                  {draft.cities.length > 0 && (
-                    <TouchableOpacity onPress={() => set('cities', [])} hitSlop={8}>
-                      <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
-                        Toutes
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {villes.length === 0 ? (
-                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted }}>
-                    Aucune partie programmée pour l’instant.
-                  </Text>
-                ) : (
-                  <PickList
-                    rows={villes.map(v => ({ key: v, label: v, count: gameCountByCity[v] ?? 0 }))}
-                    isOn={k => draft.cities.includes(k)}
-                    onToggle={k => set('cities', toggleIn(draft.cities, k))}
-                  />
-                )}
-              </View>
-
-              <View style={{ gap: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ flex: 1, fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
-                    CLUB
-                  </Text>
-                  {draft.clubs.length > 0 && (
-                    <TouchableOpacity onPress={() => set('clubs', [])} hitSlop={8}>
-                      <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
-                        Tous
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 8,
-                  backgroundColor: Colors.bgCard, borderRadius: 12,
-                  borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12,
-                }}>
-                  <Icon name="search" size={14} color={Colors.textMuted} stroke={2.3} />
-                  <TextInput
-                    value={clubSearch}
-                    onChangeText={setClubSearch}
-                    placeholder="Chercher un club…"
-                    placeholderTextColor={Colors.textMuted}
-                    autoCorrect={false}
-                    style={{ flex: 1, paddingVertical: 10, fontSize: 13, color: Colors.textPrimary }}
-                  />
-                  {clubSearch.length > 0 && (
-                    <TouchableOpacity onPress={() => setClubSearch('')} hitSlop={10}>
-                      <Icon name="x" size={14} color={Colors.textMuted} stroke={2.4} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                <PickList
-                  rows={clubsVisibles.map(c => ({
-                    key: c.name,
-                    label: c.name,
-                    sub: c.city ?? undefined,
-                    count: gameCountByClub[c.name] ?? 0,
-                  }))}
-                  isOn={k => draft.clubs.includes(k)}
-                  onToggle={k => set('clubs', toggleIn(draft.clubs, k))}
-                />
-              </View>
+              {/* Vos clubs favoris ne sont PAS une section a part : ils sont en
+                  tete du selecteur Club, marques d'une etoile. Les avoir aux
+                  deux endroits offrait le meme choix deux fois — et laissait
+                  croire a deux reglages distincts. */}
+              <SelectField
+                label="Ville"
+                summary={selectionSummary(draft.cities, 'Toutes', n => `${n} villes`)}
+                active={draft.cities.length > 0}
+                onPress={() => setPicker('city')}
+              />
+              <SelectField
+                label="Club"
+                summary={selectionSummary(draft.clubs, 'Tous', n => `${n} clubs`)}
+                active={draft.clubs.length > 0}
+                onPress={() => setPicker('club')}
+              />
             </Section>
 
             <Section title="Type de match" icon="swords">
@@ -510,29 +531,15 @@ export function ExploreFilterSheet({
                   />
                 </View>
 
-                <View style={{ gap: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ flex: 1, fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
-                      JOUER AVEC
-                    </Text>
-                    {draft.players.length > 0 && (
-                      <TouchableOpacity onPress={() => set('players', [])} hitSlop={8}>
-                        <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
-                          Tous
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <PickList
-                    rows={topPlayers.map(p => ({
-                      key: p.id,
-                      label: p.name,
-                      sub: p.matches > 1 ? `${p.matches} matchs ensemble` : '1 match ensemble',
-                    }))}
-                    isOn={k => draft.players.includes(k)}
-                    onToggle={k => set('players', toggleIn(draft.players, k))}
-                  />
-                </View>
+                <SelectField
+                  label="Jouer avec"
+                  summary={selectionSummary(
+                    draft.players.map(id => topPlayers.find(p => p.id === id)?.name ?? '?'),
+                    'Tout le monde', n => `${n} joueurs`,
+                  )}
+                  active={draft.players.length > 0}
+                  onPress={() => setPicker('player')}
+                />
               </Section>
             )}
 
@@ -659,6 +666,48 @@ export function ExploreFilterSheet({
               </Text>
             </TouchableOpacity>
           )}
+
+          {/* Les trois selecteurs, dans leur propre fenetre : une FlatList
+              virtualisee tient cent huit clubs sans que le volet s'allonge. */}
+          <PickerModal
+            visible={picker === 'city'}
+            title="Ville"
+            rows={villes.map(v => ({ key: v, label: v, count: gameCountByCity[v] ?? 0 }))}
+            isOn={k => draft.cities.includes(k)}
+            onToggle={k => set('cities', toggleIn(draft.cities, k))}
+            onClear={() => set('cities', [])}
+            onClose={() => setPicker(null)}
+            searchable
+          />
+          <PickerModal
+            visible={picker === 'club'}
+            title="Club"
+            rows={clubsPourSelecteur.map(c => ({
+              key: c.name, label: c.name,
+              sub: favorites.includes(c.name)
+                ? `★ Mon club${c.city ? ` · ${c.city}` : ''}`
+                : (c.city ?? undefined),
+              count: gameCountByClub[c.name] ?? 0,
+            }))}
+            isOn={k => draft.clubs.includes(k)}
+            onToggle={k => set('clubs', toggleIn(draft.clubs, k))}
+            onClear={() => set('clubs', [])}
+            onClose={() => setPicker(null)}
+            searchable
+          />
+          <PickerModal
+            visible={picker === 'player'}
+            title="Jouer avec"
+            rows={topPlayers.map(p => ({
+              key: p.id, label: p.name,
+              sub: p.matches > 1 ? `${p.matches} matchs ensemble` : '1 match ensemble',
+            }))}
+            isOn={k => draft.players.includes(k)}
+            onToggle={k => set('players', toggleIn(draft.players, k))}
+            onClear={() => set('players', [])}
+            onClose={() => setPicker(null)}
+            searchable
+          />
 
           {/* Le nombre AVANT de fermer : sans lui on règle à l'aveugle et on
               découvre une liste vide une fois le volet refermé. */}

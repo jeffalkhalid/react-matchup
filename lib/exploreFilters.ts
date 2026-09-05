@@ -358,3 +358,19 @@ export function countCompanions(matches: PastMatch[], myId: string): Companion[]
     .map(([id, matches]) => ({ id, matches }))
     .sort((a, b) => b.matches - a.matches || a.id.localeCompare(b.id));
 }
+
+/**
+ * Le résumé d'une sélection, tel qu'il s'affiche sur un champ replié.
+ *
+ * « Toutes » quand rien n'est coché — c'est l'état par défaut et il doit se
+ * lire comme une absence de contrainte, pas comme un vide. Un seul élément
+ * s'écrit en toutes lettres ; au-delà on compte, parce qu'énumérer trois noms
+ * de clubs déborde d'une ligne et qu'on ne saurait plus lequel manque.
+ */
+export function selectionSummary(
+  selected: string[], vide: string, pluriel: (n: number) => string,
+): string {
+  if (selected.length === 0) return vide;
+  if (selected.length === 1) return selected[0];
+  return pluriel(selected.length);
+}

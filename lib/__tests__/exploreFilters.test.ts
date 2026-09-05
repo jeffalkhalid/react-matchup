@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, matchesDatePreset, matchesTimeSlot,
   gameType, exploreRefusal, filterExplore, bestExploreFilterToDrop,
-  canPlayerSee, visibleGames, allowedGenderFilters, countCompanions,
+  canPlayerSee, visibleGames, allowedGenderFilters, countCompanions, selectionSummary,
   type ExploreFilters, type ExploreContext, type ExploreGame,
 } from '../exploreFilters';
 
@@ -320,5 +320,25 @@ describe('filtres par joueur', () => {
   it('comptent chacun pour un filtre actif', () => {
     expect(activeExploreFilterCount(f({ players: ['A'], knownOnly: true }))).toBe(2);
     expect(activeExploreFilterCount(f({ players: [] }))).toBe(0);
+  });
+});
+
+describe('resume d une selection', () => {
+  const p = (n: number) => `${n} villes`;
+
+  it('rien de coche se lit comme une ABSENCE DE CONTRAINTE', () => {
+    // « Toutes », pas « aucune » : l'etat par defaut n'est pas un vide.
+    expect(selectionSummary([], 'Toutes', p)).toBe('Toutes');
+  });
+
+  it('un seul element s ecrit en toutes lettres', () => {
+    expect(selectionSummary(['Casablanca'], 'Toutes', p)).toBe('Casablanca');
+  });
+
+  it('au-dela, on COMPTE au lieu d enumerer', () => {
+    // Trois noms de clubs debordent d'une ligne, et on ne saurait plus lequel
+    // manque.
+    expect(selectionSummary(['Casablanca', 'Rabat'], 'Toutes', p)).toBe('2 villes');
+    expect(selectionSummary(['a', 'b', 'c'], 'Toutes', p)).toBe('3 villes');
   });
 });
