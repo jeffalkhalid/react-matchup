@@ -168,7 +168,7 @@ const jourCourt = (d: Date) =>
 
 export function ExploreFilterSheet({
   visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
-  clubs, activeClubNames, myGender, favorites, gameCountByClub, gameCountByCity,
+  clubs, activeClubNames, myGender, favorites, gameCountByClub, gameCountByCity, topPlayers,
   resultCount, onApply, onClose,
 }: {
   visible: boolean;
@@ -189,6 +189,8 @@ export function ExploreFilterSheet({
   /** Combien de parties visibles par club, et par ville. */
   gameCountByClub: Record<string, number>;
   gameCountByCity: Record<string, number>;
+  /** Mes joueurs habituels, du plus croise au moins croise. */
+  topPlayers: { id: string; name: string; matches: number }[];
   /** Combien de parties passent le brouillon en cours — calculé par l'écran. */
   resultCount: (draft: ExploreFilters) => number;
   onApply: (f: ExploreFilters) => void;
@@ -484,6 +486,55 @@ export function ExploreFilterSheet({
                   ))}
               </Row>
             </Section>
+
+            {topPlayers.length > 0 && (
+              <Section title="Mes joueurs" icon="users">
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12,
+                  backgroundColor: Colors.bgCard, borderRadius: 14, padding: 14,
+                  borderWidth: 1, borderColor: Colors.border,
+                }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                      Matchs en commun
+                    </Text>
+                    <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 }}>
+                      Seulement les parties où joue quelqu’un que tu as déjà croisé.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={draft.knownOnly}
+                    onValueChange={v => set('knownOnly', v)}
+                    trackColor={{ false: Colors.border, true: Colors.brand }}
+                    thumbColor={Colors.bgCard}
+                  />
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ flex: 1, fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textMuted }}>
+                      JOUER AVEC
+                    </Text>
+                    {draft.players.length > 0 && (
+                      <TouchableOpacity onPress={() => set('players', [])} hitSlop={8}>
+                        <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+                          Tous
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <PickList
+                    rows={topPlayers.map(p => ({
+                      key: p.id,
+                      label: p.name,
+                      sub: p.matches > 1 ? `${p.matches} matchs ensemble` : '1 match ensemble',
+                    }))}
+                    isOn={k => draft.players.includes(k)}
+                    onToggle={k => set('players', toggleIn(draft.players, k))}
+                  />
+                </View>
+              </Section>
+            )}
 
             <Section title="Places disponibles" icon="users">
               <Row>

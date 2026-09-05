@@ -33,13 +33,17 @@ export interface ExploreFilters {
   /** Nombre exact de places libres exigé. `null` = indifférent. */
   spots: number | null;
   urgentOnly: boolean;
+  /** Joueurs retenus : la partie doit en compter au moins un. Vide = tous. */
+  players: string[];
+  /** N'afficher que les parties ou joue quelqu'un que j'ai deja croise. */
+  knownOnly: boolean;
   search: string;
 }
 
 export const NO_EXPLORE_FILTERS: ExploreFilters = {
   date: 'any', slot: 'any', clubs: [], cities: [],
   type: 'all', level: 'all', gender: 'all',
-  spots: null, urgentOnly: false, search: '',
+  spots: null, urgentOnly: false, players: [], knownOnly: false, search: '',
 };
 
 /** Combien de filtres sont actifs — le chiffre de la pastille « Filtres ». */
@@ -54,6 +58,8 @@ export function activeExploreFilterCount(f: ExploreFilters): number {
   if (f.gender !== 'all') n++;
   if (f.spots !== null) n++;
   if (f.urgentOnly) n++;
+  if (f.players.length > 0) n++;
+  if (f.knownOnly) n++;
   if (f.search.trim()) n++;
   return n;
 }
@@ -134,7 +140,8 @@ export function gameType(g: { is_challenge?: boolean | null; game_format?: strin
 
 /** Ce qui a écarté une partie, ou `null` si elle passe. */
 export type ExploreReason =
-  | 'date' | 'slot' | 'club' | 'city' | 'type' | 'level' | 'gender' | 'spots' | 'urgent' | 'search';
+  | 'date' | 'slot' | 'club' | 'city' | 'type' | 'level' | 'gender' | 'spots'
+  | 'urgent' | 'players' | 'known' | 'search';
 
 export interface ExploreGame {
   location?: string | null;
@@ -156,6 +163,10 @@ export interface ExploreContext {
   isUrgent: (g: ExploreGame) => boolean;
   /** « mine » / « outside » : le verdict de niveau, déjà calculé par l'écran. */
   levelFit: (g: ExploreGame) => 'fit' | 'outside';
+  /** Qui prend part à cette partie — l'écran sait ce qui compte comme place. */
+  playersOf: (g: ExploreGame) => string[];
+  /** Les joueurs déjà croisés, pour « matchs en commun ». */
+  knownPlayers: Set<string>;
 }
 
 /**
@@ -182,6 +193,12 @@ export function exploreRefusal(g: ExploreGame, f: ExploreFilters, ctx: ExploreCo
   if (f.gender !== 'all' && (g.gender_pref ?? '') !== f.gender) return 'gender';
   if (f.spots !== null && ctx.freeSpots(g) !== f.spots) return 'spots';
   if (f.urgentOnly && !ctx.isUrgent(g)) return 'urgent';
+
+  if (f.players.length > 0 || f.knownOnly) {
+    const dedans = ctx.playersOf(g);
+    if (f.players.length > 0 && !dedans.some(id => f.players.includes(id))) return 'players';
+    if (f.knownOnly && !dedans.some(id => ctx.knownPlayers.has(id))) return 'known';
+  }
 
   const q = f.search.trim().toLowerCase();
   if (q) {
@@ -219,6 +236,8 @@ export const REASON_LABEL: Record<ExploreReason, string> = {
   gender: 'Genre',
   spots: 'Places libres',
   urgent: 'Urgent',
+  players: 'Joueurs',
+  known: 'Matchs en commun',
   search: 'Recherche',
 };
 
@@ -292,4 +311,50 @@ export function allowedGenderFilters(me: PlayerGender): GenderFilter[] {
   if (me === 'female') return ['all', 'women', 'mixed'];
   // Genre non déclaré : seules les parties ouvertes à tous sont accessibles.
   return ['all', 'mixed'];
+}
+
+// ─── Les joueurs : « mes habitués » et « matchs en commun » ──────────────────
+//
+// Dernier morceau de la maquette. J'avais dit que l'agrégat « combien de
+// matchs ensemble » coûterait cher à l'échelle : c'est faux, et il faut le
+// dire. Il est borné par MON historique, pas par la base — compter mes
+// coéquipiers me coûte le nombre de mes propres matchs, que je sois seul ou
+// cent mille sur l'app. Aucune table d'agrégat n'est nécessaire.
+
+export interface PastMatch {
+  winner_id?: string | null;
+  winner_id_2?: string | null;
+  loser_id?: string | null;
+  loser_id_2?: string | null;
+}
+
+export interface Companion {
+  id: string;
+  /** Nombre de matchs joués ENSEMBLE, coéquipier ou adversaire. */
+  matches: number;
+}
+
+/**
+ * Les joueurs croisés le plus souvent, du plus fréquent au moins fréquent.
+ *
+ * Coéquipier ET adversaire comptent : ce qu'on cherche, c'est « les gens avec
+ * qui je joue », pas « ceux de mon camp ». Sur un club, l'adversaire habituel
+ * est souvent une meilleure recommandation que le partenaire d'un soir.
+ */
+export function countCompanions(matches: PastMatch[], myId: string): Companion[] {
+  const compte = new Map<string, number>();
+  for (const m of matches) {
+    const joueurs = [m.winner_id, m.winner_id_2, m.loser_id, m.loser_id_2]
+      .filter((x): x is string => !!x);
+    if (!joueurs.includes(myId)) continue;
+    for (const j of joueurs) {
+      if (j === myId) continue;
+      compte.set(j, (compte.get(j) ?? 0) + 1);
+    }
+  }
+  // Tri STABLE : à égalité on classe par identifiant, pour que deux ouvertures
+  // du volet ne donnent jamais deux ordres différents.
+  return [...compte.entries()]
+    .map(([id, matches]) => ({ id, matches }))
+    .sort((a, b) => b.matches - a.matches || a.id.localeCompare(b.id));
 }

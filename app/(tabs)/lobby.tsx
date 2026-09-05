@@ -27,7 +27,7 @@ import { LiveDot } from '../../components/live/LiveDot';
 import { HeaderActions } from '../../components/HeaderActions';
 import {
   filterExplore, activeExploreFilterCount, bestExploreFilterToDrop,
-  NO_EXPLORE_FILTERS, REASON_LABEL, visibleGames,
+  NO_EXPLORE_FILTERS, REASON_LABEL, visibleGames, countCompanions,
   type ExploreFilters, type ExploreContext, type ExploreReason, type PlayerGender,
 } from '../../lib/exploreFilters';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
@@ -1499,27 +1499,41 @@ function resetOne(r: ExploreReason): Partial<ExploreFilters> {
     case 'gender': return { gender: 'all' };
     case 'spots':  return { spots: null };
     case 'urgent': return { urgentOnly: false };
+    case 'players': return { players: [] };
+    case 'known':  return { knownOnly: false };
     case 'search': return { search: '' };
   }
 }
 
-function exploreCtx(myElo: number, villeDuClub: (n: string) => string | null): ExploreContext {
+function exploreCtx(
+  myElo: number,
+  villeDuClub: (n: string) => string | null,
+  knownPlayers: Set<string> = new Set(),
+): ExploreContext {
   return {
     now: new Date(),
     cityOfClub: villeDuClub,
     freeSpots: (g: any) => freeSpots(g),
     isUrgent: (g: any) => isUrgentGame(g),
     levelFit: (g: any) => (getEloFit(g, myElo) === 'fit' ? 'fit' : 'outside'),
+    // Qui prend part : le createur, et les joueurs qui occupent une place ou
+    // dont l'invitation court encore. Un desistement ne compte pas.
+    playersOf: (g: any) => [
+      g.creator_id,
+      ...(g.participants ?? []).filter((p: any) => occupiesSpot(p)).map((p: any) => p.player_id),
+    ].filter(Boolean),
+    knownPlayers,
   };
 }
 
-function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
   saved: SavedFilter[];
   myGender: PlayerGender;
   favorites: string[];
+  topPlayers: { id: string; name: string; matches: number }[];
   onSaveFilter: (name: string, criteria: ExploreFilters, alert: boolean) => void;
   onDeleteFilter: (id: string) => void;
   onOpenGame: (g: EnrichedGame) => void;
@@ -1559,7 +1573,11 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     const m = new Map(clubs.map(c => [c.name, c.city]));
     return (n: string) => m.get(n) ?? null;
   }, [clubs]);
-  const ctx = useMemo(() => exploreCtx(myElo, villeDuClub), [myElo, villeDuClub]);
+  const knownPlayers = useMemo(() => new Set(topPlayers.map(p => p.id)), [topPlayers]);
+  const ctx = useMemo(
+    () => exploreCtx(myElo, villeDuClub, knownPlayers),
+    [myElo, villeDuClub, knownPlayers],
+  );
   // Les lieux ou il se passe quelque chose : le volet n'offre que ceux-la.
   const activeClubNames = useMemo(
     () => [...new Set(games.map(g => (g.location ?? '').trim()).filter(Boolean))],
@@ -1768,6 +1786,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         favorites={favorites}
         gameCountByClub={gameCountByClub}
         gameCountByCity={gameCountByCity}
+        topPlayers={topPlayers}
         saved={saved}
         onUseSaved={sf => { setFilters(sf.criteria); setSheetOpen(false); }}
         onDeleteSaved={onDeleteFilter}
@@ -2196,6 +2215,10 @@ export default function LobbyScreen() {
   // clubs » (lib/clubFavorites) : le joueur les a deja choisis, on ne le fait
   // pas recommencer.
   const [favoriteClubs, setFavoriteClubs] = useState<string[]>([]);
+  // Mes joueurs habitues. Le compte est borne par MON historique, pas par la
+  // base : il coute le nombre de mes propres matchs, que l'app compte dix
+  // joueurs ou cent mille. Aucune table d'agregat n'est necessaire.
+  const [topPlayers, setTopPlayers] = useState<{ id: string; name: string; matches: number }[]>([]);
   const reloadSaved = useCallback(async () => {
     // Best-effort : tant que saved_filters.sql n'est pas applique, la table
     // n'existe pas et la rangee reste simplement vide.
@@ -2205,6 +2228,32 @@ export default function LobbyScreen() {
   useEffect(() => {
     if (!player?.id) return;
     loadClubFavorites(player.id).then(setFavoriteClubs).catch(() => setFavoriteClubs([]));
+  }, [player?.id]);
+
+  useEffect(() => {
+    const moi = player?.id;
+    if (!moi) return;
+    const cols = 'winner_id, winner_id_2, loser_id, loser_id_2';
+    const mien = `winner_id.eq.${moi},winner_id_2.eq.${moi},loser_id.eq.${moi},loser_id_2.eq.${moi}`;
+    (async () => {
+      const { data } = await supabase.from('matches').select(cols).or(mien).limit(500);
+      {
+        const compagnons = countCompanions((data ?? []) as any[], moi);
+        if (compagnons.length === 0) { setTopPlayers([]); return; }
+        // Les noms en une seule requete, pour les vingt premiers seulement :
+        // au-dela, la liste ne se lit plus.
+        const top = compagnons.slice(0, 20);
+        const { data: noms } = await supabase
+          .from('players').select('id, name').in('id', top.map(c => c.id));
+        const parId = new Map((noms ?? []).map((p: any) => [p.id, p.name as string]));
+        setTopPlayers(top.flatMap(c => {
+          const name = parId.get(c.id);
+          // Un joueur supprime n'a plus de nom : le lister sous un identifiant
+          // brut ne servirait a personne.
+          return name ? [{ id: c.id, name, matches: c.matches }] : [];
+        }));
+      }
+    })().catch(() => setTopPlayers([]));
   }, [player?.id]);
   const clubCity = useMemo(() => new Map(clubs.map(c => [c.name, c.city])), [clubs]);
   useEffect(() => {
@@ -3391,6 +3440,7 @@ export default function LobbyScreen() {
               saved={savedFilters}
               myGender={(player as any).gender ?? null}
               favorites={favoriteClubs}
+              topPlayers={topPlayers}
               onSaveFilter={async (name, criteria, alert) => {
                 try { await createSavedFilter(player.id, name, criteria, alert); await reloadSaved(); }
                 catch (e: any) { Alert.alert('Erreur', String(e?.message ?? e)); }

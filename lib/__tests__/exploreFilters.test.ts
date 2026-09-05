@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, matchesDatePreset, matchesTimeSlot,
   gameType, exploreRefusal, filterExplore, bestExploreFilterToDrop,
-  canPlayerSee, visibleGames, allowedGenderFilters,
+  canPlayerSee, visibleGames, allowedGenderFilters, countCompanions,
   type ExploreFilters, type ExploreContext, type ExploreGame,
 } from '../exploreFilters';
 
@@ -18,6 +18,8 @@ const ctx = (o: Partial<ExploreContext> = {}): ExploreContext => ({
   freeSpots: () => 1,
   isUrgent: () => false,
   levelFit: () => 'fit',
+  playersOf: () => [],
+  knownPlayers: new Set<string>(),
   ...o,
 });
 
@@ -250,5 +252,73 @@ describe('mixite : une regle, pas un filtre', () => {
     expect(allowedGenderFilters('male')).toEqual(['all', 'men', 'mixed']);
     expect(allowedGenderFilters('female')).toEqual(['all', 'women', 'mixed']);
     expect(allowedGenderFilters(null)).toEqual(['all', 'mixed']);
+  });
+});
+
+describe('joueurs croises', () => {
+  const M = (a: string, b: string, c: string, d: string) =>
+    ({ winner_id: a, winner_id_2: b, loser_id: c, loser_id_2: d });
+
+  it('compte coequipiers ET adversaires', () => {
+    // Ce qu'on cherche c'est « les gens avec qui je joue », pas « ceux de mon
+    // camp » : sur un club, l'adversaire habituel vaut souvent mieux que le
+    // partenaire d'un soir.
+    const r = countCompanions([M('moi', 'A', 'B', 'C')], 'moi');
+    expect(r.map(x => x.id).sort()).toEqual(['A', 'B', 'C']);
+  });
+
+  it('classe du plus frequent au moins frequent', () => {
+    const r = countCompanions([
+      M('moi', 'A', 'B', 'C'),
+      M('moi', 'A', 'D', 'E'),
+      M('D', 'moi', 'A', 'F'),
+    ], 'moi');
+    expect(r[0]).toEqual({ id: 'A', matches: 3 });
+  });
+
+  it('IGNORE les matchs ou je n ai pas joue', () => {
+    expect(countCompanions([M('A', 'B', 'C', 'D')], 'moi')).toEqual([]);
+  });
+
+  it('ne me compte jamais moi-meme', () => {
+    const r = countCompanions([M('moi', 'A', 'B', 'C')], 'moi');
+    expect(r.some(x => x.id === 'moi')).toBe(false);
+  });
+
+  it('supporte les simples (deux joueurs)', () => {
+    const r = countCompanions([{ winner_id: 'moi', loser_id: 'A' }], 'moi');
+    expect(r).toEqual([{ id: 'A', matches: 1 }]);
+  });
+
+  it('le tri est STABLE a egalite', () => {
+    const jeu = [M('moi', 'B', 'A', 'C')];
+    expect(countCompanions(jeu, 'moi')).toEqual(countCompanions(jeu, 'moi'));
+    expect(countCompanions(jeu, 'moi').map(x => x.id)).toEqual(['A', 'B', 'C']);
+  });
+});
+
+describe('filtres par joueur', () => {
+  const avec = (ids: string[]) => ctx({ playersOf: () => ids });
+
+  it('retient les parties ou joue AU MOINS UN des joueurs choisis', () => {
+    expect(exploreRefusal(partie(), f({ players: ['A'] }), avec(['A', 'X']))).toBe(null);
+    expect(exploreRefusal(partie(), f({ players: ['A'] }), avec(['X', 'Y']))).toBe('players');
+  });
+
+  it('« matchs en commun » retient les parties ou joue quelqu un de connu', () => {
+    const connus = ctx({ playersOf: () => ['X'], knownPlayers: new Set(['X']) });
+    const inconnus = ctx({ playersOf: () => ['Z'], knownPlayers: new Set(['X']) });
+    expect(exploreRefusal(partie(), f({ knownOnly: true }), connus)).toBe(null);
+    expect(exploreRefusal(partie(), f({ knownOnly: true }), inconnus)).toBe('known');
+  });
+
+  it('les deux filtres se cumulent', () => {
+    const c = ctx({ playersOf: () => ['A'], knownPlayers: new Set(['X']) });
+    expect(exploreRefusal(partie(), f({ players: ['A'], knownOnly: true }), c)).toBe('known');
+  });
+
+  it('comptent chacun pour un filtre actif', () => {
+    expect(activeExploreFilterCount(f({ players: ['A'], knownOnly: true }))).toBe(2);
+    expect(activeExploreFilterCount(f({ players: [] }))).toBe(0);
   });
 });
