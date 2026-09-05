@@ -25,7 +25,11 @@ describe('le budget doit tenir dans l ecran', () => {
     const pleine = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
     expect(vide.nextMatch.minHeight).toBeLessThan(pleine.nextMatch.minHeight);
     expect(vide.nextMatch.flex).toBeLessThan(pleine.nextMatch.flex);
-    expect(totalMinHeight(pleine) - totalMinHeight(vide)).toBeGreaterThanOrEqual(60);
+    // L'ecart total vient EXACTEMENT de cette carte : rien d'autre ne change
+    // entre les deux cas. Assertion structurelle plutot qu'un seuil en dp,
+    // qui ne survivrait pas au prochain reglage des planchers.
+    expect(totalMinHeight(pleine) - totalMinHeight(vide))
+      .toBe(pleine.nextMatch.minHeight - vide.nextMatch.minHeight);
   });
 
   it('la section Tournois COUTE de la place, et on la compte', () => {
@@ -66,5 +70,26 @@ describe('somme des planchers', () => {
 
   it('un ecran plus court que le budget fait defiler, et on le dit', () => {
     expect(fitsWithoutScroll(sizes(), 300)).toBe(false);
+  });
+});
+
+describe('le cas le plus charge — la limite haute du handoff', () => {
+  it('un match programme ET des tournois ouverts TIENNENT sans defilement', () => {
+    // Le handoff designe ce cas comme la limite haute de l'ecran. Avant le
+    // resserrage il reclamait 572 dp pour une colonne de 517.
+    const charge = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
+    expect(fitsWithoutScroll(charge, ANDROID_COLUMN_H)).toBe(true);
+  });
+
+  it('les quatre combinaisons tiennent', () => {
+    for (const hasTournaments of [true, false]) {
+      for (const hasNextMatch of [true, false]) {
+        const s = homeSectionSizes({ compact: true, hasTournaments, hasNextMatch });
+        expect(
+          fitsWithoutScroll(s, ANDROID_COLUMN_H),
+          `deborde : tournois=${hasTournaments} match=${hasNextMatch} -> ${totalMinHeight(s)}dp`,
+        ).toBe(true);
+      }
+    }
   });
 });

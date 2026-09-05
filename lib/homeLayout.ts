@@ -53,27 +53,31 @@ export interface HomeSizes {
  *
  * Calculée sur un écran de 690 dp de haut : moins la barre d'état (24), le
  * bloc du logo (39), les marges de la colonne (22) et la barre d'onglets (88).
- * Ce n'est pas le plus petit téléphone du marché — sur un très petit écran
- * AVEC un match programmé, le défilement reste assumé, c'est ce que le
- * `ScrollView` de secours est là pour absorber. C'est le cas SANS match qui ne
- * doit jamais défiler : c'est le plus fréquent, et c'est celui qui a échoué.
+ * LE CAS LE PLUS CHARGÉ — un match programmé ET des tournois ouverts — doit
+ * tenir : le handoff le désigne comme la limite haute de l'écran. Les
+ * planchers du mode compact sont calibrés pour ça.
+ *
+ * Abaisser un plancher ne rétrécit RIEN sur un écran qui a la place : les
+ * sections reçoivent leur part (`flex`) et le plancher ne sert que quand
+ * l'espace manque. C'est donc uniquement sur les petits écrans que le hero se
+ * tasse — c'est-à-dire exactement là où il le doit.
  */
 export const ANDROID_COLUMN_H = 517;
 
 export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
   const c = i.compact;
   return {
-    hero:  { flex: 3,   minHeight: c ? 172 : 214 },
-    ctas:  { flex: 0.8, minHeight: c ? 54  : 62 },
-    tournaments: i.hasTournaments ? { flex: 1.5, minHeight: c ? 108 : 136 } : null,
+    hero:  { flex: 3,   minHeight: c ? 146 : 214 },
+    ctas:  { flex: 0.8, minHeight: c ? 50  : 62 },
+    tournaments: i.hasTournaments ? { flex: 1.5, minHeight: c ? 92 : 136 } : null,
     // LE CŒUR DU CORRECTIF : une carte vide ne réclame pas la place d'une
     // carte pleine. Deux lignes de texte n'ont pas besoin de quatre créneaux
     // de joueurs, et la place rendue est exactement celle qui manquait.
     nextMatch: i.hasNextMatch
-      ? { flex: 2.2, minHeight: c ? 158 : 180 }
+      ? { flex: 2.2, minHeight: c ? 150 : 180 }
       : { flex: 1.1, minHeight: c ? 92  : 104 },
-    chips: { flex: 0.8, minHeight: c ? 52 : 56 },
-    gap: c ? 7 : 12,
+    chips: { flex: 0.8, minHeight: c ? 46 : 56 },
+    gap: c ? 6 : 12,
   };
 }
 
