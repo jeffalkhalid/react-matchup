@@ -500,28 +500,14 @@ export function ExploreFilterSheet({
               </Row>
             </Section>
 
-            <Section title="Urgent" icon="flame">
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                backgroundColor: Colors.bgCard, borderRadius: 14, padding: 14,
-                borderWidth: 1, borderColor: Colors.border,
-              }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
-                    Il manque une personne
-                  </Text>
-                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 }}>
-                    Une seule place libre, et ça se joue dans les 6 heures.
-                  </Text>
-                </View>
-                <Switch
-                  value={draft.urgentOnly}
-                  onValueChange={v => set('urgentOnly', v)}
-                  trackColor={{ false: Colors.border, true: Colors.brand }}
-                  thumbColor={Colors.bgCard}
-                />
-              </View>
-            </Section>
+            {/* « Urgent » n'est PAS ici, et c'est voulu : il vit sur la barre
+                de l'Explorer, a un tap. C'est le seul filtre qu'on bascule dix
+                fois dans une session — le mettre aussi dans le volet en faisait
+                deux commandes pour un meme reglage, et on ne savait plus
+                laquelle faisait foi.
+
+                Il reste porte par le meme etat : « Reinitialiser » ci-dessus
+                l'efface comme les autres, et il compte dans « Filtres (N) ». */}
           </ScrollView>
 
           {/* Enregistrer ce filtre — en disant CE QUE L'ALERTE SURVEILLERA.
