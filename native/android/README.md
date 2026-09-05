@@ -60,6 +60,23 @@ le remplissage automatique cesse de fonctionner **sans aucune erreur visible**.
    fonctionnaient avant la régénération ; elles sont déjà dans le cache
    Gradle local, la remise en état ne demande donc pas de réseau.
 
+## Les autres réglages que `prebuild` efface
+
+Ils ne concernent pas le code natif maison, mais ils vivent dans les mêmes
+fichiers jetables et disparaissent de la même façon.
+
+**`android/gradle.properties` — mémoire du build.** Le gabarit Expo donne
+`-Xmx2048m -XX:MaxMetaspaceSize=512m`. Le build de **debug** passe avec ça, le
+build de **release** non : il dexe toutes les dépendances d'un coup et D8 meurt
+en `OutOfMemoryError: Metaspace` sur `:app:mergeExtDexRelease`. Valeur remise :
+
+```properties
+org.gradle.jvmargs=-Xmx6144m -XX:MaxMetaspaceSize=2048m
+```
+
+La réponse durable ici serait le plugin **`expo-build-properties`**, qui écrit
+ces valeurs à chaque `prebuild` depuis `app.json`. Il n'est pas installé.
+
 ## La solution durable, le jour où ça vaudra la peine
 
 La réponse prévue par Expo pour du code natif maison dans un projet où
