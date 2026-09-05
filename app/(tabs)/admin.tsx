@@ -17,6 +17,9 @@ import { DisputeEvidence } from '../../components/admin/DisputeEvidence';
 import { AdminJournal } from '../../components/admin/AdminJournal';
 import { SearchBar, SearchResults } from '../../components/admin/GlobalSearch';
 import { searchAll, MIN_QUERY } from '../../lib/adminSearch';
+import {
+  toggleSelected, toggleAll, pruneSelection, selectionLabel, batchConfirmText,
+} from '../../lib/batchModeration';
 import { fetchAdminLog, nextCursor, type AdminAction } from '../../lib/adminLog';
 import {
   initialSets, parseRawSets, counterNeedsFlip, flipSets, liveSets,
@@ -1194,6 +1197,27 @@ export default function AdminScreen() {
     await loadReports();
   };
 
+  // Classement sans suite EN LOT. Une seule requete : le declencheur du
+  // journal ecrit une ligne par dossier, donc la trace reste dossier par
+  // dossier meme quand le geste, lui, est groupe.
+  const handleBatchDismiss = (ids: string[]) => {
+    if (!player || ids.length === 0) return;
+    Alert.alert('Classer sans suite', batchConfirmText(ids.length), [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Classer',
+        onPress: async () => {
+          const { error } = await supabase
+            .from('content_reports')
+            .update({ status: 'dismissed', reviewed_by: player.id, reviewed_at: new Date().toISOString() })
+            .in('id', ids);
+          if (error) { Alert.alert('Erreur', error.message); return; }
+          await loadReports();
+        },
+      },
+    ]);
+  };
+
   const handleGenderApprove = async (req: any) => {
     if (!player) return;
     setResolvingId(req.id);
@@ -1533,6 +1557,7 @@ export default function AdminScreen() {
             loading={reportsLoading}
             resolvingId={resolvingId}
             onResolve={handleResolveReport}
+            onBatchDismiss={handleBatchDismiss}
             onOpenPlayer={(id) => router.push(`/player/${id}` as any)}
           />
         )}
@@ -2139,11 +2164,27 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
 }
 
 // ─── Reports tab (modération UGC) ─────────────────────────────
-function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: {
+function ReportsTab({ reports, loading, resolvingId, onResolve, onBatchDismiss, onOpenPlayer }: {
   reports: any[]; loading: boolean; resolvingId: string | null;
   onResolve: (report: any, status: 'actioned' | 'dismissed') => void;
+  /** Classement sans suite en lot. Voir lib/batchModeration : SEULE action de
+   *  lot autorisee — on classe en lot, on ne sanctionne jamais en lot. */
+  onBatchDismiss: (ids: string[]) => void;
   onOpenPlayer: (id: string) => void;
 }) {
+  const [picking, setPicking] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const allIds = reports.map(r => r.id);
+
+  // La liste se recharge apres chaque traitement : une selection qui garderait
+  // les dossiers disparus enverrait au serveur des lignes deja classees.
+  useEffect(() => {
+    setSelected(prev => {
+      const net = pruneSelection(prev, allIds);
+      return net.length === prev.length ? prev : net;
+    });
+  }, [reports]);
+
   const typeLabel = (t: string) => ({
     message: '💬 Message', story: '📸 Story', activity: '📣 Activité',
     comment: '💭 Commentaire', player: '👤 Profil',
@@ -2165,8 +2206,71 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
   }
   return (
     <View style={{ gap: 12 }}>
+      {/* Le mode selection ne s'impose pas : hors traitement de masse, la
+          liste garde exactement l'aspect qu'elle avait. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <TouchableOpacity
+          onPress={() => { setPicking(p => !p); setSelected([]); }}
+          activeOpacity={0.8}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            borderRadius: 11, paddingVertical: 8, paddingHorizontal: 12,
+            backgroundColor: picking ? Colors.primary : Colors.bgCard,
+            borderWidth: 1, borderColor: picking ? Colors.primary : Colors.border,
+          }}
+        >
+          <Icon name="checkSquare" size={13} color={picking ? Colors.textOnDark : Colors.textSecondary} stroke={2.3} />
+          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: picking ? Colors.textOnDark : Colors.textSecondary }}>
+            {picking ? 'Terminer' : 'Sélectionner'}
+          </Text>
+        </TouchableOpacity>
+        {picking && (
+          <TouchableOpacity
+            onPress={() => setSelected(prev => toggleAll(prev, allIds))}
+            activeOpacity={0.8}
+            style={{
+              borderRadius: 11, paddingVertical: 8, paddingHorizontal: 12,
+              backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+            }}
+          >
+            <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>
+              {selected.length === allIds.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+            </Text>
+          </TouchableOpacity>
+        )}
+        <View style={{ flex: 1 }} />
+        {picking && (
+          <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+            {selectionLabel(selected.length)}
+          </Text>
+        )}
+      </View>
+
       {reports.map(r => (
-        <View key={r.id} style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5, borderColor: '#ef444433', padding: 16 }}>
+        <View key={r.id} style={{
+          backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1.5,
+          borderColor: picking && selected.includes(r.id) ? Colors.brand : '#ef444433',
+          padding: 16,
+        }}>
+          {picking && (
+            <TouchableOpacity
+              onPress={() => setSelected(prev => toggleSelected(prev, r.id))}
+              activeOpacity={0.75}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}
+            >
+              <View style={{
+                width: 20, height: 20, borderRadius: 6,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: selected.includes(r.id) ? Colors.brand : 'transparent',
+                borderWidth: 1.5, borderColor: selected.includes(r.id) ? Colors.brand : Colors.border,
+              }}>
+                {selected.includes(r.id) && <Icon name="check" size={13} color={Colors.primary} stroke={3} />}
+              </View>
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+                {selected.includes(r.id) ? 'Sélectionné' : 'Sélectionner ce signalement'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{typeLabel(r.target_type)}</Text>
             <Text style={{ fontSize: 10, color: Colors.textMuted }}>
@@ -2205,6 +2309,26 @@ function ReportsTab({ reports, loading, resolvingId, onResolve, onOpenPlayer }: 
           </View>
         </View>
       ))}
+
+      {/* UNE SEULE action de lot, et c'est voulu : « classer sans suite » ne
+          touche personne. « Retenir » marque un joueur — ca se decide un
+          dossier a la fois, en ayant lu celui-la et pas les neuf autres.
+          Cf. lib/batchModeration. */}
+      {picking && selected.length > 0 && (
+        <TouchableOpacity
+          onPress={() => onBatchDismiss(selected)}
+          activeOpacity={0.85}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+            backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 15,
+          }}
+        >
+          <Icon name="check" size={15} color={Colors.textOnDark} stroke={2.8} />
+          <Text style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+            Classer sans suite ({selected.length})
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
