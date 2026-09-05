@@ -74,6 +74,18 @@ en `OutOfMemoryError: Metaspace` sur `:app:mergeExtDexRelease`. Valeur remise :
 org.gradle.jvmargs=-Xmx6144m -XX:MaxMetaspaceSize=2048m
 ```
 
+**`android/gradle.properties` — architectures.** Le gabarit Expo construit les
+quatre : `armeabi-v7a,arm64-v8a,x86,x86_64`. Les deux dernières ne servent qu'aux
+**émulateurs** — aucun téléphone réel n'en a besoin. Les garder double le temps de
+build et alourdit l'APK d'autant. Valeur remise :
+
+```properties
+reactNativeArchitectures=armeabi-v7a,arm64-v8a
+```
+
+C'est réglé dans le fichier, et non passé en ligne de commande, pour qu'un build
+lancé **depuis Android Studio** produise exactement le même paquet.
+
 La réponse durable ici serait le plugin **`expo-build-properties`**, qui écrit
 ces valeurs à chaque `prebuild` depuis `app.json`. Il n'est pas installé.
 
