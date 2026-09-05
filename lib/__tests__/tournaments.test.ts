@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   seatedTeams, tournamentPhase, sameSideWarning, levelRangeLabel, priceLabel,
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
@@ -757,5 +758,41 @@ describe('filtres de la liste', () => {
   it('compte les filtres actifs', () => {
     expect(activeFilterCount(NO_FILTERS)).toBe(0);
     expect(activeFilterCount({ level: true, weekend: true, clubId: 'c1', free: true })).toBe(4);
+  });
+});
+
+describe('duree d une rotation', () => {
+  it('retombe sur le defaut tant que la colonne n existe pas', () => {
+    // round_minutes est optionnel : avant que la migration soit appliquee, la
+    // colonne est absente et les ecrans doivent afficher la meme chose
+    // qu'avant, pas un blanc.
+    expect(roundMinutesOf(undefined)).toBe(ROUND_MINUTES);
+    expect(roundMinutesOf(null)).toBe(ROUND_MINUTES);
+    expect(roundMinutesOf({})).toBe(ROUND_MINUTES);
+    expect(roundMinutesOf({ round_minutes: null })).toBe(ROUND_MINUTES);
+  });
+
+  it('ignore une valeur aberrante plutot que d afficher « 0 min »', () => {
+    expect(roundMinutesOf({ round_minutes: 0 })).toBe(ROUND_MINUTES);
+    expect(roundMinutesOf({ round_minutes: -5 })).toBe(ROUND_MINUTES);
+  });
+
+  it('respecte la valeur du tournoi', () => {
+    expect(roundMinutesOf({ round_minutes: 20 })).toBe(20);
+  });
+
+  it('la duree totale est le produit des deux', () => {
+    expect(totalDurationMinutes(6, 20)).toBe(120);
+    expect(totalDurationMinutes(4, 15)).toBe(60);
+  });
+
+  it('un nombre negatif ne produit pas une duree negative', () => {
+    expect(totalDurationMinutes(-3, 15)).toBe(0);
+    expect(totalDurationMinutes(6, -15)).toBe(0);
+  });
+
+  it('le libelle de format porte la duree du tournoi, pas la constante', () => {
+    expect(formatLabel(2, 6, 20)).toBe('2 terrains · 6 rotations de 20 min');
+    expect(formatLabel(2, 6)).toBe('2 terrains · 6 rotations de 15 min');
   });
 });

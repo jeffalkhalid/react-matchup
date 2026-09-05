@@ -49,6 +49,7 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   invalid_points_scale:          'Le barème de points n’est pas valable : aucun rang ne peut recevoir un nombre négatif.',
   invalid_price:                 'Le prix affiché doit être un entier positif ou nul.',
   invalid_round_count:           'Le nombre de rotations doit être un entier positif.',
+  invalid_round_minutes:         'Une rotation dure entre 5 et 60 minutes.',
   invalid_score:                 'Ce score n’est pas valable.',
   invalid_side:                  'Choisis ton côté : gauche, droit, ou les deux.',
   invalid_starts_at:             'Indique une date de début valable.',

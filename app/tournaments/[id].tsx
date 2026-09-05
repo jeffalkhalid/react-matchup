@@ -40,7 +40,7 @@ import {
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount,
   waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel, statusTone,
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
-  acceptsRegistrations, acceptsPairing, acceptsCheckIn, ROUND_MINUTES,
+  acceptsRegistrations, acceptsPairing, acceptsCheckIn, roundMinutesOf,
   fetchRoundMatches, fetchRoundMovements, fetchMatchEntries, fetchStandings,
   fetchTournamentResults, groupResultsByTeam, fetchFinalStakes, stakeLabel,
   enterTournamentScore, matchLiveStatus,
@@ -624,7 +624,7 @@ export default function TournamentDetailScreen() {
             ou on en est des rotations, d'un coup d'oeil, sans defiler. */}
         {t.status === 'EN_COURS' && t.current_round > 0 && (
           <View style={{ marginTop: 14 }}>
-            <RoundBanner current={t.current_round} total={t.round_count} minutes={ROUND_MINUTES} />
+            <RoundBanner current={t.current_round} total={t.round_count} minutes={roundMinutesOf(t)} />
           </View>
         )}
       </View>
@@ -1055,7 +1055,7 @@ export default function TournamentDetailScreen() {
           </TouchableOpacity>
           {howToOpen && [
             `Tu viens en binôme, ou seul — l’organisateur t’apparie avant le départ.`,
-            `${t.round_count} rotations de ${ROUND_MINUTES} min. Tu gagnes, tu montes d’un terrain. Tu perds, tu descends.`,
+            `${t.round_count} rotations de ${roundMinutesOf(t)} min. Tu gagnes, tu montes d’un terrain. Tu perds, tu descends.`,
             `Terrain 1 = le plus fort. Le classement de la soirée sort à la dernière rotation.`,
           ].map((line, i) => (
             <View key={i} style={{ flexDirection: 'row', gap: 9 }}>

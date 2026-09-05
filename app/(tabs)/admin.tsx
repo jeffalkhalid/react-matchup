@@ -2643,6 +2643,10 @@ function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
       const t = await createTournament({
         name: trimmedName, clubId: club?.id ?? null, startsAt: startsAt.toISOString(),
         levelMin: lvlMin, levelMax: lvlMax, courtCount: cc, roundCount: rc, priceMad: price,
+        // Duree d'une rotation : le defaut. Le reglage se fait dans l'assistant
+        // (app/tournaments/create.tsx), qui est le chemin de creation prevu ;
+        // ce formulaire-ci est l'ancien, garde comme filet.
+        roundMinutes: ROUND_MINUTES,
         pointsScale, createdBy: myPlayerId,
       });
       onCreated(t);
@@ -2729,10 +2733,9 @@ function TournamentCreateForm({ myPlayerId, onCancel, onCreated }: {
           </View>
         </View>
         <Text style={sty.orgCardDesc}>
-          Durée d’une rotation : {ROUND_MINUTES} min (fixe, même pour tous les tournois PagMatch — ce n’est pas un
-          paramètre du serveur). Placement initial : automatique par niveau — les deux binômes les plus forts au
-          Terrain 1. La dernière rotation se joue toujours pour le classement.
-        </Text>
+          Durée d’une rotation : elle se choisit à la création, dans l’assistant.
+          Elle sert à annoncer la durée de la soirée — le moteur ne chronomètre
+          rien : une rotation qui déborde de dix minutes ne bloque pas la suivante.</Text>
       </View>
 
       <View style={sty.orgCard}>

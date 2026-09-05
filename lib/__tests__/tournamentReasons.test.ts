@@ -12,17 +12,30 @@
 // tomber la suite, au lieu de livrer un libellé manquant.
 
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TOURNAMENT_REASONS, GENERIC_REASON, reasonLabel, hasReasonLabel } from '../tournamentReasons';
 
-const SQL = join(__dirname, '..', '..', 'supabase', 'migrations', 'tournaments_rpcs.sql');
+const MIGRATIONS = join(__dirname, '..', '..', 'supabase', 'migrations');
 
-/** Toutes les raisons littérales du fichier SQL : `'reason', 'xxx'`. */
+/**
+ * Toutes les raisons littérales (`'reason', 'xxx'`) de TOUTES les migrations
+ * tournoi.
+ *
+ * Ce test ne lisait que `tournaments_rpcs.sql`. Sa garantie — « un refus ajouté
+ * côté serveur sans traduction fait tomber la suite » — ne tenait donc que
+ * pour ce fichier-là : `tournament_round_minutes.sql` a ajouté
+ * `invalid_round_minutes` et le test est resté vert. Il balaie maintenant
+ * chaque migration dont le nom parle de tournoi.
+ */
 function reasonsFromSql(): string[] {
-  const src = readFileSync(SQL, 'utf8');
+  const fichiers = readdirSync(MIGRATIONS)
+    .filter(f => f.endsWith('.sql') && /tournament/i.test(f));
   const found = new Set<string>();
-  for (const m of src.matchAll(/'reason',\s*'([a-z_]+)'/g)) found.add(m[1]);
+  for (const f of fichiers) {
+    const src = readFileSync(join(MIGRATIONS, f), 'utf8');
+    for (const m of src.matchAll(/'reason',\s*'([a-z_]+)'/g)) found.add(m[1]);
+  }
   return [...found].sort();
 }
 

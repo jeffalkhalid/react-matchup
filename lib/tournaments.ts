@@ -50,6 +50,9 @@ export interface Tournament {
   level_max: number | null;
   court_count: number;
   round_count: number;
+  /** Durée d'une rotation, en minutes. Absent tant que
+   *  `tournament_round_minutes.sql` n'est pas appliqué — cf. roundMinutesOf. */
+  round_minutes?: number | null;
   price_mad: number;
   /** Score crédité À CHAQUE camp sur un match soldé par un forfait (0 par
    *  défaut) — c'est `forfeited_team`, jamais ce nombre, qui dit qui a gagné.
@@ -293,12 +296,40 @@ export function formatTournamentDate(iso: string): string {
   return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) + ` · ${hh}h${mm}`;
 }
 
-/** Le format en une ligne : « 4 terrains · 6 rotations de 15 min ». La durée
- *  d'une rotation n'est pas au schéma — elle est la constante du format. */
+/**
+ * La durée d'une rotation, par défaut.
+ *
+ * Elle a longtemps été LA constante du format : la durée d'une soirée n'était
+ * pas un réglage, mais une conséquence du nombre de rotations. Or c'est une
+ * contrainte du monde réel — on réserve un terrain pour un créneau, et selon
+ * le club une rotation dure 12, 15 ou 20 minutes. Elle vit désormais sur le
+ * tournoi (`round_minutes`), et cette constante n'est plus que le défaut.
+ */
 export const ROUND_MINUTES = 15;
 
-export function formatLabel(courtCount: number, roundCount: number): string {
-  return `${courtCount} terrain${courtCount > 1 ? 's' : ''} · ${roundCount} rotation${roundCount > 1 ? 's' : ''} de ${ROUND_MINUTES} min`;
+/** Les durées proposées à la création. Le serveur accepte 5 à 60. */
+export const ROUND_MINUTES_CHOICES = [10, 12, 15, 20] as const;
+
+/**
+ * La durée d'une rotation d'un tournoi donné.
+ *
+ * `round_minutes` est OPTIONNEL côté client : tant que
+ * `tournament_round_minutes.sql` n'est pas appliqué, la colonne n'existe pas
+ * et l'ancien défaut prend le relais — les écrans affichent la même chose
+ * qu'avant au lieu de montrer un blanc.
+ */
+export function roundMinutesOf(t: { round_minutes?: number | null } | null | undefined): number {
+  const m = t?.round_minutes;
+  return typeof m === 'number' && m > 0 ? m : ROUND_MINUTES;
+}
+
+/** La durée totale d'une soirée, en minutes. */
+export function totalDurationMinutes(roundCount: number, roundMinutes: number): number {
+  return Math.max(0, roundCount) * Math.max(0, roundMinutes);
+}
+
+export function formatLabel(courtCount: number, roundCount: number, minutes: number = ROUND_MINUTES): string {
+  return `${courtCount} terrain${courtCount > 1 ? 's' : ''} · ${roundCount} rotation${roundCount > 1 ? 's' : ''} de ${minutes} min`;
 }
 
 // ─── L'interrupteur ──────────────────────────────────────────────────────────
@@ -339,7 +370,7 @@ export function resultMessage(res: TournamentResult): string {
 // ─── Lectures ────────────────────────────────────────────────────────────────
 
 const TOURNAMENT_COLS =
-  'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, ' +
+  'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, round_minutes, ' +
   'price_mad, forfeit_games, status, current_round, created_by, created_at, club:club_id(id, name, city)';
 
 /** Les tournois PUBLIÉS, du plus proche au plus lointain. Les brouillons sont
@@ -1010,6 +1041,8 @@ export interface TournamentCreateInput {
   levelMax: number | null;
   courtCount: number;
   roundCount: number;
+  /** Durée d'une rotation, en minutes (5 à 60). */
+  roundMinutes: number;
   priceMad: number;
   pointsScale: Record<string, number>;
   createdBy: string;
@@ -1071,6 +1104,7 @@ export async function createTournament(input: TournamentCreateInput): Promise<To
     p_level_max: input.levelMax,
     p_price_mad: input.priceMad,
     p_points_scale: input.pointsScale,
+    p_round_minutes: input.roundMinutes,
   });
   if (!result.ok) throw new Error(resultMessage(result));
 
@@ -1662,7 +1696,7 @@ export function bestFilterToDrop<T extends { tournament: Tournament }>(
 export function nextTournamentAction(t: Tournament, seatedTeams: number): {
   label: string; tone: 'brand' | 'dark'; subtitle: string;
 } | { label: null; subtitle: string } {
-  const format = `${teamCount(t.court_count)} binômes · ${t.court_count} terrains · ${t.round_count} rotations de ${ROUND_MINUTES} min`;
+  const format = `${teamCount(t.court_count)} binômes · ${t.court_count} terrains · ${t.round_count} rotations de ${roundMinutesOf(t)} min`;
 
   switch (t.status) {
     case 'INSCRIPTIONS_OUVERTES':

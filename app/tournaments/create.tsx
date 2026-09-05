@@ -26,6 +26,7 @@ import { Icon } from '../../components/community/icons';
 import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
 import {
   createTournament, teamCount, seatCount, ROUND_MINUTES,
+  ROUND_MINUTES_CHOICES, totalDurationMinutes,
   defaultPointsScale, isoDay, priceLabel, levelRangeLabel,
 } from '../../lib/tournaments';
 
@@ -133,7 +134,11 @@ export default function CreateTournamentScreen() {
   }, []);
 
   const startsAt = useMemo(() => new Date(`${date}T${time}`), [date, time]);
-  const duration = rounds * ROUND_MINUTES;
+  // La duree n'est plus une consequence du nombre de rotations : on reserve un
+  // terrain pour un creneau, et selon le club une rotation dure 12, 15 ou 20
+  // minutes. Les deux se disent, la duree se calcule.
+  const [roundMinutes, setRoundMinutes] = useState<number>(ROUND_MINUTES);
+  const duration = totalDurationMinutes(rounds, roundMinutes);
 
   const canContinue = useMemo(() => {
     if (step === 0) return name.trim().length > 0 && !isNaN(startsAt.getTime());
@@ -156,6 +161,7 @@ export default function CreateTournamentScreen() {
         clubId: club?.id ?? null,
         courtCount: courts,
         roundCount: rounds,
+      roundMinutes,
         levelMin: levelMin === '' ? null : Number(levelMin),
         levelMax: levelMax === '' ? null : Number(levelMax),
         priceMad: Number(price) || 0,
@@ -452,12 +458,31 @@ export default function CreateTournamentScreen() {
                       key={r}
                       flex={1}
                       label={String(r)}
-                      sub={hhmm(r * ROUND_MINUTES)}
+                      sub={hhmm(totalDurationMinutes(r, roundMinutes))}
                       active={rounds === r}
                       onPress={() => setRounds(r)}
                     />
                   ))}
                 </View>
+              </Section>
+
+              <Section title="DURÉE D'UNE ROTATION">
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {ROUND_MINUTES_CHOICES.map(m => (
+                    <Choice
+                      key={m}
+                      flex={1}
+                      label={String(m)}
+                      sub="min"
+                      active={roundMinutes === m}
+                      onPress={() => setRoundMinutes(m)}
+                    />
+                  ))}
+                </View>
+                <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 16, marginTop: 8 }}>
+                  {rounds} × {roundMinutes} min = {hhmm(duration)} de jeu. C'est ce
+                  que tu dois avoir réservé au club.
+                </Text>
               </Section>
 
               <Section
@@ -533,7 +558,7 @@ export default function CreateTournamentScreen() {
                   ['Format', `Montante / descente · ${teamCount(courts)} binômes`],
                   ['Terrains', `${courts} terrain${courts > 1 ? 's' : ''}`],
                   ['Places', `${seatCount(courts)} joueurs`],
-                  ['Rotations', `${rounds} × ${ROUND_MINUTES} min · ${hhmm(duration)}`],
+                  ['Rotations', `${rounds} × ${roundMinutes} min · ${hhmm(duration)}`],
                   ['Niveau', levelRangeLabel(levelMin === '' ? null : Number(levelMin), levelMax === '' ? null : Number(levelMax))],
                   ['Participation', priceLabel(Number(price) || 0)],
                 ].map(([k, v], i) => (
