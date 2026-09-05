@@ -18,6 +18,10 @@ import { AdminJournal } from '../../components/admin/AdminJournal';
 import { SearchBar, SearchResults } from '../../components/admin/GlobalSearch';
 import { searchAll, MIN_QUERY } from '../../lib/adminSearch';
 import {
+  GROUPS, TAB_LABEL, groupOfTab, defaultTab, isDrillDown, subTabs,
+  type AdminTab, type AdminGroup,
+} from '../../lib/adminNav';
+import {
   toggleSelected, toggleAll, pruneSelection, selectionLabel, batchConfirmText,
 } from '../../lib/batchModeration';
 import { fetchAdminLog, nextCursor, type AdminAction } from '../../lib/adminLog';
@@ -62,7 +66,7 @@ import { StandingsTable, type StandingRowData } from '../../components/tournamen
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { Pill } from '../../components/Pill';
 
-type AdminTab = 'queue' | 'journal' | 'disputes' | 'frmt' | 'games' | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
+// AdminTab et la carte des groupes vivent dans lib/adminNav (avec leurs tests).
 
 // ─── Helpers ─────────────────────────────────────────────────
 function fmtDate(iso: string | null) {
@@ -1389,6 +1393,21 @@ export default function AdminScreen() {
               <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{disputes.length}</Text>
             </View>
           )}
+          {/* Le journal quitte la barre pour l'en-tete : on le consulte APRES
+              coup, pas pendant qu'on traite. Une pastille permanente pour un
+              ecran qu'on ouvre une fois par semaine coutait une place que la
+              file utilise mieux. */}
+          <TouchableOpacity
+            onPress={() => setTab(tab === 'journal' ? 'queue' : 'journal')}
+            activeOpacity={0.75}
+            style={{
+              width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: tab === 'journal' ? Colors.primary : Colors.bg,
+              borderWidth: 1, borderColor: tab === 'journal' ? Colors.primary : Colors.border,
+            }}
+          >
+            <Icon name="clock" size={17} color={tab === 'journal' ? Colors.textOnDark : Colors.textMuted} stroke={2.3} />
+          </TouchableOpacity>
         </View>
 
         {/* La recherche est AU-DESSUS des onglets : on cherche avant de savoir
@@ -1397,57 +1416,92 @@ export default function AdminScreen() {
           <SearchBar value={globalSearch} onChange={setGlobalSearch} />
         </View>
 
-        {/* Tab bar — blocs de groupes (titre + sous-onglets dessous), wrap si étroit */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
-          {([
-            { title: 'À traiter', items: [
-              { key: 'queue' as AdminTab, label: '📋 La file', badge: queueItems.length },
-              { key: 'journal' as AdminTab, label: '📖 Journal', badge: 0 },
-            ] },
-            { title: 'Modération', items: [
-              { key: 'disputes' as AdminTab, label: '⚖️ Litiges',     badge: disputes.length },
-              { key: 'reports'  as AdminTab, label: '🚩 Signalements', badge: reports.length },
-              { key: 'gender'   as AdminTab, label: '⚧ Genre',         badge: genderReqs.length },
-            ] },
-            { title: 'Données', items: [
-              { key: 'frmt'    as AdminTab, label: '🏆 FRMT',    badge: 0 },
-              { key: 'players' as AdminTab, label: '👥 Joueurs', badge: 0 },
-              { key: 'games'   as AdminTab, label: '🏟️ Parties', badge: 0 },
-            ] },
-            { title: 'Config', items: [
-              { key: 'badges' as AdminTab, label: '🏅 Badges', badge: 0 },
-              { key: 'settings' as AdminTab, label: '⚙️ Réglages', badge: 0 },
-            ] },
-            // L'interrupteur : ce groupe entier disparaît, onglet compris,
-            // tant que fn_tournaments_enabled() est éteint côté serveur.
-            ...(tournamentsEnabled ? [{ title: 'Tournois', items: [
-              { key: 'tournaments' as AdminTab, label: '🏆 Tournois', badge: 0 },
-            ] }] : []),
-          ]).map(group => (
-            <View key={group.title} style={{ gap: 6 }}>
-              <Text style={{ fontSize: 9, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: Fonts.uiBlack }}>{group.title}</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {group.items.map(t => {
-                  const active = tab === t.key;
-                  return (
-                    <TouchableOpacity key={t.key} onPress={() => setTab(t.key)} activeOpacity={0.7}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-                        backgroundColor: active ? Colors.primary : Colors.bgCard,
-                        borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12,
-                        borderWidth: 1, borderColor: active ? Colors.primary : Colors.border }}>
-                      <Text style={{ fontSize: 11, fontWeight: '900', color: active ? Colors.textOnDark : Colors.textSecondary, fontFamily: Fonts.uiBlack }}>{t.label}</Text>
-                      {t.badge > 0 && (
-                        <View style={{ backgroundColor: active ? Colors.textOnDark : Colors.danger, borderRadius: 999, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
-                          <Text style={{ fontSize: 9, fontWeight: '900', color: active ? Colors.danger : Colors.textOnDark, fontFamily: Fonts.uiBlack }}>{t.badge}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          ))}
+        {/* QUATRE pastilles sur une ligne, au lieu de dix onglets sur cinq
+            blocs qui mangeaient le tiers haut de l'ecran avant qu'on ait vu le
+            moindre dossier. Litiges/Signalements/Genre ne sont plus des
+            destinations qu'on choisit : ce sont des ISSUES de la file, on y
+            descend en tapant un dossier. Carte et tests : lib/adminNav. */}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {GROUPS.filter(g => g.key !== 'tournois' || tournamentsEnabled).map(g => {
+            const active = groupOfTab(tab) === g.key;
+            const badge = g.key === 'file' ? queueItems.length : 0;
+            return (
+              <TouchableOpacity
+                key={g.key}
+                onPress={() => setTab(defaultTab(g.key))}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  backgroundColor: active ? Colors.primary : Colors.bgCard,
+                  borderRadius: 12, paddingVertical: 10, paddingHorizontal: 6,
+                  borderWidth: 1, borderColor: active ? Colors.primary : Colors.border,
+                }}
+              >
+                <Text numberOfLines={1} style={{
+                  fontSize: 12, fontFamily: Fonts.uiBlack,
+                  color: active ? Colors.textOnDark : Colors.textSecondary,
+                }}>
+                  {g.label}
+                </Text>
+                {badge > 0 && (
+                  <View style={{
+                    backgroundColor: active ? Colors.brand : Colors.danger, borderRadius: 999,
+                    minWidth: 17, height: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+                  }}>
+                    <Text style={{ fontSize: 9.5, fontFamily: Fonts.uiBlack, color: active ? Colors.primary : Colors.textOnDark }}>
+                      {badge}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {/* La sous-rangee n'apparait que pour les groupes qui en ont plusieurs.
+            Un groupe a un seul onglet n'affiche rien : une rangee d'un seul
+            bouton est du bruit. */}
+        {subTabs(groupOfTab(tab) ?? 'file').length > 0 && (
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+            {subTabs(groupOfTab(tab) ?? 'file').map(k => {
+              const active = tab === k;
+              return (
+                <TouchableOpacity
+                  key={k}
+                  onPress={() => setTab(k)}
+                  activeOpacity={0.8}
+                  style={{
+                    borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12,
+                    backgroundColor: active ? Colors.bg : 'transparent',
+                    borderWidth: 1, borderColor: active ? Colors.borderDark : Colors.border,
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 11, fontFamily: Fonts.uiExtraBold,
+                    color: active ? Colors.textPrimary : Colors.textMuted,
+                  }}>
+                    {TAB_LABEL[k]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* On est descendu dans un dossier depuis la file : sans ce retour,
+            plus rien ne dit comment remonter. */}
+        {isDrillDown(tab) && (
+          <TouchableOpacity
+            onPress={() => setTab('queue')}
+            activeOpacity={0.8}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, alignSelf: 'flex-start' }}
+          >
+            <Icon name="chevronLeft" size={14} color={Colors.brandDeep} stroke={2.6} />
+            <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+              La file · {TAB_LABEL[tab]}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Content */}
