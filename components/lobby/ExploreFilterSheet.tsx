@@ -22,6 +22,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import {
+  alertCoverage, canAlert, suggestFilterName, type SavedFilter,
+} from '../../lib/savedFilters';
+import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates,
   type ExploreFilters, type DatePreset, type TimeSlot,
   type TypeFilter, type LevelFilter, type GenderFilter,
@@ -87,10 +90,16 @@ const jourCourt = (d: Date) =>
   d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 
 export function ExploreFilterSheet({
-  visible, initial, clubs, resultCount, onApply, onClose,
+  visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
+  clubs, resultCount, onApply, onClose,
 }: {
   visible: boolean;
   initial: ExploreFilters;
+  /** Les filtres enregistrés du joueur. */
+  saved: SavedFilter[];
+  onUseSaved: (f: SavedFilter) => void;
+  onDeleteSaved: (id: string) => void;
+  onSave: (name: string, criteria: ExploreFilters, alert: boolean) => void;
   /** Les clubs connus, pour les pastilles de club et de ville. */
   clubs: ClubRef[];
   /** Combien de parties passent le brouillon en cours — calculé par l'écran. */
@@ -103,10 +112,15 @@ export function ExploreFilterSheet({
   // exactement comme on l'a trouvée.
   const [draft, setDraft] = useState<ExploreFilters>(initial);
   const [clubSearch, setClubSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveAlert, setSaveAlert] = useState(true);
 
   // Le volet se rouvre sur les filtres réellement actifs, pas sur le brouillon
   // abandonné la fois d'avant.
-  React.useEffect(() => { if (visible) { setDraft(initial); setClubSearch(''); } }, [visible, initial]);
+  React.useEffect(() => {
+    if (visible) { setDraft(initial); setClubSearch(''); setSaving(false); }
+  }, [visible, initial]);
 
   const set = <K extends keyof ExploreFilters>(k: K, v: ExploreFilters[K]) =>
     setDraft(d => ({ ...d, [k]: v }));
@@ -180,6 +194,48 @@ export function ExploreFilterSheet({
           </View>
 
           <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 18, gap: 22 }}>
+            {saved.length > 0 && (
+              <Section title="Mes filtres" icon="bookOpen">
+                <Row>
+                  {saved.map(sf => (
+                    <View
+                      key={sf.id}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        backgroundColor: Colors.bgCard, borderRadius: 12,
+                        borderWidth: 1, borderColor: sf.alert ? Colors.brand : Colors.border,
+                      }}
+                    >
+                      <TouchableOpacity
+                        onPress={() => onUseSaved(sf)}
+                        activeOpacity={0.8}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 10, paddingLeft: 12 }}
+                      >
+                        {/* La cloche dit d'un coup d'œil lesquels VEILLENT. */}
+                        <Icon
+                          name={sf.alert ? 'bellRing' : 'star'}
+                          size={13}
+                          color={sf.alert ? Colors.brandDeep : Colors.textMuted}
+                          stroke={2.3}
+                        />
+                        <Text numberOfLines={1} style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, maxWidth: 150 }}>
+                          {sf.name}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => onDeleteSaved(sf.id)}
+                        hitSlop={8}
+                        activeOpacity={0.7}
+                        style={{ paddingHorizontal: 10, paddingVertical: 10 }}
+                      >
+                        <Icon name="x" size={13} color={Colors.textMuted} stroke={2.4} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </Row>
+              </Section>
+            )}
+
             <Section title="Date" icon="calendar">
               <Row>
                 <Chip label="Toutes" active={draft.date === 'any'} onPress={() => set('date', 'any')} />
@@ -324,6 +380,105 @@ export function ExploreFilterSheet({
               </View>
             </Section>
           </ScrollView>
+
+          {/* Enregistrer ce filtre — en disant CE QUE L'ALERTE SURVEILLERA.
+              Croire qu'on sera prévenu sur « ce week-end », alors que personne
+              ne peut surveiller une date relative, est pire que pas d'alerte. */}
+          {saving && (
+            <View style={{
+              marginHorizontal: 18, marginBottom: 10, padding: 14, borderRadius: 16,
+              backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, gap: 10,
+            }}>
+              <TextInput
+                value={saveName}
+                onChangeText={setSaveName}
+                placeholder={suggestFilterName(draft)}
+                placeholderTextColor={Colors.textMuted}
+                maxLength={40}
+                autoFocus
+                style={{
+                  borderWidth: 1, borderColor: Colors.border, borderRadius: 11,
+                  paddingHorizontal: 12, paddingVertical: 10,
+                  fontSize: 13.5, color: Colors.textPrimary, backgroundColor: Colors.bg,
+                }}
+              />
+              {canAlert(draft) ? (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                        Me prévenir
+                      </Text>
+                      <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 1, lineHeight: 15 }}>
+                        Surveille : {alertCoverage(draft).watched.join(' · ')}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={saveAlert}
+                      onValueChange={setSaveAlert}
+                      trackColor={{ false: Colors.border, true: Colors.brand }}
+                      thumbColor={Colors.bgCard}
+                    />
+                  </View>
+                  {saveAlert && alertCoverage(draft).ignored.length > 0 && (
+                    <Text style={{ fontSize: 10.5, fontFamily: Fonts.ui, color: Colors.textMuted, lineHeight: 15 }}>
+                      Ne tiendra pas compte de {alertCoverage(draft).ignored.join(', ').toLowerCase()} :
+                      ça dépend du moment où on regarde, pas de la partie.
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textMuted, lineHeight: 15 }}>
+                  Pas d’alerte possible ici : ce filtre ne retient qu’une date ou une
+                  disponibilité, qui changent d’un instant à l’autre. Ajoute un club,
+                  une ville, un type ou une plage horaire pour être prévenu.
+                </Text>
+              )}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setSaving(false)}
+                  activeOpacity={0.8}
+                  style={{
+                    flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 11,
+                    borderWidth: 1, borderColor: Colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>
+                    Annuler
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { onSave(saveName, draft, saveAlert && canAlert(draft)); setSaving(false); setSaveName(''); }}
+                  activeOpacity={0.85}
+                  style={{
+                    flex: 1, alignItems: 'center', paddingVertical: 11,
+                    borderRadius: 11, backgroundColor: Colors.primary,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                    Enregistrer
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {!saving && actifs > 0 && (
+            <TouchableOpacity
+              onPress={() => { setSaveName(''); setSaveAlert(canAlert(draft)); setSaving(true); }}
+              activeOpacity={0.8}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+                marginHorizontal: 18, marginBottom: 10, paddingVertical: 12, borderRadius: 12,
+                backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+              }}
+            >
+              <Icon name="bellRing" size={14} color={Colors.brandDeep} stroke={2.3} />
+              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                Enregistrer ce filtre
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Le nombre AVANT de fermer : sans lui on règle à l'aveugle et on
               découvre une liste vide une fois le volet refermé. */}

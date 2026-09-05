@@ -31,6 +31,9 @@ import {
   type ExploreFilters, type ExploreContext, type ExploreReason,
 } from '../../lib/exploreFilters';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
+import {
+  listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
+} from '../../lib/savedFilters';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { openInMaps } from '../../lib/maps';
@@ -1509,10 +1512,13 @@ function exploreCtx(myElo: number, villeDuClub: (n: string) => string | null): E
   };
 }
 
-function ExploreTab({ games, myElo, filters, setFilters, clubs, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function ExploreTab({ games, myElo, filters, setFilters, clubs, saved, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
+  saved: SavedFilter[];
+  onSaveFilter: (name: string, criteria: ExploreFilters, alert: boolean) => void;
+  onDeleteFilter: (id: string) => void;
   onOpenGame: (g: EnrichedGame) => void;
   playerId: string;
   onApply: (gameId: string, side: string) => void;
@@ -1724,6 +1730,10 @@ function ExploreTab({ games, myElo, filters, setFilters, clubs, onOpenGame, play
         visible={sheetOpen}
         initial={filters}
         clubs={clubs}
+        saved={saved}
+        onUseSaved={sf => { setFilters(sf.criteria); setSheetOpen(false); }}
+        onDeleteSaved={onDeleteFilter}
+        onSave={onSaveFilter}
         resultCount={d => filterExplore(games, d, ctx).kept.length}
         onApply={f => { setFilters(f); setSheetOpen(false); }}
         onClose={() => setSheetOpen(false)}
@@ -2143,6 +2153,13 @@ export default function LobbyScreen() {
   // parties portent le NOM du club, pas son identifiant : c'est par le nom
   // qu'on retrouve la ville.
   const [clubs, setClubs] = useState<ClubRef[]>([]);
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
+  const reloadSaved = useCallback(async () => {
+    // Best-effort : tant que saved_filters.sql n'est pas applique, la table
+    // n'existe pas et la rangee reste simplement vide.
+    try { setSavedFilters(await listSavedFilters()); } catch { setSavedFilters([]); }
+  }, []);
+  useEffect(() => { reloadSaved(); }, [reloadSaved]);
   const clubCity = useMemo(() => new Map(clubs.map(c => [c.name, c.city])), [clubs]);
   useEffect(() => {
     supabase.from('clubs').select('name, city').order('name').then(({ data }) => {
@@ -3325,6 +3342,15 @@ export default function LobbyScreen() {
               games={games} myElo={myElo}
               filters={exploreFilters} setFilters={setExploreFilters}
               clubs={clubs}
+              saved={savedFilters}
+              onSaveFilter={async (name, criteria, alert) => {
+                try { await createSavedFilter(player.id, name, criteria, alert); await reloadSaved(); }
+                catch (e: any) { Alert.alert('Erreur', String(e?.message ?? e)); }
+              }}
+              onDeleteFilter={async (id) => {
+                try { await deleteSavedFilter(id); await reloadSaved(); }
+                catch (e: any) { Alert.alert('Erreur', String(e?.message ?? e)); }
+              }}
               onOpenGame={(g) => openGameById(g.id)}
               playerId={player.id}
               onApply={(gameId, side) => handleApply(gameId, false, side)}
