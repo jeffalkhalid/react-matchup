@@ -22,6 +22,7 @@ import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
 import { HomeTournaments } from '../../components/home/HomeTournaments';
+import { homeSectionSizes } from '../../lib/homeLayout';
 import {
   getTournamentsEnabled, fetchTournaments, fetchRegistrationsFor, homeTournamentList,
   type HomeTournamentEntry,
@@ -239,6 +240,16 @@ export default function HomeScreen() {
   const visibleUpcoming = upcomingGames.filter(g =>
     !g.match_date || new Date(g.match_date).getTime() + 90 * 60_000 > now.getTime());
 
+  // Le budget de hauteur de la colonne, calcule a UN SEUL endroit et teste
+  // (lib/homeLayout). Il a deborde deux fois, et les deux fois le symptome ne
+  // ressemblait pas a un probleme de hauteur : « du scroll en bas », puis
+  // « le haut du hero est coupe ».
+  const sizes = homeSectionSizes({
+    compact,
+    hasTournaments: tournois.length > 0,
+    hasNextMatch: visibleUpcoming.length > 0,
+  });
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F7F7F7' }}>
       <View style={{
@@ -437,7 +448,7 @@ export default function HomeScreen() {
               paddingHorizontal: 20,
               paddingTop: compact ? 6 : 10,
               paddingBottom: 8,
-              gap: compact ? 9 : 12,
+              gap: sizes.gap,
             }}>
               {/* Hauteurs RELATIVES : chaque section reçoit une part
                   proportionnelle de l'écran (flex), avec un plancher
@@ -448,7 +459,7 @@ export default function HomeScreen() {
               <View
                 ref={(v) => registerTourAnchor('home-profile', v)}
                 collapsable={false}
-                style={{ flex: 3, minHeight: compact ? 184 : 214 }}>
+                style={{ flex: sizes.hero.flex, minHeight: sizes.hero.minHeight }}>
                 <HomeProfileCard
                   name={player.name}
                   elo={player.elo_score}
@@ -466,7 +477,7 @@ export default function HomeScreen() {
               <View
                 ref={(v) => registerTourAnchor('home-ctas', v)}
                 collapsable={false}
-                style={{ flex: 0.8, minHeight: compact ? 54 : 62 }}>
+                style={{ flex: sizes.ctas.flex, minHeight: sizes.ctas.minHeight }}>
                 <HomePrimaryActions
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
@@ -479,7 +490,7 @@ export default function HomeScreen() {
                   sinon sa part de hauteur réserverait de la place pour rien, et l'accueil
                   ne retrouverait pas ses proportions d'origine. */}
               {tournois.length > 0 && (
-                <View style={{ flex: 1.5, minHeight: compact ? 124 : 136 }}>
+                <View style={{ flex: sizes.tournaments!.flex, minHeight: sizes.tournaments!.minHeight }}>
                   <HomeTournaments
                     entries={tournois}
                     onOpen={(id) => router.push(`/tournaments/${id}` as any)}
@@ -488,8 +499,12 @@ export default function HomeScreen() {
                 </View>
               )}
 
-              {/* D. Prochain match — ~2,2/7,6 (plancher relevé : slots joueurs 40 px) */}
-              <View style={{ flex: 2.2, minHeight: compact ? 162 : 180 }}>
+              {/* D. Prochain match. Sa part DEPEND de son contenu : une carte
+                  vide (« aucun match programme ») n'a que deux lignes a dire et
+                  ne reclame plus la place de quatre creneaux de joueurs. C'est
+                  ce qui faisait deborder la colonne sur Android — le budget et
+                  son test vivent dans lib/homeLayout. */}
+              <View style={{ flex: sizes.nextMatch.flex, minHeight: sizes.nextMatch.minHeight }}>
                 <UpcomingMatchCard
                   game={visibleUpcoming[0] ?? null}
                   count={visibleUpcoming.length}
@@ -504,7 +519,7 @@ export default function HomeScreen() {
               </View>
 
               {/* E. Raccourcis secondaires — ~0,8/7,6 */}
-              <View style={{ flex: 0.8, minHeight: compact ? 52 : 56, flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: sizes.chips.flex, minHeight: sizes.chips.minHeight, flexDirection: 'row', gap: 10 }}>
                 <HomeShortcutCard
                   icon="trophy"
                   iconColor={Colors.brandDeep}
