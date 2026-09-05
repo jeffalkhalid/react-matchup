@@ -25,6 +25,12 @@ import CreateWizard, { type WizardResult } from './CreateWizard';
 import { Pill, pillAccent } from '../../components/Pill';
 import { LiveDot } from '../../components/live/LiveDot';
 import { HeaderActions } from '../../components/HeaderActions';
+import {
+  filterExplore, activeExploreFilterCount, bestExploreFilterToDrop,
+  NO_EXPLORE_FILTERS, REASON_LABEL,
+  type ExploreFilters, type ExploreContext, type ExploreReason,
+} from '../../lib/exploreFilters';
+import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { openInMaps } from '../../lib/maps';
@@ -39,7 +45,6 @@ import { registerTourAnchor, useTourInfo } from '../../lib/tourAnchors';
 
 // ─── Local types ──────────────────────────────────────────────
 type TabKey = 'explorer' | 'upcoming' | 'history';
-type FilterMode = 'all' | 'urgent';
 type TypeFilter = 'all' | 'competitive' | 'friendly' | 'challenge';
 type LevelFilter = 'mine' | 'outside' | 'all';
 type RoleFilter = 'all' | 'playing' | 'creator' | 'pending';
@@ -1473,38 +1478,42 @@ function EmptyState({ text, sub }: { text: string; sub?: string }) {
   );
 }
 
-// Applique les filtres de l'Explorer (mode urgent, type, recherche).
-// Factorisé pour que le badge de l'onglet ET la liste utilisent EXACTEMENT
-// la même logique → le compteur reflète les filtres actifs.
-function filterExploreGames(
-  games: EnrichedGame[], filterMode: FilterMode, typeFilter: TypeFilter, levelFilter: LevelFilter,
-  search: string, myElo: number,
-): EnrichedGame[] {
-  let arr = games;
-  if (filterMode === 'urgent') arr = arr.filter(g => isUrgentGame(g));
-  if (typeFilter !== 'all') arr = arr.filter(g => getGameType(g) === typeFilter);
-  // Niveau : « Mon niveau » = mon ELO dans la fourchette de la partie (fit),
-  // « Hors mon niveau » = tout le reste (limite incluse). Même prédicat que la
-  // pastille ✓ Mon niveau / Hors niveau des cartes (getEloFit).
-  if (levelFilter === 'mine')    arr = arr.filter(g => getEloFit(g, myElo) === 'fit');
-  if (levelFilter === 'outside') arr = arr.filter(g => getEloFit(g, myElo) !== 'fit');
-  if (search.trim()) {
-    const q = search.toLowerCase();
-    arr = arr.filter(g =>
-      (g.location ?? '').toLowerCase().includes(q) ||
-      ((g.creator as any)?.name ?? '').toLowerCase().includes(q),
-    );
+// Applique les filtres de l'Explorer. La REGLE vit dans lib/exploreFilters,
+// avec ses tests : neuf dimensions, et pour chaque partie ecartee la RAISON de
+// son ecart — de quoi dire a l'ecran quel filtre retirer plutot que de le
+// laisser sur un « aucun resultat » sans issue.
+/** Remet a son defaut la SEULE dimension nommee — la sortie proposee quand
+ *  plus rien ne passe ne doit pas effacer tous les autres reglages. */
+function resetOne(r: ExploreReason): Partial<ExploreFilters> {
+  switch (r) {
+    case 'date':   return { date: 'any' };
+    case 'slot':   return { slot: 'any' };
+    case 'club':   return { clubs: [] };
+    case 'city':   return { cities: [] };
+    case 'type':   return { type: 'all' };
+    case 'level':  return { level: 'all' };
+    case 'gender': return { gender: 'all' };
+    case 'spots':  return { spots: null };
+    case 'urgent': return { urgentOnly: false };
+    case 'search': return { search: '' };
   }
-  return arr;
 }
 
-// ─── Explorer tab ─────────────────────────────────────────────
-function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTypeFilter, levelFilter, setLevelFilter, search, setSearch, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function exploreCtx(myElo: number, villeDuClub: (n: string) => string | null): ExploreContext {
+  return {
+    now: new Date(),
+    cityOfClub: villeDuClub,
+    freeSpots: (g: any) => freeSpots(g),
+    isUrgent: (g: any) => isUrgentGame(g),
+    levelFit: (g: any) => (getEloFit(g, myElo) === 'fit' ? 'fit' : 'outside'),
+  };
+}
+
+function ExploreTab({ games, myElo, filters, setFilters, clubs, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
   games: EnrichedGame[]; myElo: number;
-  filterMode: FilterMode; setFilterMode: (v: FilterMode) => void;
-  typeFilter: TypeFilter; setTypeFilter: (v: TypeFilter) => void;
-  levelFilter: LevelFilter; setLevelFilter: (v: LevelFilter) => void;
-  search: string; setSearch: (v: string) => void; onOpenGame: (g: EnrichedGame) => void;
+  filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
+  clubs: ClubRef[];
+  onOpenGame: (g: EnrichedGame) => void;
   playerId: string;
   onApply: (gameId: string, side: string) => void;
   onChangeSide: (participantId: string, side: string) => void;
@@ -1529,27 +1538,39 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
       </TouchableOpacity>
     );
   };
-  const filtered = useMemo(
-    () => filterExploreGames(games, filterMode, typeFilter, levelFilter, search, myElo),
-    [games, filterMode, typeFilter, levelFilter, search, myElo],
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const villeDuClub = useMemo(() => {
+    const m = new Map(clubs.map(c => [c.name, c.city]));
+    return (n: string) => m.get(n) ?? null;
+  }, [clubs]);
+  const ctx = useMemo(() => exploreCtx(myElo, villeDuClub), [myElo, villeDuClub]);
+
+  const mainListAll = useMemo(
+    () => filterExplore(games, filters, ctx).kept,
+    [games, filters, ctx],
+  );
+  const filtered = mainListAll;
+
+  const hasActiveFilter = activeExploreFilterCount(filters) > 0;
+  const recommended = useMemo(
+    () => games.filter(g => getEloFit(g, myElo) === 'fit'),
+    [games, myElo],
   );
 
-  const hasActiveFilter = filterMode !== 'all' || typeFilter !== 'all' || levelFilter !== 'all' || search.trim().length > 0;
-  const resetFilters = () => { setFilterMode('all'); setTypeFilter('all'); setLevelFilter('all'); setSearch(''); };
-
-  const recommended = useMemo(() => games.filter(g => getEloFit(g, myElo) === 'fit'), [games, myElo]);
-  // Le compteur passe par la MEME fonction que la liste, avec les memes autres
-  // filtres actifs. Il reecrivait la regle une seconde fois, et il ignorait le
-  // type, le niveau et la recherche : avec « Competitif » actif, la pastille
-  // pouvait annoncer « Urgent (3) » et n'en montrer qu'une au clic.
+  // Le compteur « Urgent » passe par la MEME fonction que la liste, avec les
+  // autres filtres actifs : il annoncait un nombre que la liste ne montrait pas.
   const urgentCount = useMemo(
-    () => filterExploreGames(games, 'urgent', typeFilter, levelFilter, search, myElo).length,
-    [games, typeFilter, levelFilter, search, myElo],
+    () => filterExplore(games, { ...filters, urgentOnly: true }, ctx).kept.length,
+    [games, filters, ctx],
   );
 
-  // "Pour toi" is shown above the main list; drop those games from the main
-  // list so the same match never appears twice. Masqué dès qu'un filtre est
-  // actif → la liste filtrée s'affiche à plat (et l'état vide peut apparaître).
+  // Jamais de cul-de-sac : quand plus rien ne passe, on nomme la sortie la plus
+  // rentable au lieu d'un « aucun resultat » muet.
+  const escape = useMemo(
+    () => (mainListAll.length === 0 ? bestExploreFilterToDrop(games, filters, ctx) : null),
+    [mainListAll.length, games, filters, ctx],
+  );
+
   const showForYou = !hasActiveFilter && recommended.length > 0;
   const recommendedIds = useMemo(() => new Set(recommended.map(g => g.id)), [recommended]);
 
@@ -1591,74 +1612,122 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
     [filtered, showForYou, recommendedIds],
   );
 
-  const countLabel = filterMode === 'urgent' ? `urgente${mainList.length > 1 ? 's' : ''}`
+  const countLabel = filters.urgentOnly ? `urgente${mainList.length > 1 ? 's' : ''}`
     : `disponible${mainList.length > 1 ? 's' : ''}`;
 
   return (
     <View style={{ paddingBottom: 100 }}>
-      {/* Search bar */}
+      {/* La recherche reste a plat : c'est le geste le plus frequent, et le
+          seul qui se fait en tapant. Tout le reste passe dans le volet — a
+          neuf dimensions, des pastilles a plat mangeraient la liste qu'elles
+          servent a trouver. */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14,
-        marginTop: 12, marginBottom: 2, backgroundColor: Colors.bgCard, borderRadius: 12,
+        marginTop: 12, marginBottom: 10, backgroundColor: Colors.bgCard, borderRadius: 12,
         borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
       }}>
         <Icon name="search" size={16} color={Colors.textMuted} stroke={2.2} />
         <TextInput
-          value={search} onChangeText={setSearch}
+          value={filters.search}
+          onChangeText={v => setFilters({ ...filters, search: v })}
           placeholder="Rechercher un club, un joueur…"
           placeholderTextColor={Colors.textMuted}
           style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
         />
+        {filters.search.length > 0 && (
+          <TouchableOpacity onPress={() => setFilters({ ...filters, search: '' })} hitSlop={10}>
+            <Icon name="x" size={15} color={Colors.textMuted} stroke={2.4} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Mode pills */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 10, gap: 8 }}>
-        <ModePill active={filterMode === 'all'} onPress={() => setFilterMode('all')}>Toutes</ModePill>
-        <ModePill active={filterMode === 'urgent'} onPress={() => setFilterMode('urgent')}
-          icon={<Icon name="flame" size={12} color={filterMode === 'urgent' ? Colors.textOnDark : Colors.danger} fill={filterMode === 'urgent' ? Colors.textOnDark : Colors.danger} />}>
-          {urgentCount > 0 ? `Urgent (${urgentCount})` : 'Urgent'}
-        </ModePill>
-      </ScrollView>
+      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, marginBottom: 12 }}>
+        <TouchableOpacity
+          onPress={() => setSheetOpen(true)}
+          activeOpacity={0.85}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 7,
+            backgroundColor: hasActiveFilter ? Colors.primary : Colors.bgCard,
+            borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+            borderWidth: 1, borderColor: hasActiveFilter ? Colors.primary : Colors.border,
+          }}
+        >
+          <Icon name="sliders" size={14} color={hasActiveFilter ? Colors.brand : Colors.textSecondary} stroke={2.3} />
+          <Text style={{
+            fontSize: 12.5, fontFamily: Fonts.uiBlack,
+            color: hasActiveFilter ? Colors.textOnDark : Colors.textSecondary,
+          }}>
+            Filtres{hasActiveFilter ? ` (${activeExploreFilterCount(filters)})` : ''}
+          </Text>
+        </TouchableOpacity>
 
-      {/* Type de match — segmenté Tous / Compétitif / Amical / Défi */}
-      <View style={{ marginBottom: 14 }}>
-        <Text style={{
-          fontSize: 11, fontWeight: '900', color: Colors.textPrimary,
-          letterSpacing: 1.5, textTransform: 'uppercase',
-          paddingHorizontal: 14, marginBottom: 8,
-        }}>
-          Type de match
-        </Text>
-        <SegmentControl<TypeFilter>
-          value={typeFilter} onChange={setTypeFilter}
-          options={[
-            { v: 'all',         label: 'Tous' },
-            { v: 'competitive', label: 'Compétitif' },
-            { v: 'friendly',    label: 'Amical' },
-            { v: 'challenge',   label: 'Défi', icon: 'swords' },
-          ]}
-        />
+        {/* « Urgent » garde son acces direct : c'est le filtre qu'on pose et
+            qu'on retire dix fois, pas celui qu'on regle une fois. */}
+        <TouchableOpacity
+          onPress={() => setFilters({ ...filters, urgentOnly: !filters.urgentOnly })}
+          activeOpacity={0.85}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            backgroundColor: filters.urgentOnly ? Colors.danger : Colors.bgCard,
+            borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+            borderWidth: 1, borderColor: filters.urgentOnly ? Colors.danger : Colors.border,
+          }}
+        >
+          <Icon name="flame" size={13}
+            color={filters.urgentOnly ? Colors.textOnDark : Colors.danger}
+            fill={filters.urgentOnly ? Colors.textOnDark : Colors.danger} />
+          <Text style={{
+            fontSize: 12.5, fontFamily: Fonts.uiBlack,
+            color: filters.urgentOnly ? Colors.textOnDark : Colors.textSecondary,
+          }}>
+            {urgentCount > 0 ? `Urgent (${urgentCount})` : 'Urgent'}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={{ flex: 1 }} />
+
+        {hasActiveFilter && (
+          <TouchableOpacity
+            onPress={() => setFilters(NO_EXPLORE_FILTERS)}
+            activeOpacity={0.8}
+            style={{ justifyContent: 'center', paddingHorizontal: 4 }}
+          >
+            <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
+              Tout effacer
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Niveau des parties — segmenté Mon niveau / Hors mon niveau / Tous */}
-      <View style={{ marginBottom: 14 }}>
-        <Text style={{
-          fontSize: 11, fontWeight: '900', color: Colors.textPrimary,
-          letterSpacing: 1.5, textTransform: 'uppercase',
-          paddingHorizontal: 14, marginBottom: 8,
-        }}>
-          Niveau des parties
-        </Text>
-        <SegmentControl<LevelFilter>
-          value={levelFilter} onChange={setLevelFilter}
-          options={[
-            { v: 'mine',    label: 'Mon niveau', icon: 'racket' },
-            { v: 'outside', label: 'Hors mon niveau' },
-            { v: 'all',     label: 'Tous' },
-          ]}
-        />
-      </View>
+      {/* Jamais un cul-de-sac : on nomme le filtre dont le retrait revele le
+          plus, plutot qu'un « aucun resultat » muet. */}
+      {escape && (
+        <TouchableOpacity
+          onPress={() => setFilters({ ...filters, ...resetOne(escape.reason) })}
+          activeOpacity={0.85}
+          style={{
+            marginHorizontal: 14, marginBottom: 12, padding: 14, borderRadius: 14,
+            backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, gap: 4,
+          }}
+        >
+          <Text style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+            Aucune partie ne correspond
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 17 }}>
+            Retire « {REASON_LABEL[escape.reason]} » et {escape.unlocked} partie
+            {escape.unlocked > 1 ? 's' : ''} apparaî{escape.unlocked > 1 ? 'tront' : 'tra'}.
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <ExploreFilterSheet
+        visible={sheetOpen}
+        initial={filters}
+        clubs={clubs}
+        resultCount={d => filterExplore(games, d, ctx).kept.length}
+        onApply={f => { setFilters(f); setSheetOpen(false); }}
+        onClose={() => setSheetOpen(false)}
+      />
 
       {/* "Pour toi" — pile verticale des parties à ton niveau */}
       {showForYou && (
@@ -1710,7 +1779,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
               {mainList.length} partie{mainList.length > 1 ? 's' : ''} {countLabel}
             </Text>
             {hasActiveFilter && (
-              <TouchableOpacity onPress={resetFilters} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => setFilters(NO_EXPLORE_FILTERS)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
                   Réinitialiser les filtres
                 </Text>
@@ -1731,7 +1800,7 @@ function ExploreTab({ games, myElo, filterMode, setFilterMode, typeFilter, setTy
                     <Text style={{ color: Colors.textMuted, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>
                       {games.length} partie{games.length > 1 ? 's' : ''} disponible{games.length > 1 ? 's' : ''} au total
                     </Text>
-                    <TouchableOpacity onPress={resetFilters} activeOpacity={0.85}
+                    <TouchableOpacity onPress={() => setFilters(NO_EXPLORE_FILTERS)} activeOpacity={0.85}
                       style={{ marginTop: 14, backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
                       <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontSize: 13 }}>Réinitialiser les filtres</Text>
                     </TouchableOpacity>
@@ -2063,11 +2132,23 @@ export default function LobbyScreen() {
   const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>('explorer');
-  const [filterMode, setFilterMode] = useState<FilterMode>('all');
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
-  const [search, setSearch] = useState('');
+  // Les neuf filtres de l'Explorer en UN objet : le volet, la liste, le
+  // compteur « Urgent » et le badge d'onglet lisent tous celui-la. Quatre
+  // etats separes avaient deja produit trois copies divergentes de la meme
+  // regle sans que rien ne le signale.
+  const [exploreFilters, setExploreFilters] = useState<ExploreFilters>(NO_EXPLORE_FILTERS);
+
+  // Le referentiel des clubs, pour les pastilles de club et de ville. Les
+  // parties portent le NOM du club, pas son identifiant : c'est par le nom
+  // qu'on retrouve la ville.
+  const [clubs, setClubs] = useState<ClubRef[]>([]);
+  const clubCity = useMemo(() => new Map(clubs.map(c => [c.name, c.city])), [clubs]);
+  useEffect(() => {
+    supabase.from('clubs').select('name, city').order('name').then(({ data }) => {
+      setClubs((data ?? []) as ClubRef[]);
+    });
+  }, []);
 
   const [games, setGames] = useState<EnrichedGame[]>([]);
   const [upcomingGames, setUpcomingGames] = useState<EnrichedGame[]>([]);
@@ -3135,8 +3216,8 @@ export default function LobbyScreen() {
   const upcomingBadge = upcomingGames.filter(g => isConfirmedInGame(g, player.id)).length;
   // Badge Explorer = nombre de parties APRÈS application des filtres (Option A).
   const exploreBadge = useMemo(
-    () => filterExploreGames(games, filterMode, typeFilter, levelFilter, search, myElo).length,
-    [games, filterMode, typeFilter, levelFilter, search, myElo],
+    () => filterExplore(games, exploreFilters, exploreCtx(myElo, n => clubCity.get(n) ?? null)).kept.length,
+    [games, exploreFilters, myElo, clubCity],
   );
   const scoresToValidate = matches.filter(m => matchNeedsMyAction(m, player.id) !== null).length;
 
@@ -3242,10 +3323,9 @@ export default function LobbyScreen() {
           {tab === 'explorer' && (
             <ExploreTab
               games={games} myElo={myElo}
-              filterMode={filterMode} setFilterMode={setFilterMode}
-              typeFilter={typeFilter} setTypeFilter={setTypeFilter}
-              levelFilter={levelFilter} setLevelFilter={setLevelFilter}
-              search={search} setSearch={setSearch} onOpenGame={(g) => openGameById(g.id)}
+              filters={exploreFilters} setFilters={setExploreFilters}
+              clubs={clubs}
+              onOpenGame={(g) => openGameById(g.id)}
               playerId={player.id}
               onApply={(gameId, side) => handleApply(gameId, false, side)}
               onChangeSide={handleChangeSide}
