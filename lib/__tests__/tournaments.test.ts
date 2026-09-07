@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel,
-  groupRegistrations, pairsCountLabel,
+  groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   seatedTeams, tournamentPhase, sameSideWarning, levelRangeLabel, priceLabel,
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
@@ -874,5 +874,38 @@ describe('inscrits groupes par binome', () => {
 
   it('sans aucun binome, le compte ne parle que de joueurs', () => {
     expect(pairsCountLabel(groupRegistrations([R('a', 'A', 6)], []))).toBe('1 joueur');
+  });
+});
+
+describe('choisir un partenaire deja inscrit', () => {
+  const ctx = (registered: string[], soloOpen: [string, boolean][] = []) => ({
+    registered: new Set(registered),
+    soloOpen: new Map(soloOpen),
+  });
+
+  it('un joueur NON inscrit part avec moi, en un geste', () => {
+    expect(partnerPath('x', ctx([]))).toBe('direct');
+  });
+
+  it('un inscrit resté SEUL et OUVERT forme le binome aussitot', () => {
+    // C'est le cas que l'ecran grisait : precisement la personne avec qui on
+    // veut jouer.
+    expect(partnerPath('x', ctx(['x'], [['x', true]]))).toBe('instant');
+  });
+
+  it('un inscrit seul mais SUR ACCORD recoit une demande', () => {
+    expect(partnerPath('x', ctx(['x'], [['x', false]]))).toBe('request');
+  });
+
+  it('un inscrit DEJA EN BINOME reste hors de portee', () => {
+    // Absent de soloOpen = il a deja une equipe.
+    expect(partnerPath('x', ctx(['x']))).toBe('blocked');
+  });
+
+  it('le bouton annonce ce qu il va faire', () => {
+    expect(registerCtaLabel('instant')).toContain('former le binôme');
+    expect(registerCtaLabel('request')).toContain('demander');
+    expect(registerCtaLabel('direct')).toBe('S’inscrire');
+    expect(registerCtaLabel(null)).toBe('S’inscrire');
   });
 });

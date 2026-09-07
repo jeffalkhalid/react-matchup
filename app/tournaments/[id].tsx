@@ -38,7 +38,7 @@ import {
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount,
-  groupRegistrations,
+  groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL,
   waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel, statusTone,
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
   acceptsRegistrations, acceptsPairing, acceptsCheckIn, roundMinutesOf,
@@ -1232,6 +1232,7 @@ export default function TournamentDetailScreen() {
           myId={player.id}
           defaultSide={(player.court_side as TournamentSide | undefined) ?? 'both'}
           registeredIds={new Set(regs.map(r => r.player_id))}
+          soloOpen={new Map(solos.map(r => [r.player_id, r.open_to_join]))}
           onClose={() => setSheetOpen(false)}
           onDone={async (res) => {
             if (isFeatureDisabled(res)) { setSheetOpen(false); setEnabled(false); return; }
@@ -1311,12 +1312,14 @@ export default function TournamentDetailScreen() {
 // (feedback_nav_depuis_modal_native). Ici, aucune navigation ne part de la
 // feuille — et la forme reste celle de ProfileMenuSheet.
 
-function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose, onDone }: {
+function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpen, onClose, onDone }: {
   tournamentId: string;
   myId: string;
   /** Prérempli depuis le profil — le côté reste un choix PROPRE AU TOURNOI. */
   defaultSide: TournamentSide;
   registeredIds: Set<string>;
+  /** Les inscrits restes SEULS, et leur open_to_join. */
+  soloOpen: Map<string, boolean>;
   onClose: () => void;
   onDone: (res: TournamentResult) => void;
 }) {
@@ -1366,6 +1369,21 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose
     try {
       // `open_to_join` est MON mode, avec ou sans partenaire : le serveur écrit
       // le partenaire FERMÉ de son côté, on ne décide rien pour lui.
+      // Un partenaire DEJA INSCRIT ne peut pas etre passe a
+      // tournament_register (elle refuse partner_already_registered) : on
+      // s'inscrit seul, puis on le rejoint — le binome se forme aussitot s'il
+      // est ouvert, sinon une demande part et il decide.
+      const chemin = mode === 'duo' && partner
+        ? partnerPath(partner.id, { registered: registeredIds, soloOpen })
+        : null;
+
+      if (chemin === 'instant' || chemin === 'request') {
+        const inscription = await registerToTournament(tournamentId, side, true, null);
+        if (!inscription.ok) { onDone(inscription); return; }
+        onDone(await joinTournamentPlayer(tournamentId, partner!.id));
+        return;
+      }
+
       const res = await registerToTournament(
         tournamentId, side, openToJoin, mode === 'duo' ? partner?.id : null,
       );
@@ -1503,21 +1521,34 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose
                     )}
                     <View style={{ gap: 6, marginTop: 8 }}>
                       {results.map(p => {
-                        const already = registeredIds.has(p.id);
+                        // Griser TOUT inscrit etait un cul-de-sac : celui qui
+                        // est inscrit et resté SEUL est precisement la personne
+                        // avec qui on veut jouer. Seul un joueur deja en binome
+                        // est hors de portee. Cf. lib/tournaments.partnerPath.
+                        const path = partnerPath(p.id, { registered: registeredIds, soloOpen });
+                        const bloque = path === 'blocked';
                         return (
                           <TouchableOpacity
-                            key={p.id} disabled={already} activeOpacity={0.8}
+                            key={p.id} disabled={bloque} activeOpacity={0.8}
                             onPress={() => setPartner({ id: p.id, name: p.name })}
-                            style={[cs.card, { padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10, opacity: already ? 0.5 : 1 }]}>
+                            style={[cs.card, {
+                              padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10,
+                              opacity: bloque ? 0.45 : 1,
+                            }]}>
                             <Avatar name={p.name} size={28} />
-                            <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
-                              {p.name}
-                            </Text>
-                            {already
-                              ? <Pill variant="neutral">Déjà inscrit</Pill>
-                              : p.elo_score != null
-                                ? <Pill variant="ink">{`Niv. ${eloToLevel(p.elo_score).toFixed(1)}`}</Pill>
-                                : null}
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
+                                {p.name}
+                              </Text>
+                              {path !== 'direct' && (
+                                <Text numberOfLines={1} style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: bloque ? Colors.textMuted : Colors.brandDeep, marginTop: 1 }}>
+                                  {PARTNER_PATH_LABEL[path]}
+                                </Text>
+                              )}
+                            </View>
+                            {p.elo_score != null && (
+                              <Pill variant="ink">{`Niv. ${eloToLevel(p.elo_score).toFixed(1)}`}</Pill>
+                            )}
                           </TouchableOpacity>
                         );
                       })}
@@ -1532,7 +1563,12 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, onClose
             )}
 
             <PrimaryButton
-              label={mode === 'duo' ? 'Nous inscrire' : 'M’inscrire'}
+              // Le bouton DIT ce qu'il va faire : avec un partenaire deja
+              // inscrit, il ne nous inscrit pas tous les deux — il m'inscrit et
+              // forme le binome, ou envoie une demande.
+              label={mode !== 'duo' || !partner
+                ? 'M’inscrire'
+                : registerCtaLabel(partnerPath(partner.id, { registered: registeredIds, soloOpen }))}
               busy={busy}
               disabled={mode === 'duo' && !partner}
               onPress={submit}

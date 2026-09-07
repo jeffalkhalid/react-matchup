@@ -1822,3 +1822,52 @@ export function pairsCountLabel(pairs: RegisteredPair[]): string {
   const j = `${joueurs} joueur${joueurs > 1 ? 's' : ''}`;
   return binomes > 0 ? `${j} · ${binomes} binôme${binomes > 1 ? 's' : ''}` : j;
 }
+
+// ─── Choisir un partenaire déjà inscrit ──────────────────────────────────────
+//
+// La recherche de binôme grisait TOUT joueur déjà inscrit, avec la pastille
+// « Déjà inscrit ». Techniquement exact — `tournament_register` refuse
+// `partner_already_registered` — mais c'est un cul-de-sac : quelqu'un
+// d'inscrit et resté SEUL est précisément la personne avec qui on veut jouer.
+//
+// Le chemin existe, il est simplement ailleurs : s'inscrire, puis le
+// rejoindre. Selon SON réglage, le binôme se forme aussitôt (`open_to_join`)
+// ou une demande part et il décide. Plutôt que de griser, on nomme le chemin.
+
+export type PartnerPath =
+  /** Pas encore inscrit : il part avec moi, en un geste. */
+  | 'direct'
+  /** Inscrit, seul, et ouvert : le binôme se forme dès mon inscription. */
+  | 'instant'
+  /** Inscrit, seul, mais sur accord : une demande part, il décide. */
+  | 'request'
+  /** Inscrit ET déjà en binôme : rien à faire de ce côté. */
+  | 'blocked';
+
+export interface PartnerContext {
+  registered: Set<string>;
+  /** Les inscrits restés SEULS, et leur `open_to_join`. */
+  soloOpen: Map<string, boolean>;
+}
+
+export function partnerPath(playerId: string, ctx: PartnerContext): PartnerPath {
+  if (!ctx.registered.has(playerId)) return 'direct';
+  const ouvert = ctx.soloOpen.get(playerId);
+  if (ouvert === undefined) return 'blocked';
+  return ouvert ? 'instant' : 'request';
+}
+
+/** Ce que la ligne annonce, et ce que le bouton fera. */
+export const PARTNER_PATH_LABEL: Record<PartnerPath, string> = {
+  direct: '',
+  instant: 'Inscrit · cherche un binôme',
+  request: 'Inscrit · sur accord',
+  blocked: 'Déjà en binôme',
+};
+
+/** Le libellé du bouton d'inscription, selon le chemin du partenaire choisi. */
+export function registerCtaLabel(path: PartnerPath | null): string {
+  if (path === 'instant') return 'S’inscrire et former le binôme';
+  if (path === 'request') return 'S’inscrire et lui demander';
+  return 'S’inscrire';
+}
