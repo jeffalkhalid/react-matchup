@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
-  TextInput, Alert, Pressable, StyleSheet, KeyboardAvoidingView, Platform, Image,
+  TextInput, Alert, Pressable, StyleSheet, KeyboardAvoidingView, Platform, Image, Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,6 +54,11 @@ import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/Court
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { TournamentShareCard } from '../../components/tournaments/TournamentShareCard';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
+import {
+  tournamentShareText, tournamentIcs, icsFileName,
+} from '../../lib/tournamentShare';
 import { LiveHero, ResultHero, RoundBanner, RegistrationCard, StickyActionBar } from '../../components/tournaments/FicheHeros';
 import { RegisteredStrip } from '../../components/tournaments/RegisteredStrip';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
@@ -394,6 +399,41 @@ export default function TournamentDetailScreen() {
   );
 
   const solos = useMemo(() => soloRegistrations(regs, teams), [regs, teams]);
+
+  // PARTAGE : du texte, pas un lien. La passerelle web sert /u/, /g/ et /p/ —
+  // il n'y a pas de route pour un tournoi, et partager une adresse qui repond
+  // 404 serait pire que ne rien partager.
+  const partagerTournoi = async (tournoi: typeof t, libres: number) => {
+    if (!tournoi) return;
+    try {
+      await Share.share({ message: tournamentShareText(tournoi as any, libres) });
+    } catch { /* l'utilisateur a ferme la feuille de partage */ }
+  };
+
+  // AGENDA : un fichier .ics partage, pas expo-calendar. Ce module n'est pas
+  // installe et l'ajouter demanderait une permission plus une recompilation
+  // native — donc un nouvel APK, et rien dans Expo Go d'ici la. Un .ics
+  // s'ouvre dans l'agenda de n'importe quel telephone, sans permission.
+  const ajouterAgenda = async (tournoi: typeof t) => {
+    if (!tournoi) return;
+    try {
+      const f = new File(Paths.cache, icsFileName(tournoi as any));
+      if (f.exists) f.delete();
+      f.create();
+      f.write(tournamentIcs(tournoi as any));
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Indisponible', 'Le partage de fichiers n’est pas disponible sur cet appareil.');
+        return;
+      }
+      await Sharing.shareAsync(f.uri, {
+        mimeType: 'text/calendar',
+        UTI: 'com.apple.ical.ics',
+        dialogTitle: 'Ajouter à mon agenda',
+      });
+    } catch (e: any) {
+      Alert.alert('Erreur', String(e?.message ?? e));
+    }
+  };
 
   const byId = useMemo(() => {
     const m = new Map<string, TournamentRegistration>();
@@ -819,6 +859,8 @@ export default function TournamentDetailScreen() {
             courts={t.court_count}
             priceLabel={priceLabel(t.price_mad)}
             onDirections={hasMapTarget(t.club?.name) ? () => openInMaps(t.club?.name) : undefined}
+            onShare={() => partagerTournoi(t, seatCount(t.court_count) - seatsTaken(regs))}
+            onCalendar={() => ajouterAgenda(t)}
           />
         )}
 

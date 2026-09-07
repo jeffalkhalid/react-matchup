@@ -250,7 +250,7 @@ export function ResultHero({ rank, total, partner, climbs, wins, losses, gamesWo
  * répétaient la date et le club déjà présents dans l'en-tête. Ce qui reste ici
  * est ce qui décide : la date, le lieu, et s'il reste de la place.
  */
-export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price, onDirections }: {
+export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price, onDirections, onShare, onCalendar }: {
   /** « VEN. 11 SEPT » */
   dayLabel: string;
   /** « 19:00 » */
@@ -262,6 +262,10 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
   priceLabel: string;
   /** Ouvre l'itinéraire vers le club. Absent quand il n'y a pas de club. */
   onDirections?: () => void;
+  /** Envoie le tournoi à ses partenaires. */
+  onShare?: () => void;
+  /** Ajoute la soirée à l'agenda du téléphone. */
+  onCalendar?: () => void;
 }) {
   const ratio = total > 0 ? Math.min(1, taken / total) : 0;
   const plein = free === 0;
@@ -354,6 +358,47 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
           </Text>
         </View>
       </View>
+
+      {/* Deux gestes qui manquaient : dire aux autres qu'une soirée existe, et
+          ne pas l'oublier soi-même. Ils sont côte à côte, en second rang — ils
+          ne doivent pas concurrencer l'inscription, qui reste le geste
+          principal en bas d'écran. */}
+      {(onShare || onCalendar) && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+          {onShare && (
+            <TouchableOpacity
+              onPress={onShare}
+              activeOpacity={0.8}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+                paddingVertical: 11, borderRadius: 12,
+                backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+              }}
+            >
+              <Icon name="share" size={14} color={Colors.textPrimary} stroke={2.3} />
+              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                Partager
+              </Text>
+            </TouchableOpacity>
+          )}
+          {onCalendar && (
+            <TouchableOpacity
+              onPress={onCalendar}
+              activeOpacity={0.8}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+                paddingVertical: 11, borderRadius: 12,
+                backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+              }}
+            >
+              <Icon name="calendar" size={14} color={Colors.textPrimary} stroke={2.3} />
+              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                Agenda
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
