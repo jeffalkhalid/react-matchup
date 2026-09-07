@@ -27,6 +27,8 @@ import { reasonLabel } from './tournamentReasons';
 
 // ─── Types (miroir du schéma) ────────────────────────────────────────────────
 
+import { displayName } from './players';
+
 export type TournamentStatus =
   | 'BROUILLON' | 'INSCRIPTIONS_OUVERTES' | 'COMPLET' | 'CHECK_IN'
   | 'PRET' | 'EN_COURS' | 'TERMINE' | 'CLASSEMENT_VALIDE' | 'ANNULE';
@@ -1725,4 +1727,98 @@ export function nextTournamentAction(t: Tournament, seatedTeams: number): {
     default:
       return { label: null, subtitle: format };
   }
+}
+
+// ─── Les inscrits, groupés par binôme ────────────────────────────────────────
+//
+// La liste montrait les gens UN PAR UN — des initiales, puis des prénoms à la
+// suite. Or on ne s'inscrit pas seul à une montante : on s'inscrit à deux, et
+// la première question qu'on se pose devant la liste est « qui joue avec
+// qui ». La donnée existait (`tournament_teams` relie deux joueurs), elle
+// n'était simplement jamais montrée.
+
+export interface PairedPlayer {
+  id: string;
+  name: string;
+  elo: number | null;
+  mine: boolean;
+}
+
+export interface RegisteredPair {
+  /** Stable : l'identifiant de l'équipe, ou celui du joueur encore seul. */
+  key: string;
+  a: PairedPlayer;
+  /** `null` quand le joueur cherche encore un binôme. */
+  b: PairedPlayer | null;
+  /** Le binôme est en liste d'attente — il n'a pas (encore) sa place. */
+  waiting: boolean;
+}
+
+/**
+ * Les inscrits, regroupés par binôme.
+ *
+ * TROIS PIÈGES, tous rencontrés ailleurs dans ce fichier :
+ *
+ *  - Une équipe RETIRÉE (`withdrawn`) n'est plus un binôme. Ses membres
+ *    redeviennent des joueurs seuls s'ils sont encore inscrits — les afficher
+ *    ensemble laisserait croire à une paire qui ne jouera pas.
+ *  - Une équipe dont un membre n'est plus inscrit ne doit pas afficher un
+ *    fantôme : on ne garde que ce qui existe des deux côtés.
+ *  - Un binôme dont les deux moitiés n'ont pas le même statut de file ne peut
+ *    pas exister côté serveur (`waitlist_mismatch`). Par sécurité on prend le
+ *    statut LE PLUS DÉFAVORABLE : si l'un attend, la paire attend.
+ */
+export function groupRegistrations(
+  regs: TournamentRegistration[],
+  teams: TournamentTeam[],
+  myId?: string | null,
+): RegisteredPair[] {
+  const parJoueur = new Map(regs.map(r => [r.player_id, r]));
+  const versPaire = (r: TournamentRegistration): PairedPlayer => ({
+    id: r.player_id,
+    name: displayName(r.player ?? null, 'player'),
+    elo: r.player?.elo_score ?? null,
+    mine: !!myId && r.player_id === myId,
+  });
+
+  const paires: RegisteredPair[] = [];
+  const casees = new Set<string>();
+
+  for (const t of teams) {
+    if (t.withdrawn) continue;
+    const r1 = parJoueur.get(t.player1_id);
+    const r2 = parJoueur.get(t.player2_id);
+    if (!r1 || !r2) continue;
+    casees.add(t.player1_id);
+    casees.add(t.player2_id);
+    paires.push({
+      key: t.id,
+      a: versPaire(r1),
+      b: versPaire(r2),
+      waiting: r1.waitlist_position != null || r2.waitlist_position != null,
+    });
+  }
+
+  for (const r of regs) {
+    if (casees.has(r.player_id)) continue;
+    paires.push({
+      key: r.player_id,
+      a: versPaire(r),
+      b: null,
+      waiting: r.waitlist_position != null,
+    });
+  }
+
+  // Les binômes assis d'abord, puis les joueurs seuls, puis la file d'attente :
+  // on lit « qui joue » avant « qui cherche » avant « qui espère ».
+  const rang = (p: RegisteredPair) => (p.waiting ? 2 : p.b ? 0 : 1);
+  return paires.sort((x, y) => rang(x) - rang(y) || x.key.localeCompare(y.key));
+}
+
+/** « 6 joueurs · 3 binômes » — l'en-tête de la liste des inscrits. */
+export function pairsCountLabel(pairs: RegisteredPair[]): string {
+  const joueurs = pairs.reduce((n, p) => n + (p.b ? 2 : 1), 0);
+  const binomes = pairs.filter(p => p.b).length;
+  const j = `${joueurs} joueur${joueurs > 1 ? 's' : ''}`;
+  return binomes > 0 ? `${j} · ${binomes} binôme${binomes > 1 ? 's' : ''}` : j;
 }

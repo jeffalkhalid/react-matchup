@@ -38,6 +38,7 @@ import {
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount,
+  groupRegistrations,
   waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel, statusTone,
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
   acceptsRegistrations, acceptsPairing, acceptsCheckIn, roundMinutesOf,
@@ -399,6 +400,12 @@ export default function TournamentDetailScreen() {
   );
 
   const solos = useMemo(() => soloRegistrations(regs, teams), [regs, teams]);
+  // Les inscrits par binome : c'est « qui joue avec qui » qu'on cherche dans
+  // cette liste, pas « qui est la ». Regroupement et pieges : lib/tournaments.
+  const pairs = useMemo(
+    () => groupRegistrations(regs, teams, player?.id),
+    [regs, teams, player?.id],
+  );
 
   // PARTAGE : du texte, pas un lien. La passerelle web sert /u/, /g/ et /p/ —
   // il n'y a pas de route pour un tournoi, et partager une adresse qui repond
@@ -1122,14 +1129,10 @@ export default function TournamentDetailScreen() {
             des terrains qui dit qui est la. */}
         {!started && (
           <RegisteredStrip
-            people={regs.map(r => ({
-              id: r.player_id,
-              name: displayName(byId.get(r.player_id)?.player, 'player'),
-              waiting: r.waitlist_position != null,
-              mine: r.player_id === player?.id,
-            }))}
-            total={total}
+            pairs={pairs}
+            free={Math.max(0, total - seatsTaken(regs))}
             onPlayerPress={(id) => router.push(`/player/${id}` as any)}
+            onJoin={(id) => run(`join-${id}`, () => joinTournamentPlayer(t.id, id))}
           />
         )}
 

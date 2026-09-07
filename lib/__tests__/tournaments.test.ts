@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel,
+  groupRegistrations, pairsCountLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   seatedTeams, tournamentPhase, sameSideWarning, levelRangeLabel, priceLabel,
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
@@ -794,5 +795,84 @@ describe('duree d une rotation', () => {
   it('le libelle de format porte la duree du tournoi, pas la constante', () => {
     expect(formatLabel(2, 6, 20)).toBe('2 terrains · 6 rotations de 20 min');
     expect(formatLabel(2, 6)).toBe('2 terrains · 6 rotations de 15 min');
+  });
+});
+
+describe('inscrits groupes par binome', () => {
+  const R = (id: string, name: string, elo: number | null, waitlist: number | null = null) => ({
+    tournament_id: 't', player_id: id, side: 'BOTH' as any, open_to_join: false,
+    waitlist_position: waitlist, check_in_status: 'PENDING' as any,
+    registered_at: '2026-09-01T00:00:00Z',
+    player: { id, name, elo_score: elo },
+  });
+  const T = (id: string, p1: string, p2: string, withdrawn = false) =>
+    ({ id, tournament_id: 't', player1_id: p1, player2_id: p2, withdrawn });
+
+  it('reunit les deux joueurs d une equipe', () => {
+    const p = groupRegistrations([R('a', 'Alamine', 6.5), R('k', 'Kay2', 6.0)], [T('e1', 'a', 'k')]);
+    expect(p).toHaveLength(1);
+    expect(p[0].a.name).toBe('Alamine');
+    expect(p[0].b?.name).toBe('Kay2');
+  });
+
+  it('un joueur SANS equipe reste seul, il ne disparait pas', () => {
+    const p = groupRegistrations([R('a', 'Alamine', 6.5)], []);
+    expect(p).toHaveLength(1);
+    expect(p[0].b).toBe(null);
+  });
+
+  it('une equipe RETIREE ne forme plus un binome', () => {
+    // Ses membres redeviennent des joueurs seuls : les afficher ensemble
+    // laisserait croire a une paire qui ne jouera pas.
+    const p = groupRegistrations(
+      [R('a', 'Alamine', 6.5), R('k', 'Kay2', 6.0)],
+      [T('e1', 'a', 'k', true)],
+    );
+    expect(p).toHaveLength(2);
+    expect(p.every(x => x.b === null)).toBe(true);
+  });
+
+  it('une equipe dont un membre n est PLUS INSCRIT n affiche pas de fantome', () => {
+    const p = groupRegistrations([R('a', 'Alamine', 6.5)], [T('e1', 'a', 'disparu')]);
+    expect(p).toHaveLength(1);
+    expect(p[0].b).toBe(null);
+    expect(p[0].a.name).toBe('Alamine');
+  });
+
+  it('un binome dont UNE MOITIE attend, attend en entier', () => {
+    // Le serveur refuse cet etat (waitlist_mismatch) ; par securite on prend
+    // le statut le plus defavorable plutot que d annoncer une place acquise.
+    const p = groupRegistrations(
+      [R('a', 'Alamine', 6.5), R('k', 'Kay2', 6.0, 3)],
+      [T('e1', 'a', 'k')],
+    );
+    expect(p[0].waiting).toBe(true);
+  });
+
+  it('ordonne : binomes assis, puis joueurs seuls, puis la file', () => {
+    const p = groupRegistrations(
+      [R('a', 'A', 6), R('b', 'B', 6), R('c', 'C', 6), R('d', 'D', 6, 1), R('e', 'E', 6, 2)],
+      [T('e1', 'a', 'b'), T('e2', 'd', 'e')],
+    );
+    expect(p.map(x => (x.waiting ? 'file' : x.b ? 'binome' : 'seul')))
+      .toEqual(['binome', 'seul', 'file']);
+  });
+
+  it('marque MON inscription', () => {
+    const p = groupRegistrations([R('a', 'A', 6), R('k', 'K', 6)], [T('e1', 'a', 'k')], 'k');
+    expect(p[0].a.mine).toBe(false);
+    expect(p[0].b?.mine).toBe(true);
+  });
+
+  it('le compte distingue joueurs et binomes', () => {
+    const p = groupRegistrations(
+      [R('a', 'A', 6), R('b', 'B', 6), R('c', 'C', 6)],
+      [T('e1', 'a', 'b')],
+    );
+    expect(pairsCountLabel(p)).toBe('3 joueurs · 1 binôme');
+  });
+
+  it('sans aucun binome, le compte ne parle que de joueurs', () => {
+    expect(pairsCountLabel(groupRegistrations([R('a', 'A', 6)], []))).toBe('1 joueur');
   });
 });
