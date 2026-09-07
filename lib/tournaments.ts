@@ -1835,7 +1835,7 @@ export function pairsCountLabel(pairs: RegisteredPair[]): string {
 // ou une demande part et il décide. Plutôt que de griser, on nomme le chemin.
 
 export type PartnerPath =
-  /** Pas encore inscrit : il part avec moi, en un geste. */
+  /** Pas encore inscrit : une invitation part, il decide. */
   | 'direct'
   /** Inscrit, seul, et ouvert : le binôme se forme dès mon inscription. */
   | 'instant'
@@ -1859,7 +1859,9 @@ export function partnerPath(playerId: string, ctx: PartnerContext): PartnerPath 
 
 /** Ce que la ligne annonce, et ce que le bouton fera. */
 export const PARTNER_PATH_LABEL: Record<PartnerPath, string> = {
-  direct: '',
+  // Depuis tournament_partner_invite.sql, inviter n'inscrit PLUS d'office :
+  // une demande part. Le dire ici evite de promettre un binome forme.
+  direct: 'Il devra accepter',
   instant: 'Inscrit · cherche un binôme',
   request: 'Inscrit · sur accord',
   blocked: 'Déjà en binôme',
@@ -1868,6 +1870,8 @@ export const PARTNER_PATH_LABEL: Record<PartnerPath, string> = {
 /** Le libellé du bouton d'inscription, selon le chemin du partenaire choisi. */
 export function registerCtaLabel(path: PartnerPath | null): string {
   if (path === 'instant') return 'S’inscrire et former le binôme';
-  if (path === 'request') return 'S’inscrire et lui demander';
+  // Les deux autres chemins envoient une demande — et le bouton doit le dire :
+  // « Nous inscrire » mentirait sur ce qui va se passer.
+  if (path === 'request' || path === 'direct') return 'S’inscrire et l’inviter';
   return 'S’inscrire';
 }

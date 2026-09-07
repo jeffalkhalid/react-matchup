@@ -883,7 +883,9 @@ describe('choisir un partenaire deja inscrit', () => {
     soloOpen: new Map(soloOpen),
   });
 
-  it('un joueur NON inscrit part avec moi, en un geste', () => {
+  it('un joueur NON inscrit recoit une invitation', () => {
+    // Depuis tournament_partner_invite.sql, il n'est plus inscrit d'office :
+    // une demande part et il decide.
     expect(partnerPath('x', ctx([]))).toBe('direct');
   });
 
@@ -904,8 +906,9 @@ describe('choisir un partenaire deja inscrit', () => {
 
   it('le bouton annonce ce qu il va faire', () => {
     expect(registerCtaLabel('instant')).toContain('former le binôme');
-    expect(registerCtaLabel('request')).toContain('demander');
-    expect(registerCtaLabel('direct')).toBe('S’inscrire');
+    expect(registerCtaLabel('request')).toContain('inviter');
+    // « Nous inscrire » mentirait : dans les deux cas une demande part.
+    expect(registerCtaLabel('direct')).toContain('inviter');
     expect(registerCtaLabel(null)).toBe('S’inscrire');
   });
 });
