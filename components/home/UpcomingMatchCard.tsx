@@ -15,6 +15,8 @@ import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { getLiveScoringEnabled, fetchLiveSession } from '../../lib/liveSession';
 import { LiveDot } from '../live/LiveDot';
+import { useOrigin } from '../../hooks/useOrigin';
+import { formatGameDistance } from '../../lib/geo';
 import type { OpenGame } from '../../types';
 
 const VIOLET = '#8B5CF6';
@@ -124,6 +126,10 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
   // la plus grande taille qui y tient, en largeur ET en hauteur.
   const [zone, setZone] = useState({ w: 0, h: 0 });
 
+  // Distance du club, même source que les cartes du lobby (hooks/useOrigin).
+  const { distanceOf } = useOrigin();
+  const distance = game ? distanceOf(game.location) : null;
+
   // Badge « 🔴 LIVE » : uniquement si le flag est actif ET qu'une session live
   // existe pour cette partie. Flag éteint ⇒ aucune requête live_match_sessions.
   useEffect(() => {
@@ -214,9 +220,18 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
 
             {/* Club + nature du match (défi / compétitif / amical — même pastille que MatchCard) */}
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
-                {game.location || 'Lieu à définir'}
-              </Text>
+              {/* La distance vit sur la LIGNE DU CLUB : l'accueil ne défile
+                  pas, la carte ne doit pas grandir d'un pixel. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
+                  {game.location || 'Lieu à définir'}
+                </Text>
+                {distance && (
+                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 11.5, color: Colors.textMuted }}>
+                    {formatGameDistance(distance)}
+                  </Text>
+                )}
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, alignSelf: 'flex-start' }}>
                 {liveSessionId && <LiveDot />}
                 <NaturePill {...matchNature(game)} />

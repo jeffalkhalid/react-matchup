@@ -10,6 +10,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { staysInUpcoming } from '../../lib/games';
+import { useOrigin } from '../../hooks/useOrigin';
 import { Colors, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { fetchPlayerTotals, EMPTY_TOTALS } from '../../lib/playerStats';
@@ -55,6 +56,9 @@ export default function HomeScreen() {
   // Mes clubs favoris, par nom : troisième critère du classement des
   // suggestions (après le niveau et l'urgence, cf. lib/homeSlot).
   const [favoris, setFavoris] = useState<string[]>([]);
+  // Point de départ partagé (GPS récent, sinon ma zone) : sert au critère
+  // « proche » des suggestions et à la distance de la carte « Prochain match ».
+  const { distanceOf, radiusKm } = useOrigin();
   const [loading, setLoading] = useState(true);
   const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
   // Badges votables = badge_defs actifs (source unique, pilotée par l'admin) ; MVP exclu du vote.
@@ -320,7 +324,10 @@ export default function HomeScreen() {
   // disent la même chose — sinon une section se dessine sans place réservée.
   const suggestions = suggestibleGames(
     openGames as any,
-    { id: player.id, gender: player.gender, elo: player.elo_score, favoriteClubs: favoris },
+    {
+      id: player.id, gender: player.gender, elo: player.elo_score, favoriteClubs: favoris,
+      distanceOf, radiusKm,
+    },
     now,
   ) as unknown as OpenGame[];
   const slot = homeSlot({
