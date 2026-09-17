@@ -1,8 +1,12 @@
 import { supabase } from './supabase';
 import { isInvitationVisible, isGameReadyToScore } from './games';
-import { matchNeedsMyAction } from './matches';
+import { matchNeedsMyAction, MATCH_ACTION_FIELDS } from './matches';
 import { getHiddenPlayerIds } from './moderation';
 import { getLeague, getLeagueLabel, eloToLevel } from './theme';
+import {
+  buildJoinedItems, eventToItem, lockedDefiItem, participationsCoveredByEvents,
+  type JoinedRow, type NotificationEventRow,
+} from './notifEvents';
 
 // ─── Source UNIQUE de la liste de notifications ──────────────────────────────
 // Construit l'ENSEMBLE des cartes de notification d'un joueur, dans l'ordre
@@ -68,6 +72,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     { data: queuedApps },
     { data: lockedApps },
     { data: cancelledParts },
+    { data: notifEvents },
   ] = await Promise.all([
     supabase
       .from('defi_applications')
@@ -76,7 +81,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .eq('status', 'pending'),
     supabase
       .from('matches')
-      .select('id, status, winner:winner_id(name), submitter:created_by(name), created_by, winner_id, winner_id_2, loser_id, loser_id_2')
+      .select(`${MATCH_ACTION_FIELDS}, winner:winner_id(name), submitter:created_by(name)`)
       .or(playerOr)
       .in('status', ['pending', 'counter_proposed']),
     supabase
@@ -112,7 +117,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     // Mes parties (créateur ou participant validé) — pour les demandes à valider.
     supabase
       .from('open_games')
-      .select('id, location, status, match_date')
+      .select('id, location, status, match_date, is_challenge')
       .neq('status', 'cancelled')
       .or(orParts),
     // Notifs "info" déjà supprimées par l'utilisateur (joined / levelup).
@@ -146,7 +151,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     // carte info supprimable (type 'joined').
     supabase
       .from('defi_applications')
-      .select('id, game_id, resolved_at, game:game_id(location, match_date, status)')
+      .select('id, game_id, resolved_at, queued_at, game:game_id(location, match_date, status)')
       .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
       .eq('status', 'locked')
       .gte('resolved_at', sevenDaysAgo),
@@ -161,9 +166,20 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
       .in('status', ['accepted', 'pending', 'waitlist', 'invited'])
       .eq('game.status', 'cancelled')
       .gt('game.match_date', nowIso),
+    // Événements écrits par le serveur au moment où ça se passe (départs,
+    // éjections, défi rouvert/annulé, promotions) : ce qui fait DISPARAÎTRE un
+    // joueur ne laisse aucune ligne à relire ailleurs (lib/notifEvents).
+    // Table absente (migration pas encore appliquée) → erreur → aucune carte.
+    supabase
+      .from('notification_events')
+      .select('id, kind, title, body, route, game_id, ref, created_at')
+      .eq('player_id', playerId)
+      .gte('created_at', sevenDaysAgo)
+      .order('created_at', { ascending: false }),
   ]);
 
   const dismissedKeys = new Set((dismissedRows ?? []).map((d: any) => d.notif_key));
+  const eventRows = (notifEvents ?? []) as NotificationEventRow[];
 
   // Modération : masquer les défis émis par un joueur bloqué (deux sens).
   const hidden = await getHiddenPlayerIds(playerId);
@@ -245,24 +261,17 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     // que ce soit auto-accept, invitation acceptée ou candidature approuvée.
     const { data: joined } = await supabase
       .from('game_participants')
-      .select('id, game_id, player_id, approvals, created_at, player:player_id(name)')
+      .select('id, game_id, player_id, approvals, created_at, team_side, player:player_id(name)')
       .in('game_id', validReqGameIds)
       .eq('status', 'accepted')
       .neq('player_id', playerId)
       .gte('created_at', sevenDaysAgo)
       .order('created_at', { ascending: false });
-    joinedItems = (joined ?? []).map((j: any) => {
-      const g = myGameById.get(j.game_id);
-      const where = g?.location ? ` à ${g.location}` : '';
-      const wasApproved = (j.approvals ?? []).length > 0;
-      return {
-        id: `joined-${j.id}`,
-        type: 'joined' as const,
-        title: wasApproved ? '✅ Candidature acceptée' : '👋 Nouveau joueur',
-        subtitle: `${j.player?.name ?? 'Un joueur'} a rejoint la partie${where}`,
-        route: `/(tabs)/lobby?gameId=${j.game_id}`,
-      };
-    });
+    joinedItems = buildJoinedItems(
+      (joined ?? []) as unknown as JoinedRow[],
+      myGameById,
+      participationsCoveredByEvents(eventRows),
+    );
   }
 
   // Demandes de message (DM) : une carte par personne (→ « plusieurs » si
@@ -297,6 +306,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     });
 
   const result: NotifItem[] = [
+    ...eventRows.map(eventToItem),
     ...cancelledItems,
     ...dmRequestItems,
     ...pendingReqItems,
@@ -352,13 +362,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     ...(lockedApps ?? [])
       .filter((l: any) => l.game?.status === 'confirmed'
         && (!l.game?.match_date || new Date(l.game.match_date).getTime() > Date.now()))
-      .map((l: any) => ({
-        id: `joined-defi-${l.id}`,
-        type: 'joined' as const,
-        title: '⚔️ Défi confirmé',
-        subtitle: `Votre binôme relève le défi${l.game?.location ? ` à ${l.game.location}` : ''} — rendez-vous sur le terrain !`,
-        route: `/(tabs)/lobby?gameId=${l.game_id}`,
-      })),
+      .map((l: any) => lockedDefiItem(l)),
     ...visiblePending.map(({ m, action }: any) => action === 'resolve' ? {
       id: `match-${m.id}`,
       type: 'match' as const,
