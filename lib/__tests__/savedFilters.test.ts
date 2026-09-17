@@ -97,3 +97,22 @@ describe('nom nettoye', () => {
     expect(normalizeFilterName('x'.repeat(80), NO_EXPLORE_FILTERS)).toHaveLength(40);
   });
 });
+
+describe('distance max et alertes (lot 1)', () => {
+  it('la distance est enregistrée avec le filtre mais PAS encore surveillée par l alerte', () => {
+    const c = alertCoverage(f({ cities: ['Rabat'], maxKm: 10 }));
+    expect(c.watched).toEqual(['Ville']);
+    expect(c.ignored).toEqual(['Distance']);
+  });
+
+  it('une distance seule ne suffit pas à faire une alerte', () => {
+    expect(canAlert(f({ maxKm: 10 }))).toBe(false);
+  });
+
+  it('relecture : maxKm absent ou aberrant → null ; valeur permise conservée', () => {
+    expect(hydrateFilter({ type: 'friendly' }).maxKm).toBeNull();
+    expect(hydrateFilter({ maxKm: 15 }).maxKm).toBeNull();
+    expect(hydrateFilter({ maxKm: '10' }).maxKm).toBeNull();
+    expect(hydrateFilter({ maxKm: 20 }).maxKm).toBe(20);
+  });
+});

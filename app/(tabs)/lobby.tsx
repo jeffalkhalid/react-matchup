@@ -31,6 +31,7 @@ import {
   NO_EXPLORE_FILTERS, REASON_LABEL, visibleGames, countCompanions,
   type ExploreFilters, type ExploreContext, type ExploreReason, type PlayerGender,
 } from '../../lib/exploreFilters';
+import type { DistanceOf } from '../../lib/geo';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
 import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
@@ -1538,6 +1539,7 @@ function resetOne(r: ExploreReason): Partial<ExploreFilters> {
     case 'slot':   return { slot: 'any' };
     case 'club':   return { clubs: [] };
     case 'city':   return { cities: [] };
+    case 'distance': return { maxKm: null };
     case 'type':   return { type: 'all' };
     case 'level':  return { level: 'all' };
     case 'gender': return { gender: 'all' };
@@ -1553,6 +1555,7 @@ function exploreCtx(
   myElo: number,
   villeDuClub: (n: string) => string | null,
   knownPlayers: Set<string> = new Set(),
+  distanceOf: DistanceOf = () => null,
 ): ExploreContext {
   return {
     now: new Date(),
@@ -1567,6 +1570,7 @@ function exploreCtx(
       ...(g.participants ?? []).filter((p: any) => occupiesSpot(p)).map((p: any) => p.player_id),
     ].filter(Boolean),
     knownPlayers,
+    distanceOf: (g: any) => distanceOf(g.location),
   };
 }
 

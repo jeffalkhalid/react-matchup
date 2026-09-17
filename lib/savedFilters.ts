@@ -23,6 +23,7 @@
 import {
   NO_EXPLORE_FILTERS, type ExploreFilters,
 } from './exploreFilters';
+import { isZoneRadius } from './geo';
 
 export interface SavedFilter {
   id: string;
@@ -35,8 +36,9 @@ export interface SavedFilter {
 
 /** Les critères qu'une alerte sait surveiller. */
 export const ALERTABLE_KEYS = ['clubs', 'cities', 'type', 'gender', 'slot', 'level'] as const;
-/** Ceux qui n'ont de sens qu'au moment où l'on regarde. */
-export const VIEW_ONLY_KEYS = ['date', 'spots', 'urgentOnly', 'search'] as const;
+/** Ceux qui n'ont de sens qu'au moment où l'on regarde — et la distance, que
+ *  le serveur ne sait pas encore mesurer (lot 4 de la localisation). */
+export const VIEW_ONLY_KEYS = ['date', 'spots', 'urgentOnly', 'search', 'maxKm'] as const;
 
 /**
  * Les critères de ce filtre qu'une alerte surveillera réellement, et ceux
@@ -55,6 +57,7 @@ export function alertCoverage(f: ExploreFilters): { watched: string[]; ignored: 
   if (f.spots !== null) ignored.push('Places libres');
   if (f.urgentOnly) ignored.push('Urgent');
   if (f.search.trim()) ignored.push('Recherche');
+  if (f.maxKm !== null) ignored.push('Distance');
   return { watched, ignored };
 }
 
@@ -103,6 +106,7 @@ export function hydrateFilter(raw: unknown): ExploreFilters {
     clubs: Array.isArray(c.clubs) ? c.clubs : [],
     cities: Array.isArray(c.cities) ? c.cities : [],
     search: typeof c.search === 'string' ? c.search : '',
+    maxKm: isZoneRadius(c.maxKm) ? c.maxKm : null,
   };
 }
 

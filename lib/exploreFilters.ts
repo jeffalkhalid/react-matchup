@@ -14,6 +14,8 @@
 // base : `gender_pref` vaut men / women / mixed, `game_format` vaut
 // competitive / friendly, et le défi se lit sur `is_challenge`.
 
+import type { GameDistance } from './geo';
+
 export type DatePreset = 'any' | 'today' | 'tomorrow' | 'week' | 'weekend';
 export type TimeSlot = 'any' | 'morning' | 'afternoon' | 'evening' | 'night';
 export type TypeFilter = 'all' | 'competitive' | 'friendly' | 'challenge';
@@ -27,6 +29,8 @@ export interface ExploreFilters {
   clubs: string[];
   /** Villes retenues. Vide = toutes. */
   cities: string[];
+  /** Distance maximale en km depuis le point de départ (5 / 10 / 20 / 40). `null` = indifférent. */
+  maxKm: number | null;
   type: TypeFilter;
   level: LevelFilter;
   gender: GenderFilter;
@@ -41,7 +45,7 @@ export interface ExploreFilters {
 }
 
 export const NO_EXPLORE_FILTERS: ExploreFilters = {
-  date: 'any', slot: 'any', clubs: [], cities: [],
+  date: 'any', slot: 'any', clubs: [], cities: [], maxKm: null,
   type: 'all', level: 'all', gender: 'all',
   spots: null, urgentOnly: false, players: [], knownOnly: false, search: '',
 };
@@ -53,6 +57,7 @@ export function activeExploreFilterCount(f: ExploreFilters): number {
   if (f.slot !== 'any') n++;
   if (f.clubs.length > 0) n++;
   if (f.cities.length > 0) n++;
+  if (f.maxKm !== null) n++;
   if (f.type !== 'all') n++;
   if (f.level !== 'all') n++;
   if (f.gender !== 'all') n++;
@@ -140,7 +145,7 @@ export function gameType(g: { is_challenge?: boolean | null; game_format?: strin
 
 /** Ce qui a écarté une partie, ou `null` si elle passe. */
 export type ExploreReason =
-  | 'date' | 'slot' | 'club' | 'city' | 'type' | 'level' | 'gender' | 'spots'
+  | 'date' | 'slot' | 'club' | 'city' | 'distance' | 'type' | 'level' | 'gender' | 'spots'
   | 'urgent' | 'players' | 'known' | 'search';
 
 export interface ExploreGame {
@@ -167,6 +172,8 @@ export interface ExploreContext {
   playersOf: (g: ExploreGame) => string[];
   /** Les joueurs déjà croisés, pour « matchs en commun ». */
   knownPlayers: Set<string>;
+  /** Distance de la partie depuis le point de départ (hooks/useOrigin) ; null = inconnue. */
+  distanceOf: (g: ExploreGame) => GameDistance | null;
 }
 
 /**
@@ -185,6 +192,13 @@ export function exploreRefusal(g: ExploreGame, f: ExploreFilters, ctx: ExploreCo
   if (f.cities.length > 0) {
     const ville = lieu ? ctx.cityOfClub(lieu) : null;
     if (!ville || !f.cities.includes(ville)) return 'city';
+  }
+
+  if (f.maxKm !== null) {
+    const d = ctx.distanceOf(g);
+    // Club placé au centre de sa ville : sa distance est approximative, on ne
+    // promet pas « à moins de N km » sur une position fausse.
+    if (!d || d.approx || d.km > f.maxKm) return 'distance';
   }
 
   if (f.type !== 'all' && gameType(g) !== f.type) return 'type';
@@ -231,6 +245,7 @@ export const REASON_LABEL: Record<ExploreReason, string> = {
   slot: 'Plage horaire',
   club: 'Club',
   city: 'Ville',
+  distance: 'Distance',
   type: 'Type de match',
   level: 'Niveau',
   gender: 'Genre',

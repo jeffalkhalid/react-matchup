@@ -20,6 +20,7 @@ const ctx = (o: Partial<ExploreContext> = {}): ExploreContext => ({
   levelFit: () => 'fit',
   playersOf: () => [],
   knownPlayers: new Set<string>(),
+  distanceOf: () => null,
   ...o,
 });
 
@@ -340,5 +341,36 @@ describe('resume d une selection', () => {
     // manque.
     expect(selectionSummary(['Casablanca', 'Rabat'], 'Toutes', p)).toBe('2 villes');
     expect(selectionSummary(['a', 'b', 'c'], 'Toutes', p)).toBe('3 villes');
+  });
+});
+
+describe('distance max', () => {
+  const loin = { km: 12, approx: false };
+  const pres = { km: 8, approx: false };
+  const centreVille = { km: 3, approx: true };
+
+  it('compte comme un filtre actif', () => {
+    expect(activeExploreFilterCount(f({ maxKm: 10 }))).toBe(1);
+    expect(activeExploreFilterCount(f({ maxKm: null }))).toBe(0);
+  });
+
+  it('écarte trop loin, inconnu et centre-ville ; garde ce qui est dans le rayon', () => {
+    expect(exploreRefusal(partie(), f({ maxKm: 10 }), ctx({ distanceOf: () => loin }))).toBe('distance');
+    expect(exploreRefusal(partie(), f({ maxKm: 10 }), ctx({ distanceOf: () => null }))).toBe('distance');
+    // Club placé au centre de sa ville : on ne promet pas « à moins de 10 km »
+    // sur une position fausse.
+    expect(exploreRefusal(partie(), f({ maxKm: 10 }), ctx({ distanceOf: () => centreVille }))).toBe('distance');
+    expect(exploreRefusal(partie(), f({ maxKm: 10 }), ctx({ distanceOf: () => pres }))).toBeNull();
+    expect(exploreRefusal(partie(), f({ maxKm: 12 }), ctx({ distanceOf: () => loin }))).toBeNull();
+  });
+
+  it('sans distance max, la distance n est même pas calculée', () => {
+    const jamais = () => { throw new Error('distanceOf ne doit pas être appelée'); };
+    expect(exploreRefusal(partie(), f(), ctx({ distanceOf: jamais }))).toBeNull();
+  });
+
+  it('proposée comme filtre à retirer quand elle cache tout', () => {
+    const best = bestExploreFilterToDrop([partie(), partie()], f({ maxKm: 5 }), ctx({ distanceOf: () => loin }));
+    expect(best).toEqual({ reason: 'distance', unlocked: 2 });
   });
 });
