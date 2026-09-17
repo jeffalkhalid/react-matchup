@@ -51,3 +51,4 @@ design_handoff_auth_flow
 SENDING KEY.txt
 # Fichiers temporaires d'outillage (brouillons de revue, index)
 .superpowers/tmp/
+.superpowers/sdd/
