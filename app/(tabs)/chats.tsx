@@ -112,7 +112,7 @@ export default function ChatsScreen() {
           />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+          <Text numberOfLines={2}
             style={{ color: Colors.textOnDark, fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center', paddingRight: 5 }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
         </View>
         <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.md }}>

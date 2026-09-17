@@ -97,7 +97,7 @@ function CarouselCard({ entry, dark, onOpen }: {
         </View>
       </View>
 
-      <Text numberOfLines={1} style={{ fontSize: 19, lineHeight: 20, fontFamily: Fonts.welcome, letterSpacing: 0.3, color: titre }}>
+      <Text numberOfLines={1} style={{ fontSize: 19, lineHeight: 20, fontFamily: Fonts.welcome, letterSpacing: 0.3, color: titre, paddingRight: 7 }}>
         {t.name}
       </Text>
 
@@ -162,7 +162,7 @@ function WideCard({ entry, onOpen }: { entry: HomeTournamentEntry; onOpen: () =>
           </View>
         </View>
 
-        <Text numberOfLines={1} style={{ fontSize: 21, lineHeight: 22, fontFamily: Fonts.welcome, letterSpacing: 0.3, color: '#FFFFFF' }}>
+        <Text numberOfLines={1} style={{ fontSize: 21, lineHeight: 22, fontFamily: Fonts.welcome, letterSpacing: 0.3, color: '#FFFFFF', paddingRight: 7 }}>
           {t.name}
         </Text>
 

@@ -42,7 +42,7 @@ export default function ArchivedChatsScreen() {
             <Text style={{ color: Colors.textOnDark, fontSize: 20, fontWeight: '900' }}>‹</Text>
           </TouchableOpacity>
           <View>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            <Text numberOfLines={2}
               style={{ color: Colors.textOnDark, fontSize: 24, lineHeight: 31, fontFamily: Fonts.welcome, letterSpacing: -0.5, paddingRight: 5 }}>
               <Text style={{ color: Colors.brand }}>Archivées</Text>
             </Text>

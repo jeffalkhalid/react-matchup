@@ -148,7 +148,7 @@ export default function NotificationsScreen() {
         {/* Segment unique obligatoire : adjustsFontSizeToFit est un no-op Android
             dès qu'un <Text> imbriqué est présent → le titre passait à la ligne
             (« Tes » seul visible) quand le badge + « Effacer les infos » rognent la largeur. */}
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+        <Text numberOfLines={2}
           style={{ fontSize: 26, lineHeight: 34, color: Colors.brand, flex: 1, fontFamily: Fonts.welcome, letterSpacing: -0.5, paddingRight: 5 }}>
           Tes notifications
         </Text>

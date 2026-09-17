@@ -30,7 +30,7 @@ export function IllustDefi() {
               <Avatar name="Sofia I" size={44} radius={14} league="silver" />
             </View>
           </View>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 13, lineHeight: 17, textTransform: 'uppercase', color: '#0A0A0A', marginTop: 6 }}>Karim & Sofia</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 13, lineHeight: 17, color: '#0A0A0A', marginTop: 6, paddingHorizontal: 4 }}>KARIM & SOFIA</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#E8A906' }}>Moy. 5.3</Text>
         </View>
 
@@ -54,7 +54,7 @@ export function IllustDefi() {
               <Text style={{ fontFamily: Fonts.display, fontSize: 18, lineHeight: 23, color: '#C0BBB2' }}>?</Text>
             </View>
           </View>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 13, lineHeight: 17, textTransform: 'uppercase', color: '#0A0A0A', marginTop: 6 }}>Toi + binôme</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 13, lineHeight: 17, color: '#0A0A0A', marginTop: 6, paddingHorizontal: 4 }}>TOI + BINÔME</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#A1A1AA' }}>À choisir</Text>
         </View>
       </View>

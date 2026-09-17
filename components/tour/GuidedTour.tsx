@@ -400,8 +400,8 @@ export default function GuidedTour({ onDone }: { onDone: () => void }) {
               </Text>
             </View>
           </View>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 34, lineHeight: 38, textTransform: 'uppercase', color: '#fff', letterSpacing: 0.5 }}>
-            Ta première partie{'\n'}t’attend au <Text style={{ color: Colors.brand }}>lobby</Text>
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 34, lineHeight: 38, color: '#fff', letterSpacing: 0.5, paddingRight: 10 }}>
+            TA PREMIÈRE PARTIE{'\n'}T’ATTEND AU <Text style={{ color: Colors.brand }}>LOBBY</Text>
           </Text>
           <Text style={{ marginTop: 14, fontFamily: Fonts.ui, fontSize: 14, lineHeight: 21, color: '#8A8A92', maxWidth: 290 }}>
             Tu sais rejoindre une partie et créer la tienne. Le reste s’explique dans le guide « ? », en haut de l’écran.

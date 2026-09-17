@@ -157,7 +157,7 @@ export default function ActiviteTab() {
           <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 100, height: 22, marginLeft: -7 }} resizeMode="contain" />
         </View>
         <View style={{ alignItems: 'center' }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+          <Text numberOfLines={2}
             style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center', paddingRight: 5 }}>
             L'<Text style={{ color: Colors.brand }}>Activité</Text>
           </Text>

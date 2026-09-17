@@ -204,7 +204,7 @@ export default function ForgotPasswordScreen() {
             <Lockup width={lockupW} tokens={tokens} />
           </View>
 
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
+          <Text numberOfLines={2} style={{
             textAlign: 'center',
             fontFamily: Fonts.welcome,
             fontSize: 23,

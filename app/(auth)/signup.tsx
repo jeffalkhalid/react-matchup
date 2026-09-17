@@ -771,7 +771,7 @@ export default function SignupScreen() {
           {/* Titre + progress */}
           {!isSuccess && (
             <>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
+              <Text numberOfLines={2} style={{
                 textAlign: 'center',
                 fontFamily: Fonts.welcome,
                 fontSize: 22,
@@ -1081,14 +1081,16 @@ export default function SignupScreen() {
                     {/* Saga « Niv. » vide (Android) : ① spans multiples → le nombre
                         disparaissait au re-render → enfant UNIQUE (template string) ;
                         ② adjustsFontSizeToFit → texte invisible au premier rendu
-                        (bug RN Android, police custom) → remplacé par
-                        maxFontSizeMultiplier (le texte est court, il tient toujours
-                        sur une ligne, pas besoin de rétrécissement dynamique). */}
+                        (bug RN Android, police custom) → remplacé par le plafond de
+                        police (maxFontSizeMultiplier) : le texte est court, il tient
+                        toujours sur une ligne, pas besoin de rétrécissement dynamique.
+                        Ce plafond n'est plus posé ici (il valait 1,15) : celui de
+                        toute l'app (babel-plugin-text-scale-cap, ×1,1) est plus strict. */}
                     {/* paddingHorizontal 16 : à 44pt le débord de l'italique
                         dépasse largement le box du texte — 8px rognaient encore
                         le dernier chiffre (vu sur device). Symétrique pour
                         garder le centrage. */}
-                    <Text numberOfLines={1} maxFontSizeMultiplier={1.15} style={{
+                    <Text numberOfLines={1} style={{
                       fontFamily: Fonts.welcome, fontSize: 44, lineHeight: 57,
                       color: AUTH_BRAND, includeFontPadding: false, paddingHorizontal: 16,
                     }}>
@@ -1254,7 +1256,7 @@ export default function SignupScreen() {
               }}>
                 <IconCheck size={32} color={AUTH_BRAND} />
               </View>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
+              <Text numberOfLines={2} style={{
                 color: tokens.textPrimary,
                 fontFamily: Fonts.welcome,
                 fontSize: 24,
