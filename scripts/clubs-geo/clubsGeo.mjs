@@ -202,8 +202,8 @@ const RE_CONTIENT_URL_OU_COORD = /https?:\/\/|-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d
  * Ce que l'utilisateur a écrit dans la colonne « Décision », à partir du TEXTE
  * VISIBLE de la cellule (déjà extrait, par ex. avec texteVisibleCellule) et de
  * son hyperlien éventuel (par ex. avec lireHyperlienCellule). Le texte visible
- * l'emporte toujours ; l'hyperlien n'est utilisé que si ce texte n'est ni oui,
- * ni non, ni vide, ni un lien/des coordonnées à lui seul.
+ * l'emporte toujours. Un hyperlien caché sous un autre texte n'est JAMAIS suivi :
+ * « non merci » retapé sur une cellule qui garde son lien écrirait la position.
  */
 export function lireDecision(texteVisible, hyperlien) {
   const t = String(texteVisible ?? '').trim();
@@ -221,7 +221,7 @@ export function lireDecision(texteVisible, hyperlien) {
   // Mineur 8 : un texte qui MÊLE une URL à d'autres mots n'est pas un lien
   // exploitable, même si la cellule porte par ailleurs un hyperlien.
   if (RE_CONTIENT_URL_OU_COORD.test(t)) return { type: 'inconnu', texte: t };
-  if (lien) return { type: 'lien', texte: lien };
+  if (lien) return { type: 'refus', raison: 'cellule avec un lien caché : coller l\'adresse du lien en texte' };
   return { type: 'inconnu', texte: t };
 }
 

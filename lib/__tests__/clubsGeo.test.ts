@@ -77,12 +77,17 @@ describe('rapprochement', () => {
     expect(p.alertes.some(a => a.startsWith('statut du fichier'))).toBe(false);
   });
 
-  it('variantes anglaises des villes retirées des noms (casa, tangier(s), fez, marrakesh)', () => {
-    // Sans le retrait de « casa », ce mot resterait un mot du nom en base
-    // absent du fichier, et casserait le score parfait (« noms partiellement
-    // différents ») alors que les deux noms désignent le même club.
-    const p = proposerCorrespondance(base('Casa Riad Bay', 'Casablanca'), [fichier('Casablanca', 'Riad Bay', 33.57, -7.59)]);
-    expect(p.alertes).toEqual([]);
+  it.each([
+    ['casa', 'Casablanca'],
+    ['tangier', 'Tanger'],
+    ['tangiers', 'Tanger'],
+    ['fez', 'Fès'],
+    ['marrakesh', 'Marrakech'],
+  ])('variante anglaise « %s » retirée des noms : ne suffit pas à rapprocher deux clubs de %s', (variante, ville) => {
+    // Sans le retrait, la variante serait le seul mot commun et rapprocherait
+    // deux clubs différents de la même ville.
+    const p = proposerCorrespondance(base(`Urban ${variante}`, ville), [fichier(ville, `${variante} Arena`, 33.57, -7.59)]);
+    expect(p.fichier).toBeNull();
   });
 
   it('jamais d\'une ville à une autre', () => {
@@ -203,9 +208,13 @@ describe('décisions', () => {
   it('un lien, y compris sous forme de texte tapé', () => {
     expect(lireDecision('https://maps.app.goo.gl/x')).toEqual({ type: 'lien', texte: 'https://maps.app.goo.gl/x' });
   });
-  it('un texte qui n\'est ni oui/non/vide/lien retombe sur l\'hyperlien de la cellule', () => {
-    expect(lireDecision('lien', 'https://www.google.com/maps?q=1.5,2.5'))
-      .toEqual({ type: 'lien', texte: 'https://www.google.com/maps?q=1.5,2.5' });
+  it('un lien caché sous un autre texte n\'est jamais suivi : refus', () => {
+    // « Non. », « non merci » retapés sur une cellule qui garde son lien ne
+    // doivent pas écrire la position du lien.
+    const refus = { type: 'refus', raison: 'cellule avec un lien caché : coller l\'adresse du lien en texte' };
+    for (const texte of ['lien', 'Non.', 'non merci', 'non, club fermé', 'pas sûr', '?', 'nope']) {
+      expect(lireDecision(texte, 'https://www.google.com/maps?q=1.5,2.5')).toEqual(refus);
+    }
   });
   it('tout le reste est signalé, jamais deviné', () => {
     expect(lireDecision('peut-être')).toEqual({ type: 'inconnu', texte: 'peut-être' });
