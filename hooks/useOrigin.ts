@@ -46,9 +46,14 @@ const VIDE: OriginState = {
 };
 
 let state: OriginState = VIDE;
+// La promesse du chargement initial (zone + clubs + permission) du compte
+// courant. Ne redémarre JAMAIS pour le même playerId, même après un échec :
+// seul un vrai changement de compte la remplace. Les échecs se rattrapent
+// exclusivement via reloadOrigin().
 let chargement: Promise<void> | null = null;
 // Horodatage de la dernière tentative de chargement zone+clubs — sert au
-// throttle de reloadOrigin (lib/originPolicy.shouldReloadOrigin).
+// throttle de reloadOrigin (lib/originPolicy.shouldReloadOrigin), sauf appel
+// explicite avec `force`.
 let derniereChargeAt: number | null = null;
 // Horodatage du dernier échec de LECTURE GPS — sert au throttle de
 // refreshGps/verifierFraicheur (lib/originPolicy.shouldReadGps).
@@ -56,6 +61,9 @@ let gpsFailureAt: number | null = null;
 // Une seule lecture GPS à la fois : requestGps, refreshGps et le chargement
 // initial partagent cette promesse au lieu d'en lancer une seconde.
 let lectureGps: Promise<GpsFix | null> | null = null;
+// Un seul reloadOrigin() en vol : un réseau lent ne doit pas empiler les
+// tentatives (bouton Réessayer, tirer pour rafraîchir, focus de l'Explorer…).
+let rechargement: Promise<void> | null = null;
 const abonnes = new Set<() => void>();
 let minuteur: ReturnType<typeof setInterval> | null = null;
 
@@ -96,7 +104,9 @@ async function chargerClubs(): Promise<Map<string, ClubPoint> | null> {
  * Charge zone + clubs pour `playerId`, utilisé au premier chargement ET par
  * reloadOrigin(). Un échec réseau ne remplace jamais une donnée déjà connue
  * par du vide : la zone garde sa dernière valeur bonne, l'index de clubs
- * aussi (sinon un index vide tant qu'aucun n'a jamais réussi).
+ * aussi — en réutilisant la MÊME référence (`state.index`) plutôt qu'un
+ * nouveau Map vide à chaque échec, pour que publier() puisse reconnaître
+ * qu'il n'y a rien de neuf.
  */
 async function chargerZoneEtClubs(playerId: string): Promise<Partial<OriginState>> {
   derniereChargeAt = Date.now();
@@ -104,7 +114,7 @@ async function chargerZoneEtClubs(playerId: string): Promise<Partial<OriginState
   return {
     zone: zone.status === 'error' ? state.zone : zone.zone,
     zoneAvailable: zone.status !== 'missing',
-    index: clubs ?? (state.index.size > 0 ? state.index : new Map<string, ClubPoint>()),
+    index: clubs ?? state.index,
     loadFailed: zone.status === 'error' || clubs === null,
   };
 }
@@ -117,10 +127,20 @@ function lireGps(): Promise<GpsFix | null> {
   return lectureGps;
 }
 
+/**
+ * Charge (une seule fois par compte) puis republie zone + clubs + GPS. Ne
+ * réinitialise JAMAIS l'état pour un playerId déjà en place : chaque montage
+ * de composant (une GameCard, un changement d'onglet…) rappelle `charger`,
+ * et repartir de VIDE chaque fois qu'une tentative précédente avait échoué
+ * effaçait gps/zone/index en cours de session et contournait le throttle de
+ * reloadOrigin. Les échecs se rattrapent désormais UNIQUEMENT via
+ * reloadOrigin() — jamais en rappelant charger() pour le même compte.
+ */
 function charger(playerId: string): Promise<void> {
-  if (state.playerId === playerId && chargement) return chargement;
-  // Changement de compte : on repart de zéro.
+  if (state.playerId === playerId) return chargement ?? Promise.resolve();
+  // Vrai changement de compte : on repart de zéro.
   state = { ...VIDE, playerId };
+  gpsFailureAt = null;
   abonnes.forEach(f => f());
   chargement = (async () => {
     const [donnees, permission] = await Promise.all([
@@ -128,14 +148,12 @@ function charger(playerId: string): Promise<void> {
     ]);
     if (state.playerId !== playerId) return;
     publier({ ...donnees, gpsPermission: permission, ready: true });
-    // Échec : on invalide le cache pour qu'un appel ultérieur (remontage d'un
-    // écran, reloadOrigin) relance vraiment le chargement au lieu de rendre
-    // pour toujours cette même tentative ratée.
-    if (donnees.loadFailed) chargement = null;
     // Autorisation DÉJÀ donnée : on lit la position sans rien demander.
     if (permission === 'granted') {
       const gps = await lireGps();
-      if (state.playerId === playerId && gps) publier({ gps });
+      if (state.playerId === playerId) {
+        if (gps) publier({ gps }); else gpsFailureAt = Date.now();
+      }
     }
   })();
   return chargement;
@@ -143,17 +161,26 @@ function charger(playerId: string): Promise<void> {
 
 /**
  * Relance le chargement zone + clubs pour le joueur courant — seulement si le
- * dernier a échoué et que le throttle de 30 s est passé (lib/originPolicy).
- * Sans effet si la zone est simplement absente ('missing') : ça ne changera
- * pas tout seul.
+ * dernier a échoué. `force` (geste explicite : bouton Réessayer, tirer pour
+ * rafraîchir) ignore le throttle de 30 s (lib/originPolicy) ; les appels
+ * automatiques (focus de l'Explorer, ouverture de « Ma zone ») le respectent.
+ * Une seule tentative en vol à la fois : un réseau lent ne doit pas empiler
+ * les rappels au lieu d'attendre le précédent. Sans effet si la zone est
+ * simplement absente ('missing') : ça ne changera pas tout seul.
  */
-async function reloadOrigin(): Promise<void> {
+function reloadOrigin(options?: { force?: boolean }): Promise<void> {
+  if (rechargement) return rechargement;
   const playerId = state.playerId;
-  if (!playerId) return;
-  if (!shouldReloadOrigin({ loadFailed: state.loadFailed, lastAttemptAt: derniereChargeAt, now: Date.now() })) return;
-  const donnees = await chargerZoneEtClubs(playerId);
-  if (state.playerId !== playerId) return;
-  publier(donnees);
+  if (!playerId || !state.loadFailed) return Promise.resolve();
+  if (!options?.force
+    && !shouldReloadOrigin({ loadFailed: state.loadFailed, lastAttemptAt: derniereChargeAt, now: Date.now() })) {
+    return Promise.resolve();
+  }
+  rechargement = (async () => {
+    const donnees = await chargerZoneEtClubs(playerId);
+    if (state.playerId === playerId) publier(donnees);
+  })().finally(() => { rechargement = null; });
+  return rechargement;
 }
 
 async function requestGps(): Promise<{ gps: GpsFix | null; permission: GpsPermission }> {
@@ -164,7 +191,7 @@ async function requestGps(): Promise<{ gps: GpsFix | null; permission: GpsPermis
   if (permission !== 'granted') return { gps: null, permission };
   const gps = await lireGps();
   if (state.playerId !== playerId) return { gps: null, permission };
-  if (gps) { gpsFailureAt = null; publier({ gps }); } else { gpsFailureAt = Date.now(); }
+  if (gps) { gpsFailureAt = null; publier({ gps }); } else { gpsFailureAt = Date.now(); publier({ gps: null }); }
   return { gps, permission };
 }
 

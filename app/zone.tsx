@@ -35,12 +35,14 @@ export default function ZoneScreen() {
   const source = useMemo(() => ({ html: buildZoneMapHtml(), baseUrl: 'https://localhost' }), []);
 
   // Première position de l'épingle : la zone enregistrée, sinon la position
-  // connue, sinon Casablanca.
+  // connue, sinon Casablanca. Jamais pendant un chargement en échec : `zone`
+  // pourrait n'être qu'une valeur restée en cache, pas la vraie zone du
+  // joueur — on attend une reprise réussie (loadFailed redevient faux).
   useEffect(() => {
-    if (!ready || point) return;
+    if (!ready || loadFailed || point) return;
     setPoint(initialZoneCenter(zone, gps));
     if (zone) setRadiusKm(zone.radiusKm);
-  }, [ready, zone, gps, point]);
+  }, [ready, loadFailed, zone, gps, point]);
 
   const pousser = useCallback((p: LatLng, r: number, recentrer: boolean) => {
     webref.current?.injectJavaScript(
@@ -150,7 +152,7 @@ export default function ZoneScreen() {
             Ta zone n'a pas pu être chargée. Vérifie ta connexion.
           </Text>
           <TouchableOpacity
-            onPress={() => void reloadOrigin()}
+            onPress={() => void reloadOrigin({ force: true })}
             activeOpacity={0.85}
             style={{
               alignSelf: 'flex-start', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12,

@@ -2886,7 +2886,7 @@ export default function LobbyScreen() {
     router.setParams({ rematch: undefined });
   }, [rematchParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onRefresh = async () => { setRefreshing(true); await Promise.all([fetchData(), reloadOrigin()]); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await Promise.all([fetchData(), reloadOrigin({ force: true })]); setRefreshing(false); };
 
   const handleApply = async (gameId: string, joinWaitlist: boolean, teamSide?: string) => {
     if (!player) return;
