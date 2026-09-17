@@ -252,13 +252,16 @@ export function ResultHero({ rank, total, partner, climbs, wins, losses, gamesWo
  * répétaient la date et le club déjà présents dans l'en-tête. Ce qui reste ici
  * est ce qui décide : la date, le lieu, et s'il reste de la place.
  */
-export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price, onDirections, onShare, onCalendar }: {
+export function RegistrationCard({ dayLabel, timeLabel, clubLine, distanceLine, taken, total, free, waiting, courts, priceLabel: price, onDirections, onShare, onCalendar }: {
   /** « Ven. 11 sept. » */
   dayLabel: string;
   /** « 19:00 » */
   timeLabel: string;
   /** « Padel Nation · Casablanca » */
   clubLine: string;
+  /** « 4,2 km depuis ta position » (lib/geo.distanceSentence). Absente quand
+   *  on ne sait pas d'où mesurer, ou que le club n'a pas de position. */
+  distanceLine?: string;
   taken: number; total: number; free: number; waiting: number;
   courts: number;
   priceLabel: string;
@@ -308,6 +311,12 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
           </Text>
           {onDirections && <Icon name="arrowRight" size={16} color={Colors.brandDeep} stroke={2.4} />}
         </TouchableOpacity>
+
+        {distanceLine && (
+          <Text numberOfLines={2} style={{ fontSize: 12.5, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 2, marginLeft: 28 }}>
+            {distanceLine}
+          </Text>
+        )}
 
         <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 14 }} />
 

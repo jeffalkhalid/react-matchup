@@ -27,7 +27,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useOrigin } from '../../hooks/useOrigin';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
+import { distanceSentence } from '../../lib/geo';
 import { Pill } from '../../components/Pill';
 import { Icon } from '../../components/community/icons';
 import { FitTitle } from '../../components/DisplayTitle';
@@ -338,6 +340,9 @@ export default function TournamentDetailScreen() {
   const [howToOpen, setHowToOpen] = useState(false);
   const [scoreSheetMatchId, setScoreSheetMatchId] = useState<string | null>(null);
   const [scoreBusy, setScoreBusy] = useState(false);
+
+  // Distance jusqu'au club du tournoi, même source que le reste de l'app.
+  const { distanceOf, origin } = useOrigin();
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -982,6 +987,7 @@ export default function TournamentDetailScreen() {
             dayLabel={dayLabel(t.starts_at)}
             timeLabel={timeLabel(t.starts_at)}
             clubLine={t.club?.name ? `${t.club.name}${t.club.city ? ` · ${t.club.city}` : ''}` : 'Club à confirmer'}
+            distanceLine={distanceSentence(distanceOf(t.club?.name), origin) ?? undefined}
             taken={taken}
             total={total}
             free={free}
