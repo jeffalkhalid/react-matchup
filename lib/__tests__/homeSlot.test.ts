@@ -190,6 +190,69 @@ describe('la regle de mixite, sur l accueil aussi', () => {
   });
 });
 
+describe('le critere « proche », juste apres le niveau', () => {
+  const DEUX = [
+    { player_id: 'x', status: 'accepted' },
+    { player_id: 'y', status: 'accepted' },
+  ];
+  // Distances par NOM de club, comme lib/geo.makeDistanceOf les rend.
+  const distances: Record<string, { km: number; approx: boolean }> = {
+    'Pres': { km: 3, approx: false },
+    'Loin': { km: 80, approx: false },
+    'CentreVille': { km: 2, approx: true },
+  };
+  const distanceOf = (l: string | null | undefined) => (l ? distances[l] ?? null : null);
+  const ME = { id: 'moi', gender: 'male', elo: 1500, distanceOf, radiusKm: 20 };
+
+  it('une partie PROCHE passe devant une partie urgente mais lointaine', () => {
+    const proche = G({ id: 'proche', location: 'Pres', match_date: dans(48) });
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    expect(suggestibleGames([urgente, proche], ME, NOW).map(g => g.id)).toEqual(['proche', 'urgente']);
+  });
+
+  it('mais le NIVEAU passe toujours avant la proximite', () => {
+    const procheHorsNiveau = G({ id: 'proche', location: 'Pres', min_elo: 1800, max_elo: 2200, match_date: dans(48) });
+    const loinDansNiveau = G({ id: 'loin', location: 'Loin', min_elo: 1200, max_elo: 1700, match_date: dans(48) });
+    expect(suggestibleGames([procheHorsNiveau, loinDansNiveau], ME, NOW).map(g => g.id)).toEqual(['loin', 'proche']);
+  });
+
+  it('un club place au CENTRE DE SA VILLE ne compte pas comme proche', () => {
+    // Sa distance est approximative : mettre cette partie en avant serait une
+    // promesse fondee sur un point faux.
+    const centre = G({ id: 'centre', location: 'CentreVille', match_date: dans(48) });
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    expect(suggestibleGames([centre, urgente], ME, NOW).map(g => g.id)).toEqual(['urgente', 'centre']);
+  });
+
+  it('au-dela du rayon de la zone, ce n est plus proche', () => {
+    const ME5 = { ...ME, radiusKm: 5 };
+    const auBord = G({ id: 'bord', location: 'Pres', match_date: dans(48) });   // 3 km
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    expect(suggestibleGames([urgente, auBord], ME5, NOW).map(g => g.id)).toEqual(['bord', 'urgente']);
+    const ME1 = { ...ME, radiusKm: 1 };
+    expect(suggestibleGames([urgente, auBord], ME1, NOW).map(g => g.id)).toEqual(['urgente', 'bord']);
+  });
+
+  it('SANS position, l ordre est exactement celui d avant', () => {
+    const SANS = { id: 'moi', gender: 'male', elo: 1500 };
+    const proche = G({ id: 'proche', location: 'Pres', match_date: dans(48) });
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    expect(suggestibleGames([proche, urgente], SANS, NOW).map(g => g.id)).toEqual(['urgente', 'proche']);
+  });
+
+  it('sans rayon declare, la zone par defaut est de 20 km', () => {
+    const SANS_RAYON = { id: 'moi', gender: 'male', elo: 1500, distanceOf };
+    const proche = G({ id: 'proche', location: 'Pres', match_date: dans(48) });
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    expect(suggestibleGames([proche, urgente], SANS_RAYON, NOW).map(g => g.id)).toEqual(['proche', 'urgente']);
+  });
+
+  it('proche ou pas, une partie reste PROPOSABLE (priorite, pas filtre)', () => {
+    const loin = G({ id: 'loin', location: 'Loin', match_date: dans(48) });
+    expect(suggestibleGames([loin], ME, NOW).map(g => g.id)).toEqual(['loin']);
+  });
+});
+
 describe('qui occupe l emplacement', () => {
   it('un match programme passe avant tout', () => {
     expect(homeSlot({ hasNextMatch: true, hasTournaments: true, suggestions: [G()] }).kind)

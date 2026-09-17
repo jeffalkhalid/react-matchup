@@ -144,3 +144,20 @@ export function initialZoneCenter(zone: LatLng | null, gps: GpsFix | null): LatL
   if (gps) return { lat: gps.lat, lng: gps.lng };
   return DEFAULT_MAP_CENTER;
 }
+
+/**
+ * La phrase d'une fiche : « 4,2 km depuis ta position », ou
+ * « ~12 km depuis ta zone (position approximative du club) » quand le club est
+ * placé au centre de sa ville.
+ *
+ * `null` sans point de départ ou pour un lieu inconnu : mieux vaut ne rien
+ * écrire qu'un chiffre que personne ne peut vérifier. Écrite UNE fois, elle
+ * sert à la fiche d'une partie et à celle d'un tournoi.
+ */
+export function distanceSentence(
+  d: GameDistance | null | undefined, origin: Origin | null,
+): string | null {
+  if (!d || !origin) return null;
+  const base = `${formatGameDistance(d)} ${originLabel(origin)}`;
+  return d.approx ? `${base} (position approximative du club)` : base;
+}

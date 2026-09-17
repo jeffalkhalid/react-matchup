@@ -24,6 +24,7 @@
 
 import { freeSpots, isUrgentGame, eloFitsGame } from './games';
 import { canPlayerSee } from './exploreFilters';
+import { DEFAULT_RADIUS_KM, type DistanceOf } from './geo';
 import type { PlayerGender } from './exploreFilters';
 
 /** Le minimum qu'une partie doit porter pour qu'on sache si on peut la proposer. */
@@ -67,6 +68,11 @@ export interface SuggestionViewer {
   elo?: number | null;
   /** Mes clubs favoris, par NOM (lib/clubFavorites). */
   favoriteClubs?: string[];
+  /** Distance d'un club depuis mon point de départ (hooks/useOrigin.distanceOf).
+   *  Absente = aucune position connue : le critère « proche » est ignoré. */
+  distanceOf?: DistanceOf;
+  /** Le rayon de ma zone, en km. Absent = 20 km (lib/geo.DEFAULT_RADIUS_KM). */
+  radiusKm?: number | null;
 }
 
 /**
@@ -93,11 +99,16 @@ export interface SuggestionViewer {
  *   1. DANS MA FOURCHETTE DE NIVEAU — `eloFitsGame`, la même règle que le
  *      lobby. Hors fourchette, rejoindre passe par le vote des joueurs déjà
  *      dedans : c'est une partie qu'on n'aura peut-être pas ;
- *   2. URGENTE — `isUrgentGame`, le même prédicat que le filtre « Urgent » de
+ *   2. PRÈS DE MOI — dans le rayon de ma zone, et seulement sur une position
+ *      de club SÛRE : un club placé au centre de sa ville donnerait une
+ *      distance fausse, et mettrait en avant une partie qui n'est peut-être
+ *      pas proche du tout. Sans point de départ, le critère ne départage
+ *      personne et l'ordre reste celui d'avant ;
+ *   3. URGENTE — `isUrgentGame`, le même prédicat que le filtre « Urgent » de
  *      l'Explorer (il était écrit trois fois avant de vivre à un seul
  *      endroit) : il manque une personne et ça se joue bientôt ;
- *   3. DANS UN DE MES CLUBS FAVORIS — par nom, comme partout ;
- *   4. à égalité, LA PLUS PROCHE dans le temps.
+ *   4. DANS UN DE MES CLUBS FAVORIS — par nom, comme partout ;
+ *   5. à égalité, LA PLUS PROCHE dans le temps.
  *
  * Ce sont des PRIORITÉS, pas des filtres : une partie hors fourchette reste
  * proposable s'il n'y a rien de mieux. Filtrer viderait l'accueil au lancement,
@@ -109,9 +120,16 @@ export function suggestibleGames<G extends SuggestibleGame>(
   now: Date = new Date(), max: number = MAX_SUGGESTIONS,
 ): G[] {
   const favoris = new Set(me.favoriteClubs ?? []);
+  const rayon = me.radiusKm ?? DEFAULT_RADIUS_KM;
+  /** Près de moi : position du club SÛRE et distance dans le rayon de ma zone. */
+  const proche = (g: G): boolean => {
+    const d = me.distanceOf?.(g.location);
+    return !!d && !d.approx && d.km <= rayon;
+  };
   // 0 = prioritaire, 1 = non. Comparés dans l'ordre, puis la date départage.
   const rang = (g: G): number[] => [
     me.elo != null && eloFitsGame(g, me.elo) ? 0 : 1,
+    proche(g) ? 0 : 1,
     isUrgentGame(g, now) ? 0 : 1,
     g.location != null && favoris.has(g.location) ? 0 : 1,
   ];

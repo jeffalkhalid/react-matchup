@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   haversineKm, formatKm, formatGameDistance, normClubName, buildClubIndex, makeDistanceOf,
   sortByProximity, roundZoneCoord, isZoneRadius, resolveOrigin, originLabel, initialZoneCenter,
-  DEFAULT_MAP_CENTER, GPS_MAX_AGE_MS, type ClubRow,
+  DEFAULT_MAP_CENTER, GPS_MAX_AGE_MS, distanceSentence, type ClubRow,
 } from '../geo';
 
 const CASA = { lat: 33.5731, lng: -7.5898 };
@@ -154,5 +154,26 @@ describe('point de départ', () => {
     expect(initialZoneCenter(zone, { lat: 1, lng: 1, at: now })).toEqual(zone);
     expect(initialZoneCenter(null, { lat: 1, lng: 2, at: now })).toEqual({ lat: 1, lng: 2 });
     expect(initialZoneCenter(null, null)).toEqual(DEFAULT_MAP_CENTER);
+  });
+});
+
+describe('la phrase des fiches', () => {
+  const gps = { lat: 33.5, lng: -7.6, source: 'gps' as const };
+  const zone = { lat: 33.5, lng: -7.6, source: 'zone' as const };
+
+  it('club précis : la distance et sa source', () => {
+    expect(distanceSentence({ km: 4.24, approx: false }, gps)).toBe('4,2 km depuis ta position');
+    expect(distanceSentence({ km: 4.24, approx: false }, zone)).toBe('4,2 km depuis ta zone');
+  });
+
+  it('club au centre-ville : on le DIT, au lieu de faire passer une approximation pour une mesure', () => {
+    expect(distanceSentence({ km: 12.2, approx: true }, gps))
+      .toBe('~12 km depuis ta position (position approximative du club)');
+  });
+
+  it('sans point de départ, ou lieu inconnu : aucune phrase', () => {
+    expect(distanceSentence({ km: 4.2, approx: false }, null)).toBeNull();
+    expect(distanceSentence(null, gps)).toBeNull();
+    expect(distanceSentence(undefined, gps)).toBeNull();
   });
 });
