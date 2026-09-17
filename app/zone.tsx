@@ -24,6 +24,7 @@ export default function ZoneScreen() {
   const [point, setPoint] = useState<LatLng | null>(null);
   const [radiusKm, setRadiusKm] = useState<number>(zone?.radiusKm ?? DEFAULT_RADIUS_KM);
   const [busy, setBusy] = useState<null | 'gps' | 'save' | 'delete'>(null);
+  const [choisi, setChoisi] = useState(false);
   const source = useMemo(() => ({ html: buildZoneMapHtml(), baseUrl: 'https://localhost' }), []);
 
   // Première position de l'épingle : la zone enregistrée, sinon la position
@@ -55,6 +56,7 @@ export default function ZoneScreen() {
       if (msg.type === 'ready') setWebReady(true);
       if (msg.type === 'moved' && Number.isFinite(msg.lat) && Number.isFinite(msg.lng)) {
         setPoint({ lat: msg.lat, lng: msg.lng });
+        setChoisi(true);
       }
     } catch { /* message illisible : ignoré */ }
   }, []);
@@ -74,14 +76,17 @@ export default function ZoneScreen() {
       }
       const p = { lat: fix.lat, lng: fix.lng };
       setPoint(p);
+      setChoisi(true);
       pousser(p, radiusKm, true);
     } finally {
       setBusy(null);
     }
   };
 
+  const peutEnregistrer = !!point && (!!zone || choisi);
+
   const enregistrer = async () => {
-    if (!point) return;
+    if (!point || !peutEnregistrer) return;
     setBusy('save');
     try {
       await saveZone({ lat: point.lat, lng: point.lng, radiusKm });
@@ -157,11 +162,13 @@ export default function ZoneScreen() {
                   <TouchableOpacity
                     key={r}
                     onPress={() => choisirRayon(r)}
+                    disabled={!point}
                     activeOpacity={0.8}
                     style={{
                       flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
                       backgroundColor: on ? Colors.primary : Colors.bgCard,
                       borderWidth: 1, borderColor: on ? Colors.primary : Colors.border,
+                      opacity: point ? 1 : 0.5,
                     }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: on ? Colors.textOnDark : Colors.textSecondary }}>
@@ -175,12 +182,12 @@ export default function ZoneScreen() {
             {gpsAvailable && (
               <TouchableOpacity
                 onPress={placerSurMaPosition}
-                disabled={busy !== null}
+                disabled={!point || busy !== null}
                 activeOpacity={0.85}
                 style={{
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                   paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.bgCard,
-                  borderWidth: 1, borderColor: Colors.border, opacity: busy && busy !== 'gps' ? 0.5 : 1,
+                  borderWidth: 1, borderColor: Colors.border, opacity: !point || (busy && busy !== 'gps') ? 0.5 : 1,
                 }}
               >
                 {busy === 'gps'
@@ -192,13 +199,19 @@ export default function ZoneScreen() {
               </TouchableOpacity>
             )}
 
+            {!zone && !choisi && (
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, marginBottom: -8 }}>
+                Touche la carte ou déplace l'épingle pour choisir ta zone.
+              </Text>
+            )}
+
             <TouchableOpacity
               onPress={enregistrer}
-              disabled={!point || busy !== null}
+              disabled={!peutEnregistrer || busy !== null}
               activeOpacity={0.85}
               style={{
                 alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12,
-                backgroundColor: Colors.brand, opacity: !point || (busy && busy !== 'save') ? 0.5 : 1,
+                backgroundColor: Colors.brand, opacity: !peutEnregistrer || (busy && busy !== 'save') ? 0.5 : 1,
               }}
             >
               {busy === 'save'
