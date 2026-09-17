@@ -3,8 +3,7 @@
 import { supabase } from './supabase';
 import { freeSpots } from './games';
 import type { ClubMarker } from './clubsMapHtml';
-
-const norm = (s: string) => s.trim().toLowerCase();
+import { normClubName as norm } from './geo';
 
 export async function loadClubMarkers(): Promise<ClubMarker[]> {
   // 1) Parties ouvertes par club (nom normalisé → compte)

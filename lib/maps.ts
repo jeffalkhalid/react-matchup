@@ -1,12 +1,11 @@
 // lib/maps.ts — ouverture du terrain d'une partie dans une appli de cartes.
 import { Linking } from 'react-native';
 import { supabase } from './supabase';
+import { normClubName as norm } from './geo';
 
 type Coords = { lat: number; lng: number };
 let clubCache: Map<string, Coords> | null = null;
 let loading: Promise<Map<string, Coords>> | null = null;
-
-const norm = (s: string) => s.trim().toLowerCase();
 
 async function loadClubCoords(): Promise<Map<string, Coords>> {
   if (clubCache) return clubCache;
