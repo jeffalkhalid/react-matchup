@@ -1,5 +1,8 @@
 // scripts/clubs-geo/clubsGeo.mjs — logique PURE du lot 0 de la localisation.
 //
+// Installation (une fois, avant le premier lancement d'un script de ce dossier) :
+//   cd scripts/clubs-geo && npm install
+//
 // 80 clubs sur 108 sont placés au centre de leur ville : toute distance calculée
 // vers eux est fausse. L'utilisateur a fourni un fichier de positions ; ce module
 // décide, sans réseau ni fichier, ce qu'on peut en tirer et ce qu'il faut lui
@@ -12,7 +15,8 @@
 // Mots qui ne distinguent pas un club d'un autre.
 const MOTS_VIDES = new Set((
   'padel club clubs complexe sport sports sportif sportive academy academie ' +
-  'the le la les de du des et and at center centre park football foot tennis fc association'
+  'the le la les de du des et and at center centre park football foot tennis fc association ' +
+  'casa tangier tangiers fez marrakesh'
 ).split(' '));
 
 export function sansAccents(s) {
@@ -54,6 +58,11 @@ export function centresVilles(clubs) {
 
 export const LOIN_DE_LA_VILLE_KM = 30;
 
+/** En dessous de cette distance au centre de la ville, un point n'est pas sur le club. */
+export const CENTRE_VILLE_KM = 0.3;
+
+export const STATUT_CONFIRME = 'Confirmé 2026';
+
 /**
  * Le club du fichier qui correspond le mieux à un club de la base, dans la MÊME
  * ville uniquement, avec les raisons de douter. Ce n'est qu'une proposition :
@@ -78,12 +87,17 @@ export function proposerCorrespondance(club, fichier, centre) {
   if (!meilleure) return { fichier: null, communs: [], score: 0, alertes: ['absent du fichier'] };
 
   const alertes = [];
-  if (meilleure.communs.length === 1 && mb.size >= 2) alertes.push('un seul mot en commun');
+  // Une correspondance sur un seul mot commun est fragile, quel que soit le
+  // nombre de mots du nom en base : on la signale toujours, en nommant le mot.
+  if (meilleure.communs.length === 1) alertes.push(`un seul mot en commun : « ${meilleure.communs[0]} »`);
   if (meilleure.score < 1) alertes.push('noms partiellement différents');
+  if (meilleure.fichier.statut !== STATUT_CONFIRME) {
+    alertes.push(`statut du fichier : ${meilleure.fichier.statut || '(vide)'}`);
+  }
   if (centre) {
     const d = distanceKm(centre, meilleure.fichier);
     if (d > LOIN_DE_LA_VILLE_KM) alertes.push(`loin de la ville (${Math.round(d)} km)`);
-    if (d < 0.3) alertes.push('au centre-ville');
+    if (d < CENTRE_VILLE_KM) alertes.push('au centre-ville');
   }
   return { ...meilleure, alertes };
 }
@@ -100,12 +114,14 @@ export function marquerPointsPartages(propositions) {
 }
 
 const NOMBRE = '(-?\\d{1,3}\\.\\d+)';
-const FORMES_LIEN = [
-  new RegExp(`!3d${NOMBRE}!4d${NOMBRE}`),                                   // épingle d'un lieu
-  new RegExp(`[?&](?:q|ll|query|destination|center)=${NOMBRE},\\s*${NOMBRE}`),
-  new RegExp(`@${NOMBRE},${NOMBRE}`),                                        // centre de la vue
-  new RegExp(`^${NOMBRE}\\s*,\\s*${NOMBRE}$`),                               // « lat, lng » collé
-];
+const RE_EPINGLE = new RegExp(`!3d${NOMBRE}!4d${NOMBRE}`);                    // épingle d'un lieu
+const RE_PARAM = new RegExp(`[?&](?:q|ll|query|destination|center)=${NOMBRE},\\s*${NOMBRE}`);
+const RE_VUE = new RegExp(`@${NOMBRE},${NOMBRE}`);                            // centre de la vue, pas une épingle
+const RE_COLLE = new RegExp(`^${NOMBRE}\\s*,\\s*${NOMBRE}$`);                 // « lat, lng » collé
+
+// La vue (@lat,lng) n'est PAS une épingle : un lien qui n'a qu'elle est refusé
+// par estLienDeVue plutôt que d'être lu comme une position (voir Important 2).
+const FORMES_LIEN = [RE_EPINGLE, RE_PARAM, RE_COLLE];
 
 /** Coordonnées lues dans un lien Google Maps ou un couple « lat, lng ». */
 export function lireLienMaps(texte) {
@@ -124,6 +140,17 @@ export function lireLienMaps(texte) {
   return null;
 }
 
+/**
+ * Vrai si le texte ne contient QUE la vue de la carte (« @lat,lng », l'endroit
+ * où la personne regardait), sans épingle de lieu (`!3d…!4d…`) ni paramètre de
+ * lieu (`q=`/`ll=`/…). Un tel lien n'indique pas la position du club.
+ */
+export function estLienDeVue(texte) {
+  const t = String(texte ?? '').trim();
+  if (!t) return false;
+  return RE_VUE.test(t) && !RE_EPINGLE.test(t) && !RE_PARAM.test(t);
+}
+
 /** Lien court de partage (maps.app.goo.gl) : il faut suivre la redirection. */
 export function estLienCourt(texte) {
   return /(maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(String(texte ?? ''));
@@ -138,25 +165,95 @@ export function controlerPoint(point, centre, ville) {
       || point.lng < MAROC.lngMin || point.lng > MAROC.lngMax) {
     return ['hors du Maroc'];
   }
-  if (centre) {
-    const d = distanceKm(point, centre);
-    if (d > MAX_KM_DE_LA_VILLE) return [`à ${Math.round(d)} km de ${ville}`];
-  }
+  // Sans centre connu, le contrôle de distance ne peut pas être fait : on
+  // refuse plutôt que de le sauter (mineur 7), sauf pour le contrôle du Maroc
+  // ci-dessus qui ne dépend pas du centre.
+  if (!centre) return ['ville inconnue, impossible de contrôler la distance'];
+  const d = distanceKm(point, centre);
+  if (d > MAX_KM_DE_LA_VILLE) return [`à ${Math.round(d)} km de ${ville}`];
+  if (d < CENTRE_VILLE_KM) return ['position au centre-ville, pas sur le club'];
   return [];
 }
 
-/** Ce que l'utilisateur a écrit dans la colonne « Décision ». */
-export function lireDecision(cellule) {
-  const brut = cellule == null ? ''
-    : typeof cellule === 'object' ? String(cellule.hyperlink ?? cellule.text ?? '')
-    : String(cellule);
-  const t = brut.trim();
+/**
+ * Texte visible d'une cellule exceljs (`cell.value` brut) : texte simple,
+ * richText concaténé, résultat d'une formule, ou libellé d'un lien — jamais
+ * l'URL du lien, qui n'est pas ce que la personne voit ni ce qu'elle a tapé.
+ */
+export function texteVisibleCellule(valeur) {
+  if (valeur == null) return '';
+  if (typeof valeur !== 'object') return String(valeur);
+  if (valeur instanceof Date) return valeur.toISOString();
+  if (Array.isArray(valeur.richText)) return valeur.richText.map(t => t?.text ?? '').join('');
+  if ('result' in valeur) return texteVisibleCellule(valeur.result);
+  if ('text' in valeur) return texteVisibleCellule(valeur.text);
+  return '';
+}
+
+/** Hyperlien d'une cellule exceljs (`cell.value` brut), ou null si elle n'en a pas. */
+export function lireHyperlienCellule(valeur) {
+  return valeur && typeof valeur === 'object' && typeof valeur.hyperlink === 'string' ? valeur.hyperlink : null;
+}
+
+const RE_URL_OU_COORD_SEULE = /^(?:https?:\/\/\S+|-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+)$/i;
+const RE_CONTIENT_URL_OU_COORD = /https?:\/\/|-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+/i;
+
+/**
+ * Ce que l'utilisateur a écrit dans la colonne « Décision », à partir du TEXTE
+ * VISIBLE de la cellule (déjà extrait, par ex. avec texteVisibleCellule) et de
+ * son hyperlien éventuel (par ex. avec lireHyperlienCellule). Le texte visible
+ * l'emporte toujours ; l'hyperlien n'est utilisé que si ce texte n'est ni oui,
+ * ni non, ni vide, ni un lien/des coordonnées à lui seul.
+ */
+export function lireDecision(texteVisible, hyperlien) {
+  const t = String(texteVisible ?? '').trim();
+  const lien = hyperlien == null ? '' : String(hyperlien).trim();
   if (!t) return { type: 'vide' };
   const bas = sansAccents(t);
   if (['oui', 'o', 'ok', 'yes', 'y'].includes(bas)) return { type: 'oui' };
   if (['non', 'n', 'no'].includes(bas)) return { type: 'non' };
-  if (/https?:\/\//i.test(t) || /-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+/.test(t)) return { type: 'lien', texte: t };
+  if (RE_URL_OU_COORD_SEULE.test(t)) {
+    if (lien && lien !== t) {
+      return { type: 'refus', raison: 'le texte et le lien de la cellule ne correspondent pas' };
+    }
+    return { type: 'lien', texte: t };
+  }
+  // Mineur 8 : un texte qui MÊLE une URL à d'autres mots n'est pas un lien
+  // exploitable, même si la cellule porte par ailleurs un hyperlien.
+  if (RE_CONTIENT_URL_OU_COORD.test(t)) return { type: 'inconnu', texte: t };
+  if (lien) return { type: 'lien', texte: lien };
   return { type: 'inconnu', texte: t };
+}
+
+/** Identifiants (colonne A) présents plus d'une fois : aucun de ces clubs n'est retenu. */
+export function identifiantsEnDouble(ids) {
+  const comptes = new Map();
+  for (const id of ids) {
+    const t = String(id ?? '').trim();
+    if (t) comptes.set(t, (comptes.get(t) ?? 0) + 1);
+  }
+  return new Set([...comptes].filter(([, n]) => n > 1).map(([id]) => id));
+}
+
+export const ENTETES_ATTENDUES = { A: 'Identifiant', F: 'Latitude', G: 'Longitude', L: 'Décision' };
+
+/**
+ * Vérifie que les en-têtes attendus sont à leur place (colonnes déplacées =
+ * fichier corrompu, tout le reste serait lu au mauvais endroit). Message
+ * d'erreur clair si un en-tête ne correspond pas ; null si tout est en ordre.
+ */
+export function controlerEntetes(entetes) {
+  for (const [colonne, attendu] of Object.entries(ENTETES_ATTENDUES)) {
+    if (String(entetes?.[colonne] ?? '').trim() !== attendu) {
+      return `colonnes déplacées : l'en-tête de la colonne ${colonne} devrait être ${attendu}`;
+    }
+  }
+  return null;
+}
+
+/** Texte sûr pour un commentaire SQL `-- …` : jamais de retour à la ligne. */
+export function commentaireSQL(texte) {
+  return String(texte ?? '').replace(/[\r\n]+/g, ' ');
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
