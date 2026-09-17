@@ -32,6 +32,8 @@ import {
   type ExploreFilters, type ExploreContext, type ExploreReason, type PlayerGender,
 } from '../../lib/exploreFilters';
 import type { DistanceOf } from '../../lib/geo';
+import { useOrigin } from '../../hooks/useOrigin';
+import { formatGameDistance, sortByProximity, originLabel } from '../../lib/geo';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
 import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
@@ -685,6 +687,11 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
 }) {
   const router = useRouter();
   const { width: winW } = useWindowDimensions();
+  // Distance depuis le point de départ (GPS récent ou zone). L'historique n'en
+  // a pas besoin. Même fonction que le filtre : la carte et la liste ne
+  // peuvent pas se contredire.
+  const { distanceOf } = useOrigin();
+  const distance = variant === 'history' ? null : distanceOf(game.location);
   // Échelle des pastilles : 1 dès 392 dp (iPhone), réduite proportionnellement
   // sur les écrans plus étroits (Android 360) pour tenir 4 pastilles par ligne.
   const ps = Math.min(1, Math.max(0.85, winW / 392));
@@ -834,6 +841,12 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               <Text style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
                 {game.location}
               </Text>
+              {/* Sur la MÊME ligne que le club : la carte ne grandit pas (l'accueil ne défile pas). */}
+              {distance ? (
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }} numberOfLines={1}>
+                  {formatGameDistance(distance)}
+                </Text>
+              ) : null}
             </TouchableOpacity>
           ) : null}
           {levelRange ? (
@@ -1616,6 +1629,14 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   // (gender_access.sql) : ceci evite seulement de promettre l'inaccessible.
   const games = useMemo(() => visibleGames(allGames, myGender), [allGames, myGender]);
 
+  const router = useRouter();
+  const { origin, distanceOf, gpsAvailable, zoneAvailable, requestGps, refreshGps } = useOrigin();
+  // Tri de la liste : état d'affichage, jamais enregistré dans un filtre.
+  const [sort, setSort] = useState<'date' | 'proximity'>('date');
+  // Une position de plus de 10 minutes ne compte plus : on la relit en revenant
+  // sur l'Explorer, sans jamais redemander l'autorisation.
+  useFocusEffect(useCallback(() => { void refreshGps(); }, []));
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const villeDuClub = useMemo(() => {
     const m = new Map(clubs.map(c => [c.name, c.city]));
@@ -1623,8 +1644,8 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   }, [clubs]);
   const knownPlayers = useMemo(() => new Set(topPlayers.map(p => p.id)), [topPlayers]);
   const ctx = useMemo(
-    () => exploreCtx(myElo, villeDuClub, knownPlayers),
-    [myElo, villeDuClub, knownPlayers],
+    () => exploreCtx(myElo, villeDuClub, knownPlayers, distanceOf),
+    [myElo, villeDuClub, knownPlayers, distanceOf],
   );
   // Les lieux ou il se passe quelque chose : le volet n'offre que ceux-la.
   const activeClubNames = useMemo(
@@ -1717,6 +1738,37 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     [filtered, showForYou, recommendedIds],
   );
 
+  // « Proximité » : distances précises d'abord, puis approximatives, puis
+  // inconnues (lib/geo.sortByProximity). Sans point de départ, ordre des dates.
+  const recommendedShown = useMemo(
+    () => (sort === 'proximity' && origin ? sortByProximity(recommended, distanceOf) : recommended),
+    [sort, origin, recommended, distanceOf],
+  );
+  const mainListShown = useMemo(
+    () => (sort === 'proximity' && origin ? sortByProximity(mainList, distanceOf) : mainList),
+    [sort, origin, mainList, distanceOf],
+  );
+
+  // Premier usage d'une fonction de distance sans point de départ : c'est ICI,
+  // et seulement ici, qu'on demande l'autorisation GPS.
+  const demanderPointDeDepart = async (): Promise<boolean> => {
+    if (gpsAvailable && await requestGps()) return true;
+    if (zoneAvailable) {
+      Alert.alert('Choisis ta zone', 'Sans ta position, les distances se calculent depuis ta zone de jeu.', [
+        { text: 'Plus tard', style: 'cancel' },
+        { text: 'Choisir ma zone', onPress: () => router.push('/zone' as any) },
+      ]);
+    } else {
+      Alert.alert('Position indisponible', 'Autorise la localisation dans les réglages du téléphone.');
+    }
+    return false;
+  };
+
+  const choisirTri = async (v: 'date' | 'proximity') => {
+    if (v === 'proximity' && !origin && !(await demanderPointDeDepart())) return;
+    setSort(v);
+  };
+
   const countLabel = filters.urgentOnly ? `urgente${mainList.length > 1 ? 's' : ''}`
     : `disponible${mainList.length > 1 ? 's' : ''}`;
 
@@ -1804,6 +1856,33 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         )}
       </View>
 
+      {(gpsAvailable || zoneAvailable) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginBottom: 12 }}>
+          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>Trier</Text>
+          {([['date', 'Date'], ['proximity', 'Proximité']] as const).map(([v, l]) => {
+            const on = sort === v;
+            return (
+              <TouchableOpacity
+                key={v}
+                onPress={() => { void choisirTri(v); }}
+                activeOpacity={0.85}
+                style={{
+                  paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999,
+                  backgroundColor: on ? Colors.primary : Colors.bgCard,
+                  borderWidth: 1, borderColor: on ? Colors.primary : Colors.border,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: on ? Colors.textOnDark : Colors.textSecondary }}>{l}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          <View style={{ flex: 1 }} />
+          {origin && (sort === 'proximity' || filters.maxKm !== null) && (
+            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>{originLabel(origin)}</Text>
+          )}
+        </View>
+      )}
+
       {/* Jamais un cul-de-sac : on nomme le filtre dont le retrait revele le
           plus, plutot qu'un « aucun resultat » muet. */}
       {escape && (
@@ -1855,7 +1934,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
             ✨ Pour toi · {recommended.length}
           </Text>
           <View style={{ paddingHorizontal: 14, gap: 10 }}>
-            {recommended.map((g, i) => (
+            {recommendedShown.map((g, i) => (
               // 1ʳᵉ carte visible du lobby = ancre de la visite guidée (étapes 3-4).
               <View key={g.id} ref={i === 0 ? (v) => registerTourAnchor('lobby-card', v) : undefined} collapsable={false}>
                 <GameCard game={g} variant="explore" myElo={myElo} playerId={playerId}
@@ -1940,7 +2019,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
                     </View>
                   ))
             : <View style={{ gap: 10 }}>
-                {mainList.map((g, i) => (
+                {mainListShown.map((g, i) => (
                   // Sans bloc « Pour toi », la 1ʳᵉ carte de la liste porte l'ancre visite guidée.
                   <View key={g.id} ref={!showForYou && i === 0 ? (v) => registerTourAnchor('lobby-card', v) : undefined} collapsable={false}>
                     <GameCard game={g} variant="explore" myElo={myElo} playerId={playerId}
@@ -2253,6 +2332,8 @@ export default function LobbyScreen() {
   // etats separes avaient deja produit trois copies divergentes de la meme
   // regle sans que rien ne le signale.
   const [exploreFilters, setExploreFilters] = useState<ExploreFilters>(NO_EXPLORE_FILTERS);
+  // Le compteur de l'onglet applique la même distance que la liste.
+  const { distanceOf: distanceOfBadge } = useOrigin();
 
   // Le referentiel des clubs, pour les pastilles de club et de ville. Les
   // parties portent le NOM du club, pas son identifiant : c'est par le nom
@@ -3429,8 +3510,8 @@ export default function LobbyScreen() {
   const upcomingBadge = upcomingGames.filter(g => isConfirmedInGame(g, player.id)).length;
   // Badge Explorer = nombre de parties APRÈS application des filtres (Option A).
   const exploreBadge = useMemo(
-    () => filterExplore(games, exploreFilters, exploreCtx(myElo, n => clubCity.get(n) ?? null)).kept.length,
-    [games, exploreFilters, myElo, clubCity],
+    () => filterExplore(games, exploreFilters, exploreCtx(myElo, n => clubCity.get(n) ?? null, new Set(), distanceOfBadge)).kept.length,
+    [games, exploreFilters, myElo, clubCity, distanceOfBadge],
   );
   const scoresToValidate = matches.filter(m => matchNeedsMyAction(m, player.id) !== null).length;
 
