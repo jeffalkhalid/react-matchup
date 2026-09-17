@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, TextInput, Alert, StyleSheet, Modal,
   Share, Linking, Image, useWindowDimensions,
+  InteractionManager,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,15 +36,17 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, SCORE_WINDOW_MS } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, eloFitsGame, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
 import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { isBadgeVisible } from '../../lib/badges';
 import { Icon, type IconName } from '../../components/community/icons';
-import { fetchBinomeInvitations, fetchMyApplications, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, type DefiApplication } from '../../lib/defis';
+import { fetchBinomeInvitations, fetchMyApplications, fetchQueuedBinomeCounts, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, applicationPairAverage, type DefiApplication } from '../../lib/defis';
+import { defiRefusalMessage } from '../../lib/defiMessages';
 import { notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { registerTourAnchor, useTourInfo } from '../../lib/tourAnchors';
 
@@ -64,7 +67,9 @@ interface EnrichedGame extends OpenGame {
 function getEloFit(game: OpenGame, myElo: number): EloFit {
   const min = game.min_elo ?? 0;
   const max = game.max_elo ?? 9999;
-  if (myElo >= min && myElo <= max) return 'fit';
+  // Même règle que les suggestions de l'accueil (lib/games.eloFitsGame) :
+  // une seule définition de « dans ma fourchette ».
+  if (eloFitsGame(game, myElo)) return 'fit';
   const margin = Math.min(Math.abs(myElo - min), Math.abs(myElo - max));
   return margin <= 100 ? 'close' : 'outside';
 }
@@ -126,20 +131,21 @@ function hashTone(name: string) {
 // Couleurs équipe (charte) — A = ink, B = brand
 const TEAM_BG  = { A: Colors.primary,    B: Colors.brand };
 const TEAM_FG  = { A: Colors.textOnDark, B: Colors.textOnBrand };
-function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?: number; ring?: string; team?: 'A' | 'B'; creator?: boolean }) {
+function Avatar({ name, size = 28, ring, team, creator, path }: {
+  name: string; size?: number; ring?: string; team?: 'A' | 'B'; creator?: boolean;
+  /** Photo du joueur ; initiales si absente. */
+  path?: string | null;
+}) {
   const tone = hashTone(name);
   const bg = team ? TEAM_BG[team] : tone.bg;
   const fg = team ? TEAM_FG[team] : tone.fg;
   const bs = Math.max(13, Math.round(size * 0.5));
   return (
-    <View style={{
-      width: size, height: size, borderRadius: Math.round(size * 0.3),
-      backgroundColor: bg, alignItems: 'center', justifyContent: 'center',
-      borderWidth: ring ? 2 : 0, borderColor: ring ?? 'transparent',
-    }}>
-      <Text style={{ color: fg, fontSize: Math.round(size * 0.42), fontWeight: '900' }}>
-        {(name || '?').charAt(0).toUpperCase()}
-      </Text>
+    <PlayerAvatar
+      name={name} path={path} size={size} radius={Math.round(size * 0.3)}
+      backgroundColor={bg} textColor={fg} fontSize={Math.round(size * 0.42)}
+      ring={ring ? 2 : undefined} ringColor={ring}
+    >
       {creator ? (
         <View style={{
           position: 'absolute', top: -4, right: -4,
@@ -150,7 +156,7 @@ function Avatar({ name, size = 28, ring, team, creator }: { name: string; size?:
           <Icon name="crown" size={Math.round(bs * 0.62)} color={Colors.primary} fill={Colors.primary} stroke={2.2} />
         </View>
       ) : null}
-    </View>
+    </PlayerAvatar>
   );
 }
 
@@ -331,10 +337,10 @@ const SIDE_TO_IDX: Record<string, number> = { A_GAU: 0, A_DRO: 1, B_GAU: 2, B_DR
 const IDX_TO_SIDE: Record<number, string> = { 0: 'A_GAU', 1: 'A_DRO', 2: 'B_GAU', 3: 'B_DRO' };
 
 function buildGameSlots(game: EnrichedGame, myId: string) {
-  const slots: Array<{ id: string; name: string; isMe: boolean; isInvited?: boolean; isCreator?: boolean; elo?: number | null } | null> = [null, null, null, null];
-  const creator = game.creator as { name?: string; elo_score?: number | null } | undefined;
+  const slots: Array<{ id: string; name: string; isMe: boolean; isInvited?: boolean; isCreator?: boolean; elo?: number | null; avatarPath?: string | null } | null> = [null, null, null, null];
+  const creator = game.creator as { name?: string; elo_score?: number | null; avatar_path?: string | null } | undefined;
   const creatorIdx = SIDE_TO_IDX[game.creator_side ?? 'A_GAU'] ?? 0;
-  slots[creatorIdx] = { id: game.creator_id, name: creator?.name ?? '?', isMe: game.creator_id === myId, isCreator: true, elo: creator?.elo_score ?? null };
+  slots[creatorIdx] = { id: game.creator_id, name: creator?.name ?? '?', isMe: game.creator_id === myId, isCreator: true, elo: creator?.elo_score ?? null, avatarPath: creator?.avatar_path ?? null };
   (game.participants ?? [])
     .filter((p: any) => (p.status === 'accepted' || (p.status === 'invited' && isInviteActive(p))) && p.player_id !== game.creator_id)
     .forEach((p: any) => {
@@ -344,6 +350,7 @@ function buildGameSlots(game: EnrichedGame, myId: string) {
         isMe: p.player_id === myId,
         isInvited: p.status === 'invited',
         elo: p.player?.elo_score ?? null,
+        avatarPath: p.player?.avatar_path ?? null,
       };
       const idx = SIDE_TO_IDX[p.team_side ?? ''];
       if (idx !== undefined && !slots[idx]) { slots[idx] = sp; return; }
@@ -424,7 +431,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           activeOpacity={0.7}
           hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           style={{ alignItems: 'center', gap: 3, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
-          <Avatar name={s.name} size={42} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
+          <Avatar name={s.name} path={s.avatarPath} size={42} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
           <Text
             numberOfLines={1}
             style={{
@@ -522,7 +529,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
 }
 
 // ─── Avatar row ───────────────────────────────────────────────
-function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: string; team?: 'A' | 'B'; isCreator?: boolean }>; slots: number }) {
+function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: string; team?: 'A' | 'B'; isCreator?: boolean; avatarPath?: string | null }>; slots: number }) {
   const router = useRouter();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -533,7 +540,7 @@ function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: str
           onPress={() => p.id && router.push(`/player/${p.id}` as any)}
           activeOpacity={0.7}
           style={{ marginLeft: i === 0 ? 0 : -8, zIndex: players.length - i }}>
-          <Avatar name={p.name} size={28} ring={Colors.bgCard} team={p.team} creator={p.isCreator} />
+          <Avatar name={p.name} path={p.avatarPath} size={28} ring={Colors.bgCard} team={p.team} creator={p.isCreator} />
         </TouchableOpacity>
       ))}
       {Array.from({ length: slots }).map((_, i) => (
@@ -666,13 +673,15 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   const isUrgent = isUrgentGame(game);
   const urgentDelay = urgentDelayLabel(game.match_date);
   const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
-  const creatorObj = game.creator as { id?: string; name: string } | undefined;
+  const creatorObj = game.creator as { id?: string; name: string; avatar_path?: string | null } | undefined;
   const teamOf = (side?: string): 'A' | 'B' | undefined => side ? (side.startsWith('B') ? 'B' : 'A') : undefined;
-  const allPlayers: Array<{ id?: string; name: string; team?: 'A' | 'B'; isCreator?: boolean }> = [
-    ...(creatorObj?.name ? [{ id: creatorObj.id ?? game.creator_id, name: creatorObj.name, team: teamOf((game as any).creator_side), isCreator: true }] : []),
+  const allPlayers: Array<{ id?: string; name: string; team?: 'A' | 'B'; isCreator?: boolean; avatarPath?: string | null }> = [
+    ...(creatorObj?.name ? [{ id: creatorObj.id ?? game.creator_id, name: creatorObj.name, team: teamOf((game as any).creator_side), isCreator: true, avatarPath: creatorObj.avatar_path ?? null }] : []),
     ...accepted.flatMap(p => {
-      const nm = (p.player as { name: string } | undefined)?.name;
-      return nm && p.player_id !== game.creator_id ? [{ id: p.player_id, name: nm, team: teamOf((p as any).team_side) }] : [];
+      const pl = p.player as { name: string; avatar_path?: string | null } | undefined;
+      return pl?.name && p.player_id !== game.creator_id
+        ? [{ id: p.player_id, name: pl.name, team: teamOf((p as any).team_side), avatarPath: pl.avatar_path ?? null }]
+        : [];
     }),
   ];
   // Fourchette via gameEloRange (source unique) : défi ciblé sans contrainte →
@@ -697,6 +706,17 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   // attendent une réponse (cf. spotsLabel / freeSpots).
   // Style contour ambre partagé par les pastilles de statut « en cours ».
   const warnTag = { bg: Colors.bgCard, fg: pillAccent('warning'), border: 'rgba(245,158,11,0.50)' };
+
+  // Défi complet : on attend par BINÔME, pas par joueur — la file vit dans
+  // defi_applications, pas dans les participants. Sans cette pastille, la carte
+  // disait « Complet » et rien d'autre alors qu'un binôme attendait (vu sur
+  // device, onglet À venir vs onglet Défi).
+  const queuedBinomes = (game as any).queued_binomes ?? 0;
+  const queuePill = variant !== 'history' && game.is_challenge && queuedBinomes > 0 ? (
+    <CardTag {...warnTag} s={ps}>
+      {queuedBinomes} binôme{queuedBinomes > 1 ? 's' : ''} en file
+    </CardTag>
+  ) : null;
 
   const placesPill = variant !== 'history' ? (
     spotsLeft > 0 ? <CardTag bg={Colors.brand} fg={Colors.textOnBrand} s={ps}>{spotsLeft} place{spotsLeft > 1 ? 's' : ''}</CardTag>
@@ -773,6 +793,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
           <View style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             {myStatusPill}
             {placesPill}
+            {queuePill}
           </View>
           </View>
 
@@ -2297,12 +2318,22 @@ export default function LobbyScreen() {
   // RETOURNE à la fermeture au lieu de laisser l'utilisateur dans le lobby.
   const returnToDefiRef = useRef<string | null>(null);
 
-  // Derived: always reflects latest fetched data — no stale snapshots
-  const openGame = useMemo(
-    () => [...games, ...upcomingGames, ...pastCompleteGames].find(g => g.id === openGameId)
-      ?? (detailGame?.id === openGameId ? detailGame : null),
-    [openGameId, games, upcomingGames, pastCompleteGames, detailGame],
-  );
+  // La fiche affiche toujours les données les plus fraîches… MAIS elle ne doit
+  // JAMAIS disparaître toute seule. Si la partie ouverte sort des listes pendant
+  // qu'on la regarde (rafraîchissement, score validé, créneau passé), la fiche
+  // se démontait d'un coup : sur iPhone, une Modal retirée sans avoir été
+  // fermée laisse un écran FIGÉ, qui ne répond plus au défilement alors que la
+  // navigation continue de marcher (constaté le 2026-09-16).
+  // On garde donc la dernière version connue tant que la fiche est ouverte ;
+  // seule la fermeture (openGameId = null) la démonte.
+  const lastOpenGameRef = useRef<EnrichedGame | null>(null);
+  const openGame = useMemo(() => {
+    if (!openGameId) { lastOpenGameRef.current = null; return null; }
+    const frais = [...games, ...upcomingGames, ...pastCompleteGames].find(g => g.id === openGameId)
+      ?? (detailGame?.id === openGameId ? detailGame : null);
+    if (frais) { lastOpenGameRef.current = frais; return frais; }
+    return lastOpenGameRef.current?.id === openGameId ? lastOpenGameRef.current : null;
+  }, [openGameId, games, upcomingGames, pastCompleteGames, detailGame]);
 
   // Ouvre le détail d'une partie par id, en la chargeant si elle n'est pas déjà
   // dans les listes (cas des défis non rejoints : à relever, invitation).
@@ -2311,7 +2342,7 @@ export default function LobbyScreen() {
     if (!inList) {
       const { data } = await supabase
         .from('open_games')
-        .select('*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, application_note, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))')
+        .select('*, creator:creator_id(id, name, elo_score, avatar_path, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, application_note, created_at, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, win_count, loss_count))')
         .eq('id', id)
         .single();
       if (data) setDetailGame({ ...(data as any), is_creator: (data as any).creator_id === player?.id });
@@ -2325,8 +2356,8 @@ export default function LobbyScreen() {
   const fetchData = useCallback(async () => {
     if (!player) return;
 
-    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, application_note, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
-    const MATCH_SELECT = '*, winner:winner_id(id, name, deleted_at, elo_score), winner_2:winner_id_2(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score), game:game_id(location, match_date, creator_id)';
+    const GAME_SELECT = '*, creator:creator_id(id, name, elo_score, avatar_path, win_count, loss_count), participants:game_participants(id, player_id, status, team_side, approvals, application_note, created_at, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, win_count, loss_count))';
+    const MATCH_SELECT = '*, winner:winner_id(id, name, deleted_at, elo_score, avatar_path), winner_2:winner_id_2(id, name, deleted_at, elo_score, avatar_path), loser:loser_id(id, name, deleted_at, elo_score, avatar_path), loser_2:loser_id_2(id, name, deleted_at, elo_score, avatar_path), game:game_id(location, match_date, creator_id)';
     const myMatchOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
     const scoreWindowAgo = new Date(Date.now() - SCORE_WINDOW_MS).toISOString();
 
@@ -2364,6 +2395,12 @@ export default function LobbyScreen() {
         .select(MATCH_SELECT)
         .or(myMatchOr)
         .in('status', ['pending', 'counter_proposed'])
+        // Un score n'existe pour le camp adverse qu'à partir de son heure
+        // d'ouverture (heure du match + 1h30, cf. lib/matches.isValidationOpen
+        // et la migration score_validation_delay.sql) : on ne le charge même
+        // pas avant. L'auteur, lui, garde ses scores — il doit pouvoir
+        // résoudre une contestation.
+        .or(`created_by.eq.${player.id},validation_opens_at.lte.${new Date().toISOString()}`)
         .order('created_at', { ascending: false }),
       // Historique validé : troncature d'affichage assumée (20 derniers).
       supabase
@@ -2500,7 +2537,18 @@ export default function LobbyScreen() {
       !alreadyInIds.has(g.id) && genderAllowed(g) && notExpired(g) && !hidden.has(g.creator_id)
       && (!g.is_challenge || isDefiQueueOpen(g, promoWin))) as EnrichedGame[]);
 
-    const allUpcoming = [...creatorGames, ...participantGames];
+    const allUpcomingRaw = [...creatorGames, ...participantGames];
+    // Combien de binômes attendent sur mes défis complets — MÊME source que
+    // l'onglet Défi (lib/defis), pour que les deux écrans disent le même
+    // nombre. Une seule requête pour toutes les cartes.
+    const queuedCounts = await fetchQueuedBinomeCounts(
+      allUpcomingRaw.filter(g => (g as any).is_challenge).map(g => g.id),
+    );
+    const allUpcoming = queuedCounts.size === 0
+      ? allUpcomingRaw
+      : allUpcomingRaw.map(g => (queuedCounts.get(g.id)
+          ? { ...g, queued_binomes: queuedCounts.get(g.id) } as EnrichedGame
+          : g));
     const now = new Date();
     // Actions d'abord (tri created_at desc préservé par section), historique ensuite.
     const matchRows = [
@@ -2596,13 +2644,36 @@ export default function LobbyScreen() {
 
   // Auto-ouvre le GameDetailsSheet quand on arrive depuis une notif ou une carte
   // défi (lien ?gameId=). Charge la partie par id si elle n'est pas dans les listes.
+  // `openGameById` change d'identité à CHAQUE rafraîchissement des listes (il
+  // en dépend), donc cet effet se relançait en boucle et rouvrait la fiche
+  // pendant qu'elle s'affichait. Un verrou par id : on n'ouvre qu'une fois.
+  const autoOpenedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!gameIdParam || loading) return;
+    if (autoOpenedRef.current === gameIdParam) return;
+    autoOpenedRef.current = gameIdParam;
     returnToDefiRef.current = backToDefi ?? null;   // retour au hub à la fermeture ?
     setTab('upcoming');
-    openGameById(gameIdParam);
-    router.setParams({ gameId: undefined, backToDefi: undefined });
+    // Deux précautions contre l'écran figé (constaté le 2026-09-16 en ouvrant
+    // le « Prochain match » depuis l'accueil) :
+    //  1. on attend la FIN de l'arrivée sur le lobby : ouvrir une fenêtre
+    //     modale pendant la transition d'écran laisse, sur iPhone, une fenêtre
+    //     fantôme qui avale les touches ;
+    //  2. on ne touche PAS aux paramètres de l'écran maintenant — les effacer
+    //     pendant que la fiche s'ouvre relance la navigation sous elle. Ils
+    //     sont effacés à la fermeture (voir onClose).
+    const tache = InteractionManager.runAfterInteractions(() => { void openGameById(gameIdParam); });
+    return () => tache.cancel();
   }, [gameIdParam, loading, openGameById, backToDefi]);
+
+  // Fiche fermée (par le bouton, en quittant la partie, après un score…) : le
+  // verrou saute, sinon on ne pourrait plus jamais rouvrir la MÊME partie.
+  useEffect(() => { if (!openGameId) autoOpenedRef.current = null; }, [openGameId]);
+
+  // Dernière partie affichée : la fiche RESTE montée après la fermeture, pour
+  // que la fenêtre s'efface avec son animation au lieu d'être arrachée.
+  const [sheetGame, setSheetGame] = useState<EnrichedGame | null>(null);
+  useEffect(() => { if (openGame) setSheetGame(openGame); }, [openGame]);
 
   // Auto-ouvre le wizard de création quand on arrive avec ?rematch=<matchId> (depuis le profil).
   useEffect(() => {
@@ -3091,7 +3162,7 @@ export default function LobbyScreen() {
     // accepter (plus d'auth) et bloquerait le créneau à vie. Son slot reste libre.
     const { data: players } = await supabase
       .from('players')
-      .select('id, name, elo_score')
+      .select('id, name, elo_score, avatar_path')
       .in('id', allIds)
       .is('deleted_at', null);
     const byId = new Map((players ?? []).map((p: any) => [p.id, p]));
@@ -3268,8 +3339,11 @@ export default function LobbyScreen() {
       await fetchData();
       reloadNotifs();
     } catch (e: any) {
+      const refus = defiRefusalMessage(e, app.game, applicationPairAverage(app));
       if (isCreatorConflict(e)) {
         Alert.alert('⚠️ Conflit de créneau', 'Toi ou ton binôme êtes déjà engagés sur une autre partie au même créneau (±2h).');
+      } else if (refus) {
+        Alert.alert(refus.title, refus.body);
       } else {
         Alert.alert('Erreur', e?.message ?? 'Action impossible.');
       }
@@ -3359,7 +3433,7 @@ export default function LobbyScreen() {
         {/* Title row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
           <View style={{ flexShrink: 1 }}>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            <Text numberOfLines={2}
               style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
               Le <Text style={{ color: Colors.brand }}>Lobby</Text>
             </Text>
@@ -3488,16 +3562,25 @@ export default function LobbyScreen() {
 
       {/* FAB retiré : la création se fait via l'onglet « Créer » de la barre d'onglets. */}
 
-      {openGame && (
+      {/* Montée tant qu'une partie a été ouverte : c'est `visible` qui ouvre et
+          ferme la fenêtre, jamais le démontage (cf. le commentaire de Props). */}
+      {(openGame ?? sheetGame) && (
         <GameDetailsSheet
-          game={openGame}
+          visible={!!openGame}
+          game={(openGame ?? sheetGame)!}
           myElo={myElo}
           playerId={player.id}
           onClose={() => {
             const back = returnToDefiRef.current;
             returnToDefiRef.current = null;
             setOpenGameId(null); setDetailGame(null);
-            if (back) router.replace((`/(tabs)/matchmaking?tab=${back}`) as any);
+            // Nettoyage APRÈS la fermeture : pendant que la fiche est ouverte,
+            // toute navigation se joue sous une fenêtre modale et la laisse en
+            // vrac (cf. la note « Nav depuis Modal native »).
+            InteractionManager.runAfterInteractions(() => {
+              router.setParams({ gameId: undefined, backToDefi: undefined });
+              if (back) router.replace((`/(tabs)/matchmaking?tab=${back}`) as any);
+            });
           }}
           onApply={handleApply}
           onChangeSide={handleChangeSide}

@@ -12,6 +12,7 @@ import { fetchUnreadCounts } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
 import { AMB_REVEAL_SEEN_KEY, isAmbassador } from '../../lib/ambassador';
 import HelpCenter from '../../components/HelpCenter';
+import { TabBarHiddenContext } from '../../components/TabBarVisibility';
 import GuidedTour from '../../components/tour/GuidedTour';
 import { GUIDE_KEY } from '../../lib/guideTheme';
 import { onTourReplay, registerTourAnchor } from '../../lib/tourAnchors';
@@ -97,6 +98,7 @@ function CreateTabButton({ ...rest }: any) {
 }
 
 export default function TabLayout() {
+  const [tabBarHidden, setTabBarHidden] = useState(false);
   const { player, loading } = usePlayer();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -203,11 +205,14 @@ export default function TabLayout() {
   }, [player]);
 
   return (
+    <TabBarHiddenContext.Provider value={setTabBarHidden}>
     <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
+          // Masquée quand un écran affiche un calque plein écran (fiche de partie).
+          display: tabBarHidden ? 'none' : 'flex',
           backgroundColor: 'rgba(255,255,255,0.97)',
           overflow: 'visible',
           borderTopColor: Colors.borderLight,
@@ -281,5 +286,6 @@ export default function TabLayout() {
       <GuidedTour onDone={() => { setTourReplay(false); finishOnboarding(); }} />
     )}
     </View>
+    </TabBarHiddenContext.Provider>
   );
 }

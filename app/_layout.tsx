@@ -1,6 +1,7 @@
 import '../global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useEffect } from 'react';
 import { useFonts, Anton_400Regular } from '@expo-google-fonts/anton';
 import { Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
@@ -22,6 +23,31 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 export const unstable_settings = {
   initialRouteName: 'index',
 };
+
+// Expo Router appelle ce composant quand le rendu d'un écran lève une exception.
+// Sans lui, l'app affiche un écran BLANC et devient inutilisable, sans dire
+// pourquoi (constaté le 2026-09-16 en ouvrant une fiche). Le message est donc
+// montré, et « Réessayer » relance l'écran sans redémarrer l'app.
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Promise<void> }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: Colors.bg, padding: 20, justifyContent: 'center' }}>
+      <Text style={{ fontSize: 20, fontWeight: '900', color: Colors.textPrimary, marginBottom: 8 }}>
+        Cet écran n’a pas pu s’afficher
+      </Text>
+      <ScrollView style={{ maxHeight: 260, backgroundColor: Colors.bgCardAlt, borderRadius: 12, padding: 12 }}>
+        <Text selectable style={{ fontSize: 12, color: Colors.textPrimary }}>
+          {String(error?.message ?? error)}
+        </Text>
+      </ScrollView>
+      <TouchableOpacity
+        onPress={() => { void retry(); }}
+        activeOpacity={0.85}
+        style={{ marginTop: 16, backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+        <Text style={{ fontWeight: '900', color: Colors.textOnBrand }}>Réessayer</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 function RootNavigator() {
   const { player } = usePlayer();
