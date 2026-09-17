@@ -7,6 +7,11 @@
 // Ordre : GPS de moins de 10 minutes → zone → aucun (lib/geo.resolveOrigin).
 // L'autorisation GPS n'est JAMAIS demandée ici au chargement : seulement par
 // `requestGps`, appelé sur un geste du joueur.
+//
+// supabase-js ne lève pas hors ligne, il rend `{ error }` : un échec réseau ne
+// doit jamais se faire passer pour « pas de zone » / « pas de clubs ». Le
+// magasin distingue donc `loadFailed` (chargement en échec, à réessayer) de
+// `zoneAvailable` (la fonctionnalité existe, migration appliquée).
 import { useEffect, useSyncExternalStore } from 'react';
 import { usePlayer } from './usePlayer';
 import { supabase } from '../lib/supabase';
@@ -18,12 +23,15 @@ import {
   gpsAvailable, gpsPermission, requestGpsPermission, readGpsPosition, type GpsPermission,
 } from '../lib/location';
 import { fetchMyZone, saveMyZone, deleteMyZone } from '../lib/playerZone';
+import { shouldReloadOrigin, shouldReadGps } from '../lib/originPolicy';
 
 interface OriginState {
   playerId: string | null;
   ready: boolean;
   zone: ZonePoint | null;
   zoneAvailable: boolean;
+  /** Le dernier chargement (zone + clubs) a échoué : à réessayer, pas à interpréter. */
+  loadFailed: boolean;
   gps: GpsFix | null;
   gpsPermission: GpsPermission;
   index: Map<string, ClubPoint>;
@@ -32,13 +40,22 @@ interface OriginState {
 }
 
 const VIDE: OriginState = {
-  playerId: null, ready: false, zone: null, zoneAvailable: true, gps: null,
+  playerId: null, ready: false, zone: null, zoneAvailable: true, loadFailed: false, gps: null,
   gpsPermission: 'undetermined', index: new Map(), origin: null,
   distanceOf: makeDistanceOf(null, new Map()),
 };
 
 let state: OriginState = VIDE;
 let chargement: Promise<void> | null = null;
+// Horodatage de la dernière tentative de chargement zone+clubs — sert au
+// throttle de reloadOrigin (lib/originPolicy.shouldReloadOrigin).
+let derniereChargeAt: number | null = null;
+// Horodatage du dernier échec de LECTURE GPS — sert au throttle de
+// refreshGps/verifierFraicheur (lib/originPolicy.shouldReadGps).
+let gpsFailureAt: number | null = null;
+// Une seule lecture GPS à la fois : requestGps, refreshGps et le chargement
+// initial partagent cette promesse au lieu d'en lancer une seconde.
+let lectureGps: Promise<GpsFix | null> | null = null;
 const abonnes = new Set<() => void>();
 let minuteur: ReturnType<typeof setInterval> | null = null;
 
@@ -48,26 +65,56 @@ const memeOrigine = (a: Origin | null, b: Origin | null) =>
 function publier(patch: Partial<OriginState>): void {
   const next = { ...state, ...patch };
   const origin = resolveOrigin(next.gps, next.zone, Date.now());
-  const inchange = memeOrigine(origin, state.origin) && next.index === state.index;
-  next.origin = inchange ? state.origin : origin;
+  const inchangeOrigin = memeOrigine(origin, state.origin) && next.index === state.index;
+  next.origin = inchangeOrigin ? state.origin : origin;
   // Nouvelle fonction SEULEMENT si le point de départ ou les clubs changent :
   // les distances déjà calculées restent en mémoire sinon.
-  next.distanceOf = inchange ? state.distanceOf : makeDistanceOf(origin, next.index);
+  next.distanceOf = inchangeOrigin ? state.distanceOf : makeDistanceOf(origin, next.index);
+  // Rien de changé, champ par champ, par identité : ne pas remplacer l'état
+  // ni prévenir les abonnés pour rien.
+  const cles = Object.keys(next) as (keyof OriginState)[];
+  if (cles.every(k => next[k] === state[k])) return;
   state = next;
   abonnes.forEach(f => f());
 }
 
-async function chargerClubs(): Promise<Map<string, ClubPoint>> {
+/** `null` en cas d'erreur — JAMAIS un index vide, qui se lirait comme « aucun club ». */
+async function chargerClubs(): Promise<Map<string, ClubPoint> | null> {
   try {
     const { data, error } = await supabase
       .from('clubs')
       .select('name, latitude, longitude, geo_confidence')
       .not('latitude', 'is', null);
-    if (error) return new Map();
+    if (error) return null;
     return buildClubIndex((data ?? []) as ClubRow[]);
   } catch {
-    return new Map();
+    return null;
   }
+}
+
+/**
+ * Charge zone + clubs pour `playerId`, utilisé au premier chargement ET par
+ * reloadOrigin(). Un échec réseau ne remplace jamais une donnée déjà connue
+ * par du vide : la zone garde sa dernière valeur bonne, l'index de clubs
+ * aussi (sinon un index vide tant qu'aucun n'a jamais réussi).
+ */
+async function chargerZoneEtClubs(playerId: string): Promise<Partial<OriginState>> {
+  derniereChargeAt = Date.now();
+  const [zone, clubs] = await Promise.all([fetchMyZone(playerId), chargerClubs()]);
+  return {
+    zone: zone.status === 'error' ? state.zone : zone.zone,
+    zoneAvailable: zone.status !== 'missing',
+    index: clubs ?? (state.index.size > 0 ? state.index : new Map<string, ClubPoint>()),
+    loadFailed: zone.status === 'error' || clubs === null,
+  };
+}
+
+/** Une seule lecture GPS en vol : les appelants partagent la même promesse. */
+function lireGps(): Promise<GpsFix | null> {
+  if (!lectureGps) {
+    lectureGps = readGpsPosition().finally(() => { lectureGps = null; });
+  }
+  return lectureGps;
 }
 
 function charger(playerId: string): Promise<void> {
@@ -76,42 +123,65 @@ function charger(playerId: string): Promise<void> {
   state = { ...VIDE, playerId };
   abonnes.forEach(f => f());
   chargement = (async () => {
-    const [zone, index, permission] = await Promise.all([
-      fetchMyZone(playerId), chargerClubs(), gpsPermission(),
+    const [donnees, permission] = await Promise.all([
+      chargerZoneEtClubs(playerId), gpsPermission(),
     ]);
     if (state.playerId !== playerId) return;
-    publier({ zone: zone.zone, zoneAvailable: zone.available, index, gpsPermission: permission, ready: true });
+    publier({ ...donnees, gpsPermission: permission, ready: true });
+    // Échec : on invalide le cache pour qu'un appel ultérieur (remontage d'un
+    // écran, reloadOrigin) relance vraiment le chargement au lieu de rendre
+    // pour toujours cette même tentative ratée.
+    if (donnees.loadFailed) chargement = null;
     // Autorisation DÉJÀ donnée : on lit la position sans rien demander.
     if (permission === 'granted') {
-      const gps = await readGpsPosition();
+      const gps = await lireGps();
       if (state.playerId === playerId && gps) publier({ gps });
     }
   })();
   return chargement;
 }
 
-async function requestGps(): Promise<GpsFix | null> {
+/**
+ * Relance le chargement zone + clubs pour le joueur courant — seulement si le
+ * dernier a échoué et que le throttle de 30 s est passé (lib/originPolicy).
+ * Sans effet si la zone est simplement absente ('missing') : ça ne changera
+ * pas tout seul.
+ */
+async function reloadOrigin(): Promise<void> {
+  const playerId = state.playerId;
+  if (!playerId) return;
+  if (!shouldReloadOrigin({ loadFailed: state.loadFailed, lastAttemptAt: derniereChargeAt, now: Date.now() })) return;
+  const donnees = await chargerZoneEtClubs(playerId);
+  if (state.playerId !== playerId) return;
+  publier(donnees);
+}
+
+async function requestGps(): Promise<{ gps: GpsFix | null; permission: GpsPermission }> {
   const playerId = state.playerId;
   const permission = await requestGpsPermission();
-  if (state.playerId !== playerId) return null;
+  if (state.playerId !== playerId) return { gps: null, permission };
   publier({ gpsPermission: permission });
-  if (permission !== 'granted') return null;
-  const gps = await readGpsPosition();
-  if (state.playerId !== playerId) return null;
-  if (gps) publier({ gps });
-  return gps;
+  if (permission !== 'granted') return { gps: null, permission };
+  const gps = await lireGps();
+  if (state.playerId !== playerId) return { gps: null, permission };
+  if (gps) { gpsFailureAt = null; publier({ gps }); } else { gpsFailureAt = Date.now(); }
+  return { gps, permission };
 }
 
 async function refreshGps(): Promise<void> {
   const playerId = state.playerId;
-  if (state.gpsPermission !== 'granted') return;
-  // Position encore fraîche : inutile d'interroger le téléphone.
-  if (state.gps && Date.now() - state.gps.at < GPS_MAX_AGE_MS / 2) return;
-  const gps = await readGpsPosition();
+  if (!shouldReadGps({ permission: state.gpsPermission, gps: state.gps, lastFailureAt: gpsFailureAt, now: Date.now() })) return;
+  const gps = await lireGps();
   if (state.playerId !== playerId) return;
-  // Même sans nouvelle position, republier recalcule l'origine : un GPS devenu
-  // trop ancien cède la place à la zone.
-  publier(gps ? { gps } : {});
+  if (gps) {
+    gpsFailureAt = null;
+    publier({ gps });
+  } else {
+    // Échec : la position était périmée de toute façon, on la lâche tout de
+    // suite plutôt que d'attendre les 10 minutes complètes.
+    gpsFailureAt = Date.now();
+    publier({ gps: null });
+  }
 }
 
 async function saveZone(zone: ZonePoint): Promise<void> {
@@ -131,9 +201,12 @@ async function removeZone(): Promise<void> {
 }
 
 // Une position de plus de 10 minutes ne décrit plus où est le joueur, même écran
-// ouvert : on la réévalue automatiquement toutes les minutes.
+// ouvert : on la réévalue automatiquement toutes les minutes (règle partagée
+// avec refreshGps — lib/originPolicy.shouldReadGps).
 function verifierFraicheur(): void {
-  if (state.gps && Date.now() - state.gps.at > GPS_MAX_AGE_MS) void refreshGps();
+  if (shouldReadGps({ permission: state.gpsPermission, gps: state.gps, lastFailureAt: gpsFailureAt, now: Date.now() })) {
+    void refreshGps();
+  }
 }
 
 function abonner(f: () => void): () => void {
@@ -160,6 +233,7 @@ export function useOrigin() {
     origin: s.origin,
     zone: s.zone,
     zoneAvailable: s.zoneAvailable,
+    loadFailed: s.loadFailed,
     gps: s.gps,
     gpsAvailable: gpsAvailable(),
     gpsPermission: s.gpsPermission,
@@ -167,6 +241,7 @@ export function useOrigin() {
     distanceOf: s.distanceOf,
     requestGps,
     refreshGps,
+    reloadOrigin,
     saveZone,
     removeZone,
   };
