@@ -21,6 +21,8 @@ import { LiveLobbyBlock } from '../../components/live/LiveLobbyBlock';
 import { getLiveScoringEnabled, fetchLiveSession, type LiveSession } from '../../lib/liveSession';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { useHideTabBar } from '../../components/TabBarVisibility';
+import { useOrigin } from '../../hooks/useOrigin';
+import { distanceSentence } from '../../lib/geo';
 import type { OpenGame } from '../../types';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -379,6 +381,10 @@ function GameDetailsSheetContenu({
     const sub = BackHandler.addEventListener('hardwareBackPress', () => { onClose(); return true; });
     return () => sub.remove();
   }, [visible, onClose]);
+
+  // Distance jusqu'au club, même source que les cartes (hooks/useOrigin).
+  const { distanceOf, origin } = useOrigin();
+  const phraseDistance = distanceSentence(distanceOf(game.location), origin);
 
   // La fiche est une Modal NATIVE : une navigation lancée dessous reste
   // invisible tant qu'elle est ouverte. On ferme donc la fiche AVANT de
@@ -810,6 +816,15 @@ function GameDetailsSheetContenu({
                 </View>
               )}
             </TouchableOpacity>
+
+            {/* « 4,2 km depuis ta position », ou « ~12 km … (position
+                approximative du club) » quand le club est placé au centre de
+                sa ville. Rien sans point de départ : cf. lib/geo. */}
+            {phraseDistance && (
+              <Text numberOfLines={2} style={{ fontSize: 12.5, fontFamily: Fonts.uiSemi, color: 'rgba(255,255,255,0.7)', marginTop: 2, marginLeft: 26 }}>
+                {phraseDistance}
+              </Text>
+            )}
 
             {/* Niveau · mise · mixité · places */}
             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
