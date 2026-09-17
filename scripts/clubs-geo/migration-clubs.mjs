@@ -24,7 +24,8 @@ if (!entree || !sortie) {
 async function lienComplet(url) {
   let courant = url;
   for (let i = 0; i < 5; i++) {
-    const r = await fetch(courant, { redirect: 'manual' });
+    // Délai de 10 s : un hôte qui ne répond pas ne doit pas bloquer tout le script.
+    const r = await fetch(courant, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
     const suivant = r.headers.get('location');
     if (!suivant) return courant;
     courant = new URL(suivant, courant).toString();
@@ -66,7 +67,18 @@ for (let i = 2; i <= feuille.rowCount; i++) {
     point = Number.isFinite(lat) && Number.isFinite(lng) && ligne.getCell(6).text ? { lat, lng } : null;
     if (!point) { refus.push({ nom, raison: 'oui sans correspondance proposée — coller un lien Google Maps' }); continue; }
   } else {
-    const texte = estLienCourt(decision.texte) ? await lienComplet(decision.texte) : decision.texte;
+    let texte = decision.texte;
+    if (estLienCourt(decision.texte)) {
+      // Un lien court injoignable (DNS, réseau, délai dépassé) ne doit coûter
+      // que cette ligne : sans ce try/catch, il ferait échouer tout le script
+      // et perdre toutes les lignes déjà validées (le SQL n'est écrit qu'à la fin).
+      try {
+        texte = await lienComplet(decision.texte);
+      } catch {
+        refus.push({ nom, raison: 'lien court injoignable — ouvrir le lien et copier l\'adresse complète de la page' });
+        continue;
+      }
+    }
     point = lireLienMaps(texte);
     if (!point) { refus.push({ nom, raison: 'lien illisible — ouvrir le lien et copier l\'adresse complète de la page' }); continue; }
   }
