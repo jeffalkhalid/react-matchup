@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
@@ -1564,6 +1565,9 @@ function resetOne(r: ExploreReason): Partial<ExploreFilters> {
   }
 }
 
+/** Encart « près de toi » masqué par le joueur : il ne revient pas. */
+const ORIGIN_HINT_KEY = 'explore.originHint.dismissed';
+
 function exploreCtx(
   myElo: number,
   villeDuClub: (n: string) => string | null,
@@ -1630,7 +1634,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   const games = useMemo(() => visibleGames(allGames, myGender), [allGames, myGender]);
 
   const router = useRouter();
-  const { origin, distanceOf, gpsAvailable, zoneAvailable, requestGps, refreshGps } = useOrigin();
+  const { origin, distanceOf, gpsAvailable, zoneAvailable, requestGps, refreshGps, ready, radiusKm } = useOrigin();
   // Tri de la liste : état d'affichage, jamais enregistré dans un filtre.
   const [sort, setSort] = useState<'date' | 'proximity'>('date');
   // Une position de plus de 10 minutes ne compte plus : on la relit en revenant
@@ -1769,6 +1773,19 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     setSort(v);
   };
 
+  // Démarre masqué pour ne pas clignoter le temps de relire le réglage.
+  const [encartMasque, setEncartMasque] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(ORIGIN_HINT_KEY)
+      .then(v => setEncartMasque(v === '1'))
+      .catch(() => setEncartMasque(false));
+  }, []);
+  const masquerEncart = () => {
+    setEncartMasque(true);
+    AsyncStorage.setItem(ORIGIN_HINT_KEY, '1').catch(() => {});
+  };
+  const montrerEncart = ready && !origin && !encartMasque && (gpsAvailable || zoneAvailable);
+
   const countLabel = filters.urgentOnly ? `urgente${mainList.length > 1 ? 's' : ''}`
     : `disponible${mainList.length > 1 ? 's' : ''}`;
 
@@ -1856,6 +1873,48 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         )}
       </View>
 
+      {montrerEncart && (
+        <View style={{
+          marginHorizontal: 14, marginBottom: 12, padding: 14, borderRadius: 14, gap: 10,
+          backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+            <Icon name="radar" size={18} color={Colors.textPrimary} stroke={2.2} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                Trouve les parties près de toi
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 17, marginTop: 2 }}>
+                Utilise ta position ou choisis ta zone pour voir la distance de chaque partie.
+              </Text>
+            </View>
+            <TouchableOpacity onPress={masquerEncart} hitSlop={10} accessibilityLabel="Masquer">
+              <Icon name="x" size={15} color={Colors.textMuted} stroke={2.4} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {gpsAvailable && (
+              <TouchableOpacity
+                onPress={() => { void demanderPointDeDepart(); }}
+                activeOpacity={0.85}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.primary }}
+              >
+                <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Utiliser ma position</Text>
+              </TouchableOpacity>
+            )}
+            {zoneAvailable && (
+              <TouchableOpacity
+                onPress={() => router.push('/zone' as any)}
+                activeOpacity={0.85}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}
+              >
+                <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Choisir ma zone</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
       {(gpsAvailable || zoneAvailable) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginBottom: 12 }}>
           <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>Trier</Text>
@@ -1921,6 +1980,19 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         resultCount={d => filterExplore(games, d, ctx).kept.length}
         onApply={f => { setFilters(f); setSheetOpen(false); }}
         onClose={() => setSheetOpen(false)}
+        origin={origin}
+        defaultMaxKm={radiusKm}
+        gpsAvailable={gpsAvailable}
+        zoneAvailable={zoneAvailable}
+        onRequestOrigin={async () => {
+          if (await requestGps()) return;
+          Alert.alert('Position indisponible', zoneAvailable
+            ? 'Autorise la localisation dans les réglages du téléphone, ou choisis ta zone.'
+            : 'Autorise la localisation dans les réglages du téléphone.');
+        }}
+        // Le volet est une fenêtre native : la fermer AVANT d'ouvrir un écran,
+        // sinon l'écran s'ouvre derrière elle.
+        onChooseZone={() => { setSheetOpen(false); router.push('/zone' as any); }}
       />
 
       {/* "Pour toi" — pile verticale des parties à ton niveau */}

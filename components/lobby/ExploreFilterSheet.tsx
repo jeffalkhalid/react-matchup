@@ -30,6 +30,7 @@ import {
   type ExploreFilters, type DatePreset, type TimeSlot,
   type TypeFilter, type LevelFilter, type GenderFilter, type PlayerGender,
 } from '../../lib/exploreFilters';
+import { ZONE_RADII_KM, originLabel, type Origin } from '../../lib/geo';
 
 export interface ClubRef { name: string; city: string | null }
 
@@ -262,7 +263,7 @@ const jourCourt = (d: Date) =>
 export function ExploreFilterSheet({
   visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
   clubs, activeClubNames, myGender, favorites, gameCountByClub, gameCountByCity, topPlayers,
-  resultCount, onApply, onClose,
+  resultCount, onApply, onClose, origin, defaultMaxKm, gpsAvailable, zoneAvailable, onRequestOrigin, onChooseZone,
 }: {
   visible: boolean;
   initial: ExploreFilters;
@@ -288,6 +289,16 @@ export function ExploreFilterSheet({
   resultCount: (draft: ExploreFilters) => number;
   onApply: (f: ExploreFilters) => void;
   onClose: () => void;
+  /** Point de départ des distances (GPS récent ou zone) ; null = aucun. */
+  origin: Origin | null;
+  /** Valeur prise à la première activation : rayon de la zone, 20 km sans zone. */
+  defaultMaxKm: number;
+  gpsAvailable: boolean;
+  zoneAvailable: boolean;
+  /** Demande la position du téléphone (autorisation comprise). */
+  onRequestOrigin: () => void;
+  /** Ferme le volet et ouvre « Ma zone ». */
+  onChooseZone: () => void;
 }) {
   const insets = useSafeAreaInsets();
   // On travaille sur un BROUILLON : fermer sans appliquer doit laisser la liste
@@ -488,6 +499,57 @@ export function ExploreFilterSheet({
                 onClear={() => set('clubs', [])}
                 searchable
               />
+            </Section>
+
+            <Section title="Distance" icon="radar">
+              {origin ? (
+                <>
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    backgroundColor: Colors.bgCard, borderRadius: 14, padding: 14,
+                    borderWidth: 1, borderColor: Colors.border,
+                  }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                        Distance max
+                      </Text>
+                      <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 }}>
+                        Mesurée {originLabel(origin)}. Les clubs dont la position exacte est inconnue sont écartés.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={draft.maxKm !== null}
+                      onValueChange={v => set('maxKm', v ? defaultMaxKm : null)}
+                      trackColor={{ false: Colors.border, true: Colors.brand }}
+                      thumbColor={Colors.bgCard}
+                    />
+                  </View>
+                  {draft.maxKm !== null && (
+                    <Row>
+                      {ZONE_RADII_KM.map(r => (
+                        <Chip key={r} label={`${r} km`} active={draft.maxKm === r} onPress={() => set('maxKm', r)} />
+                      ))}
+                    </Row>
+                  )}
+                </>
+              ) : (
+                // Sans point de départ, la distance est grisée : on dit comment en avoir un.
+                <View style={{
+                  backgroundColor: Colors.bgCard, borderRadius: 14, padding: 14, gap: 10,
+                  borderWidth: 1, borderColor: Colors.border,
+                }}>
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: Colors.textMuted }}>Distance max</Text>
+                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 16 }}>
+                    Active ta position ou choisis ta zone pour filtrer par distance.
+                  </Text>
+                  <Row>
+                    {gpsAvailable && <Chip label="Utiliser ma position" active={false} onPress={onRequestOrigin} />}
+                    {zoneAvailable && <Chip label="Choisir ma zone" active={false} onPress={onChooseZone} />}
+                    {/* Un filtre enregistré peut porter une distance sans point de départ : il doit pouvoir se retirer. */}
+                    {draft.maxKm !== null && <Chip label="Retirer la distance" active={false} onPress={() => set('maxKm', null)} />}
+                  </Row>
+                </View>
+              )}
             </Section>
 
             <Section title="Type de match" icon="swords">
