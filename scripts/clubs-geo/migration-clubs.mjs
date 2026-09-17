@@ -1,5 +1,7 @@
 // scripts/clubs-geo/migration-clubs.mjs — migration SQL des positions validées.
 //
+// Installation (une fois, avant le premier lancement) : cd scripts/clubs-geo && npm install
+//
 // Usage : node scripts/clubs-geo/migration-clubs.mjs <verification-remplie.xlsx> <sortie.sql>
 //
 // Ne retient QUE les lignes où l'utilisateur a répondu oui ou collé un lien, puis
@@ -10,8 +12,9 @@ import ExcelJS from 'exceljs';
 import { writeFileSync } from 'node:fs';
 import { lireClubsBase } from './base.mjs';
 import {
-  centresVilles, normaliserVille, lireDecision, lireLienMaps, estLienCourt,
-  controlerPoint, requeteMiseAJour,
+  centresVilles, normaliserVille, texteVisibleCellule, lireHyperlienCellule, lireDecision,
+  lireLienMaps, estLienDeVue, estLienCourt, controlerPoint, identifiantsEnDouble,
+  controlerEntetes, commentaireSQL, requeteMiseAJour,
 } from './clubsGeo.mjs';
 
 const [entree, sortie] = process.argv.slice(2);
@@ -34,13 +37,34 @@ async function lienComplet(url) {
   return courant;
 }
 
-const clubs = new Map((await lireClubsBase()).map(c => [c.id, c]));
-const centres = centresVilles([...clubs.values()]);
-
 const classeur = new ExcelJS.Workbook();
 await classeur.xlsx.readFile(entree);
 const feuille = classeur.getWorksheet('Vérification');
 if (!feuille) throw new Error('feuille « Vérification » introuvable');
+
+// Mineur 6 : des colonnes déplacées feraient lire n'importe quoi comme
+// identifiant, coordonnées ou décision — on arrête tout de suite, avant même
+// de contacter la base, et rien n'est écrit.
+const entete = feuille.getRow(1);
+const erreurEntetes = controlerEntetes({
+  A: entete.getCell(1).text.trim(),
+  F: entete.getCell(6).text.trim(),
+  G: entete.getCell(7).text.trim(),
+  L: entete.getCell(12).text.trim(),
+});
+if (erreurEntetes) {
+  console.error(erreurEntetes);
+  process.exit(1);
+}
+
+const clubs = new Map((await lireClubsBase()).map(c => [c.id, c]));
+const centres = centresVilles([...clubs.values()]);
+
+// Mineur 5 : un identifiant qui apparaît sur plusieurs lignes est ambigu —
+// on refuse les deux plutôt que de choisir une des deux positions au hasard.
+const idsDoubles = identifiantsEnDouble(
+  Array.from({ length: Math.max(feuille.rowCount - 1, 0) }, (_, i) => feuille.getRow(i + 2).getCell(1).text.trim()),
+);
 
 const retenus = [];
 const refus = [];
@@ -52,12 +76,17 @@ for (let i = 2; i <= feuille.rowCount; i++) {
   if (!id) continue;
   const nom = ligne.getCell(3).text.trim();
   const ville = ligne.getCell(2).text.trim();
-  const decision = lireDecision(ligne.getCell(12).value);
+
+  if (idsDoubles.has(id)) { refus.push({ nom, raison: 'identifiant en double' }); continue; }
+
+  const valeurDecision = ligne.getCell(12).value;
+  const decision = lireDecision(texteVisibleCellule(valeurDecision), lireHyperlienCellule(valeurDecision));
   const club = clubs.get(id);
 
   if (decision.type === 'vide' || decision.type === 'non') { ignores++; continue; }
   if (!club) { refus.push({ nom, raison: 'club introuvable dans la base' }); continue; }
   if (club.geo_confidence !== 'city') { refus.push({ nom, raison: 'club déjà placé précisément — ignoré' }); continue; }
+  if (decision.type === 'refus') { refus.push({ nom, raison: decision.raison }); continue; }
   if (decision.type === 'inconnu') { refus.push({ nom, raison: `décision illisible : « ${decision.texte} »` }); continue; }
 
   let point = null;
@@ -79,13 +108,19 @@ for (let i = 2; i <= feuille.rowCount; i++) {
         continue;
       }
     }
+    if (estLienDeVue(texte)) {
+      refus.push({ nom, raison: 'lien de vue, pas d\'épingle — cliquer sur le lieu dans Maps puis copier le lien' });
+      continue;
+    }
     point = lireLienMaps(texte);
     if (!point) { refus.push({ nom, raison: 'lien illisible — ouvrir le lien et copier l\'adresse complète de la page' }); continue; }
   }
 
   const erreurs = controlerPoint(point, centres.get(normaliserVille(club.city)), club.city ?? ville);
   if (erreurs.length) { refus.push({ nom, raison: erreurs.join(' · ') }); continue; }
-  retenus.push({ id, nom, ...point });
+  // Le commentaire SQL utilise le nom en BASE, jamais le texte du tableur
+  // (Important 4) : la colonne « Club (base) » reste modifiable par la personne.
+  retenus.push({ id, nom, nomBase: club.name, ...point });
 }
 
 // Deux clubs retenus sur le même point : au moins un est faux, on écarte les deux.
@@ -109,7 +144,7 @@ const sql = [
   '-- Ne touche qu\'un club encore geo_confidence = \'city\' : rejouer ne change rien.',
   '-- ============================================================',
   'BEGIN;',
-  ...valides.map(v => `-- ${v.nom}\n${requeteMiseAJour(v)}`),
+  ...valides.map(v => `-- ${commentaireSQL(v.nomBase)}\n${requeteMiseAJour(v)}`),
   'COMMIT;',
   '',
   '-- Vérification : nombre de clubs par précision (les « exact » doivent avoir augmenté).',
