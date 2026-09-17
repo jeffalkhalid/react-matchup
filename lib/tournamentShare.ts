@@ -3,18 +3,29 @@
 // Deux gestes qui manquaient à la fiche : dire à ses partenaires qu'une soirée
 // existe, et ne pas l'oublier.
 //
-// LE PARTAGE EST DU TEXTE, PAS UN LIEN. La passerelle web (`pagmatch.com`)
-// sert /u/, /g/ et /p/ — il n'y a PAS de route pour un tournoi. Partager une
-// adresse qui répond 404 serait pire que ne rien partager : celui qui la
-// reçoit conclut que l'app est cassée. Le message porte donc tout ce qu'il
-// faut pour décider — le nom, le jour, l'heure, le club, les places qui
-// restent — et rien qu'on ne puisse honorer.
+// LE MESSAGE PORTE UN LIEN, ET IL A FALLU LE CRÉER. La passerelle web
+// (`pagmatch.com`) ne servait que /u/, /g/ et /p/ : il n'existait aucune route
+// pour un tournoi, et partager une adresse qui répond 404 est pire que de ne
+// rien partager — celui qui la reçoit conclut que l'app est cassée. Le message
+// s'en passait donc.
+//
+// Le préfixe `/t/` existe maintenant, mais il vit dans un AUTRE DÉPÔT
+// (`activegame-landing` : la redirection dans `vercel.json`, la traduction en
+// lien profond dans `app/open/page.tsx`). Le lien ci-dessous ne fonctionne que
+// si ce dépôt est déployé. Tant qu'il ne l'est pas, le lien répond 404 et on
+// retombe exactement dans le cas qu'on voulait éviter.
+//
+// Le reste du message porte de quoi décider sans ouvrir le lien — le nom, le
+// jour, l'heure, le club, les places qui restent : on ne suppose pas que
+// l'autre a l'app.
 //
 // L'AGENDA PASSE PAR UN FICHIER .ics, pas par `expo-calendar`. Ce module
 // n'est pas installé, et l'ajouter demanderait une permission d'accès au
 // calendrier plus une recompilation native — donc un nouvel APK, et rien dans
 // Expo Go d'ici là. Un `.ics` partagé s'ouvre dans l'agenda de n'importe quel
 // téléphone, ne demande aucune permission, et fonctionne dès aujourd'hui.
+
+import { tournamentLink } from './community';
 
 export interface ShareableTournament {
   id: string;
@@ -56,7 +67,9 @@ export function tournamentShareText(
   if (typeof placesLibres === 'number' && placesLibres > 0) {
     lignes.push(`Il reste ${placesLibres} place${placesLibres > 1 ? 's' : ''}.`);
   }
-  lignes.push('On joue sur PagMatch.');
+  // Le lien en pied, comme le message de partage d'une partie — c'est la
+  // dernière chose qu'on lit, et celle sur laquelle on appuie.
+  lignes.push('', `S'inscrire : ${tournamentLink(t.id)}`);
   return lignes.join('\n');
 }
 

@@ -1,4 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Le message porte desormais un lien, construit depuis SHARE_BASE
+// (lib/community), qui charge le client Supabase — lequel exige les variables
+// d'environnement. On neutralise le module, comme dans urgentGame.test.
+vi.mock('../supabase', () => ({ supabase: {} }));
+
 import {
   tournamentShareText, tournamentIcs, icsDate, icsEscape, icsFileName,
   type ShareableTournament,
@@ -41,6 +47,23 @@ describe('message de partage', () => {
 
   it('tient sans club', () => {
     expect(tournamentShareText(T({ club: null }))).toContain('Montante du jeudi');
+  });
+
+  it('finit par un lien vers le tournoi', () => {
+    // Sans lui, celui qui recoit le message doit ouvrir l'app et retrouver le
+    // tournoi a la main — ce qui, dans les faits, veut dire qu'il ne vient pas.
+    const txt = tournamentShareText(T(), 4);
+    expect(txt).toContain('https://www.pagmatch.com/t/abc');
+    // En PIED : c'est la derniere chose qu'on lit, et celle sur laquelle on
+    // appuie. Meme place que le lien du partage d'une partie.
+    expect(txt.trim().split('\n').pop()).toContain('S\'inscrire');
+  });
+
+  it('echappe l identifiant dans l URL', () => {
+    // Un id qui contiendrait un caractere reserve casserait le lien en
+    // silence : il partirait, il repondrait 404, et personne ne saurait
+    // pourquoi.
+    expect(tournamentShareText(T({ id: 'a b/c' }))).toContain('/t/a%20b%2Fc');
   });
 });
 

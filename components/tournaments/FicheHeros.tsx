@@ -14,7 +14,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
+import Svg, { Rect, Line } from 'react-native-svg';
 import { Icon } from '../community/icons';
+import { FitTitle } from '../DisplayTitle';
 
 // ── Pendant la soirée ──────────────────────────────────────────────────────
 
@@ -195,7 +197,7 @@ export function ResultHero({ rank, total, partner, climbs, wins, losses, gamesWo
           <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 1.2, color: Colors.brand }}>
             TON RÉSULTAT
           </Text>
-          <Text numberOfLines={1} style={{ fontSize: 24, lineHeight: 27, fontFamily: Fonts.welcome, color: '#FFFFFF' }}>
+          <Text numberOfLines={1} style={{ fontSize: 24, lineHeight: 27, fontFamily: Fonts.welcome, color: '#FFFFFF', paddingRight: 8 }}>
             {ordinal}
           </Text>
           <Text numberOfLines={1} style={{ fontSize: 12, fontFamily: Fonts.uiSemi, color: 'rgba(255,255,255,0.62)' }}>
@@ -251,7 +253,7 @@ export function ResultHero({ rank, total, partner, climbs, wins, losses, gamesWo
  * est ce qui décide : la date, le lieu, et s'il reste de la place.
  */
 export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, free, waiting, courts, priceLabel: price, onDirections, onShare, onCalendar }: {
-  /** « VEN. 11 SEPT » */
+  /** « Ven. 11 sept. » */
   dayLabel: string;
   /** « 19:00 » */
   timeLabel: string;
@@ -269,114 +271,116 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
 }) {
   const ratio = total > 0 ? Math.min(1, taken / total) : 0;
   const plein = free === 0;
+  const gratuit = price === 'Gratuit';
 
   return (
-    <View style={{
-      backgroundColor: Colors.bgCard, borderRadius: 18, overflow: 'hidden',
-      borderWidth: 1, borderColor: Colors.border,
-      shadowColor: '#0A0A0A', shadowOpacity: 0.04, shadowRadius: 4,
-      shadowOffset: { width: 0, height: 1 }, elevation: 1,
-    }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 }}>
-        {/* Bloc horaire, même grammaire que les cartes de partie du Lobby. */}
-        <View style={{
-          backgroundColor: Colors.heroBg, borderRadius: 14,
-          paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', minWidth: 84,
-        }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{
-            fontSize: 9, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.brand,
-          }}>
-            {dayLabel}
-          </Text>
-          <Text style={{ fontSize: 21, lineHeight: 25, fontFamily: Fonts.display, color: '#FFFFFF', marginTop: 1 }}>
-            {timeLabel}
-          </Text>
+    <View style={{ gap: 12 }}>
+      <View style={{
+        backgroundColor: Colors.bgCard, borderRadius: 20, padding: 16,
+        shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12,
+        shadowOffset: { width: 0, height: 3 }, elevation: 1,
+      }}>
+        {/* ── Date et heure ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icon name="calendar" size={20} color={ACCENT} stroke={2.2} />
+          <FitTitle max={18} min={12} color={Colors.textPrimary}>DATE ET HEURE</FitTitle>
         </View>
+        {/* Segment unique (pas de <Text> imbriqué) : adjustsFontSizeToFit
+            reste opérant sur Android. Cf. feedback_android_title_clipping. */}
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{
+          alignSelf: 'stretch', fontSize: 30, lineHeight: 39, fontFamily: Fonts.welcome,
+          color: Colors.textPrimary, marginTop: 6, paddingRight: 8,
+        }}>
+          {`${dayLabel} • ${timeLabel}`}
+        </Text>
 
-        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-          {/* Le club mene a l'itineraire : on va y aller en voiture, et
-              chercher l'adresse ailleurs est un aller-retour de trop. Le
-              geocodage des clubs vit deja dans lib/maps. */}
-          <TouchableOpacity
-            onPress={onDirections}
-            disabled={!onDirections}
-            activeOpacity={0.7}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-          >
-            <Icon name="mapPin" size={12} color={onDirections ? Colors.brandDeep : Colors.textMuted} stroke={2.2} />
-            <Text numberOfLines={1} style={{
-              flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBold,
-              color: onDirections ? Colors.brandDeep : Colors.textSecondary,
-            }}>
-              {clubLine}
-            </Text>
-            {onDirections && <Icon name="arrowRight" size={13} color={Colors.brandDeep} stroke={2.4} />}
-          </TouchableOpacity>
+        {/* Le club mene a l'itineraire : on va y aller en voiture, et
+            chercher l'adresse ailleurs est un aller-retour de trop. */}
+        <TouchableOpacity
+          onPress={onDirections}
+          disabled={!onDirections}
+          activeOpacity={0.7}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}
+        >
+          <Icon name="mapPin" size={20} color={Colors.textPrimary} stroke={2.2} />
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
+            {clubLine}
+          </Text>
+          {onDirections && <Icon name="arrowRight" size={16} color={Colors.brandDeep} stroke={2.4} />}
+        </TouchableOpacity>
 
-          {/* Les places se comptent en JOUEURS — l'unité de toute l'app. */}
-          <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
-            <Text style={{ fontSize: 22, fontFamily: Fonts.display, color: plein ? Colors.danger : Colors.textPrimary }}>
+        <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 14 }} />
+
+        {/* ── Capacité ──
+            Les places se comptent en PLACES ASSISES, pas en inscrits : depuis
+            la règle du siège-aux-binômes, tout inscrit passe d'abord par la
+            file, donc « inscrits » et « places » divergent presque toujours.
+            On nomme donc ce qu'on compte. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, rowGap: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon name="users" size={20} color={Colors.textPrimary} stroke={2.2} />
+            <FitTitle max={18} min={12} color={Colors.textPrimary}>CAPACITÉ</FitTitle>
+          </View>
+          <View style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'baseline' }}>
+            <Text style={{ fontSize: 26, lineHeight: 32, fontFamily: Fonts.welcome, color: plein ? Colors.danger : Colors.brand, paddingRight: 3 }}>
               {taken}
             </Text>
-            {'  '}joueurs sur {total}
-          </Text>
-
-          <View style={{ height: 6, borderRadius: 999, backgroundColor: Colors.bg, overflow: 'hidden' }}>
-            <View style={{
-              width: `${ratio * 100}%`, height: '100%', borderRadius: 999,
-              backgroundColor: plein ? Colors.danger : Colors.brand,
-            }} />
+            <Text numberOfLines={1} style={{
+              fontSize: 18, lineHeight: 24, fontFamily: Fonts.welcome, color: Colors.textPrimary, paddingRight: 4,
+            }}>
+              {` / ${total} ${taken > 1 ? 'places occupées' : 'place occupée'}`}
+            </Text>
           </View>
         </View>
+
+        <View style={{ height: 10, borderRadius: 999, backgroundColor: '#EDEDEC', overflow: 'hidden', marginTop: 12 }}>
+          <View style={{
+            width: `${ratio * 100}%`, height: '100%', borderRadius: 999,
+            backgroundColor: plein ? Colors.danger : Colors.brand,
+          }} />
+        </View>
+
+        {/* Ce qui reste, la taille du plateau, le prix. */}
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', marginTop: 16 }}>
+          <Cell
+            icon={<CourtIcon color={Colors.textPrimary} />}
+            strong={String(courts)}
+            rest={`terrain${courts > 1 ? 's' : ''}`}
+          />
+          <View style={{ width: 1, backgroundColor: Colors.border }} />
+          <Cell
+            icon={<Icon name="gem" size={24} color={Colors.textPrimary} stroke={1.9} />}
+            strong={price}
+            rest={gratuit ? '' : 'par joueur'}
+          />
+          <View style={{ width: 1, backgroundColor: Colors.border }} />
+          <Cell
+            icon={<Icon name="users" size={24} color={plein ? Colors.danger : Colors.textPrimary} stroke={1.9} />}
+            strong={plein ? 'Complet' : String(free)}
+            strongColor={plein ? Colors.danger : Colors.brand}
+            rest={plein ? '' : `place${free > 1 ? 's' : ''} restante${free > 1 ? 's' : ''}`}
+            sub={waiting > 0 ? `${waiting} en attente` : null}
+          />
+        </View>
       </View>
 
-      {/* Pied : ce qui reste, la taille du plateau, le prix. */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 14, paddingVertical: 11, gap: 8,
-        backgroundColor: Colors.bg, borderTopWidth: 1, borderTopColor: Colors.borderLight,
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
-          <Icon name="users" size={12} color={plein ? Colors.danger : Colors.textSecondary} stroke={2.2} />
-          <Text numberOfLines={1} style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, color: plein ? Colors.danger : Colors.textPrimary }}>
-              {plein ? 'Complet' : `${free} place${free > 1 ? 's' : ''}`}
-            </Text>
-            {waiting > 0 ? ` · ${waiting} en attente` : ''}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Icon name="racket" size={12} color={Colors.textSecondary} stroke={2.2} />
-          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
-            {courts} terrain{courts > 1 ? 's' : ''}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Icon name="gem" size={12} color={Colors.textSecondary} stroke={2.2} />
-          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
-            {price}
-          </Text>
-        </View>
-      </View>
-
-      {/* Deux gestes qui manquaient : dire aux autres qu'une soirée existe, et
-          ne pas l'oublier soi-même. Ils sont côte à côte, en second rang — ils
-          ne doivent pas concurrencer l'inscription, qui reste le geste
-          principal en bas d'écran. */}
+      {/* Deux gestes : dire aux autres qu'une soirée existe, et ne pas
+          l'oublier soi-même. L'inscription reste le geste principal, en bas
+          d'écran. */}
       {(onShare || onCalendar) && (
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
           {onShare && (
             <TouchableOpacity
               onPress={onShare}
               activeOpacity={0.8}
               style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-                paddingVertical: 11, borderRadius: 12,
-                backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                paddingVertical: 13, borderRadius: 16,
+                backgroundColor: Colors.bgCard, borderWidth: 2, borderColor: Colors.primary,
               }}
             >
-              <Icon name="share" size={14} color={Colors.textPrimary} stroke={2.3} />
-              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+              <Icon name="share" size={20} color={Colors.textPrimary} stroke={2.3} />
+              <Text style={{ fontSize: 19, lineHeight: 24, fontFamily: Fonts.welcome, color: Colors.textPrimary, paddingRight: 3 }}>
                 Partager
               </Text>
             </TouchableOpacity>
@@ -386,13 +390,13 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
               onPress={onCalendar}
               activeOpacity={0.8}
               style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-                paddingVertical: 11, borderRadius: 12,
-                backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                paddingVertical: 13, borderRadius: 16,
+                backgroundColor: Colors.primary, borderWidth: 2, borderColor: Colors.primary,
               }}
             >
-              <Icon name="calendar" size={14} color={Colors.textPrimary} stroke={2.3} />
-              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+              <Icon name="calendar" size={20} color={Colors.textOnDark} stroke={2.3} />
+              <Text style={{ fontSize: 19, lineHeight: 24, fontFamily: Fonts.welcome, color: Colors.textOnDark, paddingRight: 3 }}>
                 Agenda
               </Text>
             </TouchableOpacity>
@@ -400,6 +404,49 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, taken, total, 
         </View>
       )}
     </View>
+  );
+}
+
+const ACCENT = '#7C3AED';
+const CARD_TITLE = {
+  fontSize: 18, lineHeight: 23, fontFamily: Fonts.welcome,
+  // Majuscules écrites telles quelles, pas `textTransform` : sur Android il
+  // rogne les dernières lettres de cette police.
+  color: Colors.textPrimary, paddingRight: 6, flexShrink: 1,
+};
+
+/** Une case du pied de la carte : icône, chiffre fort, unité. */
+function Cell({ icon, strong, rest, strongColor, sub }: {
+  icon: React.ReactNode; strong: string; rest: string;
+  strongColor?: string; sub?: string | null;
+}) {
+  return (
+    <View style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 4, paddingHorizontal: 4 }}>
+      {icon}
+      <Text numberOfLines={1} style={{ fontSize: 20, lineHeight: 25, fontFamily: Fonts.welcome, color: strongColor ?? Colors.textPrimary, paddingLeft: 3, paddingRight: 7 }}>
+        {strong}
+      </Text>
+      {rest ? (
+        <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 15, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, textAlign: 'center' }}>
+          {rest}
+        </Text>
+      ) : null}
+      {sub ? (
+        <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>{sub}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Un terrain vu du dessus : il n'y a pas d'icône de terrain dans le jeu. */
+function CourtIcon({ color, size = 26 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x="2.5" y="4" width="19" height="16" rx="2" />
+      <Line x1="12" y1="4" x2="12" y2="20" />
+      <Rect x="2.5" y="8" width="4" height="8" />
+      <Rect x="17.5" y="8" width="4" height="8" />
+    </Svg>
   );
 }
 
@@ -428,7 +475,7 @@ export function StickyActionBar({ priceLine, priceNote, label, disabled, busy, o
     }}>
       {priceLine && (
         <View style={{ minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontSize: 19, fontFamily: Fonts.welcome, color: Colors.textPrimary }}>
+          <Text numberOfLines={1} style={{ fontSize: 19, fontFamily: Fonts.welcome, color: Colors.textPrimary, paddingRight: 7 }}>
             {priceLine}
           </Text>
           {priceNote && (
@@ -443,11 +490,11 @@ export function StickyActionBar({ priceLine, priceNote, label, disabled, busy, o
         disabled={disabled || busy}
         activeOpacity={0.85}
         style={{
-          flex: 1, backgroundColor: Colors.heroBg, borderRadius: 16,
-          paddingVertical: 15, alignItems: 'center', opacity: disabled || busy ? 0.55 : 1,
+          flex: 1, backgroundColor: Colors.brand, borderRadius: 27,
+          paddingVertical: 16, alignItems: 'center', opacity: disabled || busy ? 0.55 : 1,
         }}
       >
-        <Text style={{ fontSize: 15.5, fontFamily: Fonts.welcome, letterSpacing: 0.5, color: Colors.textOnDark }}>
+        <Text style={{ fontSize: 17, fontFamily: Fonts.welcome, letterSpacing: 0.5, color: Colors.textOnBrand }}>
           {label}
         </Text>
       </TouchableOpacity>

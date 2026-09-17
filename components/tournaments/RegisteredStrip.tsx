@@ -22,6 +22,8 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
+import { FitTitle } from '../DisplayTitle';
+import { PlayerAvatar } from '../PlayerAvatar';
 import { eloToLevel } from '../../lib/theme';
 import { pairsCountLabel, type RegisteredPair, type PairedPlayer } from '../../lib/tournaments';
 
@@ -38,18 +40,12 @@ function Joueur({ p, onPress }: { p: PairedPlayer; onPress?: (id: string) => voi
       activeOpacity={0.75}
       style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 5 }}
     >
-      <View style={{
-        width: 46, height: 46, borderRadius: 23,
-        alignItems: 'center', justifyContent: 'center',
-        backgroundColor: p.mine ? Colors.brand : Colors.primary,
-      }}>
-        <Text style={{
-          fontSize: 16, fontFamily: Fonts.uiBlack,
-          color: p.mine ? Colors.primary : Colors.textOnDark,
-        }}>
-          {initiales(p.name)}
-        </Text>
-      </View>
+      <PlayerAvatar
+        name={p.name} path={p.avatarPath} size={46}
+        backgroundColor={p.mine ? Colors.brand : Colors.primary}
+        textColor={p.mine ? Colors.primary : Colors.textOnDark}
+        fontFamily={Fonts.uiBlack} fontSize={16} initialsMax={2}
+      />
       <Text numberOfLines={1} style={{
         maxWidth: '100%', fontSize: 12.5,
         fontFamily: p.mine ? Fonts.uiBlack : Fonts.uiExtraBold, color: Colors.textPrimary,
@@ -65,11 +61,77 @@ function Joueur({ p, onPress }: { p: PairedPlayer; onPress?: (id: string) => voi
   );
 }
 
+/**
+ * La moitié « en attente de réponse » : un ou plusieurs candidats, sous un
+ * sablier.
+ *
+ * PLUSIEURS, parce que rien n'empêche deux personnes de demander le même
+ * joueur seul — et c'est même le cas intéressant : celui qui reçoit doit
+ * choisir. On en montre DEUX au plus ; au-delà, les ronds deviennent
+ * illisibles à cette taille et le compte fait le reste.
+ */
+function Candidats({ gens, onPress }: {
+  gens: PairedPlayer[];
+  onPress?: (id: string) => void;
+}) {
+  const montres = gens.slice(0, 2);
+  const reste = gens.length - montres.length;
+  return (
+    <View style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 5 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        {montres.map((p, i) => (
+          <TouchableOpacity
+            key={p.id}
+            onPress={() => onPress?.(p.id)}
+            disabled={!onPress}
+            activeOpacity={0.75}
+            style={{
+              // Les ronds se chevauchent quand il y en a deux : la carte n'a
+              // pas la largeur de deux visages côte à côte.
+              marginLeft: i === 0 ? 0 : -14,
+              opacity: 0.85,
+            }}
+          >
+            <PlayerAvatar
+              name={p.name} path={p.avatarPath} size={46}
+              backgroundColor={p.mine ? Colors.brand : Colors.primary}
+              textColor={p.mine ? Colors.primary : Colors.textOnDark}
+              fontFamily={Fonts.uiBlack} fontSize={15} initialsMax={2}
+              ring={i === 0 ? undefined : 2} ringColor={Colors.bg}
+            />
+          </TouchableOpacity>
+        ))}
+        {reste > 0 && (
+          <View style={{
+            width: 30, height: 30, borderRadius: 15, marginLeft: -10,
+            alignItems: 'center', justifyContent: 'center',
+            backgroundColor: Colors.borderLight, borderWidth: 2, borderColor: Colors.bg,
+          }}>
+            <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>
+              +{reste}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text numberOfLines={1} style={{ maxWidth: '100%', fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.warning }}>
+        ⏳ {montres.length === 1 && reste === 0
+          ? montres[0].name.split(' ')[0]
+          : `${gens.length} demandes`}
+      </Text>
+      <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+        {gens.length > 1 ? 'à départager' : 'sans réponse'}
+      </Text>
+    </View>
+  );
+}
+
 /** La carte d'un binôme, ou d'un joueur qui en cherche un. */
-function CartePaire({ pair, onPlayerPress, onJoin }: {
+function CartePaire({ pair, onPlayerPress, onJoin, joinLabel }: {
   pair: RegisteredPair;
   onPlayerPress?: (id: string) => void;
   onJoin?: (playerId: string) => void;
+  /** « Me proposer » quand je suis inscrit, « M'inscrire avec lui » sinon. */
+  joinLabel?: string;
 }) {
   const seul = pair.b === null;
   return (
@@ -81,17 +143,34 @@ function CartePaire({ pair, onPlayerPress, onJoin }: {
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4 }}>
         <Joueur p={pair.a} onPress={onPlayerPress} />
+        {/* Le lien entre les deux DIT SON ÉTAT : l'esperluette jaune pour un
+            binôme accepté, un sablier pour une demande encore sans réponse.
+            Sans cette distinction, une carte réunie sous sablier se lirait
+            comme un binôme formé — et on croirait la place acquise. */}
         <View style={{
           width: 22, height: 22, borderRadius: 11, marginTop: 12,
           alignItems: 'center', justifyContent: 'center',
-          backgroundColor: seul ? Colors.borderLight : Colors.brand,
+          backgroundColor: seul ? Colors.borderLight
+            : pair.tentative ? Colors.warning + '26' : Colors.brand,
+          borderWidth: pair.tentative ? 1 : 0, borderColor: Colors.warning + '77',
         }}>
-          <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: seul ? Colors.textMuted : Colors.primary }}>
-            &
+          <Text style={{
+            fontSize: pair.tentative ? 10 : 11,
+            fontFamily: Fonts.uiBlack,
+            color: seul ? Colors.textMuted : pair.tentative ? Colors.warning : Colors.primary,
+          }}>
+            {pair.tentative ? '⏳' : '&'}
           </Text>
         </View>
         {pair.b ? (
           <Joueur p={pair.b} onPress={onPlayerPress} />
+        ) : pair.pending.length > 0 ? (
+          // UNE DEMANDE EST EN COURS, ET ELLE ME CONCERNE. Sans ça, deux
+          // joueurs qui s'étaient déjà demandés apparaissaient chacun dans sa
+          // propre carte « Cherche un binôme » — on croit sa demande perdue,
+          // et on en envoie une autre. Le sablier dit qu'il ne manque qu'une
+          // réponse.
+          <Candidats gens={pair.pending} onPress={onPlayerPress} />
         ) : (
           // La moitié vide garde EXACTEMENT la place d'un joueur : les cartes
           // s'alignent, et ce qui manque se voit sans avoir à comparer.
@@ -113,20 +192,31 @@ function CartePaire({ pair, onPlayerPress, onJoin }: {
         )}
       </View>
 
-      {pair.waiting && (
+      {/* Sous sablier, « EN ATTENTE » serait ambigu : on attend une RÉPONSE,
+          pas une place. On dit donc ce qu'on attend vraiment. */}
+      {pair.tentative ? (
+        <Text style={{ fontSize: 9.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.4, color: Colors.warning, textAlign: 'center' }}>
+          EN ATTENTE DE RÉPONSE
+        </Text>
+      ) : pair.waiting && (
         <Text style={{ fontSize: 9.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.4, color: Colors.warning, textAlign: 'center' }}>
           EN ATTENTE
         </Text>
       )}
 
-      {seul && onJoin && !pair.a.mine && (
+      {/* Pas de bouton si une demande est DÉJÀ en cours entre nous : le
+          serveur la refuserait (`invite_already_sent`), et proposer un geste
+          qui échoue est exactement ce qui vient d'être corrigé ailleurs sur
+          cet écran. Le sablier au-dessus dit où on en est. */}
+      {seul && onJoin && !pair.a.mine && !pair.pending.some(p => p.mine) && (
         <TouchableOpacity
           onPress={() => onJoin(pair.a.id)}
           activeOpacity={0.85}
           style={{ backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}
         >
-          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
-            Me proposer
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+            style={{ fontSize: 11.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+            {joinLabel ?? 'Me proposer'}
           </Text>
         </TouchableOpacity>
       )}
@@ -153,13 +243,24 @@ function CartePlacesLibres({ free }: { free: number }) {
   );
 }
 
-export function RegisteredStrip({ pairs, free, onPlayerPress, onJoin, children }: {
+export function RegisteredStrip({ pairs, free, onPlayerPress, onJoin, joinLabel, children }: {
   pairs: RegisteredPair[];
   /** Places joueurs encore libres — la carte en pointillés du bout. */
   free: number;
   onPlayerPress?: (playerId: string) => void;
   /** Se proposer à un joueur resté seul. */
   onJoin?: (playerId: string) => void;
+  /**
+   * Le libellé du bouton — il dépend de MON état.
+   *
+   * `tournament_join` refuse un appelant non inscrit (`not_registered`), et
+   * c'est une règle juste : on ne s'apparie pas depuis l'extérieur. Mais le
+   * bouton s'affichait quand même, et un joueur non inscrit qui appuyait
+   * recevait « Impossible · Tu n'es pas inscrit à ce tournoi » — un refus pour
+   * une condition qu'on ne lui avait jamais annoncée. L'écran dit maintenant
+   * ce que le geste va faire, et il le fait.
+   */
+  joinLabel?: string;
   children?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
@@ -173,30 +274,26 @@ export function RegisteredStrip({ pairs, free, onPlayerPress, onJoin, children }
 
   return (
     <View style={{
-      backgroundColor: Colors.bgCard, borderRadius: 18, padding: 14, gap: 12,
-      borderWidth: 1, borderColor: Colors.border,
-      shadowColor: '#0A0A0A', shadowOpacity: 0.04, shadowRadius: 4,
-      shadowOffset: { width: 0, height: 1 }, elevation: 1,
+      backgroundColor: Colors.bgCard, borderRadius: 20, padding: 16, gap: 12,
+      shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12,
+      shadowOffset: { width: 0, height: 3 }, elevation: 1,
     }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <Icon name="users" size={14} color={Colors.brandDeep} stroke={2.3} />
-        <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.textPrimary }}>
-          DÉJÀ INSCRITS
-        </Text>
+      {/* Toute la ligne ouvre / replie la liste (même geste que « Comment ça
+          marche ? »), le chevron dit l'état. */}
+      <TouchableOpacity
+        onPress={() => setOpen(o => !o)}
+        disabled={pairs.length === 0}
+        activeOpacity={0.7}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
+      >
+        <Icon name="users" size={22} color={Colors.textPrimary} stroke={2.2} />
+        <FitTitle max={19} min={12} color={Colors.textPrimary}>
+          {pairs.length > 0 ? `Déjà inscrits (${pairsCountLabel(pairs)})` : 'Déjà inscrits'}
+        </FitTitle>
         {pairs.length > 0 && (
-          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
-            ({pairsCountLabel(pairs)})
-          </Text>
+          <Icon name="chevronRight" size={20} rotate={open ? 90 : 0} color={Colors.textPrimary} stroke={2.4} />
         )}
-        <View style={{ flex: 1 }} />
-        {pairs.length > 0 && (
-          <TouchableOpacity onPress={() => setOpen(o => !o)} hitSlop={8}>
-            <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
-              {open ? 'Réduire' : 'Voir'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      </TouchableOpacity>
 
       {pairs.length === 0 ? (
         <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
@@ -208,7 +305,7 @@ export function RegisteredStrip({ pairs, free, onPlayerPress, onJoin, children }
             <View key={i} style={{ flexDirection: 'row', gap: 10 }}>
               {ligne.map((p, j) => (
                 p
-                  ? <CartePaire key={p.key} pair={p} onPlayerPress={onPlayerPress} onJoin={onJoin} />
+                  ? <CartePaire key={p.key} pair={p} onPlayerPress={onPlayerPress} onJoin={onJoin} joinLabel={joinLabel} />
                   : <CartePlacesLibres key={`libre${j}`} free={free} />
               ))}
               {/* Une ligne impaire ne doit pas étirer sa seule carte sur toute

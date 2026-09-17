@@ -19,7 +19,7 @@
 // pastilles <Pill>, feuille en surimpression (motif ProfileMenuSheet, pas un
 // <Modal> natif — cf. feedback_nav_depuis_modal_native).
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Children, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
   TextInput, Alert, Pressable, StyleSheet, KeyboardAvoidingView, Platform, Image, Share,
@@ -30,23 +30,27 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Pill } from '../../components/Pill';
 import { Icon } from '../../components/community/icons';
+import { FitTitle } from '../../components/DisplayTitle';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { displayName, isDeleted } from '../../lib/players';
 import { openInMaps, hasMapTarget } from '../../lib/maps';
 import {
   fetchTournament, fetchRegistrations, fetchTeams, fetchMyJoinRequests,
-  getTournamentsEnabled, registerToTournament, joinTournamentPlayer,
+  getTournamentsEnabled, registerToTournament, joinTournamentPlayer, fetchPendingPairs,
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount,
-  groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL,
-  waitlistCount, freePlaces, levelRangeLabel, priceLabel, statusLabel, statusTone,
+  groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL, partnerIntentNotice,
+  isExpiredUnstarted,
+  waitlistCount, freePlaces, waitExplanation, registerNotice,
+  levelRangeLabel, priceLabel, statusLabel, statusTone,
   sideLabel, sameSideWarning, formatTournamentDate, teamCount,
   acceptsRegistrations, acceptsPairing, acceptsCheckIn, roundMinutesOf,
   fetchRoundMatches, fetchRoundMovements, fetchMatchEntries, fetchStandings,
   fetchTournamentResults, groupResultsByTeam, fetchFinalStakes, stakeLabel,
   enterTournamentScore, matchLiveStatus,
   type Tournament, type TournamentRegistration, type TournamentTeam, type TournamentResult,
-  type JoinRequest, type TournamentSide,
+  type JoinRequest, type TournamentSide, type TournamentStatusTone,
   type TournamentMatch, type TournamentMovement, type TournamentMatchEntry, type TournamentStanding,
   type TournamentResultTeamRow, type TournamentStake,
 } from '../../lib/tournaments';
@@ -68,32 +72,46 @@ import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/Sc
 
 const cs = StyleSheet.create({
   card: {
-    backgroundColor: Colors.bgCard, borderRadius: 18,
-    borderWidth: 1, borderColor: Colors.border, overflow: 'hidden',
-    shadowColor: Colors.textPrimary, shadowOpacity: 0.04, shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 }, elevation: 1,
+    backgroundColor: Colors.bgCard, borderRadius: 20, overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 }, elevation: 1,
   },
 });
 
-// « VEN. 11 SEPT » / « 19:00 » — le bloc horaire de la carte d'ouverture veut
+// « Ven. 11 sept. » / « 19:00 » — le bloc horaire de la carte d'ouverture veut
 // le jour et l'heure separes, la ou `formatTournamentDate` les rend en phrase.
 function dayLabel(iso: string): string {
-  return new Date(iso)
-    .toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
-    .toUpperCase();
+  const s = new Date(iso)
+    .toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 function timeLabel(iso: string): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+/** Majuscules faites EN JS, en un seul segment : `textTransform` sur la police
+ *  des titres rogne les dernières lettres sur Android (mesure avant la
+ *  transformation), et plusieurs segments peuvent disparaître au re-rendu. */
+function titreTexte(children: React.ReactNode): string {
+  return Children.toArray(children)
+    .map(p => (typeof p === 'string' || typeof p === 'number' ? String(p) : ''))
+    .join('')
+    .toUpperCase();
+}
+
+function SectionTitle({ children, icon }: {
+  children: React.ReactNode;
+  icon?: React.ComponentProps<typeof Icon>['name'];
+}) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 4 }}>
-      <View style={{ width: 3, height: 14, backgroundColor: Colors.brand, borderRadius: 2 }} />
-      <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-        {children}
-      </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4, marginTop: 4 }}>
+      {icon
+        ? <Icon name={icon} size={20} color={Colors.textPrimary} stroke={2.2} />
+        : <View style={{ width: 4, height: 16, backgroundColor: Colors.brand, borderRadius: 2 }} />}
+      {/* Taille MESURÉE : sur Android, ce titre comprimé est coupé, jamais
+          rétréci ni mis à la ligne (cf. components/DisplayTitle.FitTitle). */}
+      <FitTitle max={20} min={13} color={Colors.textPrimary}>{titreTexte(children)}</FitTitle>
     </View>
   );
 }
@@ -113,24 +131,26 @@ function InfoLine({ icon, label, value, tone }: {
   );
 }
 
-function PrimaryButton({ label, onPress, disabled, busy, tone = 'dark' }: {
+function PrimaryButton({ label, onPress, disabled, busy, tone = 'dark', icon }: {
   label: string; onPress: () => void; disabled?: boolean; busy?: boolean;
   tone?: 'dark' | 'brand' | 'ghost' | 'danger';
+  icon?: React.ComponentProps<typeof Icon>['name'];
 }) {
-  const bg = tone === 'brand' ? Colors.brand : tone === 'ghost' ? Colors.bgCard : tone === 'danger' ? Colors.bgCard : Colors.primary;
+  const bg = tone === 'brand' ? Colors.brand : tone === 'ghost' ? '#F6F6F5' : tone === 'danger' ? '#FFE9EB' : Colors.primary;
   const fg = tone === 'brand' ? Colors.textOnBrand : tone === 'ghost' ? Colors.textPrimary : tone === 'danger' ? Colors.danger : Colors.textOnDark;
   return (
     <TouchableOpacity
       onPress={onPress} disabled={disabled || busy} activeOpacity={0.85}
       style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-        backgroundColor: bg, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 16,
-        borderWidth: tone === 'ghost' || tone === 'danger' ? 1 : 0,
-        borderColor: tone === 'danger' ? 'rgba(239,68,68,0.45)' : Colors.border,
+        backgroundColor: bg, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
+        borderWidth: tone === 'ghost' ? 1 : 0,
+        borderColor: Colors.border,
         opacity: disabled ? 0.45 : 1,
       }}>
-      {busy ? <ActivityIndicator size="small" color={fg} /> : null}
-      <Text style={{ color: fg, fontSize: 13.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.2 }}>{label}</Text>
+      {busy ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={17} color={fg} stroke={2.2} /> : null}
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+        style={{ flexShrink: 1, color: fg, fontSize: 14, fontFamily: Fonts.uiBlack, letterSpacing: 0.2 }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -215,15 +235,42 @@ function Notice({ tone, children }: { tone: 'warning' | 'info' | 'success' | 'da
   );
 }
 
-function Avatar({ name, size = 34 }: { name: string; size?: number }) {
+function Avatar({ name, size = 34, path }: { name: string; size?: number; path?: string | null }) {
+  return (
+    <PlayerAvatar
+      name={name} path={path} size={size}
+      backgroundColor={Colors.primary} textColor={Colors.textOnDark}
+      fontSize={Math.round(size * 0.42)}
+    />
+  );
+}
+
+// Pastille de l'en-tête sombre : contour coloré, texte de la même couleur.
+// La couleur du statut vient toujours de `statusTone` (source unique).
+const HERO_TONE: Record<TournamentStatusTone, string> = {
+  success: '#22C55E',
+  warning: Colors.warning,
+  brand:   Colors.brand,
+  neutral: 'rgba(255,255,255,0.45)',
+  ink:     'rgba(255,255,255,0.85)',
+  danger:  Colors.danger,
+};
+
+function HeroChip({ tone, icon, children }: {
+  tone: TournamentStatusTone;
+  icon?: React.ComponentProps<typeof Icon>['name'];
+  children: React.ReactNode;
+}) {
+  const border = HERO_TONE[tone];
+  const fg = tone === 'neutral' || tone === 'ink' ? '#FFFFFF' : border;
   return (
     <View style={{
-      width: size, height: size, borderRadius: Math.round(size * 0.3),
-      backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1, minWidth: 0,
+      borderWidth: 1.5, borderColor: border, borderRadius: 999,
+      paddingHorizontal: 10, paddingVertical: 5,
     }}>
-      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.42), fontWeight: '900' }}>
-        {(name || '?').charAt(0).toUpperCase()}
-      </Text>
+      {icon ? <Icon name={icon} size={12} color={fg} stroke={2.6} /> : null}
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, fontFamily: Fonts.uiBold, color: fg }}>{children}</Text>
     </View>
   );
 }
@@ -245,10 +292,19 @@ export default function TournamentDetailScreen() {
   const [regs, setRegs] = useState<TournamentRegistration[]>([]);
   const [teams, setTeams] = useState<TournamentTeam[]>([]);
   const [requests, setRequests] = useState<JoinRequest[]>([]);
+  // Les demandes EN COURS de tout le monde (RPC dediee) : la policy ne rend
+  // que les miennes, donc sans ca un tiers voit deux joueurs deja lies comme
+  // deux joueurs seuls. Vide tant que la RPC n'a pas repondu — les cartes
+  // retombent alors sur mes seules demandes.
+  const [publicPairs, setPublicPairs] = useState<JoinRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Le partenaire visé quand on ouvre l'inscription depuis la carte d'un
+  // inscrit resté seul. Remis à null à la fermeture, sinon la prochaine
+  // inscription partirait avec un partenaire qu'on n'a pas choisi cette fois.
+  const [pendingPartner, setPendingPartner] = useState<{ id: string; name: string } | null>(null);
   const [sideSheetOpen, setSideSheetOpen] = useState(false);
   // Distinct de « ce tournoi n'existe pas » : un aléa réseau ne doit jamais
   // se lire comme « Ce tournoi est introuvable » — cf. le `if (!tournament)`
@@ -289,9 +345,15 @@ export default function TournamentDetailScreen() {
     setEnabled(on);
     if (!on) { setLoading(false); return; }
     try {
+      // Les demandes EN COURS de tout le monde sont lues à part, et
+      // volontairement pas dans ce `Promise.all` : c'est un confort
+      // d'affichage, pas une donnée dont dépend l'écran. Les mêler ici ferait
+      // basculer toute la fiche dans le `catch` — donc « tournoi introuvable »
+      // — pour une RPC absente ou pas encore rechargée par PostgREST.
       const [t, r, tm, jr] = await Promise.all([
         fetchTournament(id), fetchRegistrations(id), fetchTeams(id), fetchMyJoinRequests(id),
       ]);
+      fetchPendingPairs(id).then(setPublicPairs).catch(() => setPublicPairs([]));
       // Ces quatre lectures ont RÉUSSI (sans quoi on serait dans le `catch`
       // ci-dessous) : `t === null` ici veut dire « ce tournoi n'existe
       // vraiment pas », jamais « le réseau a lâché » — `loadError` reste donc
@@ -402,9 +464,14 @@ export default function TournamentDetailScreen() {
   const solos = useMemo(() => soloRegistrations(regs, teams), [regs, teams]);
   // Les inscrits par binome : c'est « qui joue avec qui » qu'on cherche dans
   // cette liste, pas « qui est la ». Regroupement et pieges : lib/tournaments.
+  // Les demandes en cours passent AUSSI dans le regroupement : sans elles, un
+  // joueur qui vient d'en envoyer une se voit seul dans une carte « Cherche un
+  // binôme », comme s'il ne s'était rien passé. La RLS ne rend que les
+  // demandes OU JE SUIS partie prenante (« qui a demandé à qui » n'est pas
+  // public) — les cartes des autres restent donc muettes, et c'est voulu.
   const pairs = useMemo(
-    () => groupRegistrations(regs, teams, player?.id),
-    [regs, teams, player?.id],
+    () => groupRegistrations(regs, teams, player?.id, publicPairs.length > 0 ? publicPairs : requests),
+    [regs, teams, player?.id, requests, publicPairs],
   );
 
   // PARTAGE : du texte, pas un lien. La passerelle web sert /u/, /g/ et /p/ —
@@ -557,7 +624,9 @@ export default function TournamentDetailScreen() {
   const total = seatCount(t.court_count);
   const waiting = waitlistCount(regs);
   const free = freePlaces(regs, t.court_count);
-  const canRegister = acceptsRegistrations(t.status) && !me.registration;
+  // Un vieux lien de partage peut encore ouvrir la fiche d'un tournoi jamais
+  // lancé et passé : on n'y propose plus l'inscription (isExpiredUnstarted).
+  const canRegister = acceptsRegistrations(t.status) && !me.registration && !isExpiredUnstarted(t);
   const canPair = acceptsPairing(t.status);
   const mySide = me.registration?.side ?? null;
   const partnerReg = me.partnerId ? byId.get(me.partnerId) : null;
@@ -567,6 +636,9 @@ export default function TournamentDetailScreen() {
   // le miroir exact côté lecture : c'est `tournament_generate_round` qui
   // écrit le premier tour, et rien d'autre n'insère dans `tournament_matches`.
   const canChangeSide = t.current_round === 0;
+  // Un binôme actif (pas déclaré forfait) : la carte « Mon inscription »
+  // passe alors en deux colonnes, mon côté | mon binôme.
+  const hasTeam = !!me.team && !me.team.withdrawn;
 
   // Le classement CLOS (tournament_results), jamais le vivant, une fois le
   // tournoi TERMINE/CLASSEMENT_VALIDE. `validated` distingue « en attente »
@@ -625,20 +697,34 @@ export default function TournamentDetailScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* ── En-tête sombre ── */}
       <View style={{
-        backgroundColor: Colors.heroBg,
-        paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 18,
-        borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+        backgroundColor: Colors.heroBg, overflow: 'hidden',
+        paddingTop: insets.top + 10, paddingHorizontal: 18, paddingBottom: 20,
       }}>
+        {/* Halos jaunes (décor) */}
+        <View pointerEvents="none" style={{ position: 'absolute', top: -130, right: -100, width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(255,193,26,0.13)' }} />
+        <View pointerEvents="none" style={{ position: 'absolute', bottom: -170, left: -130, width: 280, height: 280, borderRadius: 140, backgroundColor: 'rgba(255,193,26,0.07)' }} />
+
         {/* Meme en-tete que la liste : retour a gauche, logo centre. La fiche
             ne le portait pas, on ne savait plus dans quelle app on etait. */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Icon name="chevronLeft" size={22} color={Colors.textOnDark} stroke={2.2} />
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{
+              width: 40, height: 40, borderRadius: 20,
+              borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+            <Icon name="arrowLeft" size={20} color={Colors.textOnDark} stroke={2.2} />
           </TouchableOpacity>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginRight: 22 }}>
-            <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
-            <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 100, height: 22, marginLeft: -7 }} resizeMode="contain" />
+          <View style={{ flex: 1, alignItems: 'center', marginRight: 40 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 999,
+              paddingHorizontal: 12, paddingVertical: 5,
+            }}>
+              <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
+              <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 96, height: 20, marginLeft: -6 }} resizeMode="contain" />
+            </View>
           </View>
         </View>
         {/* Titre Fonts.welcome à contenu DYNAMIQUE : segment unique (pas de
@@ -649,22 +735,30 @@ export default function TournamentDetailScreen() {
             Cf. feedback_android_title_clipping. */}
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
           style={{
-            alignSelf: 'stretch', fontSize: 25, lineHeight: 33, fontFamily: Fonts.welcome,
-            color: Colors.textOnDark, includeFontPadding: false, marginTop: 10, paddingRight: 8,
+            alignSelf: 'stretch', fontSize: 32, lineHeight: 41, fontFamily: Fonts.welcome,
+            color: Colors.textOnDark, includeFontPadding: false, marginTop: 10, paddingRight: 11,
           }}>
           {t.name}
         </Text>
-        <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 3 }}>
-          {formatTournamentDate(t.starts_at)} · {t.club?.name ?? 'Club à confirmer'}
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-          {/* Couleur SOURCE UNIQUE (`statusTone`, lib/tournaments.ts) — même
+        {/* Date · heure · club : seulement une fois le tournoi lancé. Avant,
+            la carte « Date et heure » juste en dessous le dit déjà. */}
+        {started && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+            <Icon name="calendar" size={15} color="rgba(255,255,255,0.85)" stroke={2.2} />
+            <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, fontFamily: Fonts.uiSemi, color: 'rgba(255,255,255,0.92)' }}>
+              {formatTournamentDate(t.starts_at)} · {t.club?.name ?? 'Club à confirmer'}
+            </Text>
+          </View>
+        )}
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: 12 }}>
+          {/* Une seule ligne : chaque pastille rétrécit (« … ») plutôt que de
+              passer à la ligne. Couleur SOURCE UNIQUE (`statusTone`, lib/tournaments.ts) — même
               couleur ici, sur la carte de liste et dans l'admin. */}
-          <Pill variant={statusTone(t.status)}>
+          <HeroChip tone={statusTone(t.status)} icon={statusTone(t.status) === 'success' ? 'check' : undefined}>
             {statusLabel(t.status)}
-          </Pill>
-          <Pill variant="neutral">{levelRangeLabel(t.level_min, t.level_max)}</Pill>
-          <Pill variant="neutral">{priceLabel(t.price_mad)}</Pill>
+          </HeroChip>
+          <HeroChip tone="neutral" icon="signal">{levelRangeLabel(t.level_min, t.level_max)}</HeroChip>
+          <HeroChip tone="brand" icon="gem">{priceLabel(t.price_mad)}</HeroChip>
         </View>
 
         {/* Pendant la soiree, l'en-tete porte l'avancement (handoff design) :
@@ -734,6 +828,35 @@ export default function TournamentDetailScreen() {
             Pendant la soirée, la première question est « sur quel terrain je
             joue » : terrain, mouvement, adversaires, saisie. Elle passe donc
             AVANT le tableau, qui devient le détail des autres terrains. */}
+        {/* L'ÉCRAN DE SOIRÉE. La carte ci-dessous répond déjà à « sur quel
+            terrain je joue », mais il faut l'atteindre : ouvrir l'app, aller
+            dans Tournois, ouvrir la fiche, faire défiler. Six fois dans la
+            soirée, par trente-deux personnes. Le plein écran arrive direct, et
+            il montre en plus l'état de TOUS les terrains — c'est ce qui
+            remplace l'organisateur quand la soirée se gère entre joueurs. */}
+        {t.status === 'EN_COURS' && (
+          <TouchableOpacity
+            onPress={() => router.push(`/tournaments/soiree/${t.id}` as any)}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: Colors.primary, borderRadius: 18,
+              paddingVertical: 15, paddingHorizontal: 16,
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+            }}
+          >
+            <Icon name="zap" size={18} color={Colors.brand} stroke={2.4} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                MODE SOIRÉE
+              </Text>
+              <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>
+                Ton terrain, ta saisie, et où en sont les autres
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={16} color={Colors.brand} stroke={2.4} />
+          </TouchableOpacity>
+        )}
+
         {t.status === 'EN_COURS' && t.current_round > 0 && myMatch && me.team && (
           <LiveHero
             courtNo={myMatch.court_no}
@@ -749,7 +872,7 @@ export default function TournamentDetailScreen() {
         {/* ── La soirée : tableau des terrains + classement ── */}
         {started && (
           <View style={{ gap: 10 }}>
-            <SectionTitle>La soirée</SectionTitle>
+            <SectionTitle icon="trophy">La soirée</SectionTitle>
             <LiveTabs value={liveTab} onChange={setLiveTab} />
             {!t.current_round ? (
               <Notice tone="info">Le premier tour n’a pas encore été tiré.</Notice>
@@ -879,153 +1002,182 @@ export default function TournamentDetailScreen() {
             pied d'ecran qui porte le geste -- il n'a alors pas lieu d'etre. */}
         {(me.registration || (!canRegister && acceptsRegistrations(t.status) === false && !closed)) && (
         <View style={{ gap: 10 }}>
-          <SectionTitle>Mon inscription</SectionTitle>
-
           {!me.registration ? (
-            canRegister ? (
-              <View style={{ gap: 8 }}>
-                {free === 0 && (
-                  <Notice tone="warning">
-                    {waiting > 0
-                      ? 'Une liste d’attente est en cours : ton inscription y entrera à son tour.'
-                      : 'Le tournoi est complet : ton inscription entrera en liste d’attente.'}
+            <>
+              <SectionTitle icon="users">Mon inscription</SectionTitle>
+              {canRegister ? (
+                <View style={{ gap: 8 }}>
+                  {/* Ce texte disait « Le tournoi est complet » et ne
+                      s'affichait qu'a zero place. Depuis la regle du
+                      siege-aux-binomes, TOUTE inscription entre d'abord en
+                      file : ne le dire QUE quand c'est plein faisait passer la
+                      file pour une punition, et le dire a trente places libres
+                      etait faux. Le libelle vit dans lib/tournaments. */}
+                  <Notice tone={free === 0 ? 'warning' : 'info'}>
+                    {registerNotice(free)}
                   </Notice>
-                )}
-                {/* Le geste principal vit dans la barre fixe en pied
-                    d'ecran (handoff design) : ici, plus qu'un rappel du
-                    contexte -- un bouton qui se merite au defilement n'est
-                    pas un bouton principal. */}
-              </View>
-            ) : (
-              <Notice tone="info">Les inscriptions sont fermées pour ce tournoi.</Notice>
-            )
+                  {/* Le geste principal vit dans la barre fixe en pied
+                      d'ecran (handoff design). */}
+                </View>
+              ) : (
+                <Notice tone="info">Les inscriptions sont fermées pour ce tournoi.</Notice>
+              )}
+            </>
           ) : (
-            <View style={[cs.card, { padding: 14, gap: 12 }]}>
+            <View style={[cs.card, { padding: 16, gap: 14 }]}>
+              {/* En-tête de la carte : titre + où j'en suis */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="users" size={16} color={Colors.textOnBrand} stroke={2.4} />
+                </View>
+                <FitTitle max={20} min={13} color={Colors.textPrimary}>MON INSCRIPTION</FitTitle>
+                {(() => {
+                  const st = me.team?.withdrawn
+                    ? { label: 'Forfait', icon: 'x' as const, bg: 'rgba(239,68,68,0.12)', fg: '#B91C1C' }
+                    : me.waitlisted
+                      ? { label: 'En attente', icon: 'hourglass' as const, bg: 'rgba(245,158,11,0.14)', fg: '#B45309' }
+                      : { label: 'Inscrit', icon: 'check' as const, bg: Colors.success, fg: '#FFFFFF' };
+                  return (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: st.bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+                      <Icon name={st.icon} size={14} color={st.fg} stroke={2.8} />
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: st.fg }}>{st.label}</Text>
+                    </View>
+                  );
+                })()}
+              </View>
+
               {me.waitlisted && (
                 <Notice tone="warning">
                   Tu es en liste d’attente{me.registration.waitlist_position ? ` (rang ${me.registration.waitlist_position})` : ''}.{' '}
-                  {/* La file n'avance plus une fois les matchs tirés — un
-                      texte qui promet encore une place après le lancement
-                      serait un mensonge (défaut n°9 de la relecture). */}
-                  {acceptsPairing(t.status)
-                    ? 'Ta place se prendra dès qu’il s’en libère une.'
-                    : 'Le tournoi a démarré sans que ta place ne se libère : la liste d’attente ne bouge plus pour cette soirée.'}
+                  {/* La file n'avance plus une fois les matchs tirés, et pour
+                      un joueur seul ce n'est pas une place qui manque mais un
+                      partenaire : le texte dépend de la RAISON de l'attente
+                      (lib/tournaments.waitExplanation). */}
+                  {waitExplanation({
+                    hasPartner: !!me.partnerId,
+                    pairingOpen: acceptsPairing(t.status),
+                  })}
                 </Notice>
               )}
 
-              {/* Mon côté (déclaré POUR CE TOURNOI) — modifiable jusqu'au
-                  premier tirage (`tournament_set_side`, `matches_already_generated`
-                  au-delà). La feuille d'inscription PROMET ce changement
-                  (« il pourra changer ») : avant cette correction, rien ne le
-                  tenait (défaut n°1 de la relecture). */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>Mon côté ce soir-là</Text>
-                <Pill variant="ink">{sideLabel(me.registration.side)}</Pill>
-                {canChangeSide && (
-                  <TouchableOpacity onPress={() => setSideSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>Changer</Text>
-                  </TouchableOpacity>
+              {/* Mon côté | mon binôme — deux colonnes quand j'ai un binôme
+                  actif, sinon empilés (le réglage de consentement est long). */}
+              <View style={{ flexDirection: hasTeam ? 'row' : 'column', gap: hasTeam ? 12 : 14 }}>
+                {/* Mon côté (déclaré POUR CE TOURNOI) — modifiable jusqu'au
+                    premier tirage (`tournament_set_side`, `matches_already_generated`
+                    au-delà). */}
+                <View style={hasTeam ? { flex: 1, minWidth: 0, gap: 10 } : { gap: 10 }}>
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiSemi, color: Colors.textPrimary }}>Mon côté ce soir-là</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Icon name="racket" size={22} color={Colors.textPrimary} stroke={2} />
+                    <View style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 }}>
+                      <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>{sideLabel(me.registration.side)}</Text>
+                    </View>
+                    {canChangeSide && (
+                      <TouchableOpacity onPress={() => setSideSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{ backgroundColor: '#F6F6F5', borderWidth: 1, borderColor: Colors.border, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+                        <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Changer</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                {/* Mon binôme, ou mon mode de consentement */}
+                {/* `me.team` seul décide : l'inscription du partenaire est
+                    garantie par les clés étrangères, mais si elle manquait, on
+                    afficherait quand même « tu as un binôme » plutôt que le
+                    réglage de consentement, que le serveur refuserait
+                    (`already_in_team`). */}
+                {me.team?.withdrawn ? (
+                  // Le binôme a été déclaré FORFAIT (organisateur, admin.tsx).
+                  // Même mot partout pour cet événement : « Forfait », jamais « Abandon ».
+                  <Notice tone="danger">
+                    {displayName(partnerReg?.player, 'partner')} et toi avez été déclarés forfait. Vous ne jouez plus ce tournoi.
+                  </Notice>
+                ) : me.team ? (
+                  <>
+                    <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: Colors.border }} />
+                    <View style={{ flex: 1, minWidth: 0, gap: 10 }}>
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.uiSemi, color: Colors.textPrimary }}>Mon binôme</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Avatar name={displayName(partnerReg?.player, 'partner')} path={(partnerReg?.player as any)?.avatar_path} size={40} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text numberOfLines={1} style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                            {displayName(partnerReg?.player, 'partner')}
+                          </Text>
+                          <Text numberOfLines={2} style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>
+                            Ton binôme{partnerReg ? ` : côté ${sideLabel(partnerReg.side).toLowerCase()}` : ''}
+                          </Text>
+                        </View>
+                      </View>
+                      {canPair && (
+                        <PrimaryButton
+                          tone="ghost" label="Défaire le binôme" busy={busy === 'leave'}
+                          onPress={() => Alert.alert(
+                            'Défaire le binôme ?',
+                            'Vous gardez chacun votre place et votre rang. Personne n’est désinscrit.',
+                            [
+                              { text: 'Annuler', style: 'cancel' },
+                              { text: 'Défaire', style: 'destructive', onPress: () => run('leave', () => leaveTournamentTeam(t.id)) },
+                            ],
+                          )}
+                        />
+                      )}
+                    </View>
+                  </>
+                ) : (
+                  <View style={{ gap: 10 }}>
+                    {/* Le message ne promet la liste plus bas que si elle porte
+                        encore un bouton — après le tirage, `canAsk` y est
+                        toujours faux et l'instruction devenait fausse. */}
+                    <Notice tone="info">
+                      {canPair
+                        ? 'Tu n’as pas encore de binôme. Choisis quelqu’un dans la liste plus bas.'
+                        : 'Tu n’as pas de binôme, et l’appariement est fermé pour cette soirée.'}
+                    </Notice>
+                    {/* MODE DE CONSENTEMENT — n'appartient qu'à moi, et ne change
+                        que par ce geste-ci. */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
+                          {me.registration.open_to_join ? 'On peut me prendre d’un geste' : 'Il faut mon accord'}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 2 }}>
+                          {canPair
+                            ? (me.registration.open_to_join
+                                ? 'N’importe quel inscrit peut former le binôme sans te demander.'
+                                : 'Une demande t’est envoyée, tu réponds.')
+                            : 'Ce réglage ne compte plus : l’appariement est fermé pour cette soirée.'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        disabled={busy === 'open' || !canPair}
+                        onPress={() => run('open', () => setOpenToJoin(t.id, !me.registration!.open_to_join))}
+                        activeOpacity={0.8}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+                          backgroundColor: me.registration.open_to_join ? Colors.brand : Colors.bgCard,
+                          borderWidth: 1, borderColor: me.registration.open_to_join ? Colors.brand : Colors.border,
+                          opacity: canPair ? 1 : 0.45,
+                        }}>
+                        <Text style={{
+                          fontSize: 11, fontFamily: Fonts.uiBlack, textTransform: 'uppercase', letterSpacing: 0.4,
+                          color: me.registration.open_to_join ? Colors.textOnBrand : Colors.textSecondary,
+                        }}>
+                          {me.registration.open_to_join ? 'Ouvert' : 'Sur accord'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 )}
               </View>
 
-              {/* Mon binôme, ou mon mode de consentement */}
-              {/* `me.team` seul décide : l'inscription du partenaire est
-                  garantie par les clés étrangères, mais si elle manquait, on
-                  afficherait quand même « tu as un binôme » plutôt que le
-                  réglage de consentement, que le serveur refuserait
-                  (`already_in_team`). */}
-              {me.team?.withdrawn ? (
-                // Le binôme a été déclaré FORFAIT (organisateur, admin.tsx) :
-                // rien ne le disait ici avant cette correction — le joueur
-                // lisait encore « Ton binôme · côté gauche » comme si de rien
-                // n'était (défaut n°8 de la relecture). Même mot partout
-                // pour cet événement : « Forfait », jamais « Abandon ».
-                <Notice tone="danger">
-                  {displayName(partnerReg?.player, 'partner')} et toi avez été déclarés forfait. Vous ne jouez plus ce tournoi.
-                </Notice>
-              ) : me.team ? (
-                <View style={{ gap: 10 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Avatar name={displayName(partnerReg?.player, 'partner')} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
-                        {displayName(partnerReg?.player, 'partner')}
-                      </Text>
-                      <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>
-                        Ton binôme{partnerReg ? ` · côté ${sideLabel(partnerReg.side).toLowerCase()}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                  {/* Autorisé, seulement signalé. */}
-                  {pairWarning && <Notice tone="warning">{pairWarning}</Notice>}
-                  {canPair && (
-                    <PrimaryButton
-                      tone="ghost" label="Défaire le binôme" busy={busy === 'leave'}
-                      onPress={() => Alert.alert(
-                        'Défaire le binôme ?',
-                        'Vous gardez chacun votre place et votre rang. Personne n’est désinscrit.',
-                        [
-                          { text: 'Annuler', style: 'cancel' },
-                          { text: 'Défaire', style: 'destructive', onPress: () => run('leave', () => leaveTournamentTeam(t.id)) },
-                        ],
-                      )}
-                    />
-                  )}
-                </View>
-              ) : (
-                <View style={{ gap: 10 }}>
-                  {/* Le message ne promet la liste plus bas que si elle porte
-                      encore un bouton — après le tirage, `canAsk` y est
-                      toujours faux et l'instruction devenait fausse (défaut
-                      n°9 de la relecture). */}
-                  <Notice tone="info">
-                    {canPair
-                      ? 'Tu n’as pas encore de binôme. Choisis quelqu’un dans la liste plus bas.'
-                      : 'Tu n’as pas de binôme, et l’appariement est fermé pour cette soirée.'}
-                  </Notice>
-                  {/* MODE DE CONSENTEMENT — n'appartient qu'à moi, et ne change
-                      que par ce geste-ci. */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
-                        {me.registration.open_to_join ? 'On peut me prendre d’un geste' : 'Il faut mon accord'}
-                      </Text>
-                      <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 2 }}>
-                        {canPair
-                          ? (me.registration.open_to_join
-                              ? 'N’importe quel inscrit peut former le binôme sans te demander.'
-                              : 'Une demande t’est envoyée, tu réponds.')
-                          : 'Ce réglage ne compte plus : l’appariement est fermé pour cette soirée.'}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      disabled={busy === 'open' || !canPair}
-                      onPress={() => run('open', () => setOpenToJoin(t.id, !me.registration!.open_to_join))}
-                      activeOpacity={0.8}
-                      style={{
-                        paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                        backgroundColor: me.registration.open_to_join ? Colors.brand : Colors.bgCard,
-                        borderWidth: 1, borderColor: me.registration.open_to_join ? Colors.brand : Colors.border,
-                        opacity: canPair ? 1 : 0.45,
-                      }}>
-                      <Text style={{
-                        fontSize: 11, fontFamily: Fonts.uiBlack, textTransform: 'uppercase', letterSpacing: 0.4,
-                        color: me.registration.open_to_join ? Colors.textOnBrand : Colors.textSecondary,
-                      }}>
-                        {me.registration.open_to_join ? 'Ouvert' : 'Sur accord'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
+              {/* Autorisé, seulement signalé. */}
+              {hasTeam && pairWarning && <Notice tone="warning">{pairWarning}</Notice>}
 
               {/* Pointage du jour J — MASQUÉ en liste d'attente : le serveur
                   refuse `tournament_check_in` pour un joueur en attente
-                  (`not_registered`, alors qu'il EST inscrit) parce qu'il n'a
-                  aucune place à confirmer. Avant cette correction, le bouton
-                  s'affichait juste sous le bandeau « Tu es en liste
-                  d'attente » et niait l'encadré du dessus (défaut n°1 de la
-                  relecture). */}
+                  (`not_registered`) parce qu'il n'a aucune place à confirmer. */}
               {acceptsCheckIn(t.status) && !me.waitlisted && (
                 me.registration.check_in_status === 'checked_in'
                   ? <Notice tone="success">Ta présence est enregistrée.</Notice>
@@ -1034,17 +1186,20 @@ export default function TournamentDetailScreen() {
               )}
 
               {canPair && (
-                <PrimaryButton
-                  tone="danger" label="Me désinscrire" busy={busy === 'withdraw'}
-                  onPress={() => Alert.alert(
-                    'Te désinscrire ?',
-                    'Ta place se libère et la liste d’attente avance. Ton partenaire, s’il y en a un, reste inscrit avec sa place.',
-                    [
-                      { text: 'Annuler', style: 'cancel' },
-                      { text: 'Me désinscrire', style: 'destructive', onPress: () => run('withdraw', () => withdrawFromTournament(t.id)) },
-                    ],
-                  )}
-                />
+                <>
+                  <View style={{ height: 1, backgroundColor: Colors.border }} />
+                  <PrimaryButton
+                    tone="danger" icon="trash" label="Me désinscrire" busy={busy === 'withdraw'}
+                    onPress={() => Alert.alert(
+                      'Te désinscrire ?',
+                      'Ta place se libère et la liste d’attente avance. Ton partenaire, s’il y en a un, reste inscrit avec sa place.',
+                      [
+                        { text: 'Annuler', style: 'cancel' },
+                        { text: 'Me désinscrire', style: 'destructive', onPress: () => run('withdraw', () => withdrawFromTournament(t.id)) },
+                      ],
+                    )}
+                  />
+                </>
               )}
             </View>
           )}
@@ -1061,7 +1216,7 @@ export default function TournamentDetailScreen() {
                 return (
                   <View key={req.id} style={{ gap: 8, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: 10 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Avatar name={displayName(from?.player, 'partner')} size={30} />
+                      <Avatar name={displayName(from?.player, 'partner')} path={(from?.player as any)?.avatar_path} size={30} />
                       <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
                         {displayName(from?.player, 'partner')} · côté {sideLabel(from?.side).toLowerCase()}
                       </Text>
@@ -1090,17 +1245,17 @@ export default function TournamentDetailScreen() {
             Cinq lignes de regles ouvertes en permanence poussaient tout le
             reste vers le bas. Celui qui connait le format n'a pas a les
             relire a chaque visite ; celui qui les decouvre les deplie. */}
-        <View style={[cs.card, { padding: 14, gap: howToOpen ? 10 : 0 }]}>
+        <View style={[cs.card, { padding: 16, gap: howToOpen ? 12 : 0 }]}>
           <TouchableOpacity
             onPress={() => setHowToOpen(o => !o)}
             activeOpacity={0.7}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
           >
-            <Icon name="medal" size={14} color={Colors.brandDeep} stroke={2.3} />
-            <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBlack, letterSpacing: 0.6, color: Colors.textPrimary }}>
-              COMMENT ÇA MARCHE
+            <Icon name="fileText" size={22} color={Colors.textPrimary} stroke={2} />
+            <Text numberOfLines={2} style={{ flex: 1, fontSize: 19, lineHeight: 24, fontFamily: Fonts.welcome, color: Colors.textPrimary, paddingRight: 4 }}>
+              Comment ça marche ?
             </Text>
-            <Icon name="chevronRight" size={16} rotate={howToOpen ? -90 : 90} color={Colors.textMuted} stroke={2.4} />
+            <Icon name="chevronRight" size={20} rotate={howToOpen ? 90 : 0} color={Colors.textPrimary} stroke={2.4} />
           </TouchableOpacity>
           {howToOpen && [
             `Tu viens en binôme, ou seul — l’organisateur t’apparie avant le départ.`,
@@ -1132,13 +1287,36 @@ export default function TournamentDetailScreen() {
             pairs={pairs}
             free={Math.max(0, total - seatsTaken(regs))}
             onPlayerPress={(id) => router.push(`/player/${id}` as any)}
-            onJoin={(id) => run(`join-${id}`, () => joinTournamentPlayer(t.id, id))}
+            joinLabel={me.registration ? 'Me proposer' : 'M’inscrire avec lui'}
+            onJoin={(id) => {
+              // DEUX GESTES DIFFERENTS derriere le meme bouton, parce que la
+              // situation n'est pas la meme.
+              //
+              // Inscrit : `tournament_join` forme le binome (ou envoie la
+              // demande si sa fiche n'est pas ouverte).
+              //
+              // PAS inscrit : cette RPC refuse, et a raison — on ne s'apparie
+              // pas depuis l'exterieur. Le bouton s'affichait quand meme, et
+              // repondait « Impossible · Tu n'es pas inscrit a ce tournoi » :
+              // un refus pour une condition jamais annoncee, sur le seul
+              // geste que l'ecran proposait. Le meme garde-fou existait
+              // pourtant DIX LIGNES PLUS BAS, dans la liste « joueurs sans
+              // binome » (`!me.registration ? null`) : la liste de cartes,
+              // ajoutee apres, ne l'avait pas recu.
+              //
+              // On ouvre donc l'inscription avec ce joueur deja choisi comme
+              // partenaire ; la feuille sait deja m'inscrire puis le rejoindre.
+              if (me.registration) { run(`join-${id}`, () => joinTournamentPlayer(t.id, id)); return; }
+              const cible = regs.find(r => r.player_id === id);
+              setPendingPartner({ id, name: (cible?.player as any)?.name ?? 'ce joueur' });
+              setSheetOpen(true);
+            }}
           />
         )}
 
         {/* ── Les joueurs seuls ── */}
         <View style={{ gap: 10 }}>
-          <SectionTitle>Joueurs sans binôme ({solos.length})</SectionTitle>
+          <SectionTitle icon="users">Joueurs sans binôme ({solos.length})</SectionTitle>
           {solos.length === 0 ? (
             <Notice tone="info">Tout le monde a trouvé son binôme.</Notice>
           ) : (
@@ -1163,7 +1341,7 @@ export default function TournamentDetailScreen() {
                     activeOpacity={0.7}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
                   >
-                    <Avatar name={displayName(r.player, 'player')} />
+                    <Avatar name={displayName(r.player, 'player')} path={(r.player as any)?.avatar_path} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
                         {displayName(r.player, 'player')}{isMe ? ' (toi)' : ''}
@@ -1233,14 +1411,29 @@ export default function TournamentDetailScreen() {
           defaultSide={(player.court_side as TournamentSide | undefined) ?? 'both'}
           registeredIds={new Set(regs.map(r => r.player_id))}
           soloOpen={new Map(solos.map(r => [r.player_id, r.open_to_join]))}
-          onClose={() => setSheetOpen(false)}
+          initialPartner={pendingPartner}
+          onClose={() => { setSheetOpen(false); setPendingPartner(null); }}
           onDone={async (res) => {
-            if (isFeatureDisabled(res)) { setSheetOpen(false); setEnabled(false); return; }
+            if (isFeatureDisabled(res)) { setSheetOpen(false); setPendingPartner(null); setEnabled(false); return; }
             if (!res.ok) { Alert.alert('Impossible', resultMessage(res)); return; }
             setSheetOpen(false);
+            setPendingPartner(null);
             await load();
             if (res.waitlisted === true) {
-              Alert.alert('Liste d’attente', 'Le tournoi est plein : tu entres en liste d’attente et tu avanceras dès qu’une place se libère.');
+              // Cette alerte disait « Le tournoi est plein ». Elle était vraie
+              // quand la file ne se remplissait qu'à capacité atteinte ; depuis
+              // la règle du siège-aux-binômes, TOUTE inscription y passe — vue
+              // à l'écran sur un tournoi à 2 joueurs sur 32. Le titre change
+              // aussi : entrer en file n'est plus une exception, c'est le
+              // chemin normal, et l'annoncer comme un refus fait renoncer.
+              //
+              // `hasPartner: false` sans condition : à cet instant, un
+              // partenaire éventuel n'a fait que RECEVOIR une invitation. Le
+              // binôme se forme à son acceptation, pas ici.
+              Alert.alert(
+                'Inscription enregistrée',
+                waitExplanation({ hasPartner: false, pairingOpen: true }),
+              );
             }
           }}
         />
@@ -1285,7 +1478,15 @@ export default function TournamentDetailScreen() {
         // litige est détecté forcerait CHAQUE désaccord — même une simple
         // faute de frappe — à attendre l'organisateur (Task 10). Ne pas
         // « corriger » ce comportement.
-        const canEnter = t.status === 'EN_COURS' && iAmIn && status !== 'confirmed' && status !== 'forfeited';
+        // `m.round_no === t.current_round` : UNE ROTATION PASSÉE EST DÉFINITIVE
+        // (tournament_auto_advance.sql refuse `round_closed`). Sans ce garde, la
+        // feuille d'un match d'une rotation déjà jouée proposait encore la
+        // saisie — pour répondre « Impossible » après coup, ou, avant le verrou
+        // serveur, pour créer un désaccord après que les binômes avaient changé
+        // de terrain.
+        const canEnter = t.status === 'EN_COURS' && iAmIn
+          && m.round_no === t.current_round
+          && status !== 'confirmed' && status !== 'forfeited';
         return (
           <ScoreSheet
             courtNo={m.court_no}
@@ -1312,7 +1513,7 @@ export default function TournamentDetailScreen() {
 // (feedback_nav_depuis_modal_native). Ici, aucune navigation ne part de la
 // feuille — et la forme reste celle de ProfileMenuSheet.
 
-function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpen, onClose, onDone }: {
+function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpen, initialPartner, onClose, onDone }: {
   tournamentId: string;
   myId: string;
   /** Prérempli depuis le profil — le côté reste un choix PROPRE AU TOURNOI. */
@@ -1320,16 +1521,34 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
   registeredIds: Set<string>;
   /** Les inscrits restes SEULS, et leur open_to_join. */
   soloOpen: Map<string, boolean>;
+  /**
+   * Le partenaire visé, quand on arrive ici depuis « M'inscrire avec lui »
+   * sur la carte d'un inscrit resté seul.
+   *
+   * Pourquoi passer par la feuille plutôt que d'appeler `tournament_join`
+   * directement : cette RPC refuse un appelant non inscrit, et à raison. La
+   * feuille sait déjà quoi faire d'un partenaire DÉJÀ INSCRIT — elle
+   * m'inscrit, puis le rejoint (`partnerPath`), ce qui respecte son
+   * « on peut me prendre d'un geste » au lieu de lui envoyer une demande
+   * dont il n'a pas besoin.
+   *
+   * Ces deux appels ne sont PAS atomiques, et ils ne peuvent pas l'être :
+   * `tournament_register` refuse un partenaire déjà inscrit
+   * (`partner_already_registered`). Si le second échoue, on reste inscrit
+   * sans binôme — état récupérable, la demande se refait depuis la liste des
+   * joueurs sans binôme.
+   */
+  initialPartner?: { id: string; name: string } | null;
   onClose: () => void;
   onDone: (res: TournamentResult) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [side, setSide] = useState<TournamentSide>(defaultSide);
-  const [mode, setMode] = useState<'solo' | 'duo'>('solo');
+  const [mode, setMode] = useState<'solo' | 'duo'>(initialPartner ? 'duo' : 'solo');
   const [openToJoin, setOpen] = useState(true);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<{ id: string; name: string; elo_score?: number | null }[]>([]);
-  const [partner, setPartner] = useState<{ id: string; name: string } | null>(null);
+  const [partner, setPartner] = useState<{ id: string; name: string; avatar_path?: string | null } | null>(initialPartner ?? null);
   const [searching, setSearching] = useState(false);
   // Distinct de « aucun joueur trouvé » : avant cette correction, `data`
   // était destructuré SANS jamais lire `error` — un refus réseau rendait une
@@ -1348,7 +1567,7 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
       try {
         const { supabase } = await import('../../lib/supabase');
         const { data, error } = await supabase
-          .from('players').select('id, name, elo_score')
+          .from('players').select('id, name, elo_score, avatar_path')
           .is('deleted_at', null).ilike('name', `%${term}%`).neq('id', myId).limit(20);
         if (cancelled) return;
         if (error) {
@@ -1363,6 +1582,17 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [query, mode, myId]);
+
+  // Le chemin du partenaire choisi : instantané, sur demande, pas encore
+  // inscrit, ou déjà pris. Calculé UNE fois — le bandeau, la ligne sous le nom
+  // et le libellé du bouton doivent dire la même chose, et trois lectures
+  // séparées de la même règle finissent toujours par diverger.
+  const cheminPartenaire = partner
+    ? partnerPath(partner.id, { registered: registeredIds, soloOpen })
+    : null;
+  // Arrivée CIBLÉE : on vient de la carte de quelqu'un, et on l'a toujours
+  // pour partenaire. Relâcher la croix rend la feuille complète.
+  const cible = !!initialPartner && partner?.id === initialPartner.id;
 
   const submit = async () => {
     setBusy(true);
@@ -1410,12 +1640,56 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
           <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 2 }}>
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border }} />
           </View>
-          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 16, color: Colors.textPrimary, paddingHorizontal: 18, paddingTop: 8 }}>
-            M’inscrire
+          {/* Quand on arrive depuis la carte d'un inscrit, le titre le NOMME :
+              sans ça, la feuille générique donne l'impression d'avoir perdu
+              le geste qu'on venait de faire. */}
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 16, color: Colors.textPrimary, paddingHorizontal: 18, paddingTop: 8 }}>
+            {initialPartner ? `M’inscrire avec ${initialPartner.name}` : 'M’inscrire'}
           </Text>
 
           <ScrollView contentContainerStyle={{ padding: 18, gap: 16 }} keyboardShouldPersistTaps="handled">
-            {/* Seul ou à deux */}
+            {/* ARRIVÉE CIBLÉE — on vient de la carte d'un inscrit précis.
+                La feuille générique reposait alors deux questions déjà
+                répondues (« je viens seul ou à deux ? », « avec qui ? ») et
+                reléguait la seule information qui compte — QUI — en
+                quatrième position. Ici on met la personne en tête, on dit ce
+                qui va se passer, et on ne garde que les deux choix qui
+                restent vraiment à faire : mon côté, et mon réglage si le
+                binôme se défait.
+
+                La croix reste : elle relâche la cible et rend la feuille
+                complète, pour qui change d'avis en cours de route. */}
+            {cible && partner && (
+              <View style={{ gap: 10 }}>
+                <View style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+                  <Avatar name={partner.name} path={partner.avatar_path} size={34} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                      {partner.name}
+                    </Text>
+                    {cheminPartenaire && (
+                      <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted, marginTop: 2 }}>
+                        {PARTNER_PATH_LABEL[cheminPartenaire]}
+                      </Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => { setPartner(null); setQuery(''); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Choisir quelqu’un d’autre"
+                  >
+                    <Icon name="x" size={16} color={Colors.textMuted} stroke={2.2} />
+                  </TouchableOpacity>
+                </View>
+                {cheminPartenaire && (
+                  <Notice tone="info">{partnerIntentNotice(cheminPartenaire, partner.name)}</Notice>
+                )}
+              </View>
+            )}
+
+            {/* Seul ou à deux — la question ne se pose plus quand on est
+                arrivé par quelqu'un. */}
+            {!cible && (
             <View>
               <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
                 Je viens
@@ -1438,6 +1712,7 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
                 })}
               </View>
             </View>
+            )}
 
             {/* Côté — propre au tournoi, prérempli depuis le profil */}
             <View>
@@ -1475,22 +1750,22 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
                   );
                 })}
               </View>
-              {mode === 'duo' && (
+              {mode === 'duo' && partner && (
                 <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 6 }}>
                   Ce choix reste le tien : il s’appliquera si ton binôme se défait.
                 </Text>
               )}
             </View>
 
-            {/* Le partenaire */}
-            {mode === 'duo' && (
+            {/* Le partenaire — déjà montré en tête sur une arrivée ciblée. */}
+            {mode === 'duo' && !cible && (
               <View>
                 <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>
                   Mon partenaire
                 </Text>
                 {partner ? (
                   <View style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
-                    <Avatar name={partner.name} size={30} />
+                    <Avatar name={partner.name} path={partner.avatar_path} size={30} />
                     <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>{partner.name}</Text>
                     <TouchableOpacity onPress={() => { setPartner(null); setQuery(''); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Icon name="x" size={16} color={Colors.textMuted} stroke={2.2} />
@@ -1530,12 +1805,12 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
                         return (
                           <TouchableOpacity
                             key={p.id} disabled={bloque} activeOpacity={0.8}
-                            onPress={() => setPartner({ id: p.id, name: p.name })}
+                            onPress={() => setPartner({ id: p.id, name: p.name, avatar_path: (p as any).avatar_path ?? null })}
                             style={[cs.card, {
                               padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10,
                               opacity: bloque ? 0.45 : 1,
                             }]}>
-                            <Avatar name={p.name} size={28} />
+                            <Avatar name={p.name} path={(p as any).avatar_path} size={28} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
                                 {p.name}
@@ -1555,10 +1830,19 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
                     </View>
                   </>
                 )}
-                <Notice tone="info">
-                  Ton partenaire est inscrit sans rien déclarer en son nom : côté « les deux », et
-                  « sur accord » pour tout le reste. Il pourra changer, ou défaire le binôme.
-                </Notice>
+                {/* Ce bandeau annonçait « ton partenaire est inscrit sans rien
+                    déclarer en son nom » — quel que soit le partenaire. Il
+                    décrivait l'inscription d'office, supprimée par
+                    tournament_partner_invite.sql : il était faux pour un
+                    joueur pas encore inscrit (il reçoit une demande, on
+                    n'inscrit rien à sa place) ET pour un joueur déjà inscrit
+                    (qui a déclaré son côté et son mode lui-même). Le texte
+                    dépend maintenant du chemin réel (lib/tournaments). */}
+                {partner && cheminPartenaire && (
+                  <Notice tone="info">
+                    {partnerIntentNotice(cheminPartenaire, partner.name)}
+                  </Notice>
+                )}
               </View>
             )}
 
@@ -1566,9 +1850,9 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
               // Le bouton DIT ce qu'il va faire : avec un partenaire deja
               // inscrit, il ne nous inscrit pas tous les deux — il m'inscrit et
               // forme le binome, ou envoie une demande.
-              label={mode !== 'duo' || !partner
+              label={mode !== 'duo' || !cheminPartenaire
                 ? 'M’inscrire'
-                : registerCtaLabel(partnerPath(partner.id, { registered: registeredIds, soloOpen }))}
+                : registerCtaLabel(cheminPartenaire)}
               busy={busy}
               disabled={mode === 'duo' && !partner}
               onPress={submit}

@@ -132,17 +132,71 @@ export function waitlistCount(regs: Pick<TournamentRegistration, 'waitlist_posit
   return regs.filter(r => r.waitlist_position != null).length;
 }
 
-/** Ce qu'un NOUVEL inscrit obtiendrait immédiatement — port de
- *  `fn_tournament_free_places` : ZÉRO dès que quelqu'un attend, quel que soit
- *  le nombre de sièges vides. Ces sièges appartiennent à la file, pas au
- *  prochain arrivant. C'est la seule lecture qu'un écran peut afficher
- *  honnêtement. */
+/** Les sièges réellement vides — port de `fn_tournament_free_places`.
+ *
+ *  CETTE FONCTION RENDAIT ZÉRO dès que quelqu'un attendait, quel que soit le
+ *  nombre de sièges vides : les sièges appartenaient à la file, pas au
+ *  prochain arrivant. C'était juste tant qu'un joueur en attente POUVAIT
+ *  prendre un siège.
+ *
+ *  Depuis la règle du siège-aux-binômes, il ne le peut plus : un joueur seul
+ *  n'a pas de place à tenir, et TOUTE inscription passe désormais par la file
+ *  (le partenaire est invité, plus inscrit d'office). Un tournoi de 32 places
+ *  affichait donc « COMPLET » dès son premier inscrit — vu à l'écran : « 2
+ *  joueurs sur 32 », pastille COMPLET, et « Le tournoi est plein » à
+ *  l'inscription.
+ *
+ *  La file n'est pas doublée pour autant : `fn_tournament_promote_waitlist`
+ *  tourne après chaque inscription, retrait et appariement, et la sert dans
+ *  l'ordre. Les sièges encore vides après son passage n'appartiennent à
+ *  personne. */
 export function freePlaces(
   regs: Pick<TournamentRegistration, 'waitlist_position'>[],
   courtCount: number,
 ): number {
-  if (waitlistCount(regs) > 0) return 0;
   return Math.max(0, seatCount(courtCount) - seatsTaken(regs));
+}
+
+/**
+ * Pourquoi je n'ai pas de siège — et donc quoi faire.
+ *
+ * Tous les textes de l'écran expliquaient l'attente par « le tournoi est
+ * plein ». Ils datent d'avant la règle du siège-aux-binômes, où c'était la
+ * SEULE raison d'attendre. Il y en a deux maintenant, et elles n'appellent
+ * pas le même geste : sans binôme, on cherche un partenaire ; sans place, on
+ * patiente. Dire « c'est plein » à quelqu'un qui voit trente sièges vides ne
+ * l'induit pas seulement en erreur — ça lui fait croire l'app cassée.
+ *
+ * Attendre AVEC un binôme veut forcément dire qu'il n'y a plus de place :
+ * `fn_tournament_promote_waitlist` assied tout binôme qui tient, à chaque
+ * geste. D'où deux cas, et pas trois.
+ */
+export function waitExplanation(i: {
+  hasPartner: boolean;
+  /** Les inscriptions et l'appariement sont-ils encore ouverts ? */
+  pairingOpen: boolean;
+}): string {
+  if (!i.hasPartner) {
+    return i.pairingOpen
+      ? 'Les places vont aux binômes : dès que tu as un partenaire, vous prenez une place à deux.'
+      : 'Le tournoi a démarré sans que tu trouves de binôme : les places vont aux paires.';
+  }
+  return i.pairingOpen
+    ? 'Toutes les places sont prises. Vous avancerez dès qu’un binôme se retire.'
+    : 'Le tournoi a démarré sans que votre place ne se libère : la liste d’attente ne bouge plus pour cette soirée.';
+}
+
+/**
+ * Ce qu'on annonce à quelqu'un qui n'est PAS encore inscrit.
+ *
+ * Il ne peut pas savoir qu'il entrera en file : c'est vrai de toute
+ * inscription depuis que le partenaire est invité au lieu d'être inscrit
+ * d'office. Le taire fait passer la file pour une punition.
+ */
+export function registerNotice(freeSeats: number): string {
+  return freeSeats === 0
+    ? 'Toutes les places sont prises : ton inscription entrera en liste d’attente.'
+    : 'Les places vont aux binômes : tu t’inscris d’abord seul, et vous prenez une place à deux dès que ton binôme est formé.';
 }
 
 /** « 13/16 » — un nombre de JOUEURS des deux côtés de la barre. */
@@ -402,7 +456,7 @@ export async function fetchRegistrations(tournamentId: string): Promise<Tourname
   const { supabase } = await import('./supabase');
   const { data, error } = await supabase
     .from('tournament_registrations')
-    .select('tournament_id, player_id, side, open_to_join, waitlist_position, check_in_status, registered_at, player:player_id(id, name, elo_score, deleted_at)')
+    .select('tournament_id, player_id, side, open_to_join, waitlist_position, check_in_status, registered_at, player:player_id(id, name, elo_score, avatar_path, deleted_at)')
     .eq('tournament_id', tournamentId)
     .order('waitlist_position', { ascending: true, nullsFirst: true })
     .order('registered_at', { ascending: true });
@@ -454,6 +508,48 @@ export async function fetchMyJoinRequests(tournamentId: string): Promise<JoinReq
     .order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as JoinRequest[];
+}
+
+/**
+ * Qui a demandé à faire binôme avec qui — les demandes EN COURS, pour tous.
+ *
+ * La policy de `tournament_join_requests` réserve la lecture des lignes aux
+ * deux intéressés. Un tiers voyait donc deux joueurs déjà liés comme deux
+ * joueurs seuls, et leur proposait par-dessus.
+ *
+ * ESSAYÉ AVANT, PUIS RETIRÉ : un COMPTE anonyme (« devQ a 1 demande »). Sur
+ * une soirée où deux joueurs seuls se sont demandés, les DEUX cartes
+ * affichaient « 1 demande » et le lien se déduisait aussitôt. Un nombre n'est
+ * anonyme que noyé dans le nombre, et il ne l'est jamais au début des
+ * inscriptions — c'est-à-dire quand il servirait.
+ *
+ * CE QUI SORT, ET CE QUI NE SORT PAS : les demandes `pending`, et rien
+ * d'autre. Une demande refusée disparaît de cette lecture au moment du refus,
+ * sans que personne d'autre n'ait su qu'elle avait existé — l'appariement
+ * devient lisible sans que les râteaux le deviennent.
+ *
+ * Une panne ici ne casse rien : sans ces couples, les cartes retombent sur les
+ * seules demandes que la policy laisse voir, c'est-à-dire les miennes.
+ */
+export async function fetchPendingPairs(tournamentId: string): Promise<JoinRequest[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .rpc('tournament_pending_pairs', { p_tournament: tournamentId });
+  if (error) {
+    console.warn('[tournois] demandes en cours indisponibles', error);
+    return [];
+  }
+  // La RPC ne rend que le couple : ni identifiant, ni date — on ne peut pas
+  // répondre à la place de quelqu'un avec ça. `groupRegistrations` n'a besoin
+  // que de `from_player`, `to_player` et `status`.
+  return ((data ?? []) as { from_player: string; to_player: string }[]).map(r => ({
+    id: `${r.from_player}:${r.to_player}`,
+    tournament_id: tournamentId,
+    from_player: r.from_player,
+    to_player: r.to_player,
+    status: 'pending' as const,
+    created_at: '',
+  }));
 }
 
 // ─── Appels serveur ──────────────────────────────────────────────────────────
@@ -1401,6 +1497,83 @@ export async function fetchTournamentMatches(tournamentId: string): Promise<Tour
   return (data ?? []) as unknown as TournamentMatch[];
 }
 
+/**
+ * Prévient à chaque changement d'un match de ce tournoi — score saisi, ou
+ * rotation suivante tirée (de nouveaux matchs sont insérés).
+ *
+ * POURQUOI : depuis tournament_auto_advance.sql, la rotation suivante part
+ * TOUTE SEULE quand le dernier terrain saisit. Sans abonnement, l'écran de
+ * soirée des trente autres joueurs restait sur l'ancienne rotation jusqu'à ce
+ * qu'on le rouvre — on aurait joué sur le mauvais terrain.
+ *
+ * Ne marche que si `tournament_matches` est dans la publication
+ * `supabase_realtime` (ajoutée par cette même migration). Avant, l'abonnement
+ * ne reçoit simplement rien : aucune erreur, l'écran se contente de ne pas
+ * bouger — d'où le rechargement manuel qui reste possible.
+ *
+ * Le client Supabase est importé dynamiquement, comme partout dans ce module :
+ * les tests purs n'ont pas à charger les variables d'environnement.
+ */
+export function subscribeTournamentMatches(tournamentId: string, onChange: () => void): () => void {
+  let channel: any = null;
+  let fini = false;
+  const suffix = Math.random().toString(36).slice(2, 8);
+  import('./supabase').then(({ supabase }) => {
+    if (fini) return;
+    channel = supabase
+      .channel(`tournament-matches:${tournamentId}:${suffix}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'tournament_matches', filter: `tournament_id=eq.${tournamentId}` },
+        () => onChange())
+      .subscribe();
+  });
+  return () => {
+    fini = true;
+    if (channel) import('./supabase').then(({ supabase }) => supabase.removeChannel(channel));
+  };
+}
+
+/**
+ * La soirée qui se joue MAINTENANT, et dans laquelle j'ai une place.
+ *
+ * Pendant une rotation de vingt minutes, le chemin vers la saisie passait par
+ * l'accueil, l'onglet Tournois, la fiche, puis le mode soirée. Quatre gestes,
+ * six fois dans la soirée. Cette fonction permet à l'accueil de poser un
+ * raccourci direct, sans requête supplémentaire : les tournois et les
+ * inscriptions y sont déjà chargés pour la section « Tournois ouverts ».
+ *
+ * TROIS REFUS, et chacun évite une promesse en l'air :
+ *
+ *   * les statuts où RIEN ne se joue encore. `CHECK_IN` et `PRET` sont
+ *     inclus — on est au club, c'est le moment où le raccourci sert le plus ;
+ *   * une inscription en LISTE D'ATTENTE : sans siège, il n'y a pas de
+ *     terrain à rejoindre, et la bannière enverrait vers un écran qui dirait
+ *     « tu ne joues pas cette rotation » ;
+ *   * les tournois où je ne suis pas inscrit du tout — un tournoi public en
+ *     cours ne me concerne pas.
+ *
+ * S'il y en a plusieurs (ça ne devrait pas arriver), le plus proche dans le
+ * temps gagne : `fetchTournaments` trie déjà par `starts_at`.
+ */
+export function myLiveTournament(
+  tournaments: Tournament[],
+  regs: Pick<TournamentRegistration, 'tournament_id' | 'player_id' | 'waitlist_position'>[],
+  myId: string,
+  now: Date = new Date(),
+): Tournament | null {
+  const assis = new Set(
+    regs.filter(r => r.player_id === myId && r.waitlist_position == null)
+        .map(r => r.tournament_id),
+  );
+  return tournaments.find(t =>
+    (t.status === 'EN_COURS' || t.status === 'CHECK_IN' || t.status === 'PRET')
+    // Reste en pointage ou pret sans jamais etre lance, et la soiree est
+    // passee : la banniere « c'est ce soir » s'afficherait indefiniment. Un
+    // tournoi EN_COURS n'est pas concerne -- il se joue, meme en retard.
+    && !isExpiredUnstarted(t, now)
+    && assis.has(t.id)) ?? null;
+}
+
 // ── Accueil : quel tournoi mérite une place sur l'écran d'accueil ───────────
 //
 // ── Sélection de la date et de l'heure (formulaire de création) ─────────────
@@ -1555,9 +1728,12 @@ export function homeTournamentList(
   tournaments: Tournament[],
   regsByTournament: Map<string, TournamentRegistration[]>,
   myId: string,
+  now: Date = new Date(),
 ): HomeTournamentEntry[] {
   return tournaments
-    .filter(t => tournamentPhase(t.status) === 'upcoming')
+    // Un tournoi jamais lance dont la soiree aurait deja du finir n'est plus
+    // « a venir » : le montrer inviterait a s'inscrire a une soiree morte.
+    .filter(t => tournamentPhase(t.status) === 'upcoming' && !isExpiredUnstarted(t, now))
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
     .map(t => {
       const regs = regsByTournament.get(t.id) ?? [];
@@ -1570,6 +1746,56 @@ export function homeTournamentList(
       };
     });
 }
+
+/**
+ * Un tournoi JAMAIS LANCÉ dont la soirée aurait déjà dû se terminer.
+ *
+ * Aucune liste ne regardait la date : l'accueil et l'onglet « À venir » ne
+ * filtraient que sur le statut. Un tournoi que personne n'a démarré restait
+ * donc proposé indéfiniment, inscription comprise — une soirée morte
+ * présentée comme ouverte.
+ *
+ * LE REPÈRE EST LA FIN PRÉVUE + UNE DEMI-HEURE, PAS L'HEURE DE DÉBUT. Une
+ * montante commence rarement à l'heure pile : on arrive, on pointe. Couper à
+ * `starts_at` ferait disparaître le tournoi en plein pointage, sous les yeux
+ * des joueurs. Et même la fin prévue est trop tôt (demande de l'utilisateur,
+ * 2026-09-14) : une soirée lancée en retard déborde d'autant, on ne fait pas
+ * disparaître un tournoi qu'on est peut-être en train de lancer. D'où
+ * `EXPIRY_GRACE_MINUTES` ajoutée à la fin prévue.
+ *
+ * `ends_at` ne sert pas : il n'est écrit qu'à la clôture, donc vide avant le
+ * lancement. La fin prévue se calcule : début + rotations × durée.
+ *
+ * Ne concerne que les statuts d'AVANT le lancement (`tournamentPhase` =
+ * « upcoming »). Un tournoi en cours, terminé ou annulé n'est jamais
+ * « expiré » ici. Une date illisible rend `false` : on ne fait pas
+ * disparaître une donnée sur une erreur de lecture.
+ *
+ * Les écrans ADMIN ne l'utilisent pas, volontairement : c'est là que
+ * l'organisateur retrouve ce tournoi pour l'annuler.
+ */
+export function isExpiredUnstarted(
+  t: Pick<Tournament, 'status' | 'starts_at' | 'round_count' | 'round_minutes'>,
+  now: Date = new Date(),
+): boolean {
+  if (tournamentPhase(t.status) !== 'upcoming') return false;
+  const debut = new Date(t.starts_at).getTime();
+  if (Number.isNaN(debut)) return false;
+  const limite = debut
+    + (totalDurationMinutes(t.round_count, roundMinutesOf(t)) + EXPIRY_GRACE_MINUTES) * 60_000;
+  return now.getTime() > limite;
+}
+
+/**
+ * La marge accordée APRÈS l'heure de fin supposée d'une soirée, en minutes,
+ * avant de cacher un tournoi jamais lancé (`isExpiredUnstarted`).
+ *
+ * Demandée par l'utilisateur (2026-09-14) : la fin supposée seule est trop
+ * juste — une soirée lancée en retard déborde d'autant. Nommée plutôt que
+ * noyée dans le calcul, pour qu'on la retrouve et qu'on la règle à un seul
+ * endroit.
+ */
+export const EXPIRY_GRACE_MINUTES = 30;
 
 // ── Filtres de la liste (handoff design, chantier 3) ───────────────────────
 //
@@ -1742,6 +1968,8 @@ export interface PairedPlayer {
   name: string;
   elo: number | null;
   mine: boolean;
+  /** `players.avatar_path` — sa photo, si elle existe. */
+  avatarPath?: string | null;
 }
 
 export interface RegisteredPair {
@@ -1750,6 +1978,40 @@ export interface RegisteredPair {
   a: PairedPlayer;
   /** `null` quand le joueur cherche encore un binôme. */
   b: PairedPlayer | null;
+  /**
+   * Les joueurs avec qui une demande est EN COURS — dans un sens ou dans
+   * l'autre. Vide dès que le binôme est formé.
+   *
+   * Ces liens n'existaient nulle part sur les cartes : deux joueurs qui
+   * s'étaient déjà demandés apparaissaient chacun dans sa propre carte
+   * « Cherche un binôme », comme s'il ne s'était rien passé. On croit sa
+   * demande perdue, et on en envoie une autre.
+   *
+   * LE SENS N'EST PAS DISTINGUÉ, volontairement : la carte répond « où en est
+   * cette personne », et de ce point de vue « je l'ai demandé » et « il m'a
+   * demandé » sont la même chose — une réponse manque. Qui doit répondre se
+   * lit dans la liste « joueurs sans binôme », qui porte les boutons.
+   *
+   * Conséquence assumée : une demande entre deux joueurs seuls apparaît sur
+   * LEURS DEUX cartes. Ce n'est pas un doublon — chaque carte décrit la
+   * situation de son joueur, et en cacher une reviendrait à faire disparaître
+   * quelqu'un de la liste des inscrits.
+   */
+  pending: PairedPlayer[];
+  /**
+   * `a` et `b` sont réunis par une demande EN COURS, pas par un binôme formé.
+   *
+   * Deux joueurs qui se sont demandés apparaissaient dans DEUX cartes
+   * séparées — « isolés alors qu'ils sont liés ». On les réunit donc dans une
+   * seule, sous un sablier : c'est ce que l'œil cherche dans cette liste,
+   * « qui est avec qui ».
+   *
+   * LA FUSION N'A LIEU QUE SI LE LIEN EST SANS AMBIGUÏTÉ : chacun des deux
+   * n'a qu'une seule demande en cours, et c'est vers l'autre. Dès qu'un
+   * joueur en a plusieurs, le réunir avec l'un d'eux désignerait un vainqueur
+   * que personne n'a choisi — il garde alors sa carte, avec ses candidats.
+   */
+  tentative: boolean;
   /** Le binôme est en liste d'attente — il n'a pas (encore) sa place. */
   waiting: boolean;
 }
@@ -1772,6 +2034,8 @@ export function groupRegistrations(
   regs: TournamentRegistration[],
   teams: TournamentTeam[],
   myId?: string | null,
+  /** Les demandes de binôme — seules celles encore `pending` sont lues. */
+  requests: JoinRequest[] = [],
 ): RegisteredPair[] {
   const parJoueur = new Map(regs.map(r => [r.player_id, r]));
   const versPaire = (r: TournamentRegistration): PairedPlayer => ({
@@ -1779,6 +2043,7 @@ export function groupRegistrations(
     name: displayName(r.player ?? null, 'player'),
     elo: r.player?.elo_score ?? null,
     mine: !!myId && r.player_id === myId,
+    avatarPath: (r.player as any)?.avatar_path ?? null,
   });
 
   const paires: RegisteredPair[] = [];
@@ -1795,30 +2060,94 @@ export function groupRegistrations(
       key: t.id,
       a: versPaire(r1),
       b: versPaire(r2),
+      pending: [],
+      tentative: false,
       waiting: r1.waitlist_position != null || r2.waitlist_position != null,
+    });
+  }
+
+  // Les demandes en cours, dans les deux sens. Une demande vers quelqu'un qui
+  // n'est plus inscrit, ou déjà en binôme, ne mène nulle part : on ne la
+  // montre pas — promettre un binôme impossible est pire que se taire.
+  const enAttente = new Map<string, Set<string>>();
+  for (const q of requests) {
+    if (q.status !== 'pending') continue;
+    for (const [x, y] of [[q.from_player, q.to_player], [q.to_player, q.from_player]] as const) {
+      if (casees.has(x) || casees.has(y)) continue;
+      if (!parJoueur.has(x) || !parJoueur.has(y)) continue;
+      if (!enAttente.has(x)) enAttente.set(x, new Set());
+      enAttente.get(x)!.add(y);
+    }
+  }
+
+  // FUSION DES LIENS SANS AMBIGUÏTÉ. Deux joueurs qui n'ont chacun qu'une
+  // demande, et l'un vers l'autre, forment une carte commune sous un sablier.
+  // Dès qu'un des deux est courtisé par plusieurs personnes, on ne fusionne
+  // pas : désigner un gagnant que personne n'a choisi serait pire que deux
+  // cartes.
+  for (const r of regs) {
+    if (casees.has(r.player_id)) continue;
+    const miens = enAttente.get(r.player_id);
+    if (!miens || miens.size !== 1) continue;
+    const autre = [...miens][0];
+    const siens = enAttente.get(autre);
+    if (!siens || siens.size !== 1 || !siens.has(r.player_id)) continue;
+    const r2 = parJoueur.get(autre);
+    if (!r2 || casees.has(autre)) continue;
+    casees.add(r.player_id);
+    casees.add(autre);
+    // MOI à gauche quand je suis dedans : on lit sa propre carte avant celle
+    // des autres. Sinon l'ordre alphabétique, pour qu'elle ne change pas d'un
+    // chargement à l'autre.
+    const [x, y] = !!myId && r2.player_id === myId ? [r2, r] : [r, r2];
+    paires.push({
+      key: [r.player_id, autre].sort().join(':'),
+      a: versPaire(x),
+      b: versPaire(y),
+      pending: [],
+      tentative: true,
+      waiting: x.waitlist_position != null || y.waitlist_position != null,
     });
   }
 
   for (const r of regs) {
     if (casees.has(r.player_id)) continue;
+    const candidats = [...(enAttente.get(r.player_id) ?? [])]
+      .map(id => parJoueur.get(id))
+      .filter((x): x is TournamentRegistration => !!x)
+      .map(versPaire)
+      // Ordre stable : sans tri, deux chargements peuvent rendre deux ordres
+      // et la carte « saute » sous les yeux au rafraîchissement.
+      .sort((x, y) => x.name.localeCompare(y.name));
     paires.push({
       key: r.player_id,
       a: versPaire(r),
       b: null,
+      pending: candidats,
+      tentative: false,
       waiting: r.waitlist_position != null,
     });
   }
 
-  // Les binômes assis d'abord, puis les joueurs seuls, puis la file d'attente :
-  // on lit « qui joue » avant « qui cherche » avant « qui espère ».
-  const rang = (p: RegisteredPair) => (p.waiting ? 2 : p.b ? 0 : 1);
+  // On lit « qui joue » avant « qui est sur le point de jouer » avant « qui
+  // cherche encore ». L'ancien classement mettait TOUTE la file en dernier —
+  // ça marchait tant qu'un joueur seul pouvait être assis ; depuis la règle
+  // du siège-aux-binômes, tous les solos attendent, et le critère ne
+  // départageait plus rien. Une demande en cours passe donc devant : c'est ce
+  // qui est le plus près d'aboutir.
+  const rang = (p: RegisteredPair) =>
+    p.b && !p.tentative ? (p.waiting ? 1 : 0)
+      : p.tentative ? 2
+      : p.pending.length > 0 ? 3 : 4;
   return paires.sort((x, y) => rang(x) - rang(y) || x.key.localeCompare(y.key));
 }
 
 /** « 6 joueurs · 3 binômes » — l'en-tête de la liste des inscrits. */
 export function pairsCountLabel(pairs: RegisteredPair[]): string {
   const joueurs = pairs.reduce((n, p) => n + (p.b ? 2 : 1), 0);
-  const binomes = pairs.filter(p => p.b).length;
+  // Une carte SOUS SABLIER n'est pas encore un binome : la compter en
+  // annoncerait un appariement que personne n'a accepte.
+  const binomes = pairs.filter(p => p.b && !p.tentative).length;
   const j = `${joueurs} joueur${joueurs > 1 ? 's' : ''}`;
   return binomes > 0 ? `${j} · ${binomes} binôme${binomes > 1 ? 's' : ''}` : j;
 }
@@ -1866,6 +2195,33 @@ export const PARTNER_PATH_LABEL: Record<PartnerPath, string> = {
   request: 'Inscrit · sur accord',
   blocked: 'Déjà en binôme',
 };
+
+/**
+ * Ce qui va réellement arriver au partenaire choisi, avant de valider.
+ *
+ * La feuille affichait UN SEUL texte, quel que soit le partenaire : « Ton
+ * partenaire est inscrit sans rien déclarer en son nom : côté "les deux", et
+ * "sur accord" pour tout le reste. » Il décrivait l'inscription d'office —
+ * supprimée par `tournament_partner_invite.sql`. Il était donc faux dans les
+ * DEUX cas : on n'inscrit plus personne à sa place, et quelqu'un de déjà
+ * inscrit a évidemment déclaré son côté et son mode lui-même.
+ *
+ * Les trois situations n'engagent pas la même chose — l'une forme le binôme
+ * sur-le-champ, les deux autres attendent une réponse. Le dire avant le geste
+ * évite de croire qu'on est appariés alors qu'on attend.
+ */
+export function partnerIntentNotice(path: PartnerPath, name: string): string {
+  switch (path) {
+    case 'instant':
+      return `${name} est déjà inscrit et cherche un binôme. Il accepte qu’on le prenne d’un geste : le binôme se forme dès ton inscription.`;
+    case 'request':
+      return `${name} est déjà inscrit et veut qu’on lui demande d’abord. Tu seras inscrit, et le binôme se formera s’il accepte.`;
+    case 'direct':
+      return `${name} n’est pas encore inscrit à ce tournoi. Il recevra une demande et décidera : rien n’est inscrit en son nom.`;
+    case 'blocked':
+      return `${name} a déjà un binôme sur ce tournoi.`;
+  }
+}
 
 /** Le libellé du bouton d'inscription, selon le chemin du partenaire choisi. */
 export function registerCtaLabel(path: PartnerPath | null): string {

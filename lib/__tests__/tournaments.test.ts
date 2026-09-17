@@ -8,6 +8,7 @@ import {
   roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel,
   groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
+  waitExplanation, registerNotice, partnerIntentNotice, myLiveTournament,
   seatedTeams, tournamentPhase, sameSideWarning, levelRangeLabel, priceLabel,
   soloRegistrations, myTournamentState, acceptsRegistrations, acceptsPairing,
   acceptsCheckIn, isFeatureDisabled, matchLiveStatus, validateTournamentScore,
@@ -16,7 +17,7 @@ import {
   DEFAULT_POINTS_SCALE, statusLabel, statusTone, canOpenCheckIn, stakeLabel,
   groupResultsByTeam, dateBucket, formatTournamentDate,
   monthMatrix, isoDay, timeSlots, defaultPointsScale, resizePointsScale,
-  daysUntilLabel, shortFormatLabel, homeTournamentList,
+  daysUntilLabel, shortFormatLabel, homeTournamentList, isExpiredUnstarted,
   levelAccepted, isThisWeekend, filterTournaments, bestFilterToDrop, activeFilterCount, NO_FILTERS,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
   type TournamentMissingMatch, type TournamentResultTeamRow, type Tournament,
@@ -62,10 +63,150 @@ describe('freePlaces — port de fn_tournament_free_places', () => {
     expect(freePlaces([reg('a'), reg('b')], 1)).toBe(2);
   });
 
-  it('vaut ZÉRO dès que quelqu’un attend, même s’il reste des sièges vides', () => {
-    // Deux sièges libres sur quatre, mais une file existe : ces sièges
-    // appartiennent à la file, pas au prochain arrivant.
-    expect(freePlaces([reg('a'), reg('b'), reg('c', 1)], 1)).toBe(0);
+  it('compte les sièges vides MEME quand quelqu’un attend', () => {
+    // CE TEST AFFIRMAIT L'INVERSE, et il avait raison a l'epoque : les sieges
+    // appartenaient a la file, pas au prochain arrivant. La regle du
+    // siege-aux-binomes l'a rendu faux — un joueur seul en file ne PEUT pas
+    // prendre un siege, donc les sieges vides ne lui appartiennent pas.
+    //
+    // Le cout du maintien de l'ancienne regle, vu a l'ecran : toute
+    // inscription passant desormais par la file, un tournoi de 32 places
+    // affichait « COMPLET » des son premier inscrit.
+    expect(freePlaces([reg('a'), reg('b'), reg('c', 1)], 1)).toBe(2);
+  });
+
+  it('vaut zero quand les sieges sont VRAIMENT tous pris', () => {
+    expect(freePlaces([reg('a'), reg('b'), reg('c'), reg('d')], 1)).toBe(0);
+    // Et la file par-dessus n'y change rien, dans un sens comme dans l'autre.
+    expect(freePlaces([reg('a'), reg('b'), reg('c'), reg('d'), reg('e', 1)], 1)).toBe(0);
+  });
+});
+
+describe('la soiree qui se joue maintenant — myLiveTournament', () => {
+  const TO = (id: string, status: any) => ({
+    id, name: id, club_id: null, starts_at: '2026-09-11T18:00:00Z', ends_at: null,
+    level_min: null, level_max: null, court_count: 8, round_count: 6,
+    price_mad: 0, forfeit_games: 0, status, current_round: 2,
+    created_by: 'org', created_at: '2026-09-01T00:00:00Z',
+  } as any);
+  const RG = (tid: string, pid: string, wl: number | null = null) =>
+    ({ tournament_id: tid, player_id: pid, waitlist_position: wl });
+  // Horloge FIXE, pendant la soiree des fixtures (18:00Z, 6 rotations) : un
+  // test qui lit l'horloge reelle casse le jour ou la date de fixture passe.
+  const NOW = new Date('2026-09-11T18:30:00Z');
+
+  it('trouve le tournoi en cours ou j ai une place', () => {
+    expect(myLiveTournament([TO('t1', 'EN_COURS')], [RG('t1', 'moi')], 'moi', NOW)?.id).toBe('t1');
+  });
+
+  it('inclut CHECK_IN et PRET : on est au club, c est la que ca sert', () => {
+    for (const s of ['CHECK_IN', 'PRET']) {
+      expect(myLiveTournament([TO('t1', s)], [RG('t1', 'moi')], 'moi', NOW)?.id).toBe('t1');
+    }
+  });
+
+  it('ignore ce qui ne se joue pas', () => {
+    for (const s of ['INSCRIPTIONS_OUVERTES', 'COMPLET', 'TERMINE', 'ANNULE']) {
+      expect(myLiveTournament([TO('t1', s)], [RG('t1', 'moi')], 'moi', NOW)).toBe(null);
+    }
+  });
+
+  it('ignore une inscription en LISTE D ATTENTE', () => {
+    // Sans siege il n'y a pas de terrain a rejoindre : la banniere menerait a
+    // un ecran qui dit « tu ne joues pas cette rotation ».
+    expect(myLiveTournament([TO('t1', 'EN_COURS')], [RG('t1', 'moi', 3)], 'moi', NOW)).toBe(null);
+  });
+
+  it('ignore un tournoi ou je ne suis pas inscrit', () => {
+    expect(myLiveTournament([TO('t1', 'EN_COURS')], [RG('t1', 'autre')], 'moi', NOW)).toBe(null);
+  });
+
+  it('pas de banniere pour un pointage JAMAIS LANCE dont la soiree est passee', () => {
+    // Sans ca, « c'est ce soir » s'afficherait sur l'accueil indefiniment.
+    const lendemain = new Date('2026-09-12T12:00:00Z');
+    for (const s of ['CHECK_IN', 'PRET']) {
+      expect(myLiveTournament([TO('t1', s)], [RG('t1', 'moi')], 'moi', lendemain)).toBe(null);
+    }
+  });
+
+  it('un tournoi EN COURS garde sa banniere, meme en retard sur l horaire', () => {
+    const lendemain = new Date('2026-09-12T12:00:00Z');
+    expect(myLiveTournament([TO('t1', 'EN_COURS')], [RG('t1', 'moi')], 'moi', lendemain)?.id).toBe('t1');
+  });
+});
+
+describe('ce qui va arriver au partenaire — partnerIntentNotice', () => {
+  it('nomme la personne, dans les quatre cas', () => {
+    for (const p of ['instant', 'request', 'direct', 'blocked'] as const) {
+      expect(partnerIntentNotice(p, 'Karim')).toContain('Karim');
+    }
+  });
+
+  it('ne promet un binome IMMEDIAT que sur le chemin instantane', () => {
+    // Le bandeau d'avant disait la meme chose pour tout le monde. Croire
+    // qu'on est apparie alors qu'on attend une reponse, c'est arriver a deux
+    // le soir du tournoi et decouvrir qu'on n'y est pas.
+    expect(partnerIntentNotice('instant', 'Karim')).toMatch(/dès ton inscription/);
+    expect(partnerIntentNotice('request', 'Karim')).toMatch(/s’il accepte/);
+    expect(partnerIntentNotice('direct', 'Karim')).toMatch(/décidera/);
+  });
+
+  it('ne dit JAMAIS qu on inscrit quelqu un a sa place', () => {
+    // L'inscription d'office a ete supprimee par
+    // tournament_partner_invite.sql ; le texte la decrivait encore.
+    //
+    // On vise l'AFFIRMATION fautive, pas les mots : le cas « direct » dit
+    // « rien n'est inscrit en son nom », ce qui est exactement l'inverse et
+    // qu'il faut garder.
+    for (const p of ['instant', 'request', 'direct', 'blocked'] as const) {
+      expect(partnerIntentNotice(p, 'Karim')).not.toMatch(/inscrit sans rien déclarer/);
+      expect(partnerIntentNotice(p, 'Karim')).not.toMatch(/côté « les deux »/);
+    }
+    expect(partnerIntentNotice('direct', 'Karim')).toMatch(/rien n’est inscrit en son nom/);
+  });
+
+  it('dit qu un joueur DEJA inscrit a declare ses propres choix', () => {
+    for (const p of ['instant', 'request'] as const) {
+      expect(partnerIntentNotice(p, 'Karim')).toMatch(/déjà inscrit/);
+    }
+    expect(partnerIntentNotice('direct', 'Karim')).toMatch(/pas encore inscrit/);
+  });
+});
+
+describe('pourquoi j’attends — waitExplanation', () => {
+  it('sans binome, on parle de PARTENAIRE, jamais de place', () => {
+    // Le texte disait « ta place se prendra des qu'il s'en libere une » a
+    // quelqu'un qui voyait trente sieges vides. Ce n'est pas une place qui
+    // lui manque.
+    const txt = waitExplanation({ hasPartner: false, pairingOpen: true });
+    expect(txt).toContain('binôme');
+    expect(txt).not.toMatch(/plein|complet/i);
+  });
+
+  it('avec un binome, attendre veut bien dire qu il n y a plus de place', () => {
+    // `fn_tournament_promote_waitlist` assied tout binome qui tient, a chaque
+    // geste : un binome qui attend est forcement un binome sans siege.
+    expect(waitExplanation({ hasPartner: true, pairingOpen: true }))
+      .toMatch(/places sont prises/i);
+  });
+
+  it('une fois le tournoi lance, on ne promet plus rien', () => {
+    for (const hasPartner of [true, false]) {
+      expect(waitExplanation({ hasPartner, pairingOpen: false }))
+        .toMatch(/démarré/i);
+    }
+  });
+});
+
+describe('ce qu’on annonce avant de s’inscrire — registerNotice', () => {
+  it('avec des places libres : on explique la regle des binomes', () => {
+    const txt = registerNotice(30);
+    expect(txt).toContain('binôme');
+    expect(txt).not.toMatch(/plein|toutes les places/i);
+  });
+
+  it('sans place : on le dit franchement', () => {
+    expect(registerNotice(0)).toMatch(/toutes les places sont prises/i);
   });
 });
 
@@ -655,10 +796,13 @@ describe('libelle de format court', () => {
 });
 
 describe('liste des soirees pour l accueil', () => {
+  // Horloge FIXE, avant toutes les fixtures : ces tests portent sur le tri
+  // et le comptage, pas sur l'expiration (testee plus bas).
+  const AVANT = new Date('2026-09-01T00:00:00Z');
   it('les rend TOUTES, de la plus proche a la plus lointaine', () => {
     const a = tournoi('A', '2026-09-10T18:00:00Z');
     const b = tournoi('B', '2026-09-17T18:00:00Z');
-    const l = homeTournamentList([b, a], new Map(), 'moi');
+    const l = homeTournamentList([b, a], new Map(), 'moi', AVANT);
     expect(l.map(e => e.tournament.id)).toEqual(['A', 'B']);
   });
 
@@ -666,7 +810,7 @@ describe('liste des soirees pour l accueil', () => {
     // 4 terrains = 16 places joueurs (8 binomes). La maquette montrait 6/8,
     // en binomes : c est l unite de toute l app qui gagne, pas la maquette.
     const t = tournoi('T', '2026-09-10T18:00:00Z');
-    const l = homeTournamentList([t], new Map([['T', [reg('a'), reg('b'), reg('c')]]]), 'moi');
+    const l = homeTournamentList([t], new Map([['T', [reg('a'), reg('b'), reg('c')]]]), 'moi', AVANT);
     expect(l[0].taken).toBe(3);
     expect(l[0].total).toBe(16);
   });
@@ -674,7 +818,7 @@ describe('liste des soirees pour l accueil', () => {
   it('dit ou j en suis sur chacune', () => {
     const a = tournoi('A', '2026-09-10T18:00:00Z');
     const b = tournoi('B', '2026-09-17T18:00:00Z');
-    const l = homeTournamentList([a, b], new Map([['A', [reg('moi')]], ['B', [reg('moi', 2)]]]), 'moi');
+    const l = homeTournamentList([a, b], new Map([['A', [reg('moi')]], ['B', [reg('moi', 2)]]]), 'moi', AVANT);
     expect(l[0].state).toBe('registered');
     expect(l[1].state).toBe('waitlisted');
   });
@@ -682,7 +826,63 @@ describe('liste des soirees pour l accueil', () => {
   it('ecarte ce qui n est pas a venir', () => {
     const fini = tournoi('F', '2026-09-10T18:00:00Z', 'TERMINE');
     const live = tournoi('L', '2026-09-11T18:00:00Z', 'EN_COURS');
-    expect(homeTournamentList([fini, live], new Map(), 'moi')).toEqual([]);
+    expect(homeTournamentList([fini, live], new Map(), 'moi', AVANT)).toEqual([]);
+  });
+
+  it('ecarte un tournoi JAMAIS LANCE dont la soiree est passee', () => {
+    // Aucune liste ne regardait la date : une soiree morte restait proposee,
+    // inscription comprise.
+    const passe = tournoi('P', '2026-09-10T18:00:00Z');
+    const futur = tournoi('F', '2026-09-17T18:00:00Z');
+    const l = homeTournamentList([passe, futur], new Map(), 'moi', new Date('2026-09-12T00:00:00Z'));
+    expect(l.map(e => e.tournament.id)).toEqual(['F']);
+  });
+});
+
+describe('un tournoi jamais lance, et passe — isExpiredUnstarted', () => {
+  // 6 rotations de 20 min a partir de 18:00Z : fin prevue a 20:00Z.
+  const T = (status: any, o: any = {}) => ({
+    status, starts_at: '2026-09-10T18:00:00Z', round_count: 6, round_minutes: 20, ...o,
+  });
+
+  it('reste visible EN RETARD sur l heure de debut : on pointe encore', () => {
+    // Couper a starts_at ferait disparaitre le tournoi en plein pointage.
+    expect(isExpiredUnstarted(T('CHECK_IN'), new Date('2026-09-10T18:25:00Z'))).toBe(false);
+    expect(isExpiredUnstarted(T('INSCRIPTIONS_OUVERTES'), new Date('2026-09-10T19:59:00Z'))).toBe(false);
+  });
+
+  it('reste visible pendant la DEMI-HEURE qui suit la fin supposee', () => {
+    // Demande de l'utilisateur : une soiree lancee en retard deborde d'autant,
+    // on ne fait pas disparaitre un tournoi qu'on est peut-etre en train de
+    // lancer. Fin supposee 20:00Z, limite 20:30Z incluse.
+    expect(isExpiredUnstarted(T('CHECK_IN'), new Date('2026-09-10T20:01:00Z'))).toBe(false);
+    expect(isExpiredUnstarted(T('PRET'), new Date('2026-09-10T20:30:00Z'))).toBe(false);
+  });
+
+  it('expire une fois passee la fin supposee PLUS une demi-heure', () => {
+    for (const s of ['INSCRIPTIONS_OUVERTES', 'COMPLET', 'CHECK_IN', 'PRET']) {
+      expect(isExpiredUnstarted(T(s), new Date('2026-09-10T20:31:00Z')), s).toBe(true);
+    }
+  });
+
+  it('ne touche JAMAIS un tournoi lance, termine, annule ou en brouillon', () => {
+    const tard = new Date('2026-09-20T00:00:00Z');
+    for (const s of ['EN_COURS', 'TERMINE', 'CLASSEMENT_VALIDE', 'ANNULE', 'BROUILLON']) {
+      expect(isExpiredUnstarted(T(s), tard), s).toBe(false);
+    }
+  });
+
+  it('prend la duree par defaut quand round_minutes manque', () => {
+    const t = T('PRET', { round_minutes: null });
+    // Fin supposee avec la duree par defaut, PLUS la demi-heure de marge.
+    const limite = new Date('2026-09-10T18:00:00Z').getTime()
+      + (totalDurationMinutes(6, ROUND_MINUTES) + 30) * 60_000;
+    expect(isExpiredUnstarted(t, new Date(limite - 60_000))).toBe(false);
+    expect(isExpiredUnstarted(t, new Date(limite + 60_000))).toBe(true);
+  });
+
+  it('une date illisible ne fait rien disparaitre', () => {
+    expect(isExpiredUnstarted(T('CHECK_IN', { starts_at: 'bof' }), new Date('2030-01-01'))).toBe(false);
   });
 });
 
@@ -807,6 +1007,10 @@ describe('inscrits groupes par binome', () => {
   });
   const T = (id: string, p1: string, p2: string, withdrawn = false) =>
     ({ id, tournament_id: 't', player1_id: p1, player2_id: p2, withdrawn });
+  const Q = (id: string, from: string, to: string) => ({
+    id, tournament_id: 't', from_player: from, to_player: to,
+    status: 'pending' as const, created_at: '2026-09-01T00:00:00Z',
+  });
 
   it('reunit les deux joueurs d une equipe', () => {
     const p = groupRegistrations([R('a', 'Alamine', 6.5), R('k', 'Kay2', 6.0)], [T('e1', 'a', 'k')]);
@@ -849,13 +1053,129 @@ describe('inscrits groupes par binome', () => {
     expect(p[0].waiting).toBe(true);
   });
 
-  it('ordonne : binomes assis, puis joueurs seuls, puis la file', () => {
+  it('ordonne : binomes assis, binomes en file, puis les joueurs seuls', () => {
+    // L'ORDRE A CHANGE, et l'ancien ne departageait plus rien : il mettait
+    // toute la file en dernier, ce qui marchait tant qu'un joueur seul
+    // pouvait etre assis. Depuis la regle du siege-aux-binomes, TOUS les
+    // solos attendent — le critere « en file » ne separait plus que des
+    // egaux. On lit maintenant qui joue, puis qui en est le plus pres (un
+    // binome en file n'attend qu'un siege), puis qui cherche encore.
     const p = groupRegistrations(
       [R('a', 'A', 6), R('b', 'B', 6), R('c', 'C', 6), R('d', 'D', 6, 1), R('e', 'E', 6, 2)],
       [T('e1', 'a', 'b'), T('e2', 'd', 'e')],
     );
-    expect(p.map(x => (x.waiting ? 'file' : x.b ? 'binome' : 'seul')))
-      .toEqual(['binome', 'seul', 'file']);
+    expect(p.map(x => (x.b ? (x.waiting ? 'binome en file' : 'binome assis') : 'seul')))
+      .toEqual(['binome assis', 'binome en file', 'seul']);
+  });
+
+  it('REUNIT deux joueurs qu une demande lie, dans UNE carte', () => {
+    // Ils apparaissaient dans deux cartes separees : « isoles alors qu'ils
+    // sont lies ». C'est « qui est avec qui » qu'on cherche dans cette liste.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2)],
+      [], 'a', [Q('q1', 'a', 'd')],
+    );
+    expect(p).toHaveLength(1);
+    expect(p[0].b).not.toBe(null);
+    // Mais PAS comme un binome forme : rien n'a encore ete accepte.
+    expect(p[0].tentative).toBe(true);
+    expect([p[0].a.id, p[0].b!.id].sort()).toEqual(['a', 'd']);
+  });
+
+  it('me met a GAUCHE de ma propre carte', () => {
+    // On lit sa propre situation avant celle des autres.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2)],
+      [], 'd', [Q('q1', 'a', 'd')],
+    );
+    expect(p[0].a.id).toBe('d');
+    expect(p[0].a.mine).toBe(true);
+  });
+
+  it('un binome SOUS SABLIER n est pas compte comme binome', () => {
+    // Annoncer « 1 binome » sur un appariement que personne n'a accepte
+    // ferait croire la place acquise.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2)],
+      [], 'a', [Q('q1', 'a', 'd')],
+    );
+    expect(pairsCountLabel(p)).toBe('2 joueurs');
+  });
+
+  it('ne fusionne PAS quand un des deux est courtise par plusieurs', () => {
+    // Reunir admin avec l'un de ses deux demandeurs designerait un vainqueur
+    // que personne n'a choisi.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2), R('k', 'Kay', 5.0, 3)],
+      [], 'a', [Q('q1', 'd', 'a'), Q('q2', 'k', 'a')],
+    );
+    expect(p).toHaveLength(3);
+    expect(p.every(x => !x.tentative)).toBe(true);
+    expect(p.find(x => x.a.id === 'a')!.pending.map(x => x.name)).toEqual(['DevQ', 'Kay']);
+  });
+
+  it('accumule PLUSIEURS candidats sur le meme joueur', () => {
+    // Deux personnes peuvent demander le meme joueur seul — c'est meme le cas
+    // interessant : celui qui recoit doit choisir.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2), R('k', 'Kay', 5.0, 3)],
+      [], 'a',
+      [Q('q1', 'd', 'a'), Q('q2', 'k', 'a')],
+    );
+    const admin = p.find(x => x.a.id === 'a')!;
+    // Tries par nom : sans ordre stable, la carte « saute » d'un chargement a
+    // l'autre.
+    expect(admin.pending.map(x => x.name)).toEqual(['DevQ', 'Kay']);
+  });
+
+  it('ignore une demande deja repondue', () => {
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2)], [], 'a',
+      [{ ...Q('q1', 'a', 'd'), status: 'declined' as const }],
+    );
+    expect(p.every(x => x.pending.length === 0)).toBe(true);
+  });
+
+  it('ignore une demande vers quelqu un qui a DEJA un binome', () => {
+    // Promettre un binome impossible est pire que se taire.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2), R('b', 'Bea', 5.0), R('d', 'DevQ', 3.8, 1)],
+      [T('e1', 'a', 'b')], 'd',
+      [Q('q1', 'd', 'a')],
+    );
+    expect(p.find(x => x.a.id === 'd')!.pending).toEqual([]);
+    expect(p.find(x => x.key === 'e1')!.pending).toEqual([]);
+  });
+
+  it('une demande vers un non-inscrit ne s affiche pas', () => {
+    // Depuis tournament_partner_invite.sql, on invite quelqu'un qui n'est pas
+    // encore inscrit : il n'a pas de carte, on ne peut rien y accrocher.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1)], [], 'a', [Q('q1', 'a', 'inconnu')],
+    );
+    expect(p[0].pending).toEqual([]);
+  });
+
+  it('un binome forme n a plus aucune demande en cours affichee', () => {
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2), R('b', 'Bea', 5.0)],
+      [T('e1', 'a', 'b')], 'a', [Q('q1', 'a', 'b')],
+    );
+    expect(p[0].pending).toEqual([]);
+  });
+
+  it('un TIERS ne voit aucune demande, et c est voulu', () => {
+    // La policy de lecture restreint ces lignes aux deux interesses. On a
+    // essaye de compenser par un COMPTE anonyme (« devQ a 1 demande ») :
+    // retire le 2026-09-10 apres essai. Sur une soiree ou deux joueurs seuls
+    // se sont demandes, les DEUX cartes affichaient « 1 demande » — le compte
+    // ne cachait plus rien, et c'est justement le cas frequent en debut
+    // d'inscriptions. Un nombre n'est anonyme que noye dans le nombre.
+    const p = groupRegistrations(
+      [R('a', 'Admin', 4.2, 1), R('d', 'DevQ', 3.8, 2)],
+      [], 'tiers', [],
+    );
+    expect(p.every(x => x.pending.length === 0)).toBe(true);
   });
 
   it('marque MON inscription', () => {

@@ -242,18 +242,27 @@ function StatusNotice({ status, teamA, teamB, teamAEntries, teamBEntries, forfei
     const loser = forfeitedTeamId === teamA.id ? teamA : teamB;
     text = `${loser.names.join(' · ')} a déclaré forfait sur ce match.`;
   } else if (status === 'disputed') {
+    // « Seul l'organisateur peut trancher » était vrai avant
+    // tournament_score_no_wait.sql. Un désaccord se règle maintenant entre les
+    // quatre joueurs : l'un des deux camps corrige sa saisie, et le tirage
+    // suivant — qui attend CE seul cas — repart. Renvoyer vers un organisateur
+    // absent laissait la soirée coincée sur une consigne impossible.
     tone = 'danger';
     text = a && b
-      ? `Litige : ${teamA.names.join(' · ')} dit ${a.games_a}-${a.games_b}, ${teamB.names.join(' · ')} dit ${b.games_a}-${b.games_b}. Seul l’organisateur peut trancher.`
-      : 'Litige entre les deux camps. Seul l’organisateur peut trancher.';
+      ? `Vos scores diffèrent : ${teamA.names.join(' · ')} dit ${a.games_a}-${a.games_b}, ${teamB.names.join(' · ')} dit ${b.games_a}-${b.games_b}. Mettez-vous d’accord et corrigez : la rotation suivante attend ce terrain.`
+      : 'Vos scores diffèrent. Mettez-vous d’accord et corrigez : la rotation suivante attend ce terrain.';
   } else if (!a && !b) {
-    tone = 'warning'; text = 'Aucun score saisi pour l’instant.';
+    tone = 'warning'; text = 'Aucun score saisi pour l’instant — la rotation suivante attend ce terrain.';
   } else if (a && !b) {
-    tone = 'warning';
-    text = `${teamA.names.join(' · ')} a saisi ${a.games_a}-${a.games_b}. En attente d’un joueur de ${teamB.names.join(' · ')}.`;
+    // UNE SAISIE SUFFIT depuis tournament_score_no_wait.sql : ce score compte
+    // déjà et ne bloque plus rien. L'ancien texte (« En attente d'un joueur
+    // de… », en orange) faisait croire l'inverse — on relançait l'adversaire
+    // pour rien, et en test on se croyait bloqué sans quatre comptes.
+    tone = 'info';
+    text = `${teamA.names.join(' · ')} a saisi ${a.games_a}-${a.games_b}. Ce score compte déjà ; ${teamB.names.join(' · ')} peut le confirmer ou le corriger.`;
   } else if (!a && b) {
-    tone = 'warning';
-    text = `${teamB.names.join(' · ')} a saisi ${b.games_a}-${b.games_b}. En attente d’un joueur de ${teamA.names.join(' · ')}.`;
+    tone = 'info';
+    text = `${teamB.names.join(' · ')} a saisi ${b.games_a}-${b.games_b}. Ce score compte déjà ; ${teamA.names.join(' · ')} peut le confirmer ou le corriger.`;
   } else {
     tone = 'warning'; text = 'Les deux camps ont saisi un score — mise à jour en cours.';
   }

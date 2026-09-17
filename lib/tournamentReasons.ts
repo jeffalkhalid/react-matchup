@@ -77,6 +77,11 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   request_not_found:             'Cette demande n’existe plus.',
   round_already_generated:       'Cette rotation a déjà été tirée.',
   round_incomplete:              'La rotation en cours n’est pas terminée.',
+  // Une rotation passée est définitive : dès que la suivante est partie, ses
+  // scores ne se touchent plus. Un désaccord ne peut exister que PENDANT la
+  // rotation, là où il bloque le tirage — jamais après, quand les binômes ont
+  // déjà changé de terrain (tournament_auto_advance.sql).
+  round_closed:                  'La rotation suivante est déjà partie : ce score est définitif.',
   score_out_of_range:            'Ce score sort des valeurs autorisées.',
   team_not_found:                'Ce binôme est introuvable.',
   team_not_seated:               'Ce binôme n’a pas de place dans le tournoi.',

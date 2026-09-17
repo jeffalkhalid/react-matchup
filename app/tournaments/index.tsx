@@ -23,7 +23,7 @@ import { TournamentCard } from '../../components/tournaments/TournamentCard';
 import { HiddenByFilters } from '../../components/tournaments/HiddenByFilters';
 import {
   fetchTournaments, fetchRegistrationsFor, getTournamentsEnabled,
-  tournamentPhase, freePlaces, dateBucket,
+  tournamentPhase, freePlaces, dateBucket, isExpiredUnstarted,
   filterTournaments, bestFilterToDrop, activeFilterCount, filterLabel, isThisWeekend,
   NO_FILTERS, type TournamentFilters,
   type Tournament, type TournamentRegistration, type TournamentPhase,
@@ -138,9 +138,14 @@ export default function TournamentsScreen() {
 
   const byPhase = useMemo(() => {
     const out: Record<TabKey, Tournament[]> = { upcoming: [], live: [], past: [] };
+    const maintenant = new Date();
     for (const t of tournaments) {
       const phase = tournamentPhase(t.status);
       if (phase === 'draft') continue;                 // brouillon : jamais listé
+      // Jamais lancé et la soirée aurait déjà dû finir : ni « à venir » (on
+      // s'inscrirait à une soirée morte), ni « passé » (il n'a pas eu lieu).
+      // L'organisateur le retrouve dans l'Admin pour l'annuler.
+      if (isExpiredUnstarted(t, maintenant)) continue;
       out[phase].push(t);
     }
     // Les passés du plus récent au plus ancien ; le reste par date croissante
@@ -241,7 +246,7 @@ export default function TournamentsScreen() {
         </View>
 
         <View style={{ alignItems: 'center', marginBottom: 14 }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+          <Text numberOfLines={2}
             style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
             Les <Text style={{ color: Colors.brand }}>Tournois</Text>
           </Text>

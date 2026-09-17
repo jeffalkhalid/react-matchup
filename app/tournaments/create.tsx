@@ -12,10 +12,10 @@
 // à la création, et l'appariement se fait le soir même depuis le panel, sur
 // des inscrits qui n'existent pas encore ici. Une étape qui ne recueille rien
 // est une étape qui coûte un tap.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../../components/community/icons';
 import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
+import { ClubDropdown } from '../../components/tournaments/ClubDropdown';
 import {
   createTournament, teamCount, seatCount, ROUND_MINUTES,
   ROUND_MINUTES_CHOICES, totalDurationMinutes,
@@ -117,6 +118,14 @@ export default function CreateTournamentScreen() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [club, setClub] = useState<Club | null>(null);
   const [clubsError, setClubsError] = useState(false);
+  const [clubsLoaded, setClubsLoaded] = useState(false);
+  // Recherche de club : l'écran remonte le champ en haut quand la liste
+  // s'ouvre, et masque sa barre d'action tant que le clavier est là — sur
+  // Android elle remonte avec le clavier et couvrait le bas de la liste.
+  const scrollRef = useRef<ScrollView>(null);
+  const clubSectionY = useRef(0);
+  const [clubListOpen, setClubListOpen] = useState(false);
+  const [keyboardUp, setKeyboardUp] = useState(false);
 
   const [courts, setCourts] = useState(4);
   const [rounds, setRounds] = useState(6);
@@ -125,11 +134,18 @@ export default function CreateTournamentScreen() {
   const [price, setPrice] = useState('0');
 
   useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  useEffect(() => {
     supabase.from('clubs').select('id,name,city').order('name').then(({ data, error }) => {
       // Sans `error` lu, un refus réseau laisserait la liste vide EN SILENCE et
       // le tournoi se créerait sans club sans qu'on sache pourquoi.
       if (error) setClubsError(true);
       setClubs((data ?? []) as Club[]);
+      setClubsLoaded(true);
     });
   }, []);
 
@@ -236,7 +252,7 @@ export default function CreateTournamentScreen() {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 110, gap: 22 }}>
+        <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 110, gap: 22 }} keyboardShouldPersistTaps="handled">
 
           {/* ── 1. Quand & où ── */}
           {step === 0 && (
@@ -298,49 +314,22 @@ export default function CreateTournamentScreen() {
                 </TouchableOpacity>
               </Section>
 
+              <View onLayout={e => { clubSectionY.current = e.nativeEvent.layout.y; }}>
               <Section title="LE CLUB">
                 {clubsError && (
                   <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.warning }}>
                     La liste des clubs n’a pas pu être chargée. Tu peux créer le tournoi sans club.
                   </Text>
                 )}
-                <View style={{ gap: 8 }}>
-                  {clubs.map(c => {
-                    const active = club?.id === c.id;
-                    return (
-                      <TouchableOpacity
-                        key={c.id}
-                        onPress={() => setClub(active ? null : c)}
-                        activeOpacity={0.85}
-                        style={{
-                          flexDirection: 'row', alignItems: 'center', gap: 12,
-                          backgroundColor: Colors.bgCard, borderRadius: 16, padding: 12,
-                          borderWidth: active ? 1.5 : 1, borderColor: active ? Colors.primary : Colors.border,
-                        }}
-                      >
-                        <View style={{
-                          width: 40, height: 40, borderRadius: 13,
-                          backgroundColor: active ? Colors.primary : Colors.bg,
-                          alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <Icon name="mapPin" size={19} color={active ? Colors.brand : Colors.textMuted} stroke={2.2} />
-                        </View>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
-                            {c.name}
-                          </Text>
-                          {c.city && (
-                            <Text numberOfLines={1} style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
-                              {c.city}
-                            </Text>
-                          )}
-                        </View>
-                        {active && <Icon name="check" size={18} color={Colors.primary} stroke={2.8} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                {/* Liste déroulante avec recherche : une centaine de clubs ne
+                    tiennent pas en cartes empilées dans l'étape. */}
+                <ClubDropdown
+                  clubs={clubs} value={club} onChange={setClub} loading={!clubsLoaded}
+                  onOpenChange={setClubListOpen}
+                  onReveal={({ animated }) => scrollRef.current?.scrollTo({ y: Math.max(0, clubSectionY.current - 8), animated })}
+                />
               </Section>
+              </View>
             </>
           )}
 
@@ -582,30 +571,33 @@ export default function CreateTournamentScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── Barre d'action fixe ── */}
-      <View style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 12,
-        backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.border,
-      }}>
-        <TouchableOpacity
-          onPress={() => (step === STEPS.length - 1 ? publish() : setStep(s => s + 1))}
-          disabled={!canContinue || saving}
-          activeOpacity={0.85}
-          style={{
-            backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16,
-            alignItems: 'center', opacity: !canContinue || saving ? 0.5 : 1,
-          }}
-        >
-          {saving ? (
-            <ActivityIndicator color={Colors.textOnDark} />
-          ) : (
-            <Text style={{ fontSize: 15.5, fontFamily: Fonts.welcome, letterSpacing: 0.5, color: Colors.textOnDark }}>
-              {step === STEPS.length - 1 ? 'PUBLIER LE TOURNOI' : 'CONTINUER  →'}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      {/* ── Barre d'action fixe ── masquée pendant la recherche de club
+          clavier ouvert (elle couvrait la liste sur Android). */}
+      {!(step === 0 && clubListOpen && keyboardUp) && (
+        <View style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0,
+          paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 12,
+          backgroundColor: Colors.bgCard, borderTopWidth: 1, borderTopColor: Colors.border,
+        }}>
+          <TouchableOpacity
+            onPress={() => (step === STEPS.length - 1 ? publish() : setStep(s => s + 1))}
+            disabled={!canContinue || saving}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16,
+              alignItems: 'center', opacity: !canContinue || saving ? 0.5 : 1,
+            }}
+          >
+            {saving ? (
+              <ActivityIndicator color={Colors.textOnDark} />
+            ) : (
+              <Text style={{ fontSize: 15.5, fontFamily: Fonts.welcome, letterSpacing: 0.5, color: Colors.textOnDark }}>
+                {step === STEPS.length - 1 ? 'PUBLIER LE TOURNOI' : 'CONTINUER  →'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
 
       <DateSheet visible={dateSheet} value={date} onPick={setDate} onClose={() => setDateSheet(false)} />
       <TimeSheet visible={timeSheet} value={time} onPick={setTime} onClose={() => setTimeSheet(false)} />

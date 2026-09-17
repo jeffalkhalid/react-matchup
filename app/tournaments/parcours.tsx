@@ -329,7 +329,7 @@ export default function CareerScreen() {
         {/* Titre Fonts.welcome : segment unique, numberOfLines=1 +
             adjustsFontSizeToFit + paddingRight anti-débord italique, alignSelf
             'stretch' — cf. feedback_android_title_clipping. */}
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+        <Text numberOfLines={2}
           style={{
             alignSelf: 'stretch', fontSize: 25, lineHeight: 33, fontFamily: Fonts.welcome,
             color: Colors.textOnDark, includeFontPadding: false, marginTop: 10, paddingRight: 8,
