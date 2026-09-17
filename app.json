@@ -58,6 +58,8 @@
         {
           "locationWhenInUsePermission": "PAG MATCH utilise ta position pour afficher la distance des parties près de toi. Elle reste sur ton téléphone.",
           "locationAlwaysAndWhenInUsePermission": "PAG MATCH utilise ta position pour afficher la distance des parties près de toi. Elle reste sur ton téléphone.",
+          "locationAlwaysPermission": "PAG MATCH utilise ta position pour afficher la distance des parties près de toi. Elle reste sur ton téléphone.",
+          "motionUsagePermission": "PAG MATCH peut utiliser les capteurs de mouvement pour préciser ta position.",
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
