@@ -1,0 +1,8 @@
+{
+  "name": "pagmatch-clubs-geo",
+  "private": true,
+  "description": "Outil du lot 0 de la localisation : vérification et migration des positions des clubs. Hors app.",
+  "dependencies": {
+    "exceljs": "4.4.0"
+  }
+}
