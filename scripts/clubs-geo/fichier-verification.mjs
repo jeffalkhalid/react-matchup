@@ -30,8 +30,11 @@ async function lireFichierSource(chemin) {
   feuille.eachRow((ligne, i) => {
     if (i === 1) return;
     const nom = ligne.getCell(col('Club / terrain')).text.trim();
-    const lat = Number(ligne.getCell(col('Latitude')).text);
-    const lng = Number(ligne.getCell(col('Longitude')).text);
+    // Une cellule vide doit exclure la ligne : Number('') vaut 0, pas NaN.
+    const texteLat = ligne.getCell(col('Latitude')).text.trim();
+    const texteLng = ligne.getCell(col('Longitude')).text.trim();
+    const lat = texteLat === '' ? NaN : Number(texteLat);
+    const lng = texteLng === '' ? NaN : Number(texteLng);
     if (!nom || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
     clubs.push({
       ville: ligne.getCell(col('Ville')).text.trim(),
