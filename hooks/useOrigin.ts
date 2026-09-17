@@ -40,6 +40,7 @@ const VIDE: OriginState = {
 let state: OriginState = VIDE;
 let chargement: Promise<void> | null = null;
 const abonnes = new Set<() => void>();
+let minuteur: ReturnType<typeof setInterval> | null = null;
 
 const memeOrigine = (a: Origin | null, b: Origin | null) =>
   a === b || (!!a && !!b && a.lat === b.lat && a.lng === b.lng && a.source === b.source);
@@ -73,6 +74,7 @@ function charger(playerId: string): Promise<void> {
   if (state.playerId === playerId && chargement) return chargement;
   // Changement de compte : on repart de zéro.
   state = { ...VIDE, playerId };
+  abonnes.forEach(f => f());
   chargement = (async () => {
     const [zone, index, permission] = await Promise.all([
       fetchMyZone(playerId), chargerClubs(), gpsPermission(),
@@ -89,39 +91,63 @@ function charger(playerId: string): Promise<void> {
 }
 
 async function requestGps(): Promise<GpsFix | null> {
+  const playerId = state.playerId;
   const permission = await requestGpsPermission();
+  if (state.playerId !== playerId) return null;
   publier({ gpsPermission: permission });
   if (permission !== 'granted') return null;
   const gps = await readGpsPosition();
+  if (state.playerId !== playerId) return null;
   if (gps) publier({ gps });
   return gps;
 }
 
 async function refreshGps(): Promise<void> {
+  const playerId = state.playerId;
   if (state.gpsPermission !== 'granted') return;
   // Position encore fraîche : inutile d'interroger le téléphone.
   if (state.gps && Date.now() - state.gps.at < GPS_MAX_AGE_MS / 2) return;
   const gps = await readGpsPosition();
+  if (state.playerId !== playerId) return;
   // Même sans nouvelle position, republier recalcule l'origine : un GPS devenu
   // trop ancien cède la place à la zone.
   publier(gps ? { gps } : {});
 }
 
 async function saveZone(zone: ZonePoint): Promise<void> {
-  if (!state.playerId) throw new Error('Joueur inconnu');
-  const enregistree = await saveMyZone(state.playerId, zone);
+  const playerId = state.playerId;
+  if (!playerId) throw new Error('Joueur inconnu');
+  const enregistree = await saveMyZone(playerId, zone);
+  if (state.playerId !== playerId) throw new Error('Joueur inconnu');
   publier({ zone: enregistree });
 }
 
 async function removeZone(): Promise<void> {
-  if (!state.playerId) throw new Error('Joueur inconnu');
-  await deleteMyZone(state.playerId);
+  const playerId = state.playerId;
+  if (!playerId) throw new Error('Joueur inconnu');
+  await deleteMyZone(playerId);
+  if (state.playerId !== playerId) throw new Error('Joueur inconnu');
   publier({ zone: null });
+}
+
+// Une position de plus de 10 minutes ne décrit plus où est le joueur, même écran
+// ouvert : on la réévalue automatiquement toutes les minutes.
+function verifierFraicheur(): void {
+  if (state.gps && Date.now() - state.gps.at > GPS_MAX_AGE_MS) void refreshGps();
 }
 
 function abonner(f: () => void): () => void {
   abonnes.add(f);
-  return () => { abonnes.delete(f); };
+  if (minuteur === null) {
+    minuteur = setInterval(verifierFraicheur, 60_000);
+  }
+  return () => {
+    abonnes.delete(f);
+    if (abonnes.size === 0 && minuteur !== null) {
+      clearInterval(minuteur);
+      minuteur = null;
+    }
+  };
 }
 
 export function useOrigin() {
