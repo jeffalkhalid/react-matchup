@@ -23,7 +23,7 @@ export function DiscoveryRail({ players, title = 'Joueurs autour de toi', onPres
           return (
             <View key={p.id} style={{ width: 150, borderRadius: 16, padding: 14, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', gap: 8 }}>
               <TouchableOpacity onPress={() => onPress(p.id)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 8 }}>
-                <Avatar name={p.name} path={(p as any).avatar_path} size={56} radius={999} league={p.league} />
+                <Avatar name={p.name} path={(p as any).avatar_path} size={70} league={p.league} />
                 <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textPrimary, maxWidth: 122 }}>{p.name.split(' ')[0]}</Text>
                 <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 10.5, color: Colors.textSecondary, textAlign: 'center', minHeight: 28 }}>{p.reason ?? 'Niveau proche'}</Text>
               </TouchableOpacity>

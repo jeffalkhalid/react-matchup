@@ -11,7 +11,7 @@ export function IllustChats() {
       {/* en-tête */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingBottom: 10, marginBottom: 9,
         borderBottomWidth: 1, borderBottomColor: '#F1F0EE' }}>
-        <Avatar name="Padel Dim" size={30} radius={9} league="gold" />
+        <Avatar name="Padel Dim" size={30} league="gold" />
         <View style={{ flex: 1, marginLeft: 9 }}>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#0A0A0A' }}>Partie de dimanche</Text>
           <Text style={{ fontFamily: Fonts.ui, fontSize: 9.5, color: '#A1A1AA' }}>4 joueurs · 10:30</Text>
@@ -21,7 +21,7 @@ export function IllustChats() {
 
       {/* message entrant + réaction */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 9 }}>
-        <Avatar name="Omar T" size={22} radius={7} league="bronze" />
+        <Avatar name="Omar T" size={22} league="bronze" />
         <View style={{ marginLeft: 7 }}>
           <View style={{ backgroundColor: '#F4F2EF', borderTopLeftRadius: 14, borderTopRightRadius: 14,
             borderBottomRightRadius: 14, borderBottomLeftRadius: 4, paddingVertical: 8, paddingHorizontal: 11, maxWidth: 168 }}>

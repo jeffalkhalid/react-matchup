@@ -180,7 +180,7 @@ export default function AlertNewScreen() {
                     flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 9, paddingHorizontal: 10,
                     borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: '#F1F0EE',
                   }}>
-                    <Avatar name={f.name} path={f.avatar_path} size={38} radius={12} league={f.league} />
+                    <Avatar name={f.name} path={f.avatar_path} size={48} league={f.league} />
                     <Text style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 14, color: Colors.textPrimary }}>{f.name}</Text>
                     <View style={{
                       width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center',

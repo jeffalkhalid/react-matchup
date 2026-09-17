@@ -19,11 +19,11 @@ export function IllustLobby() {
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#52525B' }}>Auj. 19:00</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-          <Avatar name="Karim B" size={30} radius={10} league="gold" />
+          <Avatar name="Karim B" size={30} league="gold" />
           <View style={{ width: 6 }} />
-          <Avatar name="Sofia I" size={30} radius={10} league="silver" />
+          <Avatar name="Sofia I" size={30} league="silver" />
           <View style={{ width: 6 }} />
-          <Avatar name="Omar T" size={30} radius={10} league="gold" />
+          <Avatar name="Omar T" size={30} league="gold" />
           <View style={{ width: 6 }} />
           <View style={{ width: 30, height: 30, borderRadius: 10, borderWidth: 2, borderStyle: 'dashed',
             borderColor: '#D8D4CE', alignItems: 'center', justifyContent: 'center' }}>
@@ -49,10 +49,10 @@ export function IllustLobby() {
       <View style={{ ...miniCard(), paddingVertical: 11, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }}>
         <View style={{ flexDirection: 'row' }}>
           <View style={{ borderWidth: 2, borderColor: '#fff', borderRadius: 9 }}>
-            <Avatar name="Yassine R" size={26} radius={8} league="gold" />
+            <Avatar name="Yassine R" size={26} league="gold" />
           </View>
           <View style={{ marginLeft: -9, borderWidth: 2, borderColor: '#fff', borderRadius: 9 }}>
-            <Avatar name="Nadia E" size={26} radius={8} league="bronze" />
+            <Avatar name="Nadia E" size={26} league="bronze" />
           </View>
         </View>
         <View style={{ flex: 1, marginLeft: 9 }}>

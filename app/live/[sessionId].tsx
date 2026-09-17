@@ -76,7 +76,7 @@ function MatchStyleBoard({ t1Ids, t2Ids, names, photos, sets, leadRow, children 
     <View style={{ flexDirection: 'row', gap: 10 }}>
       {ids.map(id => (
         <View key={id} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-          <Avatar name={names[id] ?? '?'} path={photos?.[id]} size={28} team={team} />
+          <Avatar name={names[id] ?? '?'} path={photos?.[id]} size={34} team={team} />
           <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: '700', color: PM.text }}>
             {firstName(names[id] ?? '')}
           </Text>

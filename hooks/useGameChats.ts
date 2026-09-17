@@ -9,8 +9,8 @@ export interface GameChat {
   is_challenge: boolean;
   game_format: string | null;
   creator_id: string;
-  creator: { name: string } | null;
-  participants: Array<{ player_id: string; status: string; player: { name: string } | null }>;
+  creator: { name: string; avatar_path?: string | null } | null;
+  participants: Array<{ player_id: string; status: string; player: { name: string; avatar_path?: string | null } | null }>;
   unread: number;
   last_message_at: string | null;
   archived: boolean;
@@ -30,7 +30,7 @@ export function isMatchPast(matchDate: string | null | undefined): boolean {
 }
 
 const GAME_SELECT =
-  'id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(name), participants:game_participants(player_id, status, player:player_id(name))';
+  'id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(name, avatar_path), participants:game_participants(player_id, status, player:player_id(name, avatar_path))';
 
 // WhatsApp-like order: unread first, then most recent activity (last message
 // or match_date as fallback for chats with no messages yet).

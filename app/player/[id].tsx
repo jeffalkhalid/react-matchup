@@ -563,7 +563,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [msgSheetOpen,   setMsgSheetOpen]   = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [showcaseOpen,   setShowcaseOpen]   = useState(false);
-  type BinomeRow = { binomeId: string; id: string; name: string; level: string };
+  type BinomeRow = { binomeId: string; id: string; name: string; level: string; avatarPath?: string | null };
   const [binomeActive,   setBinomeActive]   = useState<BinomeRow[]>([]);
   const [binomeIncoming, setBinomeIncoming] = useState<BinomeRow[]>([]);
   const [binomeOutgoing, setBinomeOutgoing] = useState<BinomeRow[]>([]);
@@ -628,8 +628,8 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
 
   // Onglet « Binômes ». Vue publique = paires ACTIVES (l'autre joueur). Sur MON
   // profil, on ajoute mes demandes reçues (à confirmer) et envoyées (en attente).
-  const mkRow = (bid: string, p?: { id: string; name: string; elo_score: number } | null): BinomeRow[] =>
-    p ? [{ binomeId: bid, id: p.id, name: p.name, level: formatPadelLevel(p.elo_score) }] : [];
+  const mkRow = (bid: string, p?: { id: string; name: string; elo_score: number; avatar_path?: string | null } | null): BinomeRow[] =>
+    p ? [{ binomeId: bid, id: p.id, name: p.name, level: formatPadelLevel(p.elo_score), avatarPath: p.avatar_path ?? null }] : [];
 
   const loadBinomes = async () => {
     if (isSelf) {
@@ -669,7 +669,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   // chemin change.
   const envoyerPhoto = async (image: PickedImage) => {
     if (!profile) return;
-    await uploadAvatar(profile.id, image);
+    await uploadAvatar(profile.id, image, (profile as any).avatar_path);
     await fetchData();
   };
 
@@ -1816,6 +1816,11 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
           onClose={() => setDeleteOpen(false)}
           playerName={profile.name}
           onConfirm={async () => {
+            // La photo part AVANT le compte : une fois le compte supprimé, la
+            // session n'a plus le droit d'effacer le fichier.
+            if ((profile as any).avatar_path) {
+              await removeAvatar(profile.id, (profile as any).avatar_path).catch(() => {});
+            }
             const { error } = await supabase.rpc('delete_my_account');
             if (error) { Alert.alert('Suppression impossible', error.message); return; }
             signOut();

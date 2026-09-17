@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, eloToLevel } from '../lib/theme';
 import { Pill, type PillVariant } from '../components/Pill';
 import { CreatorCrownBadge } from '../components/CreatorCrownBadge';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 import { notifyPlayers } from '../lib/notify';
 import { isGameReadyToScore } from '../lib/games';
 import { getLiveScoringEnabled, fetchLiveSession } from '../lib/liveSession';
@@ -99,6 +100,15 @@ function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, can
 }) {
   const inputs = useRef<Record<string, TextInput | null>>({});
 
+  // Même règle que les cartes de match : la photo prend 46 % de la place d'un
+  // joueur (36 à 56 px), et les cases de score s'alignent sur les lignes de
+  // joueurs (2 photos + 8 px d'écart = 2 lignes de cases).
+  const [colonne, setColonne] = useState(0);
+  const taille = colonne > 0
+    ? Math.max(36, Math.min(56, Math.round(((colonne - 10) / 2) * 0.46)))
+    : 44;
+  const padCase = Math.max(10, Math.floor((taille + 4 - 25) / 2));
+
   // Équipe qui mène = plus de sets gagnés (complets et valides uniquement).
   let w0 = 0, w1 = 0;
   sets.forEach(s => {
@@ -115,7 +125,7 @@ function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, can
     const me = p.id === meId;
     return (
       <View key={p.id} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <Avatar name={p.name} path={p.avatar_path} size={28} me={me} team={team} />
+        <Avatar name={p.name} path={p.avatar_path} size={taille} me={me} team={team} />
         <View style={{ minWidth: 0, gap: 2 }}>
           <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: me ? '800' : '600', color: PM.text, maxWidth: 90 }}>
             {p.name.split(' ')[0]}
@@ -145,7 +155,7 @@ function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, can
         placeholder="–"
         placeholderTextColor={PM.faint}
         style={{
-          width: CELL_W, paddingVertical: 10, textAlign: 'center',
+          width: CELL_W, paddingVertical: padCase, textAlign: 'center',
           fontFamily: PFonts.anton, fontSize: 19,
           color: lead ? ACCENT : PM.muted,
           backgroundColor: lead ? AC.soft : 'transparent',
@@ -172,7 +182,10 @@ function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, can
         ))}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+        <View
+          style={{ flex: 1, minWidth: 0, gap: 8 }}
+          onLayout={e => { const w = e.nativeEvent.layout.width; setColonne(prev => (Math.abs(prev - w) < 1 ? prev : w)); }}
+        >
           <View style={{ flexDirection: 'row', gap: 10 }}>{myTeam.map(p => renderPlayer(p, 0))}</View>
           <View style={{ flexDirection: 'row', gap: 10 }}>{oppTeam.map(p => renderPlayer(p, 1))}</View>
         </View>
@@ -319,11 +332,11 @@ export default function ScoreEntryScreen() {
         const accepted = (g.participants ?? []).filter((p: any) => p.status === 'accepted');
         const allParticipants: Participant[] = accepted.map((p: any) => ({
           id: p.player_id, name: p.player?.name ?? '?', elo_score: p.player?.elo_score ?? 0,
-          team_side: p.team_side ?? undefined,
+          team_side: p.team_side ?? undefined, avatar_path: p.player?.avatar_path ?? null,
         }));
         const creatorInList = allParticipants.some(p => p.id === g.creator_id);
         if (!creatorInList && g.creator) {
-          allParticipants.unshift({ id: g.creator_id, name: g.creator.name ?? '?', elo_score: g.creator.elo_score ?? 0, team_side: g.creator_side ?? undefined });
+          allParticipants.unshift({ id: g.creator_id, name: g.creator.name ?? '?', elo_score: g.creator.elo_score ?? 0, team_side: g.creator_side ?? undefined, avatar_path: g.creator.avatar_path ?? null });
         }
         return {
           id: g.id,
@@ -382,7 +395,7 @@ export default function ScoreEntryScreen() {
       // que defaultPartnerId retrouve le bon coéquipier en mode contestation.
       const SIDES: Record<number, string> = { 0: 'A_GAU', 1: 'A_DRO', 2: 'B_GAU', 3: 'B_DRO' };
       const participants: Participant[] = ([match.winner, match.winner_2, match.loser, match.loser_2] as any[])
-        .map((p: any, i: number) => (p ? { id: p.id, name: p.name ?? '?', elo_score: p.elo_score ?? 0, team_side: SIDES[i] } : null))
+        .map((p: any, i: number) => (p ? { id: p.id, name: p.name ?? '?', elo_score: p.elo_score ?? 0, team_side: SIDES[i], avatar_path: p.avatar_path ?? null } : null))
         .filter(Boolean) as Participant[];
 
       const location = (match as any).game?.location ?? '—';
@@ -741,6 +754,10 @@ export default function ScoreEntryScreen() {
                     <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '600', marginTop: 2 }}>
                       📅 {formatMatchDate(game.match_date)}
                     </Text>
+                    {/* Qui a joué : utile sur la carte REPLIÉE pour reconnaître la
+                        partie. Ouverte pour la saisie, la grille montre déjà les
+                        4 joueurs avec leur photo : les pastilles feraient doublon. */}
+                    {!isScoring && (
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                       {[...game.participants].sort((a, b) => teamRank(a) - teamRank(b)).map(p => {
                         const tc = TEAM_PILL[teamOf(p.team_side) ?? ''];
@@ -751,6 +768,7 @@ export default function ScoreEntryScreen() {
                         );
                       })}
                     </View>
+                    )}
                   </View>
                   {!isScoring && (
                     <TouchableOpacity onPress={() => openScoring(game)} style={sty.scorerBtn} activeOpacity={0.8}>
@@ -771,11 +789,10 @@ export default function ScoreEntryScreen() {
                     {!partnerChanged && (
                       partner ? (
                         <View style={[sty.partnerChip, sty.partnerChipSel, { marginTop: 8 }]}>
-                          <View style={[sty.partnerAvatar, { backgroundColor: Colors.primary }]}>
-                            <Text style={{ fontSize: 15, fontWeight: '900', color: Colors.textOnDark }}>
-                              {partner.name.charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
+                          <PlayerAvatar
+                            name={partner.name} path={partner.avatar_path} size={44}
+                            backgroundColor={Colors.primary} textColor={Colors.textOnDark} fontSize={17}
+                          />
                           <View style={{ flex: 1 }}>
                             <Text style={[sty.partnerName, { color: Colors.primary }]} numberOfLines={1}>{partner.name}</Text>
                             <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
@@ -827,12 +844,13 @@ export default function ScoreEntryScreen() {
                                 style={[sty.partnerChip, sel && sty.partnerChipSel]}
                                 activeOpacity={0.75}
                               >
-                                <View style={[sty.partnerAvatar, { backgroundColor: sel ? Colors.primary : Colors.border }]}>
-                                  <Text style={{ fontSize: 15, fontWeight: '900', color: sel ? Colors.textOnDark : Colors.textSecondary }}>
-                                    {p.name.charAt(0).toUpperCase()}
-                                  </Text>
-                                  {p.id === game.creator_id ? <CreatorCrownBadge avatarSize={36} /> : null}
-                                </View>
+                                <PlayerAvatar
+                                  name={p.name} path={p.avatar_path} size={44}
+                                  backgroundColor={sel ? Colors.primary : Colors.border}
+                                  textColor={sel ? Colors.textOnDark : Colors.textSecondary} fontSize={17}
+                                >
+                                  {p.id === game.creator_id ? <CreatorCrownBadge avatarSize={44} /> : null}
+                                </PlayerAvatar>
                                 <View style={{ flex: 1 }}>
                                   <Text style={[sty.partnerName, sel && { color: Colors.primary }]} numberOfLines={1}>{p.name}</Text>
                                   <Text style={{ fontSize: 10, color: Colors.textMuted, fontWeight: '600' }}>
@@ -867,7 +885,7 @@ export default function ScoreEntryScreen() {
                       sets={sets}
                       meId={player?.id ?? ''}
                       myTeam={[
-                        ...(player ? [{ id: player.id, name: player.name, elo_score: player.elo_score ?? 0 }] : []),
+                        ...(player ? [{ id: player.id, name: player.name, elo_score: player.elo_score ?? 0, avatar_path: (player as any).avatar_path ?? null }] : []),
                         ...(partner ? [partner] : []),
                       ]}
                       oppTeam={others.filter(p => p.id !== partnerId)}

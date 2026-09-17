@@ -205,7 +205,7 @@ function FriendRow({ f, onPress }: { f: FriendWithForm; onPress: () => void }) {
       shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 10,
       shadowOffset: { width: 0, height: 4 }, elevation: 2,
     }}>
-      <Avatar name={f.name} path={f.avatar_path} size={44} radius={14} league={f.league} />
+      <Avatar name={f.name} path={f.avatar_path} size={54} league={f.league} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14.5, color: Colors.textPrimary }}>
           {f.name}

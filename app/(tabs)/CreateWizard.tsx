@@ -165,6 +165,11 @@ function hashTone(name: string) {
   const h = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   return AV_PALETTE[h % AV_PALETTE.length];
 }
+/** Un joueur placé dans une équipe. `avatar_path` absent (undefined) = photo pas
+ *  encore connue : l'assistant la complète (joueurs pré-remplis par « Rejouer »
+ *  ou un défi ciblé, qui arrivent sans elle). `null` = pas de photo. */
+type InvitedPlayer = { id: string; name: string; elo_score: number; avatar_path?: string | null };
+
 function Avatar({ name, size = 32, path }: { name: string; size?: number; path?: string | null }) {
   const tone = hashTone(name);
   return (
@@ -273,6 +278,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   const [clubFavs,    setClubFavs]    = useState<string[]>([]);
   const [manageClubsOpen, setManageClubsOpen] = useState(false);
   const [freqPlayers, setFreqPlayers] = useState<Array<{ id: string; name: string; elo_score: number }>>([]);
+  // Largeur mesurée de la grille des équipes : les photos des places la remplissent.
+  const [largeurEquipes, setLargeurEquipes] = useState(0);
   const [searchQ,     setSearchQ]     = useState('');
   const [searchRes,   setSearchRes]   = useState<any[]>([]);
   const [searching,   setSearching]   = useState(false);
@@ -293,7 +300,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     maxLevel:       defaultBand.max,
     stakeMultiplier: 2.0,
     mySlot:         'A0' as string | null,
-    invites:        {} as Record<string, { id: string; name: string; elo_score: number }>,
+    invites:        {} as Record<string, InvitedPlayer>,
   });
 
   const set = useCallback(<K extends keyof typeof form>(k: K, v: typeof form[K]) => {
@@ -328,11 +335,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     setShowAbandon(false); setShowCal(false); setVenueOpen(false); setVenueSearch('');
     setInviteTarget(null); setSearchQ(''); setSearchRes([]);
     const gameType = initialGameType ?? 'Compétitif';
-    const invites: Record<string, { id: string; name: string; elo_score: number }> = {};
+    const invites: Record<string, InvitedPlayer> = {};
     if (initialInvites) {
       (['A1', 'B0', 'B1'] as const).forEach(slot => {
         const p = initialInvites[slot];
-        if (p) invites[slot] = { id: p.id, name: p.name, elo_score: p.elo_score };
+        if (p) invites[slot] = { id: p.id, name: p.name, elo_score: p.elo_score, avatar_path: (p as any).avatar_path };
       });
     } else if (initialInvite) {
       const opponentSlot = initialInvite.court_side === 'right' ? 'B1' : 'B0';
@@ -340,6 +347,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         id: initialInvite.id,
         name: initialInvite.name,
         elo_score: initialInvite.elo_score,
+        avatar_path: (initialInvite as any).avatar_path,
       };
     }
     const defaultGenre: Genre =
@@ -502,7 +510,28 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   function openInvite(key: string) { setInviteTarget(key); setSearchQ(''); }
 
-  function assignPlayer(p: { id: string; name: string; elo_score: number }) {
+  useEffect(() => {
+    const manquants = Object.values(form.invites)
+      .filter(p => p && p.avatar_path === undefined)
+      .map(p => p.id);
+    if (manquants.length === 0) return;
+    let vivant = true;
+    supabase.from('players').select('id, avatar_path').in('id', manquants).then(({ data }) => {
+      if (!vivant) return;
+      const parId = new Map((data ?? []).map((r: any) => [r.id as string, (r.avatar_path ?? null) as string | null]));
+      setFormState(f => {
+        const invites = { ...f.invites };
+        for (const [slot, p] of Object.entries(invites)) {
+          // Toujours défini après coup (null si introuvable) : l'effet ne se relance pas en boucle.
+          if (p && p.avatar_path === undefined) invites[slot] = { ...p, avatar_path: parId.get(p.id) ?? null };
+        }
+        return { ...f, invites };
+      });
+    });
+    return () => { vivant = false; };
+  }, [form.invites]);
+
+  function assignPlayer(p: InvitedPlayer) {
     if (!inviteTarget) return;
     const newInvites = { ...form.invites, [inviteTarget]: p };
     const newMySlot  = form.mySlot === inviteTarget ? null : form.mySlot;
@@ -1028,8 +1057,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           )}
         </View>
 
-        {/* Slot grid */}
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+        {/* Slot grid — les photos prennent toute la largeur disponible :
+            2 équipes (écart 10), chacune avec marge 10 + bordure 1,5 de chaque
+            côté, et 2 places séparées de 8. */}
+        <View
+          style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}
+          onLayout={e => { const w = e.nativeEvent.layout.width; setLargeurEquipes(prev => (Math.abs(prev - w) < 1 ? prev : w)); }}
+        >
           {(['A', 'B'] as const).map(team => (
             <View key={team} style={{ flex: 1, backgroundColor: team === 'A' ? t.teamABg : t.teamBBg,
               borderWidth: 1.5, borderColor: team === 'A' ? t.teamABorder : t.teamBBorder,
@@ -1043,6 +1077,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {([0, 1] as const).map(pos => {
                   const key    = `${team}${pos}`;
+                  const PLACE  = largeurEquipes > 0
+                    ? Math.max(48, Math.min(88, Math.floor(((largeurEquipes - 10) / 2 - 23 - 8) / 2)))
+                    : 56;
                   const isMe   = form.mySlot === key;
                   const inv    = form.invites[key];
                   const isEmpty = !isMe && !inv;
@@ -1063,21 +1100,26 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                           else { openInvite(key); }
                         }}
                         activeOpacity={0.7}
-                        style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: isEmpty ? t.libreBg : teamFill,
-                          borderWidth: isEmpty ? 2 : isMe ? 2.5 : 0,
-                          borderStyle: isEmpty ? 'dashed' : 'solid',
-                          borderColor: isEmpty ? t.libreBorder : isMe ? Colors.bgCard : 'transparent',
-                        }}>
-                        {isMe
-                          ? <Text style={{ color: teamFg, fontWeight: '900', fontSize: 14 }}>{(player?.name || '?').charAt(0).toUpperCase()}</Text>
-                          : inv
-                            ? <Text style={{ color: teamFg, fontWeight: '900', fontSize: 14 }}>{(inv.name || '?').charAt(0).toUpperCase()}</Text>
-                            : <Text style={{ color: t.libreColor, fontSize: 20, fontWeight: '300' }}>+</Text>
-                        }
-                        {isMe ? <CreatorCrownBadge avatarSize={48} /> : null}
+                        style={isEmpty ? {
+                          width: PLACE, height: PLACE, borderRadius: PLACE / 2, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: t.libreBg, borderWidth: 2, borderStyle: 'dashed', borderColor: t.libreBorder,
+                        } : undefined}>
+                        {isMe || inv ? (
+                          <PlayerAvatar
+                            name={isMe ? (player?.name ?? '?') : inv!.name}
+                            path={isMe ? (player as any)?.avatar_path : inv!.avatar_path}
+                            size={PLACE}
+                            backgroundColor={teamFill} textColor={teamFg}
+                            fontSize={Math.round(PLACE * 0.32)}
+                            ring={isMe ? 2.5 : undefined} ringColor={Colors.bgCard}
+                          >
+                            {isMe ? <CreatorCrownBadge avatarSize={PLACE} /> : null}
+                          </PlayerAvatar>
+                        ) : (
+                          <Text style={{ color: t.libreColor, fontSize: 22, fontWeight: '300' }}>+</Text>
+                        )}
                       </TouchableOpacity>
-                      <Text style={{ fontSize: 9.5, fontWeight: '700', color: isMe ? Colors.primary : inv ? Colors.primary : t.libreColor, maxWidth: 52, textAlign: 'center' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 9.5, fontWeight: '700', color: isMe ? Colors.primary : inv ? Colors.primary : t.libreColor, maxWidth: PLACE + 8, textAlign: 'center' }} numberOfLines={1}>
                         {isMe ? 'Vous' : inv ? inv.name.split(' ')[0] : 'Libre'}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -1153,7 +1195,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 {freqAvail.map(p => (
                   <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard }}>
-                    <Avatar name={p.name} path={(p as any).avatar_path} size={32} />
+                    <Avatar name={p.name} path={(p as any).avatar_path} size={40} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                       <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
@@ -1170,7 +1212,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               {searchAvail.map(p => (
                 <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }}>
-                  <Avatar name={p.name} path={(p as any).avatar_path} size={32} />
+                  <Avatar name={p.name} path={(p as any).avatar_path} size={40} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{p.name}</Text>
                     <Text style={{ fontSize: 10, color: '#94a3b8' }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
@@ -1193,7 +1235,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
           {/* Moi (A0) */}
           <View style={{ flex: 1, backgroundColor: t.teamABg, borderWidth: 1.5, borderColor: t.teamABorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
-            <Avatar name={player?.name ?? '?'} path={(player as any)?.avatar_path} size={44} />
+            <Avatar name={player?.name ?? '?'} path={(player as any)?.avatar_path} size={54} />
             <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>Vous</Text>
             <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {player ? formatPadelLevel(player.elo_score) : '—'}</Text>
           </View>
@@ -1203,7 +1245,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             style={{ flex: 1, backgroundColor: defiPartner ? t.teamABg : t.libreBg, borderWidth: 1.5, borderStyle: defiPartner ? 'solid' : 'dashed', borderColor: defiPartner ? t.teamABorder : t.libreBorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
             {defiPartner ? (
               <>
-                <Avatar name={defiPartner.name} path={(defiPartner as any).avatar_path} size={44} />
+                <Avatar name={defiPartner.name} path={(defiPartner as any).avatar_path} size={54} />
                 <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{defiPartner.name.split(' ')[0]}</Text>
                 <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(defiPartner.elo_score)}</Text>
               </>
@@ -1241,7 +1283,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   }}>
                     {opp ? (
                       <>
-                        <Avatar name={opp.name} path={(opp as any).avatar_path} size={44} />
+                        <Avatar name={opp.name} path={(opp as any).avatar_path} size={54} />
                         <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
                           {opp.name.split(' ')[0]}
                         </Text>

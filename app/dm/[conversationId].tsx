@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TextInput, TouchableOpacity, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Alert, Image,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,25 +11,17 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts } from '../../lib/theme';
 import {
   DirectConversation, DirectMessage, fetchMessages, sendDirectMessage,
-  respondDirectRequest, markConversationRead, otherId, otherName, otherPhoto, isRequestFor,
+  respondDirectRequest, markConversationRead, otherId, otherName, otherAvatarPath, isRequestFor,
 } from '../../lib/directChats';
 import { blockUser, unblockUser, reportContent, getBlockedByMe, getHiddenPlayerIds } from '../../lib/moderation';
 import ReportReasonSheet from '../../components/ReportReasonSheet';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 
 // ─── Helpers ──────────────────────────────────────────────────
-function initialsOf(name: string): string {
-  return name.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase() || '?';
-}
-
 // Avatar (photo si dispo, sinon initiales colorées) — même esprit que le chat de match.
-function Avatar({ name, photo, size = 30 }: { name: string; photo: string | null; size?: number }) {
-  if (photo) {
-    return <Image source={{ uri: photo }} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: Colors.bgCardAlt }} />;
-  }
+function Avatar({ name, path, size = 30 }: { name: string; path: string | null; size?: number }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: size * 0.36, fontWeight: '900', color: Colors.textOnDark }}>{initialsOf(name)}</Text>
-    </View>
+    <PlayerAvatar name={name} path={path} size={size} backgroundColor={Colors.brand} textColor={Colors.textOnDark} fontSize={Math.round(size * 0.36)} initialsMax={2} />
   );
 }
 
@@ -39,9 +31,9 @@ interface BubbleProps {
   prev?: DirectMessage;
   isMe: boolean;
   otherNameStr: string;
-  otherPhotoStr: string | null;
+  otherAvatarPath: string | null;
 }
-function MessageBubble({ message: m, prev, isMe, otherNameStr, otherPhotoStr }: BubbleProps) {
+function MessageBubble({ message: m, prev, isMe, otherNameStr, otherAvatarPath }: BubbleProps) {
   const time = new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const senderChanged = !prev || prev.sender_id !== m.sender_id;
 
@@ -51,7 +43,7 @@ function MessageBubble({ message: m, prev, isMe, otherNameStr, otherPhotoStr }: 
         {/* Avatar (autrui, seulement au changement d'expéditeur) */}
         {!isMe && (
           <View style={{ width: 28, alignSelf: 'flex-end' }}>
-            {senderChanged ? <Avatar name={otherNameStr} photo={otherPhotoStr} size={28} /> : null}
+            {senderChanged ? <Avatar name={otherNameStr} path={otherAvatarPath} size={34} /> : null}
           </View>
         )}
 
@@ -97,7 +89,7 @@ export default function DirectChatScreen() {
     if (!conversationId || !player) return;
     const { data: c } = await supabase
       .from('direct_conversations')
-      .select('*, requester:players!requester_id(name), addressee:players!addressee_id(name)')
+      .select('*, requester:players!requester_id(name, avatar_path), addressee:players!addressee_id(name, avatar_path)')
       .eq('id', conversationId)
       .single();
     const conv = (c as DirectConversation) ?? null;
@@ -141,7 +133,7 @@ export default function DirectChatScreen() {
   const canWrite = !!conv && (conv.status === 'accepted' ||
     (conv.status === 'pending' && conv.requester_id === myId && messages.length === 0));
   const otherNameStr = conv ? otherName(conv, myId) : '';
-  const otherPhotoStr = conv ? otherPhoto(conv, myId) : null;
+  const otherAvatarPathStr = conv ? otherAvatarPath(conv, myId) : null;
 
   // Sous-titre d'en-tête selon l'état de la conversation.
   const subtitle = !conv ? '' :
@@ -225,7 +217,7 @@ export default function DirectChatScreen() {
           {/* Avatar + nom = accès au profil */}
           <TouchableOpacity activeOpacity={0.7} disabled={!conv} onPress={openProfile}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            <Avatar name={otherNameStr} photo={otherPhotoStr} size={38} />
+            <Avatar name={otherNameStr} path={otherAvatarPathStr} size={48} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }} numberOfLines={1}>
                 {otherNameStr || 'Conversation'}
@@ -279,7 +271,7 @@ export default function DirectChatScreen() {
                 prev={messages[index - 1]}
                 isMe={item.sender_id === myId}
                 otherNameStr={otherNameStr}
-                otherPhotoStr={otherPhotoStr}
+                otherAvatarPath={otherAvatarPathStr}
               />
             )}
           />

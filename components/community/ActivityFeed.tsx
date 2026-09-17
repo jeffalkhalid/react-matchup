@@ -34,7 +34,7 @@ export function FriendsBar({ friends, sel, onSelect, dimmed = false }: {
           <TouchableOpacity key={f.id} onPress={() => onSelect(on ? null : f.id)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 56 }}>
             <View style={{ padding: on ? 3 : 2, borderRadius: 999, backgroundColor: on ? Colors.brand : (LeagueGradients[f.league] ?? LeagueGradients.gold)[1] }}>
               <View style={{ padding: on ? 2 : 0, borderRadius: 999, backgroundColor: on ? Colors.bg : 'transparent' }}>
-                <Avatar name={f.name} path={f.avatar_path} size={on ? 44 : 48} radius={999} league={f.league} />
+                <Avatar name={f.name} path={f.avatar_path} size={on ? 54 : 60} league={f.league} />
               </View>
             </View>
             <Text numberOfLines={1} style={{ fontFamily: on ? Fonts.uiExtraBold : Fonts.uiSemi, fontSize: 10.5, color: on ? Colors.textPrimary : Colors.textSecondary, maxWidth: 56 }}>

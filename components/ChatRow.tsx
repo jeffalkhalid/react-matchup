@@ -1,22 +1,23 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Spacing, FontSize, Fonts } from '../lib/theme';
 import { Pill } from './Pill';
+import { PlayerAvatar } from './PlayerAvatar';
 import type { GameChat } from '../hooks/useGameChats';
 
-function AvatarGrid({ players }: { players: Array<{ name: string; isMe: boolean }> }) {
+function AvatarGrid({ players }: { players: Array<{ name: string; isMe: boolean; path?: string | null }> }) {
   const slots = [players[0], players[1], players[2], players[3]];
   const COLORS = [Colors.primary, '#8B5CF6', '#EC4899', '#14B8A6'];
   return (
     <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.bgCardAlt, overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', padding: 4, gap: 3 }}>
         {slots.slice(0, 4).map((p, i) => (
-          <View key={i} style={{
-            width: 18, height: 18, borderRadius: 9,
-            backgroundColor: p ? (p.isMe ? Colors.primary : COLORS[i]) : Colors.border,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            {p ? <Text style={{ color: Colors.textOnDark, fontSize: 7, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{p.name.charAt(0).toUpperCase()}</Text> : null}
-          </View>
+          p ? (
+            <PlayerAvatar key={i} name={p.name} path={p.path} size={18}
+              backgroundColor={p.isMe ? Colors.primary : COLORS[i]} textColor={Colors.textOnDark}
+              fontFamily={Fonts.uiBlack} fontSize={7} />
+          ) : (
+            <View key={i} style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: Colors.border }} />
+          )
         ))}
       </View>
     </View>
@@ -32,8 +33,8 @@ export function ChatRow({ game, playerId, onPress }: {
   const label = game.is_challenge ? 'Défi' : 'Partie';
   const accepted = (game.participants ?? []).filter((p: any) => p.status === 'accepted');
   const allPlayers = [
-    { name: game.creator?.name ?? '?', isMe: playerId === game.creator_id },
-    ...accepted.map((p: any) => ({ name: p.player?.name ?? '?', isMe: p.player_id === playerId })),
+    { name: game.creator?.name ?? '?', isMe: playerId === game.creator_id, path: game.creator?.avatar_path ?? null },
+    ...accepted.map((p: any) => ({ name: p.player?.name ?? '?', isMe: p.player_id === playerId, path: p.player?.avatar_path ?? null })),
   ];
   const gameDate = new Date(game.match_date);
   const dateStr = gameDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });

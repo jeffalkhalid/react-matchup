@@ -83,6 +83,12 @@ export function splitAvatarPaths(
   return { ready, missing };
 }
 
+/** Oublie l'adresse d'une photo (image illisible, adresse périmée) : la
+ *  prochaine demande en signera une nouvelle. */
+export function forgetAvatarUrl(path: string): void {
+  cache.delete(path);
+}
+
 /** Vide le cache — changement de compte, ou tests. */
 export function resetAvatarUrlCache(): void {
   cache.clear();
@@ -201,13 +207,33 @@ export async function pendingAvatarPick(): Promise<PickedImage | null> {
 }
 
 /**
+ * Efface des fichiers de photo par l'API de stockage — la SEULE voie
+ * autorisée. Un déclencheur serveur les effaçait directement dans les tables de
+ * stockage ; Supabase le refuse désormais, et l'erreur faisait échouer tout
+ * remplacement ou retrait de photo (2026-09-17, avatars_cleanup_fix.sql).
+ *
+ * Jamais bloquant : la fiche est déjà à jour quand on arrive ici ; un fichier
+ * resté orphelin vaut mieux qu'un changement de photo annoncé en échec.
+ */
+export async function deleteAvatarFiles(paths: (string | null | undefined)[]): Promise<void> {
+  const liste = paths.filter((p): p is string => !!p);
+  if (liste.length === 0) return;
+  liste.forEach(p => cache.delete(p));
+  try {
+    await supabase.storage.from(AVATAR_BUCKET).remove(liste);
+  } catch {
+    // orphelin toléré
+  }
+}
+
+/**
  * Envoie la photo et l'attache au joueur. Rend le nouveau chemin.
  *
- * L'ancien fichier n'est PAS supprimé ici : le serveur s'en charge dès que
- * `avatar_path` change (déclencheur de la migration). Un client qui perd le
- * réseau au mauvais moment ne peut donc pas laisser d'image orpheline.
+ * Ordre : envoyer le nouveau fichier, mettre la fiche à jour, PUIS effacer
+ * l'ancien. Si la fiche ne se met pas à jour, c'est le nouveau fichier qu'on
+ * retire et l'ancienne photo reste intacte.
  */
-export async function uploadAvatar(playerId: string, image: PickedImage): Promise<string> {
+export async function uploadAvatar(playerId: string, image: PickedImage, previousPath?: string | null): Promise<string> {
   const bytes = await new File(image.uri).arrayBuffer();
   const path = newAvatarPath(playerId, image.mime);
   const { error } = await supabase.storage
@@ -226,14 +252,15 @@ export async function uploadAvatar(playerId: string, image: PickedImage): Promis
     throw dbError;
   }
   rememberAvatarUrlInvalidate(path);
+  if (previousPath && previousPath !== path) await deleteAvatarFiles([previousPath]);
   return path;
 }
 
-/** Retire la photo : le serveur efface le fichier au passage à NULL. */
+/** Retire la photo : la fiche repasse en initiales, puis le fichier est effacé. */
 export async function removeAvatar(playerId: string, currentPath?: string | null): Promise<void> {
   const { error } = await supabase.from('players').update({ avatar_path: null }).eq('id', playerId);
   if (error) throw error;
-  if (currentPath) cache.delete(currentPath);
+  await deleteAvatarFiles([currentPath]);
 }
 
 /** Une nouvelle photo ne doit pas hériter d'une adresse en cache. */
@@ -253,8 +280,10 @@ export async function reportAvatar(reporterId: string, playerId: string, reason?
   if (error) throw error;
 }
 
-/** Retrait par l'arbitre (panel). */
-export async function adminRemoveAvatar(playerId: string): Promise<void> {
+/** Retrait par l'arbitre (panel) : fiche en initiales, puis fichier effacé
+ *  (les règles d'accès autorisent l'arbitre à effacer la photo d'un autre). */
+export async function adminRemoveAvatar(playerId: string, currentPath?: string | null): Promise<void> {
   const { error } = await supabase.rpc('admin_remove_avatar', { p_player_id: playerId });
   if (error) throw error;
+  await deleteAvatarFiles([currentPath]);
 }

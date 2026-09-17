@@ -127,7 +127,7 @@ export default function CommentsScreen() {
             ) : visible.map(c => (
               <View key={c.id} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                 <TouchableOpacity onPress={() => c.player_id && router.push(`/player/${c.player_id}` as any)} activeOpacity={0.7} disabled={!c.player_id}>
-                  <Avatar name={c.actor?.name} path={(c.actor as any)?.avatar_path} size={36} radius={11} league={c.league ?? 'discovery'} />
+                  <Avatar name={c.actor?.name} path={(c.actor as any)?.avatar_path} size={44} league={c.league ?? 'discovery'} />
                 </TouchableOpacity>
                 <View style={{ flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 12 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

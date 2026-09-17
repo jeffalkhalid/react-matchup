@@ -7,7 +7,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useGameChats } from '../../hooks/useGameChats';
 import { useDirectChats } from '../../hooks/useDirectChats';
-import { otherName, otherPhoto } from '../../lib/directChats';
+import { otherName, otherAvatarPath } from '../../lib/directChats';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { Colors, Spacing, FontSize, Radius, Fonts } from '../../lib/theme';
 import { ChatRow } from '../../components/ChatRow';
 import { HeaderActions } from '../../components/HeaderActions';
@@ -265,7 +266,7 @@ export default function ChatsScreen() {
           ) : null}
           renderItem={({ item: conv }) => {
             const name = otherName(conv, player?.id ?? '');
-            const photo = otherPhoto(conv, player?.id ?? '');
+            const photoPath = otherAvatarPath(conv, player?.id ?? '');
             const blocked = isConversationBlocked(conv);
             const unread = blocked ? 0 : unreadCount(conv);
             return (
@@ -278,12 +279,7 @@ export default function ChatsScreen() {
                   backgroundColor: unread > 0 ? `${Colors.primary}08` : Colors.bg,
                   opacity: blocked ? 0.55 : 1,
                 }}>
-                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                  {photo
-                    ? <Image source={{ uri: photo }} style={{ width: 48, height: 48, borderRadius: 24 }} />
-                    : <Text style={{ color: Colors.textPrimary, fontSize: 18, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{name.charAt(0).toUpperCase()}</Text>
-                  }
-                </View>
+                <PlayerAvatar name={name} path={photoPath} size={48} backgroundColor={Colors.bgCardAlt} textColor={Colors.textPrimary} fontFamily={Fonts.uiBlack} fontSize={18} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: unread > 0 ? '900' : '800', fontFamily: unread > 0 ? Fonts.uiBlack : Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>

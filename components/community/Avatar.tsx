@@ -4,9 +4,9 @@
 // La photo se demande par son chemin (`players.avatar_path`) : l'adresse est
 // signée et regroupée par écran (hooks/useAvatarUrl). Tant qu'elle n'est pas
 // prête — ou si elle échoue — on garde les initiales, jamais un rond vide.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Image } from 'react-native';
-import { useAvatarUrl } from '../../hooks/useAvatarUrl';
+import { useAvatarUrl, relancerAvatar } from '../../hooks/useAvatarUrl';
 import Svg, { Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { LeagueGradients, Colors, Fonts } from '../../lib/theme';
 import type { League } from '../../types';
@@ -15,7 +15,7 @@ function initials(name?: string): string {
   return (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-export function Avatar({ name, size = 46, radius = 14, league = 'gold', mono, path }: {
+export function Avatar({ name, size = 46, radius = 9999, league = 'gold', mono, path }: {
   name?: string;
   size?: number;
   radius?: number;
@@ -28,11 +28,12 @@ export function Avatar({ name, size = 46, radius = 14, league = 'gold', mono, pa
   const gid = `av-${league}-${size}`;
   const url = useAvatarUrl(path);
   const [echec, setEchec] = useState(false);
+  useEffect(() => { setEchec(false); }, [url]);
   const photo = url && !echec ? (
     <Image
       source={{ uri: url }}
       resizeMode="cover"
-      onError={() => setEchec(true)}
+      onError={() => { setEchec(true); if (path) relancerAvatar(path); }}
       style={{ position: 'absolute', width: size, height: size, borderRadius: r }}
     />
   ) : null;

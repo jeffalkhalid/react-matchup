@@ -7,6 +7,7 @@ import {
   type MatchView, type TimelinePoint, type RepBadge, type AchievementView,
 } from './components';
 import { BadgePill } from './BadgePill';
+import { PlayerAvatar } from '../PlayerAvatar';
 import { Icon } from '../community/icons';
 import { LaurelMedallion } from '../ambassador/primitives';
 import { Guilloche, DarkGoldBackdrop } from '../ambassador/backdrops';
@@ -326,7 +327,7 @@ export function PalmaresTab({ achievements }: { achievements: AchievementView[] 
 // ════════════════════════════════════════════════════════════════════
 //  BINÔMES (ouverts aux défis)
 // ════════════════════════════════════════════════════════════════════
-type BinomeRow = { binomeId: string; id: string; name: string; level: string };
+type BinomeRow = { binomeId: string; id: string; name: string; level: string; avatarPath?: string | null };
 
 export function BinomesTab({ active, incoming, outgoing, isSelf, onConfirm, onClose, onAdd, onPlayerPress }: {
   active: BinomeRow[];
@@ -349,10 +350,8 @@ export function BinomesTab({ active, incoming, outgoing, isSelf, onConfirm, onCl
   };
   const nothing = active.length === 0 && inc.length === 0 && out.length === 0;
 
-  const avatar = (name: string) => (
-    <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: A.soft, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: 14, fontWeight: '900', color: A.deep }}>{(name[0] ?? '?').toUpperCase()}</Text>
-    </View>
+  const avatar = (p: BinomeRow) => (
+    <PlayerAvatar name={p.name} path={p.avatarPath} size={44} backgroundColor={A.soft} textColor={A.deep} fontSize={16} />
   );
   const row = (p: BinomeRow, right: React.ReactNode) => (
     <View key={p.binomeId} style={{
@@ -360,7 +359,7 @@ export function BinomesTab({ active, incoming, outgoing, isSelf, onConfirm, onCl
       backgroundColor: PM.page, borderWidth: 1, borderColor: PM.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
     }}>
       <TouchableOpacity onPress={() => onPlayerPress?.(p.id)} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-        {avatar(p.name)}
+        {avatar(p)}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: PM.text }}>{p.name}</Text>
           <Text style={{ fontSize: 10.5, fontWeight: '700', color: PM.muted, marginTop: 1 }}>Niv. {p.level}</Text>

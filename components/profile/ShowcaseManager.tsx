@@ -8,6 +8,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Colors, Fonts } from '../../lib/theme';
+import { PlayerAvatar } from '../PlayerAvatar';
 import {
   fetchMyShowcases, fetchShowcaseInvites, openShowcase, confirmShowcase, closeShowcase,
   type ShowcaseBinome,
@@ -15,7 +16,7 @@ import {
 import { notifyShowcaseNominated, notifyShowcaseDeclined } from '../../lib/defiNotify';
 
 // ── Types ────────────────────────────────────────────────────────────
-interface PlayerLite { id: string; name: string; elo_score: number; }
+interface PlayerLite { id: string; name: string; elo_score: number; avatar_path?: string | null; }
 
 interface Props {
   visible: boolean;
@@ -24,11 +25,11 @@ interface Props {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
-function partnerOf(binome: ShowcaseBinome, myId: string): { id: string; name: string } | null {
+function partnerOf(binome: ShowcaseBinome, myId: string): { id: string; name: string; avatar_path?: string | null } | null {
   if (binome.player_a === myId) {
-    return binome.b ? { id: binome.b.id, name: binome.b.name } : null;
+    return binome.b ? { id: binome.b.id, name: binome.b.name, avatar_path: binome.b.avatar_path } : null;
   }
-  return binome.a ? { id: binome.a.id, name: binome.a.name } : null;
+  return binome.a ? { id: binome.a.id, name: binome.a.name, avatar_path: binome.a.avatar_path } : null;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -165,14 +166,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
         paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt,
       }}>
         {/* Avatar */}
-        <View style={{
-          width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.primary,
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 13, fontWeight: '900' }}>
-            {(partner.name[0] ?? '?').toUpperCase()}
-          </Text>
-        </View>
+        <PlayerAvatar name={partner.name} path={partner.avatar_path} size={44} backgroundColor={Colors.primary} textColor={Colors.textOnDark} fontSize={16} />
 
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }} numberOfLines={1}>
@@ -200,7 +194,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
   };
 
   const renderInviteRow = (b: ShowcaseBinome) => {
-    const nominator = b.a ? { id: b.a.id, name: b.a.name } : null;
+    const nominator = b.a ? { id: b.a.id, name: b.a.name, avatar_path: b.a.avatar_path } : null;
     if (!nominator) return null;
     const busyConfirm = actionIds.has(`confirm-${b.id}`);
     const busyDecline = actionIds.has(`decline-${b.id}`);
@@ -211,14 +205,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
         borderColor: Colors.border, padding: 13, gap: 10,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{
-            width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.brandDeep,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Text style={{ color: '#0A0A0A', fontSize: 13, fontWeight: '900' }}>
-              {(nominator.name[0] ?? '?').toUpperCase()}
-            </Text>
-          </View>
+          <PlayerAvatar name={nominator.name} path={nominator.avatar_path} size={44} backgroundColor={Colors.brandDeep} textColor="#0A0A0A" fontSize={16} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 12, color: Colors.textMuted }}>
               <Text style={{ fontWeight: '800', color: Colors.textPrimary }}>{nominator.name}</Text>
@@ -381,15 +368,7 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
                                     borderTopColor: Colors.bgCardAlt,
                                   }}
                                 >
-                                  <View style={{
-                                    width: 32, height: 32, borderRadius: 9,
-                                    backgroundColor: Colors.bgCardAlt,
-                                    alignItems: 'center', justifyContent: 'center',
-                                  }}>
-                                    <Text style={{ fontSize: 13, fontWeight: '800', color: Colors.textSecondary }}>
-                                      {(p.name[0] ?? '?').toUpperCase()}
-                                    </Text>
-                                  </View>
+                                  <PlayerAvatar name={p.name} path={p.avatar_path} size={40} backgroundColor={Colors.bgCardAlt} textColor={Colors.textSecondary} fontSize={15} />
                                   <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
                                     {p.name}
                                   </Text>

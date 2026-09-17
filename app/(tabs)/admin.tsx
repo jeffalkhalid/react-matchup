@@ -276,7 +276,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
   onFraud: (playerId: string, name: string) => void;
   onUnblock: (playerId: string) => void | Promise<void>;
   /** Retirer la photo de profil (signalement traité). */
-  onRemoveAvatar: (playerId: string, name: string) => void;
+  onRemoveAvatar: (playerId: string, name: string, avatarPath: string | null) => void;
   onRefresh: () => void | Promise<void>;
 }) {
   const [search, setSearch] = useState('');
@@ -417,7 +417,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
                   {/* Photo de profil signalée : l'arbitre la retire, le joueur
                       repasse en initiales (le fichier est effacé). */}
                   {!acting && (p as any).avatar_path ? (
-                    <TouchableOpacity onPress={() => onRemoveAvatar(p.id, p.name)} style={[sty.chip, { borderColor: '#ef444450' }]}>
+                    <TouchableOpacity onPress={() => onRemoveAvatar(p.id, p.name, (p as any).avatar_path ?? null)} style={[sty.chip, { borderColor: '#ef444450' }]}>
                       <Text style={[sty.chipText, { color: Colors.danger }]}>Retirer la photo</Text>
                     </TouchableOpacity>
                   ) : null}
@@ -1156,9 +1156,10 @@ export default function AdminScreen() {
 
   // Délier est devenu une action lourde (bonus retiré + revendication oubliée
   // + point effacé de la courbe) → confirmation, comme Fraudeur.
-  // Photo de profil signalée : retrait par l'arbitre. Le serveur efface le
-  // fichier au passage à NULL (migration avatars.sql).
-  const handleRemoveAvatar = (playerId: string, name: string) => {
+  // Photo de profil signalée : retrait par l'arbitre. La fiche repasse en
+  // initiales, puis l'app efface le fichier par l'API de stockage
+  // (lib/avatars.adminRemoveAvatar ; cf. avatars_cleanup_fix.sql).
+  const handleRemoveAvatar = (playerId: string, name: string, avatarPath: string | null) => {
     Alert.alert(
       'Retirer la photo ?',
       `${name} repassera à ses initiales et la photo sera effacée du serveur.`,
@@ -1169,7 +1170,7 @@ export default function AdminScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await adminRemoveAvatar(playerId);
+              await adminRemoveAvatar(playerId, avatarPath);
               await loadPlayers();
             } catch (e: any) {
               Alert.alert('Impossible', e?.message ?? 'Action refusée.');

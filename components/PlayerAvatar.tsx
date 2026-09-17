@@ -10,9 +10,9 @@
 // Repli volontaire sur les initiales dans TOUS les cas douteux : pas de photo,
 // adresse pas encore signée, image illisible, hors ligne. Un rond vide serait
 // pire que des initiales.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { View, Text, Image, type StyleProp, type ViewStyle } from 'react-native';
-import { useAvatarUrl } from '../hooks/useAvatarUrl';
+import { useAvatarUrl, relancerAvatar } from '../hooks/useAvatarUrl';
 
 /** « Jean-Marc Dupont » → « JD » ; « kenza » → « K ». */
 export function initialsOf(name: string | null | undefined, max = 2): string {
@@ -49,6 +49,8 @@ export function PlayerAvatar({
 }) {
   const url = useAvatarUrl(path);
   const [echec, setEchec] = useState(false);
+  // Une nouvelle adresse (re-signée après un échec) mérite un nouvel essai.
+  useEffect(() => { setEchec(false); }, [url]);
   const r = radius ?? size / 2;
   const montrePhoto = !!url && !echec;
 
@@ -74,7 +76,7 @@ export function PlayerAvatar({
           resizeMode="cover"
           // Adresse expirée, réseau coupé, fichier illisible : on repasse aux
           // initiales plutôt que de laisser un trou.
-          onError={() => setEchec(true)}
+          onError={() => { setEchec(true); if (path) relancerAvatar(path); }}
         />
       ) : (
         <Text

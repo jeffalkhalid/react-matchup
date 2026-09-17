@@ -29,7 +29,7 @@ export function isDefiBandWideEnough(min: number, max: number): boolean {
   return +(max - min).toFixed(2) >= DEFI_BAND_MIN_LEVEL;
 }
 
-export interface DefiPlayer { id: string; name: string; elo_score: number; win_count?: number; loss_count?: number; }
+export interface DefiPlayer { id: string; name: string; elo_score: number; avatar_path?: string | null; win_count?: number; loss_count?: number; }
 export interface DefiParticipant {
   id: string; player_id: string; status: string; team_side: string | null;
   approvals?: string[] | null; created_at?: string | null; invite_expires_at?: string | null;
@@ -55,7 +55,7 @@ export interface DefiApplication {
 const GAME_COLS =
   'id, creator_id, creator_side, status, is_challenge, is_targeted, game_format, gender_pref, ' +
   'spots_available, has_reservation, stake_multiplier, min_elo, max_elo, match_date, location, ' +
-  'creator:creator_id(id, name, elo_score, win_count, loss_count), ' +
+  'creator:creator_id(id, name, elo_score, avatar_path, win_count, loss_count), ' +
   'participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, win_count, loss_count))';
 
 // ── Helpers d'éligibilité (moyenne du binôme dans la bande du défi) ──
@@ -158,8 +158,8 @@ export async function fetchDefisInvolved(playerId: string): Promise<DefiGame[]> 
 
 const APP_COLS =
   'id, game_id, initiator_id, partner_id, status, created_at, ' +
-  'initiator:initiator_id(id, name, elo_score), ' +
-  'partner:partner_id(id, name, elo_score), ' +
+  'initiator:initiator_id(id, name, elo_score, avatar_path), ' +
+  'partner:partner_id(id, name, elo_score, avatar_path), ' +
   `game:game_id(${GAME_COLS})`;
 
 // ── Candidatures sur les défis où je suis IMPLIQUÉ (créés OU où je joue) :
@@ -261,7 +261,7 @@ export async function fetchQueuedBinomes(gameIds: string[]): Promise<Map<string,
   if (ids.length === 0) return out;
   const { data, error } = await supabase
     .from('defi_applications')
-    .select('id, game_id, initiator_id, partner_id, created_at, initiator:initiator_id(id, name), partner:partner_id(id, name)')
+    .select('id, game_id, initiator_id, partner_id, created_at, initiator:initiator_id(id, name, avatar_path), partner:partner_id(id, name, avatar_path)')
     .in('game_id', ids)
     .eq('status', 'queued')
     .order('created_at', { ascending: true });   // ordre FIFO = ordre de promotion

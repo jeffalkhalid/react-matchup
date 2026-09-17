@@ -23,11 +23,6 @@ function avatarColor(id: string): string {
   const n = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   return AVATAR_PALETTE[n % AVATAR_PALETTE.length];
 }
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : (parts[0]?.[0] ?? '?').toUpperCase();
-}
-
 const LEAGUE_FILTERS = [
   { id: 'tous',      label: 'Toutes ligues', color: null },
   { id: 'diamond',   label: 'Diamant',       color: Colors.league.diamond },
@@ -43,9 +38,9 @@ const PODIUM_BORDER = ['#fef08a', '#e2e8f0', '#fed7aa'];
 
 // Slots: [playerIndex, blockHeight, avatarSize, rankNum]
 const PODIUM_SLOTS = [
-  { idx: 1, blockH: 78,  avatarSz: 52, rankNum: 2 },
-  { idx: 0, blockH: 104, avatarSz: 62, rankNum: 1 },
-  { idx: 2, blockH: 60,  avatarSz: 46, rankNum: 3 },
+  { idx: 1, blockH: 78,  avatarSz: 64, rankNum: 2 },
+  { idx: 0, blockH: 104, avatarSz: 78, rankNum: 1 },
+  { idx: 2, blockH: 60,  avatarSz: 58, rankNum: 3 },
 ];
 
 type RankedPlayer = Player & { rank: number };
@@ -293,13 +288,16 @@ export default function RankingScreen() {
                   paddingHorizontal: 14, paddingVertical: 10,
                   borderWidth: 1.5, borderColor: 'rgba(255,193,26,0.55)',
                 }}>
-                  <View style={{
-                    width: 36, height: 36, borderRadius: 11,
-                    backgroundColor: Colors.primary,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Text style={{ color: Colors.textOnDark, fontSize: 13, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(myEntry.name)}</Text>
-                  </View>
+                  <PlayerAvatar
+                    name={myEntry.name}
+                    path={(myEntry as any).avatar_path}
+                    size={40}
+                    backgroundColor={Colors.primary}
+                    textColor={Colors.textOnDark}
+                    fontFamily={Fonts.uiBlack}
+                    fontSize={14}
+                    initialsMax={2}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: Colors.brandDeep, fontSize: 12.5, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Votre position</Text>
                     <Text style={{ color: Colors.brandDeep, fontSize: 11, marginTop: 2 }}>
@@ -406,7 +404,6 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
                   name={p.name}
                   path={(p as any).avatar_path}
                   size={avatarSz}
-                  radius={avatarSz * 0.28}
                   backgroundColor={col}
                   textColor={Colors.textOnDark}
                   fontFamily={Fonts.uiBlack}
@@ -541,12 +538,11 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
           <PlayerAvatar
             name={player.name}
             path={(player as any).avatar_path}
-            size={38}
-            radius={11}
+            size={46}
             backgroundColor={col}
             textColor={Colors.textOnDark}
             fontFamily={Fonts.uiBlack}
-            fontSize={12}
+            fontSize={15}
             ring={isMe ? 2 : 0}
             ringColor={Colors.brand}
             initialsMax={2}
@@ -556,12 +552,11 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
         <PlayerAvatar
           name={player.name}
           path={(player as any).avatar_path}
-          size={38}
-          radius={11}
+          size={46}
           backgroundColor={col}
           textColor={Colors.textOnDark}
           fontFamily={Fonts.uiBlack}
-          fontSize={12}
+          fontSize={15}
           ring={isMe ? 2 : 0}
           ringColor={Colors.brand}
           initialsMax={2}

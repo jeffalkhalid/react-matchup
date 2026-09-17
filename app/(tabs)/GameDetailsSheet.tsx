@@ -186,7 +186,7 @@ function CourtSlot({
         }]}
       >
         <View style={{
-          width: 38, height: 38, borderRadius: 19, borderWidth: 1.5,
+          width: 54, height: 54, borderRadius: 27, borderWidth: 1.5,
           borderStyle: selected ? 'solid' : 'dashed',
           borderColor: selected ? theme.accentHex : '#C4C4C8',
           alignItems: 'center', justifyContent: 'center',
@@ -214,7 +214,7 @@ function CourtSlot({
       borderColor: player.isMe ? Colors.brand : 'transparent',
       opacity: player.isInvited ? 0.7 : 1,
     }]}>
-      <Avatar name={player.name} path={player.avatarPath} size={42} team={SIDE_TEAM[side] as 'A' | 'B'} creator={player.isCreator} />
+      <Avatar name={player.name} path={player.avatarPath} size={58} team={SIDE_TEAM[side] as 'A' | 'B'} creator={player.isCreator} />
       <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, marginTop: 8 }}>
         {player.isMe ? 'Toi' : player.name.split(' ')[0]}
       </Text>
@@ -937,7 +937,7 @@ function GameDetailsSheetContenu({
                             activeOpacity={0.75}
                             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
                           >
-                            <Avatar name={p.player?.name ?? '?'} path={(p.player as any)?.avatar_path} size={40} />
+                            <Avatar name={p.player?.name ?? '?'} path={(p.player as any)?.avatar_path} size={50} />
                             <View style={{ flex: 1 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                 <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>{p.player?.name}</Text>
@@ -1023,7 +1023,7 @@ function GameDetailsSheetContenu({
                           activeOpacity={0.75}
                           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
                         >
-                          <Avatar name={p.player?.name ?? '?'} path={(p.player as any)?.avatar_path} size={30} ring={isMine ? Colors.warning : undefined} />
+                          <Avatar name={p.player?.name ?? '?'} path={(p.player as any)?.avatar_path} size={38} ring={isMine ? Colors.warning : undefined} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
                               {isMine ? 'Toi' : p.player?.name}
@@ -1114,7 +1114,7 @@ function GameDetailsSheetContenu({
                           activeOpacity={0.75}
                           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
                         >
-                          <Avatar name={p.player?.name ?? '?'} path={(p.player as any)?.avatar_path} size={30} />
+                          <Avatar name={p.player?.name ?? '?'} path={(p.player as any)?.avatar_path} size={38} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
                               {p.player?.name}
@@ -1168,7 +1168,7 @@ function GameDetailsSheetContenu({
                         activeOpacity={0.8}
                         style={sty.profileTile}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Avatar name={p.name} path={p.avatarPath} size={36} team={SIDE_TEAM[side] as 'A' | 'B'} creator={p.isCreator} />
+                          <Avatar name={p.name} path={p.avatarPath} size={44} team={SIDE_TEAM[side] as 'A' | 'B'} creator={p.isCreator} />
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
                               {p.isMe ? 'Toi' : p.name}
@@ -1283,7 +1283,7 @@ const sty = StyleSheet.create({
   teamPill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   teamPillText: { fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', letterSpacing: 0.3 },
   slot: {
-    flex: 1, minHeight: 112, borderRadius: 14,
+    flex: 1, minHeight: 130, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: 10, paddingHorizontal: 4,
   },

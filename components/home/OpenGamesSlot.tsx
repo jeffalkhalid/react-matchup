@@ -27,7 +27,7 @@
 // partie, il n'inscrit pas : rejoindre met en jeu le côté, les votes, la
 // fourchette de niveau et les refus du serveur — tout ça reste à un seul
 // endroit.
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
@@ -82,6 +82,27 @@ export function OpenGamesSlot({ games, myId, myElo, onOpenGame, onSeeAll, onCrea
   const [largeur, setLargeur] = useState(0);
   const [page, setPage] = useState(0);
 
+  // Les photos prennent le BLANC qui reste sous la carte. La zone du carrousel a
+  // une hauteur fixée par l'accueil (qui ne défile pas) ; la carte n'en occupe
+  // qu'une partie. On mesure les deux, et on agrandit les photos de la
+  // différence (moins 4 px de marge). Une carte grandit d'autant que ses
+  // photos : le calcul se stabilise en une étape, et la carte ne dépasse jamais
+  // sa zone. La largeur des colonnes plafonne aussi la taille (lobby.InlineSlots).
+  const [hauteurZone, setHauteurZone] = useState(0);
+  const [hauteursCartes, setHauteursCartes] = useState<Record<string, number>>({});
+  const [photo, setPhoto] = useState(42);
+  const photoRef = useRef(42);
+  useEffect(() => {
+    const hauteurs = Object.values(hauteursCartes);
+    if (hauteurZone <= 0 || hauteurs.length === 0) return;
+    const carte = Math.max(...hauteurs);
+    const cible = Math.max(42, Math.min(72, Math.floor(photoRef.current + (hauteurZone - carte) - 4)));
+    if (Math.abs(cible - photoRef.current) > 1) {
+      photoRef.current = cible;
+      setPhoto(cible);
+    }
+  }, [hauteurZone, hauteursCartes]);
+
   if (games.length === 0) return <CarteCreer onCreate={onCreate} />;
 
   const courante = Math.min(page, games.length - 1);
@@ -106,7 +127,7 @@ export function OpenGamesSlot({ games, myId, myElo, onOpenGame, onSeeAll, onCrea
         </TouchableOpacity>
       </View>
 
-      <View style={{ flex: 1 }} onLayout={e => setLargeur(e.nativeEvent.layout.width)}>
+      <View style={{ flex: 1 }} onLayout={e => { setLargeur(e.nativeEvent.layout.width); setHauteurZone(e.nativeEvent.layout.height); }}>
         {largeur > 0 && (
           <FlatList
             horizontal
@@ -121,7 +142,13 @@ export function OpenGamesSlot({ games, myId, myElo, onOpenGame, onSeeAll, onCrea
             onMomentumScrollEnd={e =>
               setPage(Math.round(e.nativeEvent.contentOffset.x / (largeur + GAP)))}
             renderItem={({ item }) => (
-              <View style={{ width: largeur }}>
+              <View
+                style={{ width: largeur }}
+                onLayout={e => {
+                  const h = e.nativeEvent.layout.height;
+                  setHauteursCartes(prev => (Math.abs((prev[item.id] ?? 0) - h) < 1 ? prev : { ...prev, [item.id]: h }));
+                }}
+              >
                 <GameCard
                   game={item as any}
                   variant="explore"
@@ -134,6 +161,8 @@ export function OpenGamesSlot({ games, myId, myElo, onOpenGame, onSeeAll, onCrea
                   // Calendrier / Partager : des gestes pour une partie qu'on a
                   // déjà rejointe, pas pour une découverte.
                   hideActions
+                  // Taille calculée sur le blanc disponible (voir plus haut).
+                  avatarSize={photo}
                 />
               </View>
             )}

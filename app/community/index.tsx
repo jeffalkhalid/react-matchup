@@ -114,7 +114,7 @@ export default function CommunityHubScreen() {
           {friends.slice(0, 10).map(f => (
             <TouchableOpacity key={f.id} onPress={() => router.push(`/player/${f.id}` as any)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 52 }}>
               <View style={{ padding: 2, borderRadius: 999, backgroundColor: (LeagueGradients[f.league] ?? LeagueGradients.gold)[1] }}>
-                <Avatar name={f.name} path={f.avatar_path} size={44} radius={999} league={f.league} />
+                <Avatar name={f.name} path={f.avatar_path} size={54} league={f.league} />
               </View>
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 10.5, color: Colors.textSecondary, maxWidth: 52 }}>
                 {f.name.split(' ')[0]}

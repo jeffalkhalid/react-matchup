@@ -142,7 +142,7 @@ function Avatar({ name, size = 28, ring, team, creator, path }: {
   const bs = Math.max(13, Math.round(size * 0.5));
   return (
     <PlayerAvatar
-      name={name} path={path} size={size} radius={Math.round(size * 0.3)}
+      name={name} path={path} size={size}
       backgroundColor={bg} textColor={fg} fontSize={Math.round(size * 0.42)}
       ring={ring ? 2 : undefined} ringColor={ring}
     >
@@ -373,7 +373,10 @@ function getSlotTheme(_game: OpenGame) {
 }
 
 // ─── Inline slot grid ─────────────────────────────────────────
-function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSide, slotAnchor }: {
+function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSide, slotAnchor, avatarSize }: {
+  /** Taille FIXE des photos (l'accueil passe 42 : sa hauteur est comptée). Absente :
+   *  les photos remplissent la largeur disponible (voir plus bas). */
+  avatarSize?: number;
   game: EnrichedGame;
   playerId: string;
   onApply?: (gameId: string, side: string) => void;
@@ -413,12 +416,25 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
   const anchorRef = (idx: number) =>
     slotAnchor && idx === firstFreeIdx ? (v: any) => registerTourAnchor('lobby-slot', v) : undefined;
 
+  // Les 4 colonnes se partagent la largeur RÉELLE de la carte, et la photo
+  // remplit sa colonne. Une largeur fixe (60) laissait de la place perdue sur
+  // les grands téléphones et débordait sur les plus étroits.
+  const [largeur, setLargeur] = useState(0);
+  const GAP_EQUIPE = 8;
+  const GAP_VS = 16;
+  const LARGEUR_VS = 38;
+  const slotW = largeur > 0
+    ? Math.max(48, Math.floor((largeur - 2 * GAP_EQUIPE - 2 * GAP_VS - LARGEUR_VS) / 4))
+    : 60;
+  const tailleMaxColonne = Math.max(42, Math.min(72, slotW - 4));
+  const taille = avatarSize != null ? Math.min(avatarSize, tailleMaxColonne) : tailleMaxColonne;
+
   const renderSlot = (idx: number) => {
     const s = slots[idx];
     const side = IDX_TO_SIDE[idx];
     const posLabel = side.includes('GAU') ? 'G' : 'D';
 
-    const SLOT_W = 60;
+    const SLOT_W = slotW;
     const nameLabel = s ? (s.isMe ? 'Toi' : (s.name?.split(' ')[0] ?? '?')) : null;
 
     if (s) {
@@ -431,7 +447,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           activeOpacity={0.7}
           hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           style={{ alignItems: 'center', gap: 3, width: SLOT_W, opacity: s.isInvited ? 0.45 : 1 }}>
-          <Avatar name={s.name} path={s.avatarPath} size={42} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
+          <Avatar name={s.name} path={s.avatarPath} size={taille} ring={s.isMe ? Colors.warning : undefined} team={team} creator={s.isCreator} />
           <Text
             numberOfLines={1}
             style={{
@@ -459,7 +475,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           activeOpacity={0.7} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
           <View style={{
-            width: 42, height: 42, borderRadius: 999,
+            width: taille, height: taille, borderRadius: 999,
             borderWidth: 1.5, borderColor: st.border, borderStyle: 'dashed',
             backgroundColor: st.bg, alignItems: 'center', justifyContent: 'center',
           }}>
@@ -480,7 +496,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
           activeOpacity={0.7} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}
           hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
           <View style={{
-            width: 42, height: 42, borderRadius: 999,
+            width: taille, height: taille, borderRadius: 999,
             borderWidth: 1.5, borderColor: st.border, borderStyle: 'dashed',
             backgroundColor: st.bg, alignItems: 'center', justifyContent: 'center',
           }}>
@@ -495,7 +511,7 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
     return (
       <View key={idx} ref={anchorRef(idx)} collapsable={false} style={{ alignItems: 'center', gap: 3, width: SLOT_W }}>
         <View style={{
-          width: 30, height: 30, borderRadius: 999,
+          width: Math.round(taille * 0.72), height: Math.round(taille * 0.72), borderRadius: 999,
           borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
           backgroundColor: Colors.bg,
         }} />
@@ -511,19 +527,24 @@ function InlineSlots({ game, playerId, onApply, onChangeSide, onCreatorChangeSid
   // avec les avatars. On aligne tout par le haut → avatars/pastilles sur la même
   // ligne, les libellés pendent dessous. Le séparateur reste centré sur la bande.
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+    <View
+      style={{ alignSelf: 'stretch' }}
+      onLayout={e => { const w = e.nativeEvent.layout.width; setLargeur(prev => (Math.abs(prev - w) < 1 ? prev : w)); }}
+    >
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: GAP_VS }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: GAP_EQUIPE }}>
         {renderSlot(0)}
         {renderSlot(1)}
       </View>
       {/* Séparateur « VS » entre les deux équipes (remplace le filet vertical), centré sur les avatars. */}
-      <Text style={{ fontSize: 24, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.5, marginTop: 9 }}>
+      <Text style={{ fontSize: 24, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.5, marginTop: Math.round((taille - 24) / 2) }}>
         VS
       </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: GAP_EQUIPE }}>
         {renderSlot(2)}
         {renderSlot(3)}
       </View>
+    </View>
     </View>
   );
 }
@@ -539,14 +560,14 @@ function AvatarRow({ players, slots }: { players: Array<{ id?: string; name: str
           disabled={!p.id}
           onPress={() => p.id && router.push(`/player/${p.id}` as any)}
           activeOpacity={0.7}
-          style={{ marginLeft: i === 0 ? 0 : -8, zIndex: players.length - i }}>
-          <Avatar name={p.name} path={p.avatarPath} size={28} ring={Colors.bgCard} team={p.team} creator={p.isCreator} />
+          style={{ marginLeft: i === 0 ? 0 : -10, zIndex: players.length - i }}>
+          <Avatar name={p.name} path={p.avatarPath} size={34} ring={Colors.bgCard} team={p.team} creator={p.isCreator} />
         </TouchableOpacity>
       ))}
       {Array.from({ length: slots }).map((_, i) => (
         <View key={`s${i}`} style={{
-          marginLeft: players.length === 0 && i === 0 ? 0 : -8, zIndex: 0,
-          width: 28, height: 28, borderRadius: 8,
+          marginLeft: players.length === 0 && i === 0 ? 0 : -10, zIndex: 0,
+          width: 34, height: 34, borderRadius: 17,
           borderWidth: 2, borderColor: Colors.border, borderStyle: 'dashed',
           backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center',
         }}>
@@ -646,7 +667,7 @@ async function shareGame(game: EnrichedGame) {
 }
 
 // ─── Game Card ────────────────────────────────────────────────
-export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, footerSlot, tourSlotAnchor }: {
+export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, footerSlot, tourSlotAnchor, avatarSize }: {
   game: EnrichedGame; variant: 'explore' | 'upcoming' | 'history';
   myElo: number; playerId?: string; onPress: () => void;
   onApply?: (gameId: string, side: string) => void;
@@ -659,6 +680,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   onDeclineInvitation?: (participantId: string, gameId: string) => void;
   footerSlot?: React.ReactNode;   // contenu additionnel rendu DANS la carte (ex. actions défi)
   tourSlotAnchor?: boolean;       // visite guidée : ancre 'lobby-slot' sur le 1ᵉʳ slot libre
+  avatarSize?: number;            // taille fixe des photos (l'accueil passe 42) ; absente = s'adapte à la largeur
 }) {
   const router = useRouter();
   const { width: winW } = useWindowDimensions();
@@ -845,7 +867,8 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
                 onApply={onApply}
                 onChangeSide={onChangeSide}
                 onCreatorChangeSide={onCreatorChangeSide}
-                slotAnchor={tourSlotAnchor} />
+                slotAnchor={tourSlotAnchor}
+                avatarSize={avatarSize} />
             : <AvatarRow players={allPlayers} slots={0} />
           }
         </View>

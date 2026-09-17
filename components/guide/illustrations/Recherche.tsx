@@ -32,7 +32,7 @@ export function IllustRecherche() {
           marginBottom: i === ROWS.length - 1 ? 0 : 8,
           backgroundColor: i === 0 ? 'rgba(79,70,229,0.06)' : '#FAFAF9',
           borderWidth: 1, borderColor: i === 0 ? 'rgba(79,70,229,0.30)' : '#EFEDEA' }}>
-          <Avatar name={r.n} size={32} radius={10} league={r.lg} />
+          <Avatar name={r.n} size={32} league={r.lg} />
           <View style={{ flex: 1, minWidth: 0, marginLeft: 9 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#0A0A0A' }}>{r.n}</Text>

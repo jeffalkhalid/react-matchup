@@ -235,7 +235,7 @@ function Notice({ tone, children }: { tone: 'warning' | 'info' | 'success' | 'da
   );
 }
 
-function Avatar({ name, size = 34, path }: { name: string; size?: number; path?: string | null }) {
+function Avatar({ name, size = 42, path }: { name: string; size?: number; path?: string | null }) {
   return (
     <PlayerAvatar
       name={name} path={path} size={size}
@@ -1100,7 +1100,7 @@ export default function TournamentDetailScreen() {
                     <View style={{ flex: 1, minWidth: 0, gap: 10 }}>
                       <Text style={{ fontSize: 13, fontFamily: Fonts.uiSemi, color: Colors.textPrimary }}>Mon binôme</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Avatar name={displayName(partnerReg?.player, 'partner')} path={(partnerReg?.player as any)?.avatar_path} size={40} />
+                        <Avatar name={displayName(partnerReg?.player, 'partner')} path={(partnerReg?.player as any)?.avatar_path} size={50} />
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text numberOfLines={1} style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
                             {displayName(partnerReg?.player, 'partner')}
@@ -1216,7 +1216,7 @@ export default function TournamentDetailScreen() {
                 return (
                   <View key={req.id} style={{ gap: 8, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: 10 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Avatar name={displayName(from?.player, 'partner')} path={(from?.player as any)?.avatar_path} size={30} />
+                      <Avatar name={displayName(from?.player, 'partner')} path={(from?.player as any)?.avatar_path} size={38} />
                       <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
                         {displayName(from?.player, 'partner')} · côté {sideLabel(from?.side).toLowerCase()}
                       </Text>
@@ -1662,7 +1662,7 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
             {cible && partner && (
               <View style={{ gap: 10 }}>
                 <View style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
-                  <Avatar name={partner.name} path={partner.avatar_path} size={34} />
+                  <Avatar name={partner.name} path={partner.avatar_path} size={42} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
                       {partner.name}
@@ -1765,7 +1765,7 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
                 </Text>
                 {partner ? (
                   <View style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
-                    <Avatar name={partner.name} path={partner.avatar_path} size={30} />
+                    <Avatar name={partner.name} path={partner.avatar_path} size={38} />
                     <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>{partner.name}</Text>
                     <TouchableOpacity onPress={() => { setPartner(null); setQuery(''); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Icon name="x" size={16} color={Colors.textMuted} stroke={2.2} />
@@ -1810,7 +1810,7 @@ function RegisterSheet({ tournamentId, myId, defaultSide, registeredIds, soloOpe
                               padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10,
                               opacity: bloque ? 0.45 : 1,
                             }]}>
-                            <Avatar name={p.name} path={(p as any).avatar_path} size={28} />
+                            <Avatar name={p.name} path={(p as any).avatar_path} size={34} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
                                 {p.name}

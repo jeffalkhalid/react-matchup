@@ -63,19 +63,19 @@ function initials(name: string): string {
   return name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-function PlayerSlot({ p, team }: { p: SlotPlayer | null; team: 'A' | 'B' }) {
+function PlayerSlot({ p, team, size = 52 }: { p: SlotPlayer | null; team: 'A' | 'B'; size?: number }) {
   const dark = team === 'A';
   return (
-    <View style={{ alignItems: 'center', width: 60 }}>
+    <View style={{ alignItems: 'center', width: size + 16 }}>
       {p ? (
         <>
           {/* Invité sans réponse : avatar estompé, et « ⏳ » à la place du
               niveau — il tient la place, il n'est pas encore dedans. */}
           <PlayerAvatar
-            name={p.name} path={p.avatarPath} size={40}
+            name={p.name} path={p.avatarPath} size={size}
             backgroundColor={dark ? Colors.primary : Colors.brand}
             textColor={dark ? '#FFFFFF' : Colors.primary}
-            fontFamily={Fonts.display} fontSize={15}
+            fontFamily={Fonts.display} fontSize={Math.round(size * 0.38)}
             initialsMax={2}
             style={{ opacity: p.invited ? 0.45 : 1 }}
           />
@@ -88,14 +88,14 @@ function PlayerSlot({ p, team }: { p: SlotPlayer | null; team: 'A' | 'B' }) {
               {p.invited ? '⏳' : eloToLevel(p.elo).toFixed(1)}
             </Text>
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 3, maxWidth: 60 }}>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 3, maxWidth: size + 16 }}>
             {p.name.split(/\s+/)[0]}
           </Text>
         </>
       ) : (
         <>
           <View style={{
-            width: 40, height: 40, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed',
+            width: size, height: size, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed',
             borderColor: Colors.textMuted, alignItems: 'center', justifyContent: 'center',
           }}>
             <Icon name="plus" size={16} color={Colors.textMuted} stroke={2} />
@@ -119,6 +119,10 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
 }) {
   const router = useRouter();
   const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
+  // Zone des joueurs : elle prend toute la hauteur restante de la carte (dont la
+  // hauteur est fixée par l'accueil, qui ne défile pas), et les photos prennent
+  // la plus grande taille qui y tient, en largeur ET en hauteur.
+  const [zone, setZone] = useState({ w: 0, h: 0 });
 
   // Badge « 🔴 LIVE » : uniquement si le flag est actif ET qu'une session live
   // existe pour cette partie. Flag éteint ⇒ aucune requête live_match_sessions.
@@ -148,6 +152,11 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
         ? `Niv. ${eloToLevel(range.min).toFixed(1)}`
         : `Niv. ${eloToLevel(range.min).toFixed(1)} – ${eloToLevel(range.max).toFixed(1)}`)
     : null;
+  // Largeur : 4 places (photo + 16) + 2 écarts de 4 + rond VS de 30 + 2 écarts de 8.
+  // Hauteur : photo + pastille de niveau et prénom (~28).
+  const taillePhoto = zone.w > 0 && zone.h > 0
+    ? Math.max(40, Math.min(76, Math.floor(Math.min((zone.w - 118) / 4, zone.h - 28))))
+    : (compact ? 44 : 52);
   const slots = (team: SlotPlayer[], size: number): (SlotPlayer | null)[] =>
     [...team, ...Array(Math.max(0, size - team.length)).fill(null)];
 
@@ -227,16 +236,25 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
 
           {/* Joueurs — camp A vs camp B, niveaux réels */}
           {teams && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: compact ? 8 : 10, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: compact ? 7 : 9 }}>
+            <View
+              style={{ flex: 1, justifyContent: 'center', marginTop: compact ? 8 : 10, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: compact ? 7 : 9 }}
+              onLayout={e => {
+                const { width: w, height: h } = e.nativeEvent.layout;
+                const hUtile = h - (compact ? 7 : 9) - 1;   // moins le filet et sa marge
+                setZone(prev => (Math.abs(prev.w - w) < 1 && Math.abs(prev.h - hUtile) < 1 ? prev : { w, h: hUtile }));
+              }}
+            >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <View style={{ flexDirection: 'row', gap: 4 }}>
-                {slots(teams.A, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `a${i}`} p={p} team="A" />)}
+                {slots(teams.A, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `a${i}`} p={p} team="A" size={taillePhoto} />)}
               </View>
               <View style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 10, color: Colors.textSecondary }}>VS</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 4 }}>
-                {slots(teams.B, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `b${i}`} p={p} team="B" />)}
+                {slots(teams.B, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `b${i}`} p={p} team="B" size={taillePhoto} />)}
               </View>
+            </View>
             </View>
           )}
         </>

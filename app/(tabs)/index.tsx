@@ -112,7 +112,7 @@ export default function HomeScreen() {
         .eq('status', 'accepted'),
       supabase
         .from('matches')
-        .select('id, score_text, created_at, winner_id, winner_id_2, loser_id, loser_id_2, game:game_id(location, match_date), winner:winner_id(id, name), winner_2:winner_id_2(id, name), loser:loser_id(id, name), loser_2:loser_id_2(id, name)')
+        .select('id, score_text, created_at, winner_id, winner_id_2, loser_id, loser_id_2, game:game_id(location, match_date), winner:winner_id(id, name, avatar_path), winner_2:winner_id_2(id, name, avatar_path), loser:loser_id(id, name, avatar_path), loser_2:loser_id_2(id, name, avatar_path)')
         .or(playerOr)
         .in('status', ['pending', 'validated'])
         .gte('created_at', badgeWindowAgo)

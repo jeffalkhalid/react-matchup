@@ -24,10 +24,10 @@ export function IllustDefi() {
         <View style={{ alignItems: 'center' }}>
           <View style={{ flexDirection: 'row' }}>
             <View style={{ borderWidth: 2, borderColor: '#fff', borderRadius: 16, zIndex: 2 }}>
-              <Avatar name="Karim B" size={44} radius={14} league="gold" />
+              <Avatar name="Karim B" size={44} league="gold" />
             </View>
             <View style={{ marginLeft: -10, borderWidth: 2, borderColor: '#fff', borderRadius: 16 }}>
-              <Avatar name="Sofia I" size={44} radius={14} league="silver" />
+              <Avatar name="Sofia I" size={44} league="silver" />
             </View>
           </View>
           <Text style={{ fontFamily: Fonts.welcome, fontSize: 13, lineHeight: 17, color: '#0A0A0A', marginTop: 6, paddingHorizontal: 4 }}>KARIM & SOFIA</Text>
@@ -47,7 +47,7 @@ export function IllustDefi() {
         <View style={{ alignItems: 'center' }}>
           <View style={{ flexDirection: 'row' }}>
             <View style={{ borderWidth: 2, borderColor: '#fff', borderRadius: 16, zIndex: 2 }}>
-              <Avatar name="Toi K" size={44} radius={14} league="gold" />
+              <Avatar name="Toi K" size={44} league="gold" />
             </View>
             <View style={{ marginLeft: -10, width: 48, height: 48, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed',
               borderColor: '#D8D4CE', backgroundColor: '#FAFAF9', alignItems: 'center', justifyContent: 'center' }}>

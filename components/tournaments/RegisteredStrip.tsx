@@ -27,6 +27,10 @@ import { PlayerAvatar } from '../PlayerAvatar';
 import { eloToLevel } from '../../lib/theme';
 import { pairsCountLabel, type RegisteredPair, type PairedPlayer } from '../../lib/tournaments';
 
+// Taille des photos des joueurs. La case « cherche un binôme » et le rond « & »
+// entre les deux joueurs en dépendent : ils doivent rester alignés sur elles.
+const TAILLE_JOUEUR = 56;
+
 function initiales(name: string): string {
   return (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
@@ -41,10 +45,10 @@ function Joueur({ p, onPress }: { p: PairedPlayer; onPress?: (id: string) => voi
       style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 5 }}
     >
       <PlayerAvatar
-        name={p.name} path={p.avatarPath} size={46}
+        name={p.name} path={p.avatarPath} size={TAILLE_JOUEUR}
         backgroundColor={p.mine ? Colors.brand : Colors.primary}
         textColor={p.mine ? Colors.primary : Colors.textOnDark}
-        fontFamily={Fonts.uiBlack} fontSize={16} initialsMax={2}
+        fontFamily={Fonts.uiBlack} fontSize={20} initialsMax={2}
       />
       <Text numberOfLines={1} style={{
         maxWidth: '100%', fontSize: 12.5,
@@ -93,10 +97,10 @@ function Candidats({ gens, onPress }: {
             }}
           >
             <PlayerAvatar
-              name={p.name} path={p.avatarPath} size={46}
+              name={p.name} path={p.avatarPath} size={TAILLE_JOUEUR}
               backgroundColor={p.mine ? Colors.brand : Colors.primary}
               textColor={p.mine ? Colors.primary : Colors.textOnDark}
-              fontFamily={Fonts.uiBlack} fontSize={15} initialsMax={2}
+              fontFamily={Fonts.uiBlack} fontSize={19} initialsMax={2}
               ring={i === 0 ? undefined : 2} ringColor={Colors.bg}
             />
           </TouchableOpacity>
@@ -148,7 +152,7 @@ function CartePaire({ pair, onPlayerPress, onJoin, joinLabel }: {
             Sans cette distinction, une carte réunie sous sablier se lirait
             comme un binôme formé — et on croirait la place acquise. */}
         <View style={{
-          width: 22, height: 22, borderRadius: 11, marginTop: 12,
+          width: 22, height: 22, borderRadius: 11, marginTop: (TAILLE_JOUEUR - 22) / 2,
           alignItems: 'center', justifyContent: 'center',
           backgroundColor: seul ? Colors.borderLight
             : pair.tentative ? Colors.warning + '26' : Colors.brand,
@@ -176,7 +180,7 @@ function CartePaire({ pair, onPlayerPress, onJoin, joinLabel }: {
           // s'alignent, et ce qui manque se voit sans avoir à comparer.
           <View style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 5 }}>
             <View style={{
-              width: 46, height: 46, borderRadius: 23,
+              width: TAILLE_JOUEUR, height: TAILLE_JOUEUR, borderRadius: TAILLE_JOUEUR / 2,
               alignItems: 'center', justifyContent: 'center',
               borderWidth: 1.5, borderStyle: 'dashed', borderColor: Colors.borderDark,
             }}>

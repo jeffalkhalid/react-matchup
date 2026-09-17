@@ -46,8 +46,8 @@ export default function StoryMatchPicker({ visible, playerId, onClose, onPick, r
     supabase
       .from('matches')
       .select(`id, score_text, created_at, is_challenge, winner_id, loser_id, winner_id_2, loser_id_2,
-        winner:winner_id(id, name, deleted_at), loser:loser_id(id, name, deleted_at),
-        winner_2:winner_id_2(id, name, deleted_at), loser_2:loser_id_2(id, name, deleted_at),
+        winner:winner_id(id, name, deleted_at, avatar_path), loser:loser_id(id, name, deleted_at, avatar_path),
+        winner_2:winner_id_2(id, name, deleted_at, avatar_path), loser_2:loser_id_2(id, name, deleted_at, avatar_path),
         game:game_id(location, match_date)`)
       .or(`winner_id.eq.${playerId},loser_id.eq.${playerId},winner_id_2.eq.${playerId},loser_id_2.eq.${playerId}`)
       .eq('status', 'validated')

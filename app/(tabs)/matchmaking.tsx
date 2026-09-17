@@ -43,7 +43,6 @@ function PlayerAvatar({ name, size = 36, path }: { name: string; size?: number; 
       name={name}
       path={path}
       size={size}
-      radius={Math.round(size * 0.36)}
       backgroundColor={hashColor(name)}
       textColor={Colors.textOnDark}
       fontSize={Math.round(size * 0.38)}
@@ -139,8 +138,8 @@ function VitrineCard({ sb, onDefier }: { sb: ShowcaseBinome; onDefier: () => voi
         {/* Paire */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{ flexDirection: 'row' }}>
-            <PlayerAvatar name={a?.name ?? '?'} path={(a as any)?.avatar_path} size={38} />
-            <View style={{ marginLeft: -13 }}><PlayerAvatar name={b?.name ?? '?'} path={(b as any)?.avatar_path} size={38} /></View>
+            <PlayerAvatar name={a?.name ?? '?'} path={(a as any)?.avatar_path} size={48} />
+            <View style={{ marginLeft: -16 }}><PlayerAvatar name={b?.name ?? '?'} path={(b as any)?.avatar_path} size={48} /></View>
           </View>
           <View style={{ flex: 1, marginLeft: 11 }}>
             <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
@@ -713,7 +712,7 @@ export default function MatchmakingScreen() {
                         activeOpacity={0.75}
                       >
                         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={38} />
+                          <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={48} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                             <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
@@ -760,7 +759,7 @@ export default function MatchmakingScreen() {
                         activeOpacity={0.75}
                       >
                         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={38} />
+                          <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={48} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                             <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
@@ -817,13 +816,9 @@ export default function MatchmakingScreen() {
             </Text>
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis 2v2 & candidatures</Text>
           </View>
-          <View style={{ flex: 1, alignItems: 'flex-end' }}>
-            {pendingCount > 0 && (
-              <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brandDeep }}>{pendingCount}</Text>
-              </View>
-            )}
-          </View>
+          {/* Contrepoids du titre centré. Le nombre d'invitations en attente
+              s'affichait ici ET sur l'onglet « Mes défis » : retiré ici. */}
+          <View style={{ flex: 1 }} />
         </View>
         {/* Onglets soulignés (même esprit que la page profil) */}
         <View style={{ flexDirection: 'row', marginTop: 6 }}>
@@ -1045,7 +1040,7 @@ export default function MatchmakingScreen() {
                     {myBinomes.map(p => (
                       <TouchableOpacity key={p.id} onPress={() => router.push(`/player/${p.id}` as any)} activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
-                        <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={34} />
+                        <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={42} />
                         <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                         <Pill variant="neutral">Niv. {eloToLevel(p.elo_score).toFixed(1)}</Pill>
                       </TouchableOpacity>

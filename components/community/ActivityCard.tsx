@@ -44,7 +44,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
       {/* Entête — avatar + nom cliquables → profil de l'acteur */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <TouchableOpacity onPress={onPressActor} disabled={!onPressActor} activeOpacity={0.7} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <Avatar name={e.actor?.name} path={(e.actor as any)?.avatar_path} size={42} radius={13} league={league} />
+          <Avatar name={e.actor?.name} path={(e.actor as any)?.avatar_path} size={52} league={league} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 14, color: Colors.textPrimary }}>
               <Text style={{ fontFamily: Fonts.uiExtraBold }}>{e.actor?.name ?? 'Joueur'}</Text>

@@ -41,7 +41,6 @@ export function Avatar({ name, size = 30, me = false, team, creator, path }: { n
       name={name}
       path={path}
       size={size}
-      radius={Math.round(size * 0.32)}
       backgroundColor={mine ? ACCENT : PM.ink}
       textColor={mine ? PM.ink : '#FFFFFF'}
       fontSize={Math.round(size * 0.40)}
@@ -63,8 +62,16 @@ export function LevelPill({ lvl }: { lvl?: number }) {
   );
 }
 
+// Taille des photos dans une carte de match, avant mesure de la carte (la
+// taille réelle s'adapte à la largeur, cf. MatchTeamsScore). La grille de score
+// en déduit la hauteur de ses lignes : chaque ligne de score doit tomber en face
+// de la ligne de joueurs de son équipe (2 photos + 8 px d'écart = 2 lignes).
+export const MATCH_AVATAR = 44;
+const scoreRowPadding = (avatar: number) => Math.max(7, Math.floor((avatar + 4 - 25) / 2));
+
 // ── Grille de score — sets en colonnes, 2 lignes = 2 équipes ──────────
-export function ScoreGrid({ sets, winnerRow }: { sets: [number, number][]; winnerRow: 0 | 1 }) {
+export function ScoreGrid({ sets, winnerRow, avatarSize = MATCH_AVATAR }: { sets: [number, number][]; winnerRow: 0 | 1; avatarSize?: number }) {
+  const pad = scoreRowPadding(avatarSize);
   const nSets = sets.length;
   const Row = (rowIdx: 0 | 1) => (
     <View style={{ flexDirection: 'row' }}>
@@ -72,7 +79,7 @@ export function ScoreGrid({ sets, winnerRow }: { sets: [number, number][]; winne
         const win = winnerRow === rowIdx;
         return (
           <View key={`${rowIdx}-${i}`} style={{
-            width: 30, paddingVertical: 7, alignItems: 'center', justifyContent: 'center',
+            width: 30, paddingVertical: pad, alignItems: 'center', justifyContent: 'center',
             borderRightWidth: i < nSets - 1 ? 1 : 0, borderRightColor: PM.divider,
             borderBottomWidth: rowIdx === 0 ? 1 : 0, borderBottomColor: PM.divider,
             backgroundColor: win ? A.soft : 'transparent',
@@ -93,13 +100,13 @@ export function ScoreGrid({ sets, winnerRow }: { sets: [number, number][]; winne
   );
 }
 
-function MatchPlayer({ p, team, onPress }: { p: PlayerLite; team: 0 | 1; onPress?: () => void }) {
+function MatchPlayer({ p, team, onPress, size = MATCH_AVATAR }: { p: PlayerLite; team: 0 | 1; onPress?: () => void; size?: number }) {
   const Wrap: any = onPress ? TouchableOpacity : View;
   return (
     <Wrap
       {...(onPress ? { onPress, activeOpacity: 0.7 } : {})}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
-      <Avatar name={p.name} path={p.avatarPath} size={28} me={p.me} team={team} creator={p.isCreator} />
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      <Avatar name={p.name} path={p.avatarPath} size={size} me={p.me} team={team} creator={p.isCreator} />
       <View style={{ minWidth: 0, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: p.me ? '800' : '600', color: PM.text, maxWidth: 90 }}>
@@ -135,17 +142,27 @@ export function NaturePill({ kind, stake }: { kind: 'defi' | 'competitif' | 'ami
 // Exporté pour réutilisation hors carte — ex. « Leur version » d'un score
 // contesté dans le lobby, affichée au même format noms + grille.
 export function MatchTeamsScore({ m, onPlayerPress }: { m: MatchView; onPlayerPress?: (id: string) => void }) {
+  // La photo prend 46 % de la place d'un joueur (36 à 56 px) : la carte mesure
+  // sa largeur réelle, au lieu d'une taille fixe calculée pour l'écran le plus
+  // étroit, qui laissait de la place perdue ailleurs.
+  const [colonne, setColonne] = useState(0);
+  const taille = colonne > 0
+    ? Math.max(36, Math.min(56, Math.round(((colonne - 8) / 2) * 0.46)))
+    : MATCH_AVATAR;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          {m.teams[0].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={0} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
+      <View
+        style={{ flex: 1, minWidth: 0, gap: 8 }}
+        onLayout={e => { const w = e.nativeEvent.layout.width; setColonne(prev => (Math.abs(prev - w) < 1 ? prev : w)); }}
+      >
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {m.teams[0].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={0} size={taille} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
         </View>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          {m.teams[1].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={1} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {m.teams[1].map((p, i) => <View key={i} style={{ flex: 1, minWidth: 0 }}><MatchPlayer p={p} team={1} size={taille} onPress={p.id && onPlayerPress ? () => onPlayerPress(p.id!) : undefined} /></View>)}
         </View>
       </View>
-      <View><ScoreGrid sets={m.sets} winnerRow={m.winnerRow} /></View>
+      <View><ScoreGrid sets={m.sets} winnerRow={m.winnerRow} avatarSize={taille} /></View>
     </View>
   );
 }
@@ -554,16 +571,16 @@ export function ProfileHeader(props: {
           {ambassador != null ? (
             <View style={{ borderWidth: 2, borderColor: AMB.gold, borderRadius: 999, padding: 3, alignSelf: 'flex-start' }}>
               <PlayerAvatar
-                name={name} path={props.avatarPath} size={72}
+                name={name} path={props.avatarPath} size={90}
                 backgroundColor={ACCENT} textColor={PM.ink}
-                fontFamily={PFonts.anton} fontSize={30}
+                fontFamily={PFonts.anton} fontSize={38}
               />
             </View>
           ) : (
             <PlayerAvatar
-              name={name} path={props.avatarPath} size={72}
+              name={name} path={props.avatarPath} size={90}
               backgroundColor={ACCENT} textColor={PM.ink}
-              fontFamily={PFonts.anton} fontSize={30}
+              fontFamily={PFonts.anton} fontSize={38}
               ring={3} ringColor={PM.inkSoft}
             />
           )}

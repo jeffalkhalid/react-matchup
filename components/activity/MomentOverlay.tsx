@@ -43,7 +43,7 @@ export function MomentOverlay({ event, myId, onReact, onComment, onClose, onPres
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
           <TouchableOpacity onPress={() => event.player_id && onPressActor?.(event.player_id)} disabled={!onPressActor || !event.player_id}
             activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-            <Avatar name={event.actor?.name} path={(event.actor as any)?.avatar_path} size={40} radius={13} league={event.league} />
+            <Avatar name={event.actor?.name} path={(event.actor as any)?.avatar_path} size={50} league={event.league} />
             <View style={{ flex: 1 }}>
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 15, color: '#FFFFFF' }}>{event.actor?.name ?? 'Joueur'}</Text>
               <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{fmtDate(event.created_at)}</Text>

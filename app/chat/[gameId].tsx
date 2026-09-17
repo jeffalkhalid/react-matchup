@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { notifyPlayers } from '../../lib/notify';
 import { getHiddenPlayerIds, reportContent, blockUser } from '../../lib/moderation';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import type { Message } from '../../types';
 import { Colors, Fonts } from '../../lib/theme';
 
@@ -49,15 +50,15 @@ interface GameInfo {
   id: string; location: string; match_date: string;
   is_challenge: boolean; game_format: string;
   creator_id: string;
-  creator: { name: string } | null;
-  participants: { player_id: string; status: string; player: { name: string } | null }[];
+  creator: { name: string; avatar_path?: string | null } | null;
+  participants: { player_id: string; status: string; player: { name: string; avatar_path?: string | null } | null }[];
 }
-interface Participant { id: string; name: string }
+interface Participant { id: string; name: string; avatarPath?: string | null }
 
 // ─── Message item ─────────────────────────────────────────────
 interface MsgItemProps {
   message: Message; prevMessage?: Message;
-  isMe: boolean; allPlayers: { id: string; name: string }[];
+  isMe: boolean; allPlayers: Participant[];
   reactingId: string | null; setReactingId: (id: string | null) => void;
   myId: string;
   addReaction: (msgId: string, emoji: string) => void;
@@ -86,9 +87,8 @@ function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, se
           <View style={{ width: 28, alignSelf: 'flex-end' }}>
             {showAvatar ? (
               <TouchableOpacity onPress={() => m.player_id && router.push(`/player/${m.player_id}` as any)} activeOpacity={0.7} disabled={!m.player_id}>
-                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.textOnDark }}>{m.player_name.charAt(0).toUpperCase()}</Text>
-                </View>
+                <PlayerAvatar name={m.player_name} path={pIdx >= 0 ? allPlayers[pIdx].avatarPath : null} size={28}
+                  backgroundColor={color} textColor={Colors.textOnDark} fontSize={10} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -162,9 +162,9 @@ function MessageItem({ message: m, prevMessage, isMe, allPlayers, reactingId, se
               {readers.slice(0, 3).map(r => {
                 const idx = allPlayers.findIndex(p => p.id === r.id);
                 return (
-                  <View key={r.id} style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: idx >= 0 ? playerColor(idx) : Colors.textMuted, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#fff' }}>
-                    <Text style={{ fontSize: 7, fontWeight: '900', color: Colors.textOnDark }}>{r.name.charAt(0).toUpperCase()}</Text>
-                  </View>
+                  <PlayerAvatar key={r.id} name={r.name} path={idx >= 0 ? allPlayers[idx].avatarPath : null} size={16}
+                    backgroundColor={idx >= 0 ? playerColor(idx) : Colors.textMuted} textColor={Colors.textOnDark}
+                    fontSize={7} ring={1.5} ringColor="#fff" />
                 );
               })}
             </View>
@@ -301,12 +301,12 @@ export default function ChatScreen() {
   }, []);
 
   // ── Derived ─────────────────────────────────────────────────
-  const allPlayers = useMemo<{ id: string; name: string }[]>(() => {
+  const allPlayers = useMemo<Participant[]>(() => {
     if (!game) return [];
     const accepted = (game.participants ?? []).filter(p => p.status === 'accepted');
     return [
-      { id: game.creator_id, name: game.creator?.name ?? '?' },
-      ...accepted.map(p => ({ id: p.player_id, name: p.player?.name ?? '?' })),
+      { id: game.creator_id, name: game.creator?.name ?? '?', avatarPath: game.creator?.avatar_path ?? null },
+      ...accepted.map(p => ({ id: p.player_id, name: p.player?.name ?? '?', avatarPath: p.player?.avatar_path ?? null })),
     ];
   }, [game]);
 
@@ -351,7 +351,7 @@ export default function ChatScreen() {
     if (!player) return;
 
     supabase.from('open_games')
-      .select('id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(name), participants:game_participants(player_id, status, player:player_id(name))')
+      .select('id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(name, avatar_path), participants:game_participants(player_id, status, player:player_id(name, avatar_path))')
       .eq('id', gameId).single()
       .then(({ data }) => { if (data) setGame(data as unknown as GameInfo); });
 
@@ -527,14 +527,13 @@ export default function ChatScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20 }}>
               {allPlayers.map((p, i) => {
                 const isMe = p.id === player?.id;
-                const initials = p.name.split(' ').map((w: string) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
                 return (
                   <View key={p.id} style={{ alignItems: 'center', gap: 4 }}>
                     <TouchableOpacity onPress={() => p.id && router.push(`/player/${p.id}` as any)} activeOpacity={0.7} disabled={!p.id}>
-                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: playerColor(i), alignItems: 'center', justifyContent: 'center', shadowColor: playerColor(i), shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textOnDark }}>{initials}</Text>
+                      <PlayerAvatar name={p.name} path={p.avatarPath} size={40} backgroundColor={playerColor(i)} textColor={Colors.textOnDark} fontSize={13} initialsMax={2}
+                        style={{ shadowColor: playerColor(i), shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}>
                         {p.id === game.creator_id ? <CreatorCrownBadge avatarSize={40} ringColor={Colors.heroBg} /> : null}
-                      </View>
+                      </PlayerAvatar>
                     </TouchableOpacity>
                     <Text style={{ fontSize: 9.5, fontWeight: '700', color: Colors.textMuted, maxWidth: 48, textAlign: 'center' }} numberOfLines={1}>
                       {isMe ? 'Toi' : p.name.split(' ')[0]}

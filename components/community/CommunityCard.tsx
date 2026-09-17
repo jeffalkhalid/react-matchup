@@ -33,7 +33,7 @@ export function CommunityCard() {
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {preview.map((f, i) => (
             <View key={f.id} style={{ marginLeft: i === 0 ? 0 : -12, zIndex: 5 - i, borderWidth: 2, borderColor: Colors.heroBg, borderRadius: 13 }}>
-              <Avatar name={f.name} path={f.avatar_path} size={34} radius={11} league={f.league} />
+              <Avatar name={f.name} path={f.avatar_path} size={42} league={f.league} />
             </View>
           ))}
           {extra > 0 && (
