@@ -112,6 +112,8 @@ aide.getColumn(1).width = 110;
   '  • un lien Google Maps (ou « latitude, longitude ») : la position exacte du club, à utiliser à la place.',
   'Lignes rouges : club absent du fichier — colle un lien Google Maps si tu le trouves, sinon laisse vide.',
   'Lignes orange : proposition douteuse (voir « Alertes ») — vérifie-la avant de répondre oui.',
+  'Pour copier un lien : dans Google Maps, clique sur le club lui-même (une épingle apparaît), puis « Partager » → « Copier le lien ». Un lien copié depuis la barre d\'adresse sans avoir cliqué sur le club montre seulement la carte : il sera refusé.',
+  'Colle le lien tel quel dans la case, sans autre mot. Pour remplacer un lien par « non », fais d\'abord clic droit → « Supprimer le lien hypertexte », puis tape « non ».',
   'Case vide = aucun changement. Rien n\'est écrit en base sans ton oui ou ton lien.',
 ].forEach(t => aide.addRow([t]));
 
