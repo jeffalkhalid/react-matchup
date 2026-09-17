@@ -3,7 +3,7 @@
 // Maquette 2026-08 : nom + pill Ambassadeur, ligne ligue/FRMT, gros niveau jaune
 // avec cible « → 6.50 », barre de progression épaisse, 3 stats (matchs/victoires/badges).
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { Colors, Fonts, formatPadelLevel, eloToLevel, getLeague, getLeagueLabel } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
 import { AMB } from '../../lib/ambassador';
@@ -52,8 +52,11 @@ export function HomeProfileCard({ name, elo, wins, losses, badgeCount, frmt, onP
       {/* Identité — tap → profil complet */}
       <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={{ gap: compact ? 6 : 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {/* Rétrécir ne marche que sur iPhone : sur Android, adjustsFontSizeToFit
+              coupait le nom au mot. Là-bas, « … » en fin de nom (l'accueil ne
+              défile pas, pas de 2e ligne). */}
           <Text
-            numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            numberOfLines={1} adjustsFontSizeToFit={Platform.OS === 'ios'} minimumFontScale={0.6}
             style={{ fontFamily: Fonts.welcome, fontSize: compact ? 23 : 26, lineHeight: compact ? 28 : 32, color: Colors.textOnDark, letterSpacing: 0.3, paddingRight: 5, flexShrink: 1 }}
           >
             {name}

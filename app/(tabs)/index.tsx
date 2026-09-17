@@ -11,6 +11,7 @@ import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
 import { Colors, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
+import { fetchPlayerTotals, EMPTY_TOTALS } from '../../lib/playerStats';
 import { isAmbassador } from '../../lib/ambassador';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon } from '../../components/community/icons';
@@ -20,12 +21,16 @@ import { isBadgeVisible } from '../../lib/badges';
 import { HomeProfileCard } from '../../components/home/HomeProfileCard';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
-import { HomeShortcutCard } from '../../components/home/HomeShortcutCard';
+import { HomeRankButton } from '../../components/home/HomeRankButton';
 import { HomeTournaments } from '../../components/home/HomeTournaments';
-import { homeSectionSizes } from '../../lib/homeLayout';
+import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
+import { homeSectionSizes, COMPACT_THRESHOLD_H, TOURNAMENTS_RESERVE } from '../../lib/homeLayout';
+import { suggestibleGames, homeSlot } from '../../lib/homeSlot';
+import { loadClubFavorites } from '../../lib/clubFavorites';
 import {
   getTournamentsEnabled, fetchTournaments, fetchRegistrationsFor, homeTournamentList,
-  type HomeTournamentEntry,
+  myLiveTournament,
+  type HomeTournamentEntry, type Tournament,
 } from '../../lib/tournaments';
 import { registerTourAnchor } from '../../lib/tourAnchors';
 import type { OpenGame } from '../../types';
@@ -41,8 +46,14 @@ export default function HomeScreen() {
   const { player, refresh } = usePlayer();
   const { reload: reloadNotifs } = useNotificationCount();
   const [badgeCount, setBadgeCount] = useState(0);
+  // Matchs joués / victoires : tous les matchs validés (lib/playerStats).
+  const [totals, setTotals] = useState(EMPTY_TOTALS);
   const [myRank, setMyRank] = useState<number | null>(null);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
+  const [openGames, setOpenGames] = useState<OpenGame[]>([]);
+  // Mes clubs favoris, par nom : troisième critère du classement des
+  // suggestions (après le niveau et l'urgence, cf. lib/homeSlot).
+  const [favoris, setFavoris] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [badgeMatches, setBadgeMatches] = useState<any[]>([]);
   // Badges votables = badge_defs actifs (source unique, pilotée par l'admin) ; MVP exclu du vote.
@@ -66,9 +77,11 @@ export default function HomeScreen() {
   // pleines, la colonne deborde, et l'accueil se met a defiler -- ce qu'il ne
   // faisait pas avant. C'est ce que le handoff demandait et que j'avais omis.
   const [tournois, setTournois] = useState<HomeTournamentEntry[]>([]);
+  // La soiree en cours ou j'ai une place — la banniere du haut.
+  const [soiree, setSoiree] = useState<Tournament | null>(null);
   const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48
-    - (tournois.length > 0 ? 140 : 0);
-  const compact = availableH < 575 * Math.max(1, fontScale);
+    - (tournois.length > 0 ? TOURNAMENTS_RESERVE : 0);
+  const compact = availableH < COMPACT_THRESHOLD_H * Math.max(1, fontScale);
 
   const fetchData = useCallback(async () => {
     if (!player) return;
@@ -143,13 +156,44 @@ export default function HomeScreen() {
     // (noms + niveaux des deux camps ; l'occupation dérive de occupiesSpot).
     const { data: upcoming } = await supabase
       .from('open_games')
-      .select('id, location, match_date, status, creator_id, creator_side, spots_available, game_format, is_challenge, min_elo, max_elo, creator:creator_id(id, name, elo_score), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score))')
+      .select('id, location, match_date, status, creator_id, creator_side, spots_available, game_format, is_challenge, min_elo, max_elo, creator:creator_id(id, name, elo_score, avatar_path), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path))')
       .gt('match_date', now)
       .neq('status', 'cancelled')
       .or(orFilter)
       .order('match_date', { ascending: true });
 
     setUpcomingGames((upcoming as unknown as OpenGame[]) ?? []);
+
+    // Les parties ouvertes proposées quand l'écran n'a rien d'autre à dire
+    // (« Ça se joue bientôt », cf. lib/homeSlot). On en ramène une douzaine
+    // pour en garder trois au plus, classées : le tri par mixité et par places réellement
+    // libres se fait côté client, sur les mêmes fonctions que le lobby —
+    // `freeSpots` fait foi, pas le compteur `spots_available` qui dérive.
+    //
+    // La requête part À CHAQUE FOIS, y compris quand un match est programmé et
+    // qu'on n'affichera rien. C'est délibéré : la décision dépend AUSSI des
+    // tournois, qui se chargent séparément, et attendre les deux ferait
+    // apparaître les vignettes après coup, sous les yeux du joueur.
+    const { data: ouvertes } = await supabase
+      .from('open_games')
+      .select('id, location, match_date, status, creator_id, spots_available, game_format, is_challenge, gender_pref, min_elo, max_elo, creator:creator_id(id, name, elo_score, avatar_path), participants:game_participants(player_id, status, invite_expires_at, player:player_id(id, name, elo_score, avatar_path))')
+      .eq('status', 'open')
+      .gt('match_date', now)
+      .neq('creator_id', player.id)
+      // Un défi se joue binôme contre binôme : « rejoindre » n'y veut pas dire
+      // la même chose que sur une partie ouverte. Il a son propre onglet.
+      .or('is_challenge.is.null,is_challenge.eq.false')
+      .order('match_date', { ascending: true })
+      // Une QUARANTAINE, plus douze : le classement (niveau, urgence, club
+      // favori) peut préférer une partie plus lointaine. Ne lire que les douze
+      // plus proches affichait « crée le tien » dès qu'elles étaient toutes
+      // pleines ou réservées, alors qu'une partie plus loin convenait.
+      .limit(40);
+
+    setOpenGames((ouvertes as unknown as OpenGame[]) ?? []);
+    // `loadClubFavorites` ne lève pas : en cas d'échec, liste vide — le
+    // classement perd son troisième critère, rien d'autre.
+    setFavoris(await loadClubFavorites(player.id));
 
     setLoading(false);
   }, [player]);
@@ -171,16 +215,37 @@ export default function HomeScreen() {
     (async () => {
       if (!player) return;
       try {
-        if (!(await getTournamentsEnabled())) { if (!annule) setTournois([]); return; }
+        if (!(await getTournamentsEnabled())) {
+          if (!annule) { setTournois([]); setSoiree(null); }
+          return;
+        }
         const liste = await fetchTournaments();
         const regs = await fetchRegistrationsFor(liste.map(t => t.id));
-        if (!annule) setTournois(homeTournamentList(liste, regs, player.id));
+        if (!annule) {
+          setTournois(homeTournamentList(liste, regs, player.id));
+          // La soirée qui se joue MAINTENANT — dérivée des mêmes lectures, pas
+          // d'une requête de plus. Pendant une rotation de vingt minutes, la
+          // seule chose qui compte est d'atteindre son terrain.
+          // `fetchRegistrationsFor` rend une Map tournoi -> inscriptions ;
+          // `myLiveTournament` raisonne sur des lignes, pas sur un index.
+          setSoiree(myLiveTournament(liste, [...regs.values()].flat(), player.id));
+        }
       } catch {
-        if (!annule) setTournois([]);
+        if (!annule) { setTournois([]); setSoiree(null); }
       }
     })();
     return () => { annule = true; };
   }, [player]));
+
+  // Matchs joués / victoires (amicaux compris) — rechargé à chaque retour sur
+  // l'accueil, comme le reste de la carte de profil.
+  useFocusEffect(useCallback(() => {
+    const id = player?.id;
+    if (!id) return;
+    let annule = false;
+    fetchPlayerTotals(id).then(t => { if (!annule) setTotals(t); }).catch(() => {});
+    return () => { annule = true; };
+  }, [player?.id]));
 
   useEffect(() => {
     // Le param est remis à undefined dès l'ouverture ; on relâche alors le verrou
@@ -231,7 +296,11 @@ export default function HomeScreen() {
 
   if (!player) return null;
 
-  const matchCount = player.win_count + player.loss_count;
+  // Matchs joués : TOUS les matchs validés, amicaux compris — même source que
+  // le profil (lib/playerStats). Les compteurs `win_count`/`loss_count` du
+  // serveur sont les compteurs CLASSÉS : ils affichaient 5 là où la liste des
+  // matchs en montrait 6.
+  const matchCount = totals.played;
   const now = new Date();
   // Une partie reste visible 1 h 30 APRÈS son heure de début (durée du match) :
   // c'est la fenêtre du score en direct (démarrage possible jusqu'à H+2h), et
@@ -244,10 +313,27 @@ export default function HomeScreen() {
   // (lib/homeLayout). Il a deborde deux fois, et les deux fois le symptome ne
   // ressemblait pas a un probleme de hauteur : « du scroll en bas », puis
   // « le haut du hero est coupe ».
+  // Qui occupe l'emplacement du milieu : le match programmé, les parties
+  // ouvertes, ou l'invitation à en créer une. La règle vit dans lib/homeSlot,
+  // le budget de hauteur dans lib/homeLayout, et un test vérifie que les deux
+  // disent la même chose — sinon une section se dessine sans place réservée.
+  const suggestions = suggestibleGames(
+    openGames as any,
+    { id: player.id, gender: player.gender, elo: player.elo_score, favoriteClubs: favoris },
+    now,
+  ) as unknown as OpenGame[];
+  const slot = homeSlot({
+    hasNextMatch: visibleUpcoming.length > 0,
+    hasTournaments: tournois.length > 0,
+    suggestions,
+  });
+
   const sizes = homeSectionSizes({
     compact,
     hasTournaments: tournois.length > 0,
     hasNextMatch: visibleUpcoming.length > 0,
+    openGames: suggestions.length,
+    hasLiveTournament: !!soiree,
   });
 
   return (
@@ -261,23 +347,18 @@ export default function HomeScreen() {
             pour que le logo reste STRICTEMENT centré sur 360 dp :
             gauche 12..80 · logo 126,5..233,5 · droite 238..348. */}
         <HeaderActions top={insets.top + 6} right={12} tint="dark" size={34} />
-        {/* Coin gauche — loupe (recherche joueurs) + Communauté, miroir du cluster droit */}
+        {/* Coin gauche — Classement + Communauté, miroir du cluster droit.
+            Le trophée a PRIS LA PLACE de la loupe, il ne s'est pas ajouté : un
+            troisième bouton pousserait le cluster jusqu'au logo (budget
+            ci-dessus). La loupe menait à /community/friends, que l'écran
+            /community du bouton voisin propose déjà en haut à droite ; le rang,
+            lui, ne se lisait plus nulle part depuis le retrait de la rangée de
+            raccourcis du bas. */}
         <View style={{
           position: 'absolute', top: insets.top + 6, left: 12, zIndex: 20,
           flexDirection: 'row', alignItems: 'center', gap: 6,
         }}>
-          <TouchableOpacity
-            onPress={() => router.push('/community/friends' as any)}
-            activeOpacity={0.75}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{
-              width: 34, height: 34, borderRadius: 17,
-              backgroundColor: Colors.heroBg,
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <Icon name="search" size={17} color={Colors.brand} stroke={2} />
-          </TouchableOpacity>
+          <HomeRankButton rank={myRank} onPress={() => router.push('/ranking' as any)} />
           <TouchableOpacity
             onPress={() => router.push('/community' as any)}
             activeOpacity={0.75}
@@ -455,6 +536,40 @@ export default function HomeScreen() {
                   minHeight sous lequel le contenu ne s'écrase pas —
                   en-dessous, c'est le ScrollView qui prend le relais. */}
 
+              {/* A. LA SOIRÉE EN COURS — au-dessus de tout, et seulement
+                  pendant qu'elle dure. Une rotation dure vingt minutes : la
+                  seule chose qui compte alors est d'atteindre son terrain, et
+                  le chemin passait par l'onglet Tournois puis la fiche. Hors
+                  soirée la bannière n'existe pas, donc elle ne coûte rien à
+                  l'accueil ordinaire (cf. lib/homeLayout). */}
+              {sizes.liveBanner && soiree && (
+                <TouchableOpacity
+                  onPress={() => router.push(`/tournaments/soiree/${soiree.id}` as any)}
+                  activeOpacity={0.85}
+                  style={{
+                    minHeight: sizes.liveBanner.minHeight,
+                    backgroundColor: Colors.primary, borderRadius: 16,
+                    paddingHorizontal: 14,
+                    flexDirection: 'row', alignItems: 'center', gap: 10,
+                  }}
+                >
+                  <View style={{
+                    width: 9, height: 9, borderRadius: 999, backgroundColor: Colors.brand,
+                  }} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                      {soiree.name}
+                    </Text>
+                    <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: 'rgba(255,255,255,0.65)', marginTop: 1 }}>
+                      {soiree.status === 'EN_COURS' && soiree.current_round > 0
+                        ? `Rotation ${soiree.current_round} sur ${soiree.round_count} · ton terrain t’attend`
+                        : 'C’est ce soir · pointe-toi en arrivant'}
+                    </Text>
+                  </View>
+                  <Icon name="chevronRight" size={16} color={Colors.brand} stroke={2.4} />
+                </TouchableOpacity>
+              )}
+
               {/* B. Hero profil — ~3/7,6 de la hauteur — ancre visite guidée (étape 1) */}
               <View
                 ref={(v) => registerTourAnchor('home-profile', v)}
@@ -463,8 +578,8 @@ export default function HomeScreen() {
                 <HomeProfileCard
                   name={player.name}
                   elo={player.elo_score}
-                  wins={player.win_count}
-                  losses={player.loss_count}
+                  wins={totals.wins}
+                  losses={totals.losses}
                   badgeCount={badgeCount}
                   frmt={formatFrmtRanking(player)}
                   onPress={() => router.push(`/player/${player.id}` as any)}
@@ -481,6 +596,7 @@ export default function HomeScreen() {
                 <HomePrimaryActions
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
+                  textScale={sizes.ctas.textScale}
                 />
               </View>
 
@@ -489,7 +605,7 @@ export default function HomeScreen() {
                   Le conteneur lui-même n'est PAS rendu quand la liste est vide :
                   sinon sa part de hauteur réserverait de la place pour rien, et l'accueil
                   ne retrouverait pas ses proportions d'origine. */}
-              {tournois.length > 0 && (
+              {sizes.tournaments && tournois.length > 0 && (
                 <View style={{ flex: sizes.tournaments!.flex, minHeight: sizes.tournaments!.minHeight }}>
                   <HomeTournaments
                     entries={tournois}
@@ -499,43 +615,53 @@ export default function HomeScreen() {
                 </View>
               )}
 
-              {/* D. Prochain match. Sa part DEPEND de son contenu : une carte
-                  vide (« aucun match programme ») n'a que deux lignes a dire et
-                  ne reclame plus la place de quatre creneaux de joueurs. C'est
-                  ce qui faisait deborder la colonne sur Android — le budget et
-                  son test vivent dans lib/homeLayout. */}
-              <View style={{ flex: sizes.nextMatch.flex, minHeight: sizes.nextMatch.minHeight }}>
-                <UpcomingMatchCard
-                  game={visibleUpcoming[0] ?? null}
-                  count={visibleUpcoming.length}
-                  onOpenDetails={() => {
-                    const g = visibleUpcoming[0];
-                    if (g) router.push(`/(tabs)/lobby?gameId=${g.id}` as any);
-                  }}
-                  onSeeAll={() => router.push('/(tabs)/lobby?tab=upcoming' as any)}
-                  onFindGame={() => router.push('/(tabs)/lobby' as any)}
-                  compact={compact}
-                />
-              </View>
+              {/* D. Prochain match — rendu SEULEMENT s'il y en a un. La carte
+                  vide repetait le bouton « Trouver un match » ci-dessus : meme
+                  phrase, meme destination. Sans match, `sizes.nextMatch` est
+                  nul et c'est le vide (`sizes.filler`) qui prend sa part, pour
+                  que les cartes restantes ne gonflent pas d'autant. Le budget
+                  et son test vivent dans lib/homeLayout. */}
+              {sizes.nextMatch && (
+                <View style={{ flex: sizes.nextMatch.flex, minHeight: sizes.nextMatch.minHeight }}>
+                  <UpcomingMatchCard
+                    game={visibleUpcoming[0] ?? null}
+                    count={visibleUpcoming.length}
+                    onOpenDetails={() => {
+                      const g = visibleUpcoming[0];
+                      if (g) router.push(`/(tabs)/lobby?gameId=${g.id}` as any);
+                    }}
+                    onSeeAll={() => router.push('/(tabs)/lobby?tab=upcoming' as any)}
+                    onFindGame={() => router.push('/(tabs)/lobby' as any)}
+                    compact={compact}
+                  />
+                </View>
+              )}
 
-              {/* E. Raccourcis secondaires — ~0,8/7,6 */}
-              <View style={{ flex: sizes.chips.flex, minHeight: sizes.chips.minHeight, flexDirection: 'row', gap: 10 }}>
-                <HomeShortcutCard
-                  icon="trophy"
-                  iconColor={Colors.brandDeep}
-                  iconBg="rgba(255,193,26,0.16)"
-                  title="Classement"
-                  value={myRank != null ? `#${myRank}` : undefined}
-                  onPress={() => router.push('/ranking' as any)}
-                />
-                <HomeShortcutCard
-                  icon="pencil"
-                  iconColor="#8B5CF6"
-                  iconBg="rgba(139,92,246,0.12)"
-                  title="Score"
-                  onPress={() => router.push('/score-entry' as any)}
-                />
-              </View>
+              {/* D bis. « Ça se joue bientôt » — ni match ni tournoi. Deux
+                  vraies parties à rejoindre, ou l'invitation à en créer une
+                  s'il n'y en a aucune. */}
+              {sizes.openGames && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
+                <View style={{ flex: sizes.openGames.flex, minHeight: sizes.openGames.minHeight }}>
+                  <OpenGamesSlot
+                    games={slot.kind === 'openGames' ? slot.games : []}
+                    myId={player.id}
+                    myElo={player.elo_score}
+                    onOpenGame={(id) => router.push(`/(tabs)/lobby?gameId=${id}` as any)}
+                    onSeeAll={() => router.push('/(tabs)/lobby' as any)}
+                    onCreate={() => router.push('/(tabs)/lobby?create=1' as any)}
+                  />
+                </View>
+              )}
+
+              {sizes.filler && (
+                <View pointerEvents="none" style={{ flex: sizes.filler.flex }} />
+              )}
+
+              {/* La rangée « Classement · Score » vivait ici. Le rang est monté
+                  dans l'en-tête ; « Score » s'atteint depuis le lobby (avec le
+                  match en contexte, ce que cette carte ne savait pas faire) et
+                  depuis le guide. Les ~52 dp rendus repartent aux sections
+                  ci-dessus via le budget de lib/homeLayout. */}
 
             </View>
             </ScrollView>

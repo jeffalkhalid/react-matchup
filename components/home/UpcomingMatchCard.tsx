@@ -8,10 +8,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
-import { occupiesSpot, gameEloRange } from '../../lib/games';
+import { occupiesSpot, isInviteActive, gameEloRange } from '../../lib/games';
 import { matchNature } from '../../lib/matchView';
 import { NaturePill } from '../profile/components';
 import { Icon } from '../community/icons';
+import { PlayerAvatar } from '../PlayerAvatar';
 import { getLiveScoringEnabled, fetchLiveSession } from '../../lib/liveSession';
 import { LiveDot } from '../live/LiveDot';
 import type { OpenGame } from '../../types';
@@ -28,7 +29,10 @@ function dayLabel(date: Date): string {
   return date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-type SlotPlayer = { id: string; name: string; elo: number };
+// `invited` : la place est TENUE par une invitation encore valable, mais le
+// joueur n'a pas répondu. Il occupe la place (occupiesSpot), il n'est pas
+// DEDANS pour autant — la carte doit le montrer comme la fiche (« ⏳ Invité »).
+type SlotPlayer = { id: string; name: string; elo: number; invited?: boolean; avatarPath?: string | null };
 
 // TeamSide encode camp + position ('A_GAU', 'B_DRO'…) — seul le camp nous intéresse ici.
 function sideOf(teamSide?: string | null): 'A' | 'B' | undefined {
@@ -40,16 +44,17 @@ function sideOf(teamSide?: string | null): 'A' | 'B' | undefined {
 function buildTeams(game: OpenGame): { A: SlotPlayer[]; B: SlotPlayer[]; teamSize: number } {
   const teamSize = game.game_format === 'singles' ? 1 : 2;
   const teams: { A: SlotPlayer[]; B: SlotPlayer[] } = { A: [], B: [] };
-  const push = (side: 'A' | 'B' | undefined, p?: { id: string; name: string; elo_score: number } | null) => {
+  const push = (side: 'A' | 'B' | undefined, p?: { id: string; name: string; elo_score: number; avatar_path?: string | null } | null, invited = false) => {
     if (!p) return;
     const s: 'A' | 'B' = side ?? (teams.A.length <= teams.B.length ? 'A' : 'B');
-    if (teams[s].length < teamSize) teams[s].push({ id: p.id, name: p.name, elo: p.elo_score });
-    else teams[s === 'A' ? 'B' : 'A'].push({ id: p.id, name: p.name, elo: p.elo_score });
+    const slot = { id: p.id, name: p.name, elo: p.elo_score, invited, avatarPath: p.avatar_path ?? null };
+    if (teams[s].length < teamSize) teams[s].push(slot);
+    else teams[s === 'A' ? 'B' : 'A'].push(slot);
   };
   push(sideOf(game.creator_side), game.creator as any);
   (game.participants ?? [])
     .filter(p => occupiesSpot(p as any) && p.player_id !== game.creator_id && (p as any).player)
-    .forEach(p => push(sideOf((p as any).team_side), (p as any).player));
+    .forEach(p => push(sideOf((p as any).team_side), (p as any).player, isInviteActive(p as any)));
   return { ...teams, teamSize };
 }
 
@@ -64,21 +69,26 @@ function PlayerSlot({ p, team }: { p: SlotPlayer | null; team: 'A' | 'B' }) {
     <View style={{ alignItems: 'center', width: 60 }}>
       {p ? (
         <>
+          {/* Invité sans réponse : avatar estompé, et « ⏳ » à la place du
+              niveau — il tient la place, il n'est pas encore dedans. */}
+          <PlayerAvatar
+            name={p.name} path={p.avatarPath} size={40}
+            backgroundColor={dark ? Colors.primary : Colors.brand}
+            textColor={dark ? '#FFFFFF' : Colors.primary}
+            fontFamily={Fonts.display} fontSize={15}
+            initialsMax={2}
+            style={{ opacity: p.invited ? 0.45 : 1 }}
+          />
           <View style={{
-            width: 40, height: 40, borderRadius: 999,
-            backgroundColor: dark ? Colors.primary : Colors.brand,
-            alignItems: 'center', justifyContent: 'center',
+            backgroundColor: p.invited ? Colors.bgCard : dark ? Colors.brand : Colors.primary,
+            borderWidth: p.invited ? 1 : 0, borderColor: Colors.border,
+            borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -8,
           }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 15, color: dark ? '#FFFFFF' : Colors.primary, includeFontPadding: false }}>
-              {initials(p.name)}
+            <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 9, color: p.invited ? Colors.textSecondary : dark ? Colors.primary : Colors.brand }}>
+              {p.invited ? '⏳' : eloToLevel(p.elo).toFixed(1)}
             </Text>
           </View>
-          <View style={{ backgroundColor: dark ? Colors.brand : Colors.primary, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -8 }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 9, color: dark ? Colors.primary : Colors.brand }}>
-              {eloToLevel(p.elo).toFixed(1)}
-            </Text>
-          </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: Colors.textSecondary, marginTop: 3, maxWidth: 60 }}>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 3, maxWidth: 60 }}>
             {p.name.split(/\s+/)[0]}
           </Text>
         </>

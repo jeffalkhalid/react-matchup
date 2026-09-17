@@ -229,6 +229,33 @@ export function gameEloRange(game: {
   return { min: Math.min(...elos), max: Math.max(...elos), derived: true };
 }
 
+// ─── Source de vérité UNIQUE : « dans ma fourchette de niveau » ─────────────
+/**
+ * Mon ELO est-il dans la fourchette DÉCLARÉE de cette partie ?
+ *
+ * Le lobby (`getEloFit`) et les suggestions de l'accueil (lib/homeSlot) s'en
+ * servent. Avant, la règle vivait dans une fonction privée du lobby, utilisée
+ * à quatre endroits : l'accueil en aurait fait une cinquième copie — et deux
+ * copies d'une même règle finissent toujours par diverger (le filtre « Urgent »
+ * en a eu trois, avec le même bug dans chacune).
+ *
+ * Bornes absentes = ouvert : `min_elo` nul vaut 0, `max_elo` nul vaut 9999,
+ * exactement comme `getEloFit`. Une partie sans fourchette déclarée accepte
+ * donc tout le monde.
+ *
+ * ⚠️ Ce n'est PAS `gameEloRange`, qui pour un défi ciblé DÉRIVE une fourchette
+ * des joueurs présents, pour l'AFFICHAGE. L'accès se juge sur la fourchette
+ * déclarée.
+ */
+export function eloFitsGame(
+  game: { min_elo?: number | null; max_elo?: number | null },
+  elo: number,
+): boolean {
+  const min = game.min_elo ?? 0;
+  const max = game.max_elo ?? 9999;
+  return elo >= min && elo <= max;
+}
+
 // ─── Le filtre « Urgent » de l'Explorer ──────────────────────────────────────
 //
 // Une partie est urgente quand IL MANQUE UNE PERSONNE et que ça se joue
