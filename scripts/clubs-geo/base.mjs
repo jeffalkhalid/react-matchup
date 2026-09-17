@@ -1,4 +1,5 @@
 // scripts/clubs-geo/base.mjs — lecture des clubs de la base, en LECTURE SEULE.
+// Installation (une fois, avant le premier lancement) : cd scripts/clubs-geo && npm install
 // Clé publique de l'app (.env) : les scripts du lot 0 n'écrivent jamais en base,
 // ils produisent une migration que l'utilisateur applique lui-même.
 import { readFileSync } from 'node:fs';

@@ -1,5 +1,7 @@
 // scripts/clubs-geo/fichier-verification.mjs — fichier Excel à vérifier.
 //
+// Installation (une fois, avant le premier lancement) : cd scripts/clubs-geo && npm install
+//
 // Usage : node scripts/clubs-geo/fichier-verification.mjs <fichier-source.xlsx> <sortie.xlsx>
 //
 // Une ligne par club de la base encore placé au centre-ville, avec la

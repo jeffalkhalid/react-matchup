@@ -620,9 +620,10 @@ Expected: `80 clubs à vérifier → sans alerte N · douteux N · absents du fi
 
 - [ ] **Step 5 : relire le fichier produit**
 
-Run (lecture de contrôle) :
+Run (lecture de contrôle — exceljs vit dans `scripts/clubs-geo/node_modules`, jamais à la
+racine : ce `require` doit s'exécuter depuis `scripts/clubs-geo`, sinon il ne le trouve plus) :
 ```bash
-node -e "const E=require('exceljs');(async()=>{const w=new E.Workbook();await w.xlsx.readFile('C:/Users/jeffa/Bureau/clubs_verification.xlsx');const f=w.getWorksheet('Vérification');console.log('lignes',f.rowCount-1);console.log(f.getRow(1).values.slice(1).join(' | '));const r=f.getRow(2);console.log(r.getCell(3).text,'=>',r.getCell(4).text,r.getCell(11).text);})()"
+cd scripts/clubs-geo && node -e "const E=require('exceljs');(async()=>{const w=new E.Workbook();await w.xlsx.readFile('C:/Users/jeffa/Bureau/clubs_verification.xlsx');const f=w.getWorksheet('Vérification');console.log('lignes',f.rowCount-1);console.log(f.getRow(1).values.slice(1).join(' | '));const r=f.getRow(2);console.log(r.getCell(3).text,'=>',r.getCell(4).text,r.getCell(11).text);})()"
 ```
 Expected: `lignes 80`, l'en-tête des 13 colonnes dans l'ordre de l'interface, une ligne d'exemple lisible.
 
