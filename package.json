@@ -2,6 +2,9 @@
   "name": "react-matchup",
   "version": "1.0.0",
   "main": "index.ts",
+  "overrides": {
+    "react-dom": "19.2.3"
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -25,6 +28,7 @@
     "expo-image-picker": "~57.0.15",
     "expo-keep-awake": "~57.0.1",
     "expo-linking": "~57.0.9",
+    "expo-location": "~57.0.18",
     "expo-media-library": "~57.0.4",
     "expo-notifications": "~57.0.16",
     "expo-router": "~57.0.18",

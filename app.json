@@ -54,6 +54,14 @@
         }
       ],
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "PAG MATCH utilise ta position pour afficher la distance des parties près de toi. Elle reste sur ton téléphone.",
+          "locationAlwaysAndWhenInUsePermission": "PAG MATCH utilise ta position pour afficher la distance des parties près de toi. Elle reste sur ton téléphone.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
