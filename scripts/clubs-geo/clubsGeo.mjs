@@ -16,7 +16,7 @@ const MOTS_VIDES = new Set((
 ).split(' '));
 
 export function sansAccents(s) {
-  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return String(s ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
 export function normaliserVille(s) {
