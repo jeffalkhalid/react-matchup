@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
+import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough } from '../../lib/defis';
 import { consumePickedVenue } from '../../lib/venuePicker';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import { Avatar as ClubAvatar } from '../../components/community/Avatar';
@@ -17,6 +18,7 @@ import { ClubsMapModal } from '../../components/ClubsMapModal';
 import { ManageClubsModal } from '../../components/ManageClubsModal';
 import { Pill } from '../../components/Pill';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { Icon } from '../../components/community/icons';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -137,8 +139,19 @@ function getTheme(type: GameType) {
 function defaultLevelBand(gameType: GameType, lv: number): { min: number; max: number } {
   const mn = Math.max(1.0, +(lv - 0.5).toFixed(2));
   const mx = Math.min(8.0, +(lv + 0.5).toFixed(2));
-  if (gameType === 'Défi') return { min: mx, max: Math.min(8.0, +(lv + 1.5).toFixed(2)) };
-  return { min: mn, max: mx };
+  if (gameType === 'Défi') return widenBand(mx, Math.min(8.0, +(lv + 1.5).toFixed(2)));
+  return widenBand(mn, mx);
+}
+
+// Une fourchette doit rester REJOIGNABLE : au moins DEFI_BAND_MIN_LEVEL d'écart
+// (cf. lib/defis). Sinon il faudrait tomber sur la moyenne au centième près, et
+// le défi reste ouvert sans que personne ne puisse le relever.
+// Le plafond ne peut pas dépasser 8 : quand le minimum touche le haut, c'est lui
+// qui redescend.
+function widenBand(min: number, max: number): { min: number; max: number } {
+  const hi = Math.min(8.0, Math.max(max, defiMinimumMaxLevel(min)));
+  const lo = Math.max(1.0, Math.min(min, +(hi - DEFI_BAND_MIN_LEVEL).toFixed(2)));
+  return { min: +lo.toFixed(2), max: +hi.toFixed(2) };
 }
 
 // ─── Avatar ───────────────────────────────────────────────────
@@ -152,14 +165,14 @@ function hashTone(name: string) {
   const h = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   return AV_PALETTE[h % AV_PALETTE.length];
 }
-function Avatar({ name, size = 32 }: { name: string; size?: number }) {
+function Avatar({ name, size = 32, path }: { name: string; size?: number; path?: string | null }) {
   const tone = hashTone(name);
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: tone.bg, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: tone.fg, fontSize: Math.round(size * 0.4), fontWeight: '900' }}>
-        {(name || '?').charAt(0).toUpperCase()}
-      </Text>
-    </View>
+    <PlayerAvatar
+      name={name} path={path} size={size}
+      backgroundColor={tone.bg} textColor={tone.fg}
+      fontSize={Math.round(size * 0.4)}
+    />
   );
 }
 
@@ -365,7 +378,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         });
         const topIds = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id]) => id);
         if (!topIds.length) return;
-        supabase.from('players').select('id,name,elo_score').in('id', topIds).is('deleted_at', null).then(({ data: players }) => {
+        supabase.from('players').select('id,name,elo_score,avatar_path').in('id', topIds).is('deleted_at', null).then(({ data: players }) => {
           if (players) setFreqPlayers(topIds.map(id => (players as any[]).find(p => p.id === id)).filter(Boolean));
         });
       });
@@ -428,7 +441,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (searchQ.length < 2) { setSearchRes([]); return; }
     setSearching(true);
     const t = setTimeout(() => {
-      supabase.from('players').select('id,name,elo_score')
+      supabase.from('players').select('id,name,elo_score,avatar_path')
         .is('deleted_at', null)
         .ilike('name', `%${searchQ}%`)
         .neq('id', player?.id ?? '')
@@ -443,9 +456,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   const defiPartnerChosen = isDefi && Object.keys(form.invites).some(k => k.startsWith('A'));
   const canNext = (() => {
     if (step === 0) return !!form.day && !!form.time && !!form.location && !isPastSlot(form.day, form.time);
-    if (step === 1) return !!form.gameType && (isDefi || form.minLevel <= form.maxLevel);
+    if (step === 1) return !!form.gameType && (isDefi || isDefiBandWideEnough(form.minLevel, form.maxLevel));
     if (isDefi && step === 2) return defiPartnerChosen;          // Mon binôme
-    if (isDefi && step === 3) return form.maxLevel >= form.minLevel && form.stakeMultiplier >= 1.5 && form.stakeMultiplier <= 3.0;
+    if (isDefi && step === 3) return isDefiBandWideEnough(form.minLevel, form.maxLevel) && form.stakeMultiplier >= 1.5 && form.stakeMultiplier <= 3.0;
     return true; // L'équipe (non-défi) : publication libre comme aujourd'hui
   })();
 
@@ -570,14 +583,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   }
 
   // En Défi, fige minLevel au plancher dès que le binôme/plancher change,
-  // et remonte maxLevel s'il est sous le plancher.
+  // et remonte maxLevel pour garder une fourchette relevable.
   useEffect(() => {
     if (form.gameType !== 'Défi') return;
-    setFormState(f => ({
-      ...f,
-      minLevel: defiFloorLevel,
-      maxLevel: Math.max(f.maxLevel, defiFloorLevel),
-    }));
+    setFormState(f => {
+      const band = widenBand(defiFloorLevel, f.maxLevel);
+      return { ...f, minLevel: band.min, maxLevel: band.max };
+    });
   }, [form.gameType, defiFloorLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Step 0: When & Where ──────────────────────────────────
@@ -936,7 +948,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                       {form.minLevel.toFixed(2)}
                     </Text>
                     {!lockMin && (
-                      <TouchableOpacity onPress={() => set('minLevel', Math.min(form.maxLevel, +(form.minLevel + 0.1).toFixed(2)))}
+                      <TouchableOpacity onPress={() => set('minLevel', Math.min(+(form.maxLevel - DEFI_BAND_MIN_LEVEL).toFixed(2), +(form.minLevel + 0.1).toFixed(2)))}
                         style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ fontSize: 18, color: Colors.textPrimary }}>+</Text>
                       </TouchableOpacity>
@@ -951,7 +963,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     {!lockMax && (
-                      <TouchableOpacity onPress={() => set('maxLevel', Math.max(form.minLevel, +(form.maxLevel - 0.1).toFixed(2)))}
+                      <TouchableOpacity onPress={() => set('maxLevel', Math.max(+(form.minLevel + DEFI_BAND_MIN_LEVEL).toFixed(2), +(form.maxLevel - 0.1).toFixed(2)))}
                         style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ fontSize: 18, color: Colors.textPrimary }}>−</Text>
                       </TouchableOpacity>
@@ -1141,7 +1153,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                 {freqAvail.map(p => (
                   <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard }}>
-                    <Avatar name={p.name} size={32} />
+                    <Avatar name={p.name} path={(p as any).avatar_path} size={32} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                       <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
@@ -1158,7 +1170,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               {searchAvail.map(p => (
                 <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }}>
-                  <Avatar name={p.name} size={32} />
+                  <Avatar name={p.name} path={(p as any).avatar_path} size={32} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{p.name}</Text>
                     <Text style={{ fontSize: 10, color: '#94a3b8' }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
@@ -1181,7 +1193,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
           {/* Moi (A0) */}
           <View style={{ flex: 1, backgroundColor: t.teamABg, borderWidth: 1.5, borderColor: t.teamABorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
-            <Avatar name={player?.name ?? '?'} size={44} />
+            <Avatar name={player?.name ?? '?'} path={(player as any)?.avatar_path} size={44} />
             <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>Vous</Text>
             <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {player ? formatPadelLevel(player.elo_score) : '—'}</Text>
           </View>
@@ -1191,7 +1203,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             style={{ flex: 1, backgroundColor: defiPartner ? t.teamABg : t.libreBg, borderWidth: 1.5, borderStyle: defiPartner ? 'solid' : 'dashed', borderColor: defiPartner ? t.teamABorder : t.libreBorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
             {defiPartner ? (
               <>
-                <Avatar name={defiPartner.name} size={44} />
+                <Avatar name={defiPartner.name} path={(defiPartner as any).avatar_path} size={44} />
                 <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{defiPartner.name.split(' ')[0]}</Text>
                 <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(defiPartner.elo_score)}</Text>
               </>
@@ -1229,7 +1241,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   }}>
                     {opp ? (
                       <>
-                        <Avatar name={opp.name} size={44} />
+                        <Avatar name={opp.name} path={(opp as any).avatar_path} size={44} />
                         <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>
                           {opp.name.split(' ')[0]}
                         </Text>
@@ -1260,7 +1272,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   // ── Étape Défi : mise (×1.5→×3) + plafond de niveau adverse ──
   function renderDefiSettings() {
     const setStake = (v: number) => set('stakeMultiplier', +Math.min(3.0, Math.max(1.5, v)).toFixed(1));
-    const setCap   = (v: number) => set('maxLevel', +Math.min(8.0, Math.max(defiFloorLevel, v)).toFixed(2));
+    // Le plafond ne redescend jamais jusqu'au plancher : il resterait une
+    // fourchette nulle, donc un défi que personne ne peut relever.
+    const setCap   = (v: number) => set('maxLevel', +Math.min(8.0, Math.max(defiMinimumMaxLevel(defiFloorLevel), v)).toFixed(2));
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Mise */}
@@ -1317,7 +1331,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: Colors.bg, paddingTop: insets.top }}>
           <View style={{ alignItems: 'center', padding: 32, paddingBottom: 16 }}>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            <Text numberOfLines={2}
               style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textPrimary, letterSpacing: 0.2, marginBottom: 6, paddingRight: 5 }}>
               Partie <Text style={{ color: Colors.brand }}>publiée !</Text>
             </Text>
@@ -1412,7 +1426,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, fontWeight: '600' }}>‹</Text>
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+              <Text numberOfLines={2}
                 style={{ fontSize: 22, lineHeight: 29, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, paddingRight: 5 }}>
                 Nouvelle <Text style={{ color: Colors.brand }}>partie</Text>
               </Text>

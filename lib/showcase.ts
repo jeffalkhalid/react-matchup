@@ -3,7 +3,7 @@
 import { supabase } from './supabase';
 import { getHiddenPlayerIds } from './moderation';
 
-export interface ShowcasePlayer { id: string; name: string; elo_score: number; court_side?: string | null; }
+export interface ShowcasePlayer { id: string; name: string; elo_score: number; avatar_path?: string | null; court_side?: string | null; }
 export interface ShowcaseBinome {
   id: string; player_a: string; player_b: string; status: string; created_at: string;
   a?: ShowcasePlayer | null; b?: ShowcasePlayer | null;
@@ -11,7 +11,7 @@ export interface ShowcaseBinome {
 
 const COLS =
   'id, player_a, player_b, status, created_at, ' +
-  'a:player_a(id, name, elo_score, court_side), b:player_b(id, name, elo_score, court_side)';
+  'a:player_a(id, name, elo_score, avatar_path, court_side), b:player_b(id, name, elo_score, avatar_path, court_side)';
 
 // Vitrine publique : binômes ACTIFS que je peux défier (pas les miens).
 export async function fetchVitrine(playerId: string): Promise<ShowcaseBinome[]> {

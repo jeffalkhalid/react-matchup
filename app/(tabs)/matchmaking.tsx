@@ -15,8 +15,11 @@ import {
   fetchOpenDefis, fetchMyDefis, fetchDefisInvolved, fetchCandidaturesOnMyDefis,
   fetchMyApplications, fetchBinomeInvitations, fetchMyDefiInvites, defiGameWithMyBinome, defiOtherBinomeCount,
   acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, applyToDefi, cancelDefi,
+  applicationPairAverage,
   type DefiGame, type DefiApplication, type DefiInvite,
 } from '../../lib/defis';
+import { defiRefusalMessage } from '../../lib/defiMessages';
+import { PlayerAvatar as Photo } from '../../components/PlayerAvatar';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { isCreatorConflict } from '../../lib/games';
@@ -34,13 +37,17 @@ const AV_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc
 function hashColor(name: string) {
   return AV_COLORS[(name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % AV_COLORS.length];
 }
-function PlayerAvatar({ name, size = 36 }: { name: string; size?: number }) {
+function PlayerAvatar({ name, size = 36, path }: { name: string; size?: number; path?: string | null }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: Math.round(size * 0.36), backgroundColor: hashColor(name), alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: Colors.textOnDark, fontSize: Math.round(size * 0.38), fontWeight: '900' }}>
-        {(name || '?').charAt(0).toUpperCase()}
-      </Text>
-    </View>
+    <Photo
+      name={name}
+      path={path}
+      size={size}
+      radius={Math.round(size * 0.36)}
+      backgroundColor={hashColor(name)}
+      textColor={Colors.textOnDark}
+      fontSize={Math.round(size * 0.38)}
+    />
   );
 }
 
@@ -132,8 +139,8 @@ function VitrineCard({ sb, onDefier }: { sb: ShowcaseBinome; onDefier: () => voi
         {/* Paire */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{ flexDirection: 'row' }}>
-            <PlayerAvatar name={a?.name ?? '?'} size={38} />
-            <View style={{ marginLeft: -13 }}><PlayerAvatar name={b?.name ?? '?'} size={38} /></View>
+            <PlayerAvatar name={a?.name ?? '?'} path={(a as any)?.avatar_path} size={38} />
+            <View style={{ marginLeft: -13 }}><PlayerAvatar name={b?.name ?? '?'} path={(b as any)?.avatar_path} size={38} /></View>
           </View>
           <View style={{ flex: 1, marginLeft: 11 }}>
             <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>
@@ -278,7 +285,7 @@ export default function MatchmakingScreen() {
   useEffect(() => {
     if (partnerSearch.length < 2) { setPartnerResults([]); setPartnerBusy(new Set()); return; }
     const t = setTimeout(() => {
-      supabase.from('players').select('id,name,elo_score,court_side')
+      supabase.from('players').select('id,name,elo_score,avatar_path,court_side')
         .is('deleted_at', null)
         .ilike('name', `%${partnerSearch}%`)
         .neq('id', player?.id ?? '')
@@ -368,7 +375,7 @@ export default function MatchmakingScreen() {
         const topIds = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => id);
         if (!topIds.length) { setLoadingSuggestions(false); return; }
         const { data: freqPlayers } = await supabase.from('players')
-          .select('id,name,elo_score,court_side').in('id', topIds).is('deleted_at', null);
+          .select('id,name,elo_score,avatar_path,court_side').in('id', topIds).is('deleted_at', null);
         if (!freqPlayers?.length) { setLoadingSuggestions(false); return; }
         // 2) Filtrer les candidats : éligibilité (moyenne du binôme {moi, p} dans la
         //    bande du défi) + disponibilité au créneau (pas de partie acceptée à ±2h).
@@ -440,7 +447,7 @@ export default function MatchmakingScreen() {
   }, [params.relever, openDefis]);
 
   // ── Submit candidature ───────────────────────────────────────
-  const submitRelever = async (partner: { id: string; name: string }) => {
+  const submitRelever = async (partner: { id: string; name: string; elo_score?: number }) => {
     if (!releverGame || applying) return;
     setApplying(true);
     try {
@@ -450,18 +457,13 @@ export default function MatchmakingScreen() {
       showToast(`Candidature envoyée — ${partner.name} doit accepter pour verrouiller le binôme.`);
       fetchData();
     } catch (e: any) {
-      if (e?.message?.includes('out of level band')) {
-        const lo = releverGame.min_elo != null ? eloToLevel(releverGame.min_elo).toFixed(1) : '?';
-        const hi = releverGame.max_elo != null ? eloToLevel(releverGame.max_elo).toFixed(1) : '?';
-        Alert.alert(
-          'Niveau de la paire',
-          `Pour relever ce défi, la paire doit avoir un niveau moyen entre ${lo} et ${hi}.\n\nLa moyenne de ${player?.name ?? 'toi'} + ${partner.name} est en dehors. Choisis un partenaire pour rapprocher la moyenne de cette fourchette.`,
-        );
-      } else if (e?.message?.includes('already in game')) {
-        Alert.alert('Déjà engagés', 'Toi ou ton partenaire êtes déjà engagés sur ce défi.');
-      } else {
-        Alert.alert('Impossible', e?.message ?? 'Candidature impossible.');
-      }
+      // Un seul traducteur pour tous les refus serveur (cf. lib/defiMessages).
+      const moyenne = player?.elo_score != null && partner.elo_score != null
+        ? (player.elo_score + partner.elo_score) / 2
+        : null;
+      const refus = defiRefusalMessage(e, releverGame, moyenne);
+      if (refus) Alert.alert(refus.title, refus.body);
+      else Alert.alert('Impossible', e?.message ?? 'Candidature impossible.');
     } finally {
       setApplying(false);
     }
@@ -484,8 +486,11 @@ export default function MatchmakingScreen() {
       await fetchData();
       reloadNotifs();
     } catch (e: any) {
+      const refus = defiRefusalMessage(e, app.game, applicationPairAverage(app));
       if (isCreatorConflict(e)) {
         Alert.alert('⚠️ Conflit de créneau', 'Toi ou ton binôme êtes déjà engagés sur une autre partie au même créneau (±2h).');
+      } else if (refus) {
+        Alert.alert(refus.title, refus.body);
       } else {
         Alert.alert('Erreur', e?.message ?? 'Action impossible.');
       }
@@ -708,7 +713,7 @@ export default function MatchmakingScreen() {
                         activeOpacity={0.75}
                       >
                         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <PlayerAvatar name={p.name} size={38} />
+                          <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={38} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                             <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
@@ -755,7 +760,7 @@ export default function MatchmakingScreen() {
                         activeOpacity={0.75}
                       >
                         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <PlayerAvatar name={p.name} size={38} />
+                          <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={38} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                             <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
@@ -807,7 +812,7 @@ export default function MatchmakingScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
           <View style={{ flex: 1 }} />
           <View style={{ flexShrink: 1 }}>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center', paddingRight: 5 }}>
+            <Text numberOfLines={2} style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center', paddingRight: 5 }}>
               Les <Text style={{ color: Colors.brand }}>Défis</Text>
             </Text>
             <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Défis 2v2 & candidatures</Text>
@@ -1040,7 +1045,7 @@ export default function MatchmakingScreen() {
                     {myBinomes.map(p => (
                       <TouchableOpacity key={p.id} onPress={() => router.push(`/player/${p.id}` as any)} activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
-                        <PlayerAvatar name={p.name} size={34} />
+                        <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={34} />
                         <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                         <Pill variant="neutral">Niv. {eloToLevel(p.elo_score).toFixed(1)}</Pill>
                       </TouchableOpacity>

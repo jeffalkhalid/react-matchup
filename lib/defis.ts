@@ -6,6 +6,29 @@ import { supabase } from './supabase';
 import { getHiddenPlayerIds } from './moderation';
 import { isInvitationVisible } from './games';
 
+// ─── La fourchette de niveau d'un défi ──────────────────────────────────────
+//
+// Un défi ne se relève pas tout seul : la MOYENNE du binôme candidat doit
+// tomber dans la fourchette [min_elo, max_elo] (vérifié par le serveur, RPC
+// defi_apply / defi_accept).
+//
+// Piège vu sur device (2026-09-16) : l'assistant laissait descendre le maximum
+// jusqu'au minimum. Une fourchette de largeur NULLE exige une moyenne au
+// centième près — personne ne peut relever, et le refus tombait en anglais
+// (« binome out of level band ») au moment d'accepter. D'où cette largeur
+// minimale, partagée par l'assistant de création et ses tests.
+export const DEFI_BAND_MIN_LEVEL = 0.5;
+
+/** Le maximum le plus bas acceptable pour un défi dont le minimum vaut `min`. */
+export function defiMinimumMaxLevel(min: number): number {
+  return Math.min(8, +(min + DEFI_BAND_MIN_LEVEL).toFixed(2));
+}
+
+/** La fourchette est-elle assez large pour qu'un binôme puisse y entrer ? */
+export function isDefiBandWideEnough(min: number, max: number): boolean {
+  return +(max - min).toFixed(2) >= DEFI_BAND_MIN_LEVEL;
+}
+
 export interface DefiPlayer { id: string; name: string; elo_score: number; win_count?: number; loss_count?: number; }
 export interface DefiParticipant {
   id: string; player_id: string; status: string; team_side: string | null;
@@ -33,7 +56,7 @@ const GAME_COLS =
   'id, creator_id, creator_side, status, is_challenge, is_targeted, game_format, gender_pref, ' +
   'spots_available, has_reservation, stake_multiplier, min_elo, max_elo, match_date, location, ' +
   'creator:creator_id(id, name, elo_score, win_count, loss_count), ' +
-  'participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, win_count, loss_count))';
+  'participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, win_count, loss_count))';
 
 // ── Helpers d'éligibilité (moyenne du binôme dans la bande du défi) ──
 export function binomeAvg(eloA: number, eloB: number): number {
@@ -42,6 +65,12 @@ export function binomeAvg(eloA: number, eloB: number): number {
 export function isBinomeEligible(eloA: number, eloB: number, minElo: number | null, maxElo: number | null): boolean {
   const avg = binomeAvg(eloA, eloB);
   return avg >= (minElo ?? 0) && avg <= (maxElo ?? 999999);
+}
+/** Moyenne du binome d'une candidature, ou null si un ELO manque. */
+export function applicationPairAverage(app: DefiApplication): number | null {
+  const a = app.initiator?.elo_score;
+  const b = app.partner?.elo_score;
+  return a != null && b != null ? binomeAvg(a, b) : null;
 }
 
 // ── Fenêtre de promotion (minutes) — app_config, lecture publique, cachée. ──
@@ -211,6 +240,49 @@ export function defiGameWithMyBinome(app: DefiApplication): DefiGame | null {
     { id: `app-p-${app.id}`, player_id: app.partner_id,   status: 'invited', team_side: 'B_DRO', player: app.partner ?? null },
   ];
   return { ...g, participants: [...(g.participants ?? []), ...inject] };
+}
+
+/** Un binôme EN FILE sur un défi complet. */
+export interface QueuedBinome {
+  id: string;
+  gameId: string;
+  playerIds: [string, string];
+  names: [string, string];
+}
+
+// ── Les binômes EN FILE ('queued') de plusieurs défis, en UNE requête. ──
+// Même source que l'onglet Défi (defi_applications), pour que la fiche du
+// match, la carte « À venir » et le hub disent le même nombre. La RLS fait le
+// tri : un joueur du défi et les binômes candidats voient la file, personne
+// d'autre (defi_apps_select_participants.sql).
+export async function fetchQueuedBinomes(gameIds: string[]): Promise<Map<string, QueuedBinome[]>> {
+  const out = new Map<string, QueuedBinome[]>();
+  const ids = [...new Set(gameIds.filter(Boolean))];
+  if (ids.length === 0) return out;
+  const { data, error } = await supabase
+    .from('defi_applications')
+    .select('id, game_id, initiator_id, partner_id, created_at, initiator:initiator_id(id, name), partner:partner_id(id, name)')
+    .in('game_id', ids)
+    .eq('status', 'queued')
+    .order('created_at', { ascending: true });   // ordre FIFO = ordre de promotion
+  if (error) { console.warn('[defis] fetchQueuedBinomes', error); return out; }
+  for (const r of (data ?? []) as any[]) {
+    const entry: QueuedBinome = {
+      id: r.id,
+      gameId: r.game_id,
+      playerIds: [r.initiator_id, r.partner_id],
+      names: [r.initiator?.name ?? '?', r.partner?.name ?? '?'],
+    };
+    const list = out.get(r.game_id);
+    if (list) list.push(entry); else out.set(r.game_id, [entry]);
+  }
+  return out;
+}
+
+/** Combien de binômes attendent, par défi. */
+export async function fetchQueuedBinomeCounts(gameIds: string[]): Promise<Map<string, number>> {
+  const byGame = await fetchQueuedBinomes(gameIds);
+  return new Map([...byGame].map(([id, list]) => [id, list.length]));
 }
 
 // Nombre d'AUTRES binômes ayant postulé sur ce défi (hors le mien) — RPC (RLS).
