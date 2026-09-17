@@ -77,12 +77,12 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
                   CERCLE DES 100
                 </Text>
                 <Text
-                  numberOfLines={1} adjustsFontSizeToFit
+                  numberOfLines={2}
                   style={{
                     fontFamily: PFonts.barlow, fontSize: 22, color: '#FFFFFF',
-                    textTransform: 'uppercase', marginTop: 3, marginBottom: 2, paddingRight: 6,
+                    marginTop: 3, marginBottom: 2, paddingRight: 6,
                   }}>
-                  Ambassadeur {formatMemberNumber(ambassador.number)}
+                  {`Ambassadeur ${formatMemberNumber(ambassador.number)}`.toUpperCase()}
                 </Text>
                 <Text style={{
                   fontFamily: PFonts.uiSemi, fontSize: 10.5, color: 'rgba(255,255,255,0.55)',
@@ -191,7 +191,7 @@ export function StatsTab({ curLevel, delta30, timeline, winRate, played, wins, l
         {form.length > 0 && (
           <View style={{ borderTopWidth: 1, borderTopColor: PM.divider, marginTop: 12, paddingTop: 12 }}>
             <Text style={{ fontSize: 9, fontWeight: '800', color: PM.muted, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 2 }}>Forme récente</Text>
-            <Text style={{ fontSize: 10, fontWeight: '600', color: PM.faint, marginBottom: 8 }}>5 derniers matchs compétitifs et défis</Text>
+            <Text style={{ fontSize: 10, fontWeight: '600', color: PM.faint, marginBottom: 8 }}>5 derniers matchs joués</Text>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {form.map((f, i) => (
                 <View key={i} style={{
@@ -391,8 +391,8 @@ export function BinomesTab({ active, incoming, outgoing, isSelf, onConfirm, onCl
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Ouvert aux défis</Text>
-          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, lineHeight: 29, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>
-            {active.length === 0 ? 'Aucun binôme' : `${active.length} binôme${active.length > 1 ? 's' : ''}`}
+          <Text numberOfLines={2} style={{ fontFamily: PFonts.barlow, fontSize: 22, lineHeight: 29, color: '#fff', marginTop: 2, paddingRight: 6 }}>
+            {active.length === 0 ? 'AUCUN BINÔME' : `${active.length} BINÔME${active.length > 1 ? 'S' : ''}`}
           </Text>
         </View>
         {isSelf && onAdd && (
@@ -481,7 +481,7 @@ export function BadgesTab({ badges }: { badges: RepBadge[] }) {
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: 0.7, textTransform: 'uppercase' }}>Badge signature</Text>
-          <Text numberOfLines={1} style={{ fontFamily: PFonts.barlow, fontSize: 22, lineHeight: 29, color: '#fff', textTransform: 'uppercase', marginTop: 2 }}>{top.label}</Text>
+          <Text numberOfLines={2} style={{ fontFamily: PFonts.barlow, fontSize: 22, lineHeight: 29, color: '#fff', marginTop: 2, paddingRight: 6 }}>{top.label.toUpperCase()}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{ fontFamily: PFonts.anton, fontSize: 28, lineHeight: 36, color: ACCENT }}>{totalVotes}</Text>

@@ -5,6 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
 import Svg, { Path } from 'react-native-svg';
 import { usePlayer } from '../../hooks/usePlayer';
+import { fetchPlayerTotals, EMPTY_TOTALS } from '../../lib/playerStats';
 import { Colors, Fonts, getLeague, eloToLevel } from '../../lib/theme';
 import { getReferralStats, referralLink, referralQRValue, SHARE_LABEL } from '../../lib/community';
 import { NavBar, Kicker, Chips } from '../../components/community/ui';
@@ -27,8 +28,10 @@ export default function InviteScreen() {
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [totals, setTotals] = useState(EMPTY_TOTALS);
 
   useEffect(() => { if (player) getReferralStats(player).then(setStats); }, [player]);
+  useEffect(() => { if (player?.id) fetchPlayerTotals(player.id).then(setTotals).catch(() => {}); }, [player?.id]);
 
   const code = stats?.code ?? '';
   const link = code ? referralLink(code) : '';
@@ -36,7 +39,8 @@ export default function InviteScreen() {
   const cream = variant === 'cream';
 
   // Données pour le composer de story (mêmes types que la fiche joueur).
-  const totalM = (player?.win_count ?? 0) + (player?.loss_count ?? 0);
+  // Mêmes totaux que l'accueil et le profil : tous les matchs validés.
+  const totalM = totals.played;
   const storyPlayer: StoryPlayer | null = player ? {
     name: player.name,
     league: getLeague(player.elo_score),
@@ -45,9 +49,9 @@ export default function InviteScreen() {
     frmtRank: player.frmt_rank ?? undefined,
     frmtVerified: player.frmt_verified ?? undefined,
     fiability: player.fiability_pct,
-    wins: player.win_count ?? 0,
-    losses: player.loss_count ?? 0,
-    winRate: totalM > 0 ? Math.round(((player.win_count ?? 0) / totalM) * 100) : 0,
+    wins: totals.wins,
+    losses: totals.losses,
+    winRate: totals.winRate,
     streak: 0,
     recentForm: [],
     club: player.clubs?.[0],
@@ -119,8 +123,8 @@ export default function InviteScreen() {
             ) : (
               <Image source={require('../../assets/auth/splash-racket.png')} style={{ width: 44, height: 44 }} resizeMode="contain" />
             )}
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 26, color: titleColor, textTransform: 'uppercase', marginTop: cream ? 14 : 8, textAlign: 'center', lineHeight: 34, paddingRight: 5 }}>
-              Rejoins-moi sur <Text style={{ color: Colors.brandDeep }}>PagMatch</Text>
+            <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 26, color: titleColor, marginTop: cream ? 14 : 8, textAlign: 'center', lineHeight: 34, paddingHorizontal: 8 }}>
+              REJOINS-MOI SUR <Text style={{ color: Colors.brandDeep }}>PAGMATCH</Text>
             </Text>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 13, color: subColor, marginTop: 6, textAlign: 'center' }}>
               Scanne le QR ou ouvre le lien pour créer ton profil et me défier.
