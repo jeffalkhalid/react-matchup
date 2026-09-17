@@ -13,11 +13,18 @@ import { Icon } from '../components/community/icons';
 import { useOrigin } from '../hooks/useOrigin';
 import { buildZoneMapHtml } from '../lib/zoneMapHtml';
 import { initialZoneCenter, ZONE_RADII_KM, DEFAULT_RADIUS_KM, type LatLng } from '../lib/geo';
+import { gpsFailureMessage } from '../lib/originPolicy';
 
 export default function ZoneScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { ready, zone, zoneAvailable, gps, gpsAvailable, requestGps, saveZone, removeZone } = useOrigin();
+  const {
+    ready, zone, zoneAvailable, loadFailed, gps, gpsAvailable, requestGps, saveZone, removeZone, reloadOrigin,
+  } = useOrigin();
+
+  // Un chargement en échec (réseau) se relance à l'ouverture de l'écran, au
+  // plus une fois toutes les 30 s (lib/originPolicy.shouldReloadOrigin).
+  useEffect(() => { void reloadOrigin(); }, []);
 
   const webref = useRef<WebView>(null);
   const [webReady, setWebReady] = useState(false);
@@ -69,9 +76,10 @@ export default function ZoneScreen() {
   const placerSurMaPosition = async () => {
     setBusy('gps');
     try {
-      const fix = await requestGps();
+      const { gps: fix, permission } = await requestGps();
       if (!fix) {
-        Alert.alert('Position indisponible', "Autorise la localisation dans les réglages du téléphone, ou place l'épingle à la main.");
+        const { title, body } = gpsFailureMessage(permission, zoneAvailable, ", ou place l'épingle à la main.");
+        Alert.alert(title, body);
         return;
       }
       const p = { lat: fix.lat, lng: fix.lng };
@@ -132,7 +140,27 @@ export default function ZoneScreen() {
         </View>
       </View>
 
-      {!zoneAvailable ? (
+      {!ready ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={Colors.primary} />
+        </View>
+      ) : loadFailed ? (
+        <View style={{ margin: 18, gap: 14 }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 19 }}>
+            Ta zone n'a pas pu être chargée. Vérifie ta connexion.
+          </Text>
+          <TouchableOpacity
+            onPress={() => void reloadOrigin()}
+            activeOpacity={0.85}
+            style={{
+              alignSelf: 'flex-start', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12,
+              backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border,
+            }}
+          >
+            <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      ) : !zoneAvailable ? (
         <Text style={{ margin: 18, fontSize: 13, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 19 }}>
           Les zones ne sont pas encore disponibles. Réessaie un peu plus tard.
         </Text>
@@ -199,7 +227,7 @@ export default function ZoneScreen() {
               </TouchableOpacity>
             )}
 
-            {!zone && !choisi && (
+            {ready && !zone && !choisi && (
               <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, marginBottom: -8 }}>
                 Touche la carte ou déplace l'épingle pour choisir ta zone.
               </Text>

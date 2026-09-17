@@ -35,6 +35,8 @@ import {
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
 import { formatGameDistance, sortByProximity, originLabel } from '../../lib/geo';
+import { gpsFailureMessage } from '../../lib/originPolicy';
+import type { GpsPermission } from '../../lib/location';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
 import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
@@ -1634,12 +1636,16 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   const games = useMemo(() => visibleGames(allGames, myGender), [allGames, myGender]);
 
   const router = useRouter();
-  const { origin, distanceOf, gpsAvailable, zoneAvailable, requestGps, refreshGps, ready, radiusKm } = useOrigin();
+  const {
+    origin, distanceOf, gpsAvailable, gpsPermission, zoneAvailable, loadFailed,
+    requestGps, refreshGps, reloadOrigin, ready, radiusKm,
+  } = useOrigin();
   // Tri de la liste : état d'affichage, jamais enregistré dans un filtre.
   const [sort, setSort] = useState<'date' | 'proximity'>('date');
   // Une position de plus de 10 minutes ne compte plus : on la relit en revenant
-  // sur l'Explorer, sans jamais redemander l'autorisation.
-  useFocusEffect(useCallback(() => { void refreshGps(); }, []));
+  // sur l'Explorer, sans jamais redemander l'autorisation. Un chargement en
+  // échec (réseau) se relance aussi, mais au plus une fois toutes les 30 s.
+  useFocusEffect(useCallback(() => { void refreshGps(); void reloadOrigin(); }, []));
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const villeDuClub = useMemo(() => {
@@ -1742,35 +1748,49 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     [filtered, showForYou, recommendedIds],
   );
 
+  // `sort` reste l'INTENTION du joueur, même sans point de départ encore
+  // disponible : sortEffectif retombe sur la date tant qu'il n'y en a pas,
+  // mais bascule tout seul en proximité dès qu'un point de départ apparaît
+  // (par exemple après avoir choisi une zone depuis l'alerte ci-dessous).
+  const sortEffectif = sort === 'proximity' && origin ? 'proximity' : 'date';
+
   // « Proximité » : distances précises d'abord, puis approximatives, puis
   // inconnues (lib/geo.sortByProximity). Sans point de départ, ordre des dates.
   const recommendedShown = useMemo(
-    () => (sort === 'proximity' && origin ? sortByProximity(recommended, distanceOf) : recommended),
-    [sort, origin, recommended, distanceOf],
+    () => (sortEffectif === 'proximity' ? sortByProximity(recommended, distanceOf) : recommended),
+    [sortEffectif, recommended, distanceOf],
   );
   const mainListShown = useMemo(
-    () => (sort === 'proximity' && origin ? sortByProximity(mainList, distanceOf) : mainList),
-    [sort, origin, mainList, distanceOf],
+    () => (sortEffectif === 'proximity' ? sortByProximity(mainList, distanceOf) : mainList),
+    [sortEffectif, mainList, distanceOf],
   );
 
   // Premier usage d'une fonction de distance sans point de départ : c'est ICI,
   // et seulement ici, qu'on demande l'autorisation GPS.
   const demanderPointDeDepart = async (): Promise<boolean> => {
-    if (gpsAvailable && await requestGps()) return true;
+    let permission: GpsPermission = 'unavailable';
+    if (gpsAvailable) {
+      const res = await requestGps();
+      if (res.gps) return true;
+      permission = res.permission;
+    }
     if (zoneAvailable) {
       Alert.alert('Choisis ta zone', 'Sans ta position, les distances se calculent depuis ta zone de jeu.', [
         { text: 'Plus tard', style: 'cancel' },
         { text: 'Choisir ma zone', onPress: () => router.push('/zone' as any) },
       ]);
     } else {
-      Alert.alert('Position indisponible', 'Autorise la localisation dans les réglages du téléphone.');
+      const { title, body } = gpsFailureMessage(permission, false);
+      Alert.alert(title, body);
     }
     return false;
   };
 
-  const choisirTri = async (v: 'date' | 'proximity') => {
-    if (v === 'proximity' && !origin && !(await demanderPointDeDepart())) return;
+  // Choisir « Proximité » enregistre TOUJOURS l'intention, même sans point de
+  // départ : demanderPointDeDepart s'exécute à côté, sans bloquer le choix.
+  const choisirTri = (v: 'date' | 'proximity') => {
     setSort(v);
+    if (v === 'proximity' && !origin) void demanderPointDeDepart();
   };
 
   // Démarre masqué pour ne pas clignoter le temps de relire le réglage.
@@ -1784,7 +1804,11 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     setEncartMasque(true);
     AsyncStorage.setItem(ORIGIN_HINT_KEY, '1').catch(() => {});
   };
-  const montrerEncart = ready && !origin && !encartMasque && (gpsAvailable || zoneAvailable);
+  // Ni pendant un chargement en échec (on ne sait pas encore s'il y a une
+  // zone), ni quand la permission GPS est déjà accordée (le chargement va la
+  // lire tout seul — proposer « Utiliser ma position » n'aurait aucun sens).
+  const montrerEncart = ready && !origin && !encartMasque && !loadFailed
+    && gpsPermission !== 'granted' && (gpsAvailable || zoneAvailable);
 
   const countLabel = filters.urgentOnly ? `urgente${mainList.length > 1 ? 's' : ''}`
     : `disponible${mainList.length > 1 ? 's' : ''}`;
@@ -1919,11 +1943,11 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginBottom: 12 }}>
           <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>Trier</Text>
           {([['date', 'Date'], ['proximity', 'Proximité']] as const).map(([v, l]) => {
-            const on = sort === v;
+            const on = sortEffectif === v;
             return (
               <TouchableOpacity
                 key={v}
-                onPress={() => { void choisirTri(v); }}
+                onPress={() => choisirTri(v)}
                 activeOpacity={0.85}
                 style={{
                   paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999,
@@ -1985,10 +2009,10 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         gpsAvailable={gpsAvailable}
         zoneAvailable={zoneAvailable}
         onRequestOrigin={async () => {
-          if (await requestGps()) return;
-          Alert.alert('Position indisponible', zoneAvailable
-            ? 'Autorise la localisation dans les réglages du téléphone, ou choisis ta zone.'
-            : 'Autorise la localisation dans les réglages du téléphone.');
+          const { gps, permission } = await requestGps();
+          if (gps) return;
+          const { title, body } = gpsFailureMessage(permission, zoneAvailable);
+          Alert.alert(title, body);
         }}
         // Le volet est une fenêtre native : la fermer AVANT d'ouvrir un écran,
         // sinon l'écran s'ouvre derrière elle.
@@ -2405,7 +2429,7 @@ export default function LobbyScreen() {
   // regle sans que rien ne le signale.
   const [exploreFilters, setExploreFilters] = useState<ExploreFilters>(NO_EXPLORE_FILTERS);
   // Le compteur de l'onglet applique la même distance que la liste.
-  const { distanceOf: distanceOfBadge } = useOrigin();
+  const { distanceOf: distanceOfBadge, reloadOrigin } = useOrigin();
 
   // Le referentiel des clubs, pour les pastilles de club et de ville. Les
   // parties portent le NOM du club, pas son identifiant : c'est par le nom
@@ -2862,7 +2886,7 @@ export default function LobbyScreen() {
     router.setParams({ rematch: undefined });
   }, [rematchParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await Promise.all([fetchData(), reloadOrigin()]); setRefreshing(false); };
 
   const handleApply = async (gameId: string, joinWaitlist: boolean, teamSide?: string) => {
     if (!player) return;
@@ -3573,6 +3597,16 @@ export default function LobbyScreen() {
     }
   };
 
+  // Badge Explorer = nombre de parties APRÈS application des filtres (Option A).
+  // Ce useMemo doit rester AVANT le `if (!player) return null;` ci-dessous :
+  // un Hook ne peut pas dépendre d'un retour conditionnel qui le précède.
+  // Aucune de ses dépendances (games, exploreFilters, myElo, clubCity,
+  // distanceOfBadge) n'est déclarée après ce point : le déplacement est sûr.
+  const exploreBadge = useMemo(
+    () => filterExplore(games, exploreFilters, exploreCtx(myElo, n => clubCity.get(n) ?? null, new Set(), distanceOfBadge)).kept.length,
+    [games, exploreFilters, myElo, clubCity, distanceOfBadge],
+  );
+
   if (!player) return null;
 
   // Badge « À venir » = matchs où je suis CONFIRMÉ (créateur ou accepté), même
@@ -3580,11 +3614,6 @@ export default function LobbyScreen() {
   // Les invitations reçues / candidatures / listes d'attente restent visibles
   // dans l'onglet mais ne comptent pas dans le badge.
   const upcomingBadge = upcomingGames.filter(g => isConfirmedInGame(g, player.id)).length;
-  // Badge Explorer = nombre de parties APRÈS application des filtres (Option A).
-  const exploreBadge = useMemo(
-    () => filterExplore(games, exploreFilters, exploreCtx(myElo, n => clubCity.get(n) ?? null, new Set(), distanceOfBadge)).kept.length,
-    [games, exploreFilters, myElo, clubCity, distanceOfBadge],
-  );
   const scoresToValidate = matches.filter(m => matchNeedsMyAction(m, player.id) !== null).length;
 
   return (

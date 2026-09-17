@@ -501,6 +501,7 @@ export function ExploreFilterSheet({
               />
             </Section>
 
+            {(gpsAvailable || zoneAvailable || draft.maxKm !== null) && (
             <Section title="Distance" icon="radar">
               {origin ? (
                 <>
@@ -551,6 +552,7 @@ export function ExploreFilterSheet({
                 </View>
               )}
             </Section>
+            )}
 
             <Section title="Type de match" icon="swords">
               <Row>
