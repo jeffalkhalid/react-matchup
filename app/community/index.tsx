@@ -95,7 +95,7 @@ export default function CommunityHubScreen() {
           {/* numberOfLines+adjustsFontSizeToFit : sur Android (grande police
               système), le titre passait à la ligne et la fin disparaissait ;
               paddingRight : le débord de l'italique rognait le dernier glyphe. */}
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+          <Text numberOfLines={2}
             style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
             La <Text style={{ color: Colors.brand }}>Communauté</Text>
           </Text>
@@ -114,7 +114,7 @@ export default function CommunityHubScreen() {
           {friends.slice(0, 10).map(f => (
             <TouchableOpacity key={f.id} onPress={() => router.push(`/player/${f.id}` as any)} activeOpacity={0.85} style={{ alignItems: 'center', gap: 6, width: 52 }}>
               <View style={{ padding: 2, borderRadius: 999, backgroundColor: (LeagueGradients[f.league] ?? LeagueGradients.gold)[1] }}>
-                <Avatar name={f.name} size={44} radius={999} league={f.league} />
+                <Avatar name={f.name} path={f.avatar_path} size={44} radius={999} league={f.league} />
               </View>
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 10.5, color: Colors.textSecondary, maxWidth: 52 }}>
                 {f.name.split(' ')[0]}

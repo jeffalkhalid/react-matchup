@@ -11,6 +11,7 @@ import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../l
 import { formatFrmtRanking } from '../lib/frmt-match';
 import { getFollowingIds, setFollow } from '../lib/community';
 import { ProfileAvatarButton } from '../components/ProfileAvatarButton';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 import { Icon } from '../components/community/icons';
 import { isAmbassador } from '../lib/ambassador';
 import { AmbassadorChip, AmbassadorRing } from '../components/ambassador/primitives';
@@ -151,9 +152,7 @@ export default function RankingScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
           <View style={{ flexShrink: 1 }}>
             <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
+              numberOfLines={2}
               style={{ color: Colors.textOnDark, fontSize: 28, letterSpacing: -0.5, lineHeight: 36, fontFamily: Fonts.welcome, paddingRight: 5 }}>
               Le <Text style={{ color: Colors.brand, fontFamily: Fonts.welcome }}>classement</Text>
             </Text>
@@ -403,18 +402,19 @@ function PodiumSection({ top3, favorites, favLoading, me, onToggleFav, onPressPl
             >
               {/* Avatar */}
               <View style={{ position: 'relative', marginBottom: 8 }}>
-                <View style={{
-                  width: avatarSz, height: avatarSz,
-                  borderRadius: avatarSz * 0.28,
-                  backgroundColor: col,
-                  alignItems: 'center', justifyContent: 'center',
-                  borderWidth: rankNum === 1 ? 3 : 2.5,
-                  borderColor: borderCol,
-                }}>
-                  <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: avatarSz * 0.32, fontFamily: Fonts.uiBlack }}>
-                    {getInitials(p.name)}
-                  </Text>
-                </View>
+                <PlayerAvatar
+                  name={p.name}
+                  path={(p as any).avatar_path}
+                  size={avatarSz}
+                  radius={avatarSz * 0.28}
+                  backgroundColor={col}
+                  textColor={Colors.textOnDark}
+                  fontFamily={Fonts.uiBlack}
+                  fontSize={avatarSz * 0.32}
+                  ring={rankNum === 1 ? 3 : 2.5}
+                  ringColor={borderCol}
+                  initialsMax={2}
+                />
                 {/* Rank badge */}
                 <View style={{
                   position: 'absolute', top: -8, right: -8,
@@ -538,24 +538,34 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
       {/* Avatar */}
       {isAmbassador(player) ? (
         <AmbassadorRing size={38} radius={11} surface={Colors.bgCard}>
-          <View style={{
-            width: 38, height: 38, borderRadius: 11,
-            backgroundColor: col,
-            alignItems: 'center', justifyContent: 'center',
-            borderWidth: isMe ? 2 : 0, borderColor: Colors.brand,
-          }}>
-            <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(player.name)}</Text>
-          </View>
+          <PlayerAvatar
+            name={player.name}
+            path={(player as any).avatar_path}
+            size={38}
+            radius={11}
+            backgroundColor={col}
+            textColor={Colors.textOnDark}
+            fontFamily={Fonts.uiBlack}
+            fontSize={12}
+            ring={isMe ? 2 : 0}
+            ringColor={Colors.brand}
+            initialsMax={2}
+          />
         </AmbassadorRing>
       ) : (
-        <View style={{
-          width: 38, height: 38, borderRadius: 11,
-          backgroundColor: col,
-          alignItems: 'center', justifyContent: 'center',
-          borderWidth: isMe ? 2 : 0, borderColor: Colors.brand,
-        }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 12, fontWeight: '900', fontFamily: Fonts.uiBlack }}>{getInitials(player.name)}</Text>
-        </View>
+        <PlayerAvatar
+          name={player.name}
+          path={(player as any).avatar_path}
+          size={38}
+          radius={11}
+          backgroundColor={col}
+          textColor={Colors.textOnDark}
+          fontFamily={Fonts.uiBlack}
+          fontSize={12}
+          ring={isMe ? 2 : 0}
+          ringColor={Colors.brand}
+          initialsMax={2}
+        />
       )}
 
       {/* Name + badges + meta */}

@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { supabase } from '../../lib/supabase';
 import { usePlayer } from '../../hooks/usePlayer';
-import { notifyPlayers } from '../../lib/notify';
 import { Colors, Fonts, FontSize, Radius, Spacing } from '../../lib/theme';
 import {
   replayEvents, isMatchDecided, gameScoreLabels, eventsFromState, progressKey,
@@ -67,8 +66,8 @@ const firstName = (n: string) => (n ?? '').trim().split(/\s+/)[0] || '?';
 // surlignée. `children` : rangée additionnelle (jeu en cours, mode points).
 const A = accentOf(ACCENT);
 
-function MatchStyleBoard({ t1Ids, t2Ids, names, sets, leadRow, children }: {
-  t1Ids: string[]; t2Ids: string[]; names: Record<string, string>;
+function MatchStyleBoard({ t1Ids, t2Ids, names, photos, sets, leadRow, children }: {
+  t1Ids: string[]; t2Ids: string[]; names: Record<string, string>; photos?: Record<string, string | null>;
   sets: { t1: number; t2: number }[];
   leadRow: 0 | 1 | null;
   children?: React.ReactNode;
@@ -77,7 +76,7 @@ function MatchStyleBoard({ t1Ids, t2Ids, names, sets, leadRow, children }: {
     <View style={{ flexDirection: 'row', gap: 10 }}>
       {ids.map(id => (
         <View key={id} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-          <Avatar name={names[id] ?? '?'} size={28} team={team} />
+          <Avatar name={names[id] ?? '?'} path={photos?.[id]} size={28} team={team} />
           <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: '700', color: PM.text }}>
             {firstName(names[id] ?? '')}
           </Text>
@@ -135,6 +134,7 @@ export default function LiveScoreScreen() {
 
   const [session, setSession] = useState<LiveSession | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [photos, setPhotos] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [localEvents, setLocalEvents] = useState<LiveEvent[]>([]);
@@ -177,11 +177,13 @@ export default function LiveScoreScreen() {
 
       const ids = [...(s.team1_ids ?? []), ...(s.team2_ids ?? [])].filter(Boolean);
       if (ids.length === 0) return;
-      const { data: rows } = await supabase.from('players').select('id,name').in('id', ids);
+      const { data: rows } = await supabase.from('players').select('id,name,avatar_path').in('id', ids);
       if (cancelled) return;
       const map: Record<string, string> = {};
-      (rows ?? []).forEach((p: any) => { map[p.id] = p.name ?? '?'; });
+      const photoMap: Record<string, string | null> = {};
+      (rows ?? []).forEach((p: any) => { map[p.id] = p.name ?? '?'; photoMap[p.id] = p.avatar_path ?? null; });
       setNames(map);
+      setPhotos(photoMap);
     })();
     return () => { cancelled = true; };
   }, [sessionId, refreshPending]);
@@ -356,16 +358,11 @@ export default function LiveScoreScreen() {
     setBusy(true);
     try {
       const matchId = await finalizeLiveSession(sessionId);
-      const others = [...(session?.team1_ids ?? []), ...(session?.team2_ids ?? [])]
-        .filter(id => !!id && id !== player.id);
-      // Circuit classique : le match est créé `pending`, la push est la même
-      // que celle d'une saisie post-match (score-entry) et ouvre le match.
-      notifyPlayers({
-        playerIds: others,
-        title: '📋 Score à valider',
-        body: `Victoire ${winnerLabel} — ${finalScore}. Valide ou conteste.`,
-        data: { type: 'match', matchId },
-      });
+      // Circuit classique : le match est créé `pending`. La notification
+      // « Score à valider » ne part PAS d'ici : le score ne s'ouvre à la
+      // validation qu'à l'heure du match + 1h30 (au moins 30 min après la
+      // saisie), et c'est le serveur qui prévient à cette heure-là
+      // (notify_scores_open_for_validation, migration score_validation_delay.sql).
       // Bascule LOCALE immédiate vers la vue « Match terminé » : ne pas
       // dépendre de la latence realtime (le payload confirmera/écrasera).
       if (mounted.current) {
@@ -373,7 +370,10 @@ export default function LiveScoreScreen() {
           ? { ...prev, status: 'finished', match_id: matchId, updated_at: new Date().toISOString() }
           : prev);
       }
-      Alert.alert('Score enregistré', `Victoire ${winnerLabel} — ${finalScore}\nEn attente de validation par l'adversaire.`);
+      Alert.alert(
+        'Score enregistré',
+        `Victoire ${winnerLabel} — ${finalScore}\nTes adversaires pourront le valider un peu après la fin du match — ils seront prévenus à ce moment-là.`,
+      );
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       const friendly = msg.includes('no_winner')
@@ -510,7 +510,7 @@ export default function LiveScoreScreen() {
           {session.status === 'finished' && closedSets.length > 0 && (
             <View style={{ alignSelf: 'stretch' }}>
               <MatchStyleBoard
-                t1Ids={session.team1_ids ?? []} t2Ids={session.team2_ids ?? []} names={names}
+                t1Ids={session.team1_ids ?? []} t2Ids={session.team2_ids ?? []} names={names} photos={photos}
                 sets={closedSets}
                 leadRow={serverState.setsWon.t1 === serverState.setsWon.t2 ? null
                   : serverState.setsWon.t1 > serverState.setsWon.t2 ? 0 : 1}
@@ -549,7 +549,7 @@ export default function LiveScoreScreen() {
 
         {/* 4. Scoreboard — carte blanche façon MatchCard (set courant = dernière colonne) */}
         <MatchStyleBoard
-          t1Ids={session.team1_ids ?? []} t2Ids={session.team2_ids ?? []} names={names}
+          t1Ids={session.team1_ids ?? []} t2Ids={session.team2_ids ?? []} names={names} photos={photos}
           sets={state.sets} leadRow={leadRow}
         >
           {scoringMode === 'points' && (() => {

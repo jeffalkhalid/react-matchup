@@ -10,12 +10,13 @@ import { Glyph } from './glyphs';
 import { Icon, type IconName } from '../community/icons';
 import { CreatorCrownBadge } from '../CreatorCrownBadge';
 import { AmbassadorPill } from '../ambassador/primitives';
+import { PlayerAvatar } from '../PlayerAvatar';
 import { AMB } from '../../lib/ambassador';
 
 const A = accentOf(ACCENT);
 
 // ── Types de présentation (alimentés par les adaptateurs de tabs.tsx) ──
-export interface PlayerLite { id?: string; name: string; lvl?: number; me?: boolean; isCreator?: boolean }
+export interface PlayerLite { id?: string; name: string; lvl?: number; me?: boolean; isCreator?: boolean; avatarPath?: string | null }
 export interface MatchView {
   id?: string;
   club: string; date: string; time: string;
@@ -33,19 +34,21 @@ export interface RepBadge { label: string; n: number }
 export interface AchievementView { key: string; name: string; desc: string; glyph: string; progress: number; target: number; unlocked: boolean }
 
 // ── Avatar à initiales — charte noir/or, distinction d'équipe ─────────
-export function Avatar({ name, size = 30, me = false, team, creator }: { name: string; size?: number; me?: boolean; team?: 0 | 1; creator?: boolean }) {
+export function Avatar({ name, size = 30, me = false, team, creator, path }: { name: string; size?: number; me?: boolean; team?: 0 | 1; creator?: boolean; path?: string | null }) {
   const mine = me || team === 0;
   return (
-    <View style={{
-      width: size, height: size, borderRadius: Math.round(size * 0.32),
-      backgroundColor: mine ? ACCENT : PM.ink,
-      alignItems: 'center', justifyContent: 'center',
-    }}>
-      <Text style={{ color: mine ? PM.ink : '#FFFFFF', fontWeight: '800', fontSize: Math.round(size * 0.40) }}>
-        {initials(name)}
-      </Text>
+    <PlayerAvatar
+      name={name}
+      path={path}
+      size={size}
+      radius={Math.round(size * 0.32)}
+      backgroundColor={mine ? ACCENT : PM.ink}
+      textColor={mine ? PM.ink : '#FFFFFF'}
+      fontSize={Math.round(size * 0.40)}
+      initialsMax={2}
+    >
       {creator ? <CreatorCrownBadge avatarSize={size} ringColor={PM.card} /> : null}
-    </View>
+    </PlayerAvatar>
   );
 }
 
@@ -96,7 +99,7 @@ function MatchPlayer({ p, team, onPress }: { p: PlayerLite; team: 0 | 1; onPress
     <Wrap
       {...(onPress ? { onPress, activeOpacity: 0.7 } : {})}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
-      <Avatar name={p.name} size={28} me={p.me} team={team} creator={p.isCreator} />
+      <Avatar name={p.name} path={p.avatarPath} size={28} me={p.me} team={team} creator={p.isCreator} />
       <View style={{ minWidth: 0, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: p.me ? '800' : '600', color: PM.text, maxWidth: 90 }}>
@@ -496,6 +499,10 @@ export function ProfileHeader(props: {
   tab: TabName; setTab: (t: TabName) => void; topInset: number;
   tabBadges?: Partial<Record<TabName, { count?: number; dot?: boolean }>>;
   ambassador?: number | null;
+  /** Photo de profil (`players.avatar_path`) — initiales si absente. */
+  avatarPath?: string | null;
+  /** Sur SON profil : changer ou retirer la photo. */
+  onPressAvatar?: () => void;
 }) {
   const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing, ambassador } = props;
   const iconBtn = { width: 36, height: 36, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' as const, justifyContent: 'center' as const };
@@ -536,26 +543,35 @@ export function ProfileHeader(props: {
 
       {/* Identité */}
       <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center' }}>
-        {ambassador != null ? (
-          <View style={{ borderWidth: 2, borderColor: AMB.gold, borderRadius: 999, padding: 3, alignSelf: 'flex-start' }}>
-            <View style={{
-              width: 72, height: 72, borderRadius: 36, backgroundColor: ACCENT,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Text style={{ fontFamily: PFonts.anton, fontSize: 30, lineHeight: 39, color: PM.ink }}>
-                {initials(name)}
-              </Text>
+        {/* Photo si le joueur en a une, initiales sinon (components/PlayerAvatar).
+            Sur son propre profil, un appui ouvre « changer / retirer ». */}
+        <TouchableOpacity
+          onPress={props.onPressAvatar}
+          disabled={!props.onPressAvatar}
+          activeOpacity={0.8}
+          accessibilityLabel={props.onPressAvatar ? 'Changer ma photo de profil' : undefined}
+        >
+          {ambassador != null ? (
+            <View style={{ borderWidth: 2, borderColor: AMB.gold, borderRadius: 999, padding: 3, alignSelf: 'flex-start' }}>
+              <PlayerAvatar
+                name={name} path={props.avatarPath} size={72}
+                backgroundColor={ACCENT} textColor={PM.ink}
+                fontFamily={PFonts.anton} fontSize={30}
+              />
             </View>
-          </View>
-        ) : (
-          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: PM.inkSoft }}>
-            <Text style={{ fontFamily: PFonts.anton, fontSize: 30, lineHeight: 39, color: PM.ink }}>{initials(name)}</Text>
-          </View>
-        )}
+          ) : (
+            <PlayerAvatar
+              name={name} path={props.avatarPath} size={72}
+              backgroundColor={ACCENT} textColor={PM.ink}
+              fontFamily={PFonts.anton} fontSize={30}
+              ring={3} ringColor={PM.inkSoft}
+            />
+          )}
+        </TouchableOpacity>
         <View style={{ flex: 1, minWidth: 0 }}>
           {/* Nom + pill Ambassadeur sur la MÊME ligne (maquette) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3 }}>{name}</Text>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', letterSpacing: 0.3, paddingRight: 8 }}>{name.toUpperCase()}</Text>
             {ambassador != null && <AmbassadorPill number={ambassador} />}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

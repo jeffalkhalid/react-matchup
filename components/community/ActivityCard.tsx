@@ -44,7 +44,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
       {/* Entête — avatar + nom cliquables → profil de l'acteur */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <TouchableOpacity onPress={onPressActor} disabled={!onPressActor} activeOpacity={0.7} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <Avatar name={e.actor?.name} size={42} radius={13} league={league} />
+          <Avatar name={e.actor?.name} path={(e.actor as any)?.avatar_path} size={42} radius={13} league={league} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 14, color: Colors.textPrimary }}>
               <Text style={{ fontFamily: Fonts.uiExtraBold }}>{e.actor?.name ?? 'Joueur'}</Text>
@@ -129,8 +129,8 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
           borderRadius: 14, padding: 14,
         }}>
           <Icon name="trendingUp" size={22} color={Colors.brandDeep} stroke={2.2} />
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 18, lineHeight: 23, color: Colors.brandDeep, textTransform: 'uppercase', paddingRight: 5, flexShrink: 1 }}>
-            {e.payload.promo_label}
+          <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 18, lineHeight: 23, color: Colors.brandDeep, paddingRight: 6, flexShrink: 1 }}>
+            {(e.payload.promo_label ?? '').toUpperCase()}
           </Text>
         </View>
       ) : null}

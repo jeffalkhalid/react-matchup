@@ -22,10 +22,10 @@ export function PlayerRow({ p, sub, onFollow, onPress, busy }: {
       <TouchableOpacity onPress={onPress} disabled={!onPress} activeOpacity={0.7} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {isAmbassador(p) ? (
           <AmbassadorRing size={46} radius={14} surface={Colors.bgCard}>
-            <Avatar name={p.name} size={46} radius={14} league={p.league} />
+            <Avatar name={p.name} path={p.avatar_path} size={46} radius={14} league={p.league} />
           </AmbassadorRing>
         ) : (
-          <Avatar name={p.name} size={46} radius={14} league={p.league} />
+          <Avatar name={p.name} path={p.avatar_path} size={46} radius={14} league={p.league} />
         )}
         <View style={{ flex: 1, minWidth: 0 }}>
           {isAmbassador(p) ? (

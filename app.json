@@ -47,6 +47,13 @@
       "expo-video",
       "expo-font",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "PAG MATCH accède à tes photos pour que tu puisses choisir ta photo de profil.",
+          "cameraPermission": "PAG MATCH accède à l'appareil photo pour que tu puisses prendre ta photo de profil."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
@@ -62,7 +69,7 @@
         "projectId": "ebd679cb-dc9f-4208-bcc0-b6b7e2f48bf1"
       }
     },
-    "owner": "kjeff",
+    "owner": "pagmatch",
     "runtimeVersion": {
       "policy": "sdkVersion"
     },

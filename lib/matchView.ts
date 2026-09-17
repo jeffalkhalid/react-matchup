@@ -56,11 +56,12 @@ export function matchToView(match: Match, playerId: string, markMe = true): Matc
   // Créateur/organisateur du match → couronne (cohérent lobby/détails/chat).
   const creatorId = (match.game as { creator_id?: string | null } | null | undefined)?.creator_id ?? undefined;
   const isCreator = (id?: string) => !!creatorId && id === creatorId;
+  const photo = (p?: { avatar_path?: string | null } | null) => (p as any)?.avatar_path ?? null;
   const myTeam = [
-    { id: meP?.id ?? undefined, name: displayName(meP ?? null, 'player'), me: markMe, lvl: lvlOf(meP), isCreator: isCreator(meP?.id) },
-    ...(partner ? [{ id: partner.id ?? undefined, name: displayName(partner, 'partner'), lvl: lvlOf(partner), isCreator: isCreator(partner.id) }] : []),
+    { id: meP?.id ?? undefined, name: displayName(meP ?? null, 'player'), me: markMe, lvl: lvlOf(meP), isCreator: isCreator(meP?.id), avatarPath: photo(meP) },
+    ...(partner ? [{ id: partner.id ?? undefined, name: displayName(partner, 'partner'), lvl: lvlOf(partner), isCreator: isCreator(partner.id), avatarPath: photo(partner) }] : []),
   ];
-  const oppTeam = opp.map(p => ({ id: p.id ?? undefined, name: displayName(p, 'opponent'), lvl: lvlOf(p), isCreator: isCreator(p.id) }));
+  const oppTeam = opp.map(p => ({ id: p.id ?? undefined, name: displayName(p, 'opponent'), lvl: lvlOf(p), isCreator: isCreator(p.id), avatarPath: photo(p) }));
   const sets = parseSetsLocal(match.score_text).map(([w, l]) => (won ? [w, l] : [l, w]) as [number, number]);
   const dt = new Date(match.game?.match_date ?? match.created_at);
   const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });

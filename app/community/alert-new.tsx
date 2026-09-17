@@ -84,8 +84,8 @@ export default function AlertNewScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       <NavBar title="Nouvelle alerte" onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 18, paddingBottom: 130 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary, textTransform: 'uppercase', marginBottom: 4, paddingRight: 5 }}>
-          Sois notifié des bonnes parties
+        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary, marginBottom: 4, paddingRight: 8 }}>
+          SOIS NOTIFIÉ DES BONNES PARTIES
         </Text>
         <Text style={{ fontFamily: Fonts.ui, fontSize: 13.5, color: Colors.textSecondary, marginBottom: 22 }}>
           On t'envoie une notif dès qu'une partie correspond à tous tes critères.
@@ -180,7 +180,7 @@ export default function AlertNewScreen() {
                     flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 9, paddingHorizontal: 10,
                     borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: '#F1F0EE',
                   }}>
-                    <Avatar name={f.name} size={38} radius={12} league={f.league} />
+                    <Avatar name={f.name} path={f.avatar_path} size={38} radius={12} league={f.league} />
                     <Text style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 14, color: Colors.textPrimary }}>{f.name}</Text>
                     <View style={{
                       width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center',

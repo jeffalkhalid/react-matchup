@@ -32,6 +32,7 @@ import {
 import { displayName } from '../../lib/players';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { Icon } from '../../components/community/icons';
+import { adminRemoveAvatar } from '../../lib/avatars';
 import { BADGE_ICONS, BADGE_ICON_VIEWBOX, FALLBACK_ICON_KEY } from '../../components/profile/badgeIcons';
 import { SvgXml } from 'react-native-svg';
 import { loadBadgeDefs } from '../../lib/badges';
@@ -267,13 +268,15 @@ function DisputesTab({ matches, liveScores, pastDisputes, editedScores, setEdite
 }
 
 // ─── Players dashboard tab ────────────────────────────────────
-function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, onRefresh }: {
+function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, onRemoveAvatar, onRefresh }: {
   players: any[];
   loading: boolean;
   actingId: string | null;
   onUnlink: (playerId: string, name: string) => void;
   onFraud: (playerId: string, name: string) => void;
   onUnblock: (playerId: string) => void | Promise<void>;
+  /** Retirer la photo de profil (signalement traité). */
+  onRemoveAvatar: (playerId: string, name: string) => void;
   onRefresh: () => void | Promise<void>;
 }) {
   const [search, setSearch] = useState('');
@@ -411,6 +414,13 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
                   ) : (
                     <Text style={{ fontSize: 11, color: Colors.textSecondary, fontWeight: '700' }}>—</Text>
                   )}
+                  {/* Photo de profil signalée : l'arbitre la retire, le joueur
+                      repasse en initiales (le fichier est effacé). */}
+                  {!acting && (p as any).avatar_path ? (
+                    <TouchableOpacity onPress={() => onRemoveAvatar(p.id, p.name)} style={[sty.chip, { borderColor: '#ef444450' }]}>
+                      <Text style={[sty.chipText, { color: Colors.danger }]}>Retirer la photo</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               </View>
             );
@@ -966,7 +976,7 @@ export default function AdminScreen() {
   const loadDisputes = useCallback(async () => {
     const { data } = await supabase
       .from('matches')
-      .select('*, winner:winner_id(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), winner_2:winner_id_2(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), loser:loser_id(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), loser_2:loser_id_2(id,name,elo_score,win_count,loss_count,last_match_at,fiability_pct), creator:created_by(name)')
+      .select('*, winner:winner_id(id,name,elo_score,avatar_path,win_count,loss_count,last_match_at,fiability_pct), winner_2:winner_id_2(id,name,elo_score,avatar_path,win_count,loss_count,last_match_at,fiability_pct), loser:loser_id(id,name,elo_score,avatar_path,win_count,loss_count,last_match_at,fiability_pct), loser_2:loser_id_2(id,name,elo_score,avatar_path,win_count,loss_count,last_match_at,fiability_pct), creator:created_by(name)')
       .eq('status', 'disputed')
       .order('created_at', { ascending: false });
     const m = data ?? [];
@@ -1146,6 +1156,30 @@ export default function AdminScreen() {
 
   // Délier est devenu une action lourde (bonus retiré + revendication oubliée
   // + point effacé de la courbe) → confirmation, comme Fraudeur.
+  // Photo de profil signalée : retrait par l'arbitre. Le serveur efface le
+  // fichier au passage à NULL (migration avatars.sql).
+  const handleRemoveAvatar = (playerId: string, name: string) => {
+    Alert.alert(
+      'Retirer la photo ?',
+      `${name} repassera à ses initiales et la photo sera effacée du serveur.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Retirer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await adminRemoveAvatar(playerId);
+              await loadPlayers();
+            } catch (e: any) {
+              Alert.alert('Impossible', e?.message ?? 'Action refusée.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handlePlayerUnlink = (playerId: string, name: string) => {
     Alert.alert(
       'Délier du classement FRMT',
@@ -1379,7 +1413,7 @@ export default function AdminScreen() {
             <Text style={{ color: Colors.textMuted, fontSize: 18 }}>‹</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome, paddingRight: 5 }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
+            <Text numberOfLines={2} style={{ fontSize: 26, lineHeight: 34, color: Colors.textPrimary, letterSpacing: -0.5, fontFamily: Fonts.welcome, paddingRight: 5 }}>Panel <Text style={{ color: Colors.brand }}>Arbitre</Text></Text>
             {/* Le compte des dossiers remplace « Administration » : le panel
                 dit ce qu'il y a a faire avant meme qu'on choisisse un onglet. */}
             <Text style={{ fontSize: 11, color: queueItems.length > 0 ? Colors.brandDeep : Colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -1602,6 +1636,7 @@ export default function AdminScreen() {
             loading={playersLoading}
             actingId={playerActingId}
             onUnlink={handlePlayerUnlink}
+            onRemoveAvatar={handleRemoveAvatar}
             onFraud={handlePlayerFraud}
             onUnblock={handlePlayerUnblock}
             onRefresh={loadPlayers}

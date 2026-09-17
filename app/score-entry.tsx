@@ -26,7 +26,7 @@ import type { Match } from '../types';
 type GameType = 'all' | 'competitive' | 'friendly' | 'challenge';
 
 interface SetScore { t1: number | null; t2: number | null }
-interface Participant { id: string; name: string; elo_score: number; team_side?: string }
+interface Participant { id: string; name: string; elo_score: number; team_side?: string; avatar_path?: string | null }
 interface Game {
   id: string; location: string; match_date: string;
   is_challenge?: boolean; game_format?: string; stake_multiplier?: number;
@@ -115,7 +115,7 @@ function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, can
     const me = p.id === meId;
     return (
       <View key={p.id} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <Avatar name={p.name} size={28} me={me} team={team} />
+        <Avatar name={p.name} path={p.avatar_path} size={28} me={me} team={team} />
         <View style={{ minWidth: 0, gap: 2 }}>
           <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: me ? '800' : '600', color: PM.text, maxWidth: 90 }}>
             {p.name.split(' ')[0]}
@@ -273,7 +273,7 @@ export default function ScoreEntryScreen() {
     if (!player) return;
     setLoading(true);
     const now = new Date().toISOString();
-    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, stake_multiplier, creator_id, creator_side, creator:creator_id(id, name, elo_score), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score))';
+    const GAME_SELECT = 'id, location, match_date, status, is_challenge, game_format, stake_multiplier, creator_id, creator_side, creator:creator_id(id, name, elo_score, avatar_path), participants:game_participants(id, player_id, status, team_side, player:player_id(id, name, elo_score, avatar_path))';
 
     // Games where I'm a participant (accepted)
     const { data: partEntries } = await supabase
@@ -372,7 +372,7 @@ export default function ScoreEntryScreen() {
     // le rappel du match (matchToView) ET la construction du Game ci-dessous.
     const { data: match } = await supabase
       .from('matches')
-      .select('*, winner:winner_id(id, name, deleted_at, elo_score), winner_2:winner_id_2(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score), game:game_id(location, match_date, creator_id)')
+      .select('*, winner:winner_id(id, name, deleted_at, elo_score, avatar_path), winner_2:winner_id_2(id, name, deleted_at, elo_score, avatar_path), loser:loser_id(id, name, deleted_at, elo_score, avatar_path), loser_2:loser_id_2(id, name, deleted_at, elo_score, avatar_path), game:game_id(location, match_date, creator_id)')
       .eq('id', contestMatchId)
       .single();
 
@@ -552,14 +552,11 @@ export default function ScoreEntryScreen() {
       const { data: newMatch, error } = await supabase.from('matches').insert([matchPayload]).select().single();
       if (error) throw error;
 
-      const otherIds = [matchPayload.winner_id, matchPayload.winner_id_2, matchPayload.loser_id, matchPayload.loser_id_2]
-        .filter((id): id is string => !!id && id !== player!.id);
-      notifyPlayers({
-        playerIds: otherIds,
-        title: '📋 Score à valider',
-        body: `${player!.name} a soumis un résultat — valide ou conteste.`,
-        data: { type: 'match', matchId: newMatch.id },
-      });
+      // Pas de notification ici : le score ne s'ouvre à la validation qu'à
+      // l'heure du match + 1h30 (et au moins 30 min après la saisie). C'est le
+      // serveur qui préviendra les adversaires à cette heure-là
+      // (notify_scores_open_for_validation, migration score_validation_delay.sql)
+      // — les prévenir maintenant les dérangerait pour une action impossible.
 
       const voteInserts: any[] = [];
       Object.entries(votes).forEach(([rid, labels]) =>
@@ -569,7 +566,10 @@ export default function ScoreEntryScreen() {
       await supabase.from('open_games').update({ status: 'closed' }).eq('id', game.id);
       setGames(prev => prev.filter(g => g.id !== game.id));
       closeScoring();
-      Alert.alert('Score enregistré !', "En attente de validation par l'adversaire.");
+      Alert.alert(
+        'Score enregistré !',
+        "Ton adversaire pourra le valider un peu après la fin du match — il sera prévenu à ce moment-là.",
+      );
     } catch (e) {
       console.error('[doSubmit]', e);
       Alert.alert('Erreur', "Réessaie, le score n'a pas été enregistré.");

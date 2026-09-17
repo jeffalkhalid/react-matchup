@@ -1,6 +1,7 @@
 import { TouchableOpacity, Text, ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { usePlayer } from '../hooks/usePlayer';
+import { PlayerAvatar } from './PlayerAvatar';
 import { Colors, getLeague } from '../lib/theme';
 
 // Avatar Profil affiché en haut à droite des écrans principaux.
@@ -15,15 +16,18 @@ export function ProfileAvatarButton({ size = 36, style }: { size?: number; style
     <TouchableOpacity
       onPress={() => router.push(`/player/${player.id}` as any)}
       activeOpacity={0.85}
-      style={[{
-        width: size, height: size, borderRadius: size / 2,
-        backgroundColor: color, alignItems: 'center', justifyContent: 'center',
-        borderWidth: 2, borderColor: 'rgba(255,255,255,0.7)',
-      }, style]}
+      style={style}
     >
-      <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: Math.round(size * 0.4) }}>
-        {player.name.charAt(0).toUpperCase()}
-      </Text>
+      <PlayerAvatar
+        name={player.name}
+        path={(player as any).avatar_path}
+        size={size}
+        backgroundColor={color}
+        textColor={Colors.textOnDark}
+        fontSize={Math.round(size * 0.4)}
+        ring={2}
+        ringColor="rgba(255,255,255,0.7)"
+      />
     </TouchableOpacity>
   );
 }

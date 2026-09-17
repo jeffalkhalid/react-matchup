@@ -234,14 +234,14 @@ export async function getActivityFeed(myId: string, limit = 50, includeSelf = fa
   const matchIds = [...new Set(list.map(e => e.match_id).filter(Boolean))] as string[];
 
   const [{ data: actors }, { data: comments }, { data: matches }] = await Promise.all([
-    supabase.from('players').select('id, name, elo_score').in('id', actorIds),
+    supabase.from('players').select('id, name, elo_score, avatar_path').in('id', actorIds),
     supabase.from('activity_comments').select('event_id').in('event_id', eventIds),
     matchIds.length
       ? supabase.from('matches').select(`
           id, winner_id, loser_id, winner_id_2, loser_id_2, score_text, created_at,
           game_format, is_challenge, stake_multiplier, scored_live,
-          winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
-          winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
+          winner:winner_id(id, name, deleted_at, elo_score, avatar_path), loser:loser_id(id, name, deleted_at, elo_score, avatar_path),
+          winner_2:winner_id_2(id, name, deleted_at, elo_score, avatar_path), loser_2:loser_id_2(id, name, deleted_at, elo_score, avatar_path),
           game:game_id(location, match_date, creator_id)`).in('id', matchIds)
       : Promise.resolve({ data: [] as any[] }),
   ]);
@@ -281,7 +281,7 @@ export async function getPlayerActivity(playerId: string, limit = 20): Promise<A
 
   const eventIds = list.map(e => e.id);
   const [{ data: actor }, { data: comments }] = await Promise.all([
-    supabase.from('players').select('id, name, elo_score').eq('id', playerId).single(),
+    supabase.from('players').select('id, name, elo_score, avatar_path').eq('id', playerId).single(),
     supabase.from('activity_comments').select('event_id').in('event_id', eventIds),
   ]);
 
@@ -339,7 +339,7 @@ export async function getComments(eventId: string): Promise<ActivityComment[]> {
 
   const actorIds = [...new Set(list.map(c => c.player_id))];
   const { data: actors } = await supabase
-    .from('players').select('id, name, elo_score').in('id', actorIds);
+    .from('players').select('id, name, elo_score, avatar_path').in('id', actorIds);
   const actorById = new Map((actors ?? []).map((a: any) => [a.id, a]));
 
   return list.map(c => {
@@ -460,6 +460,19 @@ export function referralQRValue(code: string): string {
 // Lien de partage d'une partie ouverte → écran lobby (pagmatch://lobby?gameId=).
 export function lobbyGameLink(gameId: string): string {
   return `${SHARE_BASE}/g/${encodeURIComponent(gameId)}`;
+}
+
+// Lien de partage d'un tournoi → fiche du tournoi (pagmatch://tournaments/<id>).
+//
+// Le message de partage d'un tournoi n'en portait AUCUN : il n'existait pas de
+// préfixe `/t` sur la passerelle, et envoyer une adresse qui répond 404 est
+// pire que de ne rien envoyer. Trois pièces devaient bouger ensemble, dans
+// DEUX dépôts — la redirection Vercel (activegame-landing/vercel.json), la
+// traduction en lien profond (activegame-landing/app/open/page.tsx) et cette
+// ligne. Si vous en changez une, vérifiez les deux autres : le lien n'échoue
+// pas ici, il échoue chez celui qui l'a reçu.
+export function tournamentLink(tournamentId: string): string {
+  return `${SHARE_BASE}/t/${encodeURIComponent(tournamentId)}`;
 }
 
 // ─── Message de partage d'une partie (texto/WhatsApp) ────────

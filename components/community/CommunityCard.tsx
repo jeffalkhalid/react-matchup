@@ -33,7 +33,7 @@ export function CommunityCard() {
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {preview.map((f, i) => (
             <View key={f.id} style={{ marginLeft: i === 0 ? 0 : -12, zIndex: 5 - i, borderWidth: 2, borderColor: Colors.heroBg, borderRadius: 13 }}>
-              <Avatar name={f.name} size={34} radius={11} league={f.league} />
+              <Avatar name={f.name} path={f.avatar_path} size={34} radius={11} league={f.league} />
             </View>
           ))}
           {extra > 0 && (
@@ -54,7 +54,7 @@ export function CommunityCard() {
 
       <View style={{ flex: 1, minWidth: 0 }}>
         <Kicker color={Colors.brand} style={{ fontSize: 9 }}>Communauté</Kicker>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 20, color: '#fff', marginTop: 2, letterSpacing: 0.3, paddingRight: 5 }}>
+        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 20, color: '#fff', marginTop: 2, letterSpacing: 0.3, paddingRight: 5 }}>
           Tes amis sur PagMatch
         </Text>
       </View>

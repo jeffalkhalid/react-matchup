@@ -29,7 +29,7 @@ export default function ConfidentialiteScreen() {
       <Section n={2} icon="🗂️" title="Ce que nous collectons">
         <P>Uniquement ce qui sert à faire fonctionner le jeu et la communauté :</P>
         <Tags items={[
-          'E-mail', 'Pseudo / nom', 'Niveau & ELO', 'Historique de matchs',
+          'E-mail', 'Pseudo / nom', 'Photo de profil', 'Niveau & ELO', 'Historique de matchs',
           'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
         ]} />
         <P>
@@ -37,6 +37,12 @@ export default function ConfidentialiteScreen() {
           votre nom, prénom et votre année de naissance. Ces données servent{' '}
           <B>uniquement</B> à vous associer à la bonne entrée du classement (l'année permet de
           distinguer les homonymes) et ne sont jamais affichées publiquement.
+        </P>
+        <P>
+          La <B>photo de profil</B> est facultative. Si vous en ajoutez une, elle est stockée sur nos
+          serveurs et n'est visible que des joueurs connectés à l'application : elle n'apparaît sur
+          aucune page web publique. Vous pouvez la retirer à tout moment depuis votre profil, et elle
+          est alors effacée. Une photo signalée peut être retirée par un arbitre.
         </P>
         <P>
           Les <B>Stories</B> sont générées sur votre appareil et partagées par vos soins : nous ne

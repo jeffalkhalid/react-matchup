@@ -111,8 +111,8 @@ export default function CommentsScreen() {
             style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="chevronLeft" size={20} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 26, color: Colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.3 }}>
-            Commentaires
+          <Text style={{ fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 26, color: Colors.textPrimary, letterSpacing: 0.3, paddingRight: 6 }}>
+            COMMENTAIRES
           </Text>
         </View>
 
@@ -127,7 +127,7 @@ export default function CommentsScreen() {
             ) : visible.map(c => (
               <View key={c.id} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                 <TouchableOpacity onPress={() => c.player_id && router.push(`/player/${c.player_id}` as any)} activeOpacity={0.7} disabled={!c.player_id}>
-                  <Avatar name={c.actor?.name} size={36} radius={11} league={c.league ?? 'discovery'} />
+                  <Avatar name={c.actor?.name} path={(c.actor as any)?.avatar_path} size={36} radius={11} league={c.league ?? 'discovery'} />
                 </TouchableOpacity>
                 <View style={{ flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 12 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

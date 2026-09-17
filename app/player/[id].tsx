@@ -12,6 +12,8 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
+import { totalsFromMatches } from '../../lib/playerStats';
+import { pickAvatarFromLibrary, takeAvatarWithCamera, pendingAvatarPick, uploadAvatar, removeAvatar, reportAvatar, type PickedImage } from '../../lib/avatars';
 import { getFiabilityDecayed } from '../../lib/elo';
 import { blockUser, unblockUser, isBlocked, reportContent } from '../../lib/moderation';
 import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../lib/community';
@@ -539,6 +541,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<StoryMode>('profil');
   const [composerLocked, setComposerLocked] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [ambCount, setAmbCount] = useState<number | null>(null);
   const [revealDone, setRevealDone] = useState(false);
   const [genderReqPending, setGenderReqPending] = useState<{ requested_gender: string; created_at: string } | null>(null);
@@ -660,6 +663,92 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     await loadBinomes();
   };
 
+  // ── Photo de profil (mon profil seulement) ────────────────────────────────
+  // Visible des joueurs connectés uniquement (espace de stockage privé, cf.
+  // lib/avatars). L'ancienne image est effacée par le serveur dès que le
+  // chemin change.
+  const envoyerPhoto = async (image: PickedImage) => {
+    if (!profile) return;
+    await uploadAvatar(profile.id, image);
+    await fetchData();
+  };
+
+  const appliquerPhoto = async (source: 'library' | 'camera') => {
+    if (!profile || photoBusy) return;
+    setPhotoBusy(true);
+    try {
+      const choix = source === 'camera' ? await takeAvatarWithCamera() : await pickAvatarFromLibrary();
+      if (!choix.ok) {
+        // Annulé : on se tait. Refusé : on DIT pourquoi, sinon le bouton a
+        // l'air cassé (le joueur tape, et rien ne se passe).
+        if (choix.raison === 'permission') {
+          Alert.alert(
+            source === 'camera' ? 'Accès à l’appareil photo refusé' : 'Accès aux photos refusé',
+            'Autorise l’accès dans les réglages du téléphone, à la rubrique Autorisations de l’application, puis réessaie.',
+          );
+        }
+        return;
+      }
+      await envoyerPhoto(choix.image);
+    } catch (e: any) {
+      Alert.alert('Photo non envoyée', e?.message ?? 'Réessaie dans un instant.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const retirerPhoto = async () => {
+    if (!profile || photoBusy) return;
+    setPhotoBusy(true);
+    try {
+      await removeAvatar(profile.id, (profile as any).avatar_path);
+      await fetchData();
+    } catch (e: any) {
+      Alert.alert('Impossible', e?.message ?? 'Réessaie dans un instant.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  // Android ne sait afficher que TROIS boutons dans une alerte : au-delà, il
+  // jette les suivants sans rien dire (React Native, Alert.js : `slice(0, 3)`).
+  // Avec une photo déjà en place on en avait quatre — « Annuler » disparaissait
+  // et « Retirer ma photo » prenait la place du bouton principal. D'où deux
+  // temps : d'abord quoi faire, puis avec quelle source.
+  const choisirSource = () => {
+    Alert.alert('Ma photo de profil', 'Elle sera visible par les joueurs connectés à l’app.', [
+      { text: 'Choisir dans mes photos', onPress: () => { void appliquerPhoto('library'); } },
+      { text: 'Prendre une photo', onPress: () => { void appliquerPhoto('camera'); } },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  const ouvrirActionsPhoto = () => {
+    if (!isSelf || !profile) return;
+    if (!(profile as any).avatar_path) { choisirSource(); return; }
+    Alert.alert('Ma photo de profil', 'Elle sera visible par les joueurs connectés à l’app.', [
+      { text: 'Changer ma photo', onPress: choisirSource },
+      { text: 'Retirer ma photo', style: 'destructive', onPress: () => { void retirerPhoto(); } },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  // Android peut détruire l'écran pendant que la galerie est ouverte : le choix
+  // du joueur revient alors ici, au retour sur le profil, au lieu d'être perdu.
+  useEffect(() => {
+    if (!isSelf || !profile) return;
+    let vivant = true;
+    (async () => {
+      const image = await pendingAvatarPick();
+      if (!image || !vivant) return;
+      setPhotoBusy(true);
+      try { await envoyerPhoto(image); }
+      catch (e: any) { Alert.alert('Photo non envoyée', e?.message ?? 'Réessaie dans un instant.'); }
+      finally { setPhotoBusy(false); }
+    })();
+    return () => { vivant = false; };
+  }, [isSelf, profile?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const fetchData = async () => {
     // Phase 1 — profile
     const { data: profileData } = await supabase.from('players').select('*').eq('id', id).single();
@@ -671,8 +760,8 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         .from('matches')
         .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, scored_live, status, game_id,
           winner_id, loser_id, winner_id_2, loser_id_2,
-          winner:winner_id(id, name, deleted_at, elo_score), loser:loser_id(id, name, deleted_at, elo_score),
-          winner_2:winner_id_2(id, name, deleted_at, elo_score), loser_2:loser_id_2(id, name, deleted_at, elo_score),
+          winner:winner_id(id, name, deleted_at, elo_score, avatar_path), loser:loser_id(id, name, deleted_at, elo_score, avatar_path),
+          winner_2:winner_id_2(id, name, deleted_at, elo_score, avatar_path), loser_2:loser_id_2(id, name, deleted_at, elo_score, avatar_path),
           game:game_id(location, match_date, creator_id)`)
         .or(`winner_id.eq.${id},loser_id.eq.${id},winner_id_2.eq.${id},loser_id_2.eq.${id}`)
         .eq('status', 'validated')
@@ -822,12 +911,42 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     }
   };
 
+  // Signaler une PHOTO choquante : exigé par Apple et Google dès qu'un contenu
+  // publié par un utilisateur s'affiche (ici, la photo de profil). L'arbitre la
+  // retire depuis le panel (admin_remove_avatar).
+  const signalerPhoto = () => {
+    if (!self || !profile) return;
+    Alert.alert(
+      'Signaler la photo ?',
+      'Un arbitre la vérifiera et la retirera si elle est déplacée.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Signaler',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await reportAvatar(self.id, profile.id, 'photo de profil');
+              Alert.alert('Merci', 'La photo a été signalée à un arbitre.');
+            } catch (e: any) {
+              Alert.alert('Impossible', e?.message ?? 'Réessaie dans un instant.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const openModerationMenu = () => {
-    Alert.alert('Modération', undefined, [
+    const choix: any[] = [
       { text: blocked ? 'Débloquer' : 'Bloquer', style: blocked ? 'default' : 'destructive', onPress: handleBlockToggle },
       { text: 'Signaler ce profil', onPress: handleReportProfile },
-      { text: 'Annuler', style: 'cancel' },
-    ]);
+    ];
+    if ((profile as any)?.avatar_path) {
+      choix.push({ text: 'Signaler la photo', style: 'destructive', onPress: signalerPhoto });
+    }
+    choix.push({ text: 'Annuler', style: 'cancel' });
+    Alert.alert('Modération', undefined, choix);
   };
 
   // ── Derived ───────────────────────────────────────────────────────
@@ -899,17 +1018,20 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
 
   const league      = getLeague(profile.elo_score);
   const leagueColor = Colors.league[league];
-  const wins        = profile.win_count  ?? 0;
-  const losses      = profile.loss_count ?? 0;
-  const totalM      = wins + losses;
-  const winRate     = totalM > 0 ? Math.round((wins / totalM) * 100) : 0;
+  // Matchs joués : TOUS les matchs validés, amicaux compris (décision
+  // utilisateur 2026-09-16). `profile.win_count` / `loss_count` sont les
+  // compteurs CLASSÉS — ils ignorent les amicaux et donnaient « 5 matchs »
+  // pendant que la liste juste à côté en montrait 6. Source unique :
+  // lib/playerStats, lue aussi par l'accueil et la fiche d'un match.
+  const totals      = totalsFromMatches(matches, id);
+  const wins        = totals.wins;
+  const losses      = totals.losses;
+  const totalM      = totals.played;
+  const winRate     = totals.winRate;
 
-  // Recent form + streak — matchs compétitifs et défis uniquement (on exclut
-  // les amicaux : ils ne bougent pas l'ELO et n'apparaissent pas sur la courbe).
-  // Les 3 types sont exclusifs à la création (cf. lobby) : un défi est toujours
-  // en game_format 'competitive', donc exclure 'friendly' suffit à le garder.
-  const competitiveMatches = matches.filter(m => m.game_format !== 'friendly');
-  const recentForm = competitiveMatches.slice(0, 5).map(m => (m.winner_id === id || m.winner_id_2 === id ? 'W' : 'L'));
+  // Forme récente et série : mêmes matchs que le décompte ci-dessus, amicaux
+  // compris — sinon « 5 victoires de suite » cohabitait avec « 6 matchs ».
+  const recentForm = matches.slice(0, 5).map(m => (m.winner_id === id || m.winner_id_2 === id ? 'W' : 'L'));
   let streak = 0;
   for (const m of matches) { if (m.winner_id === id || m.winner_id_2 === id) streak++; else break; }
 
@@ -1201,11 +1323,12 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     // Créateur/organisateur du match → couronne (cohérent lobby/détails/chat).
     const creatorId = (m.game as { creator_id?: string | null } | null | undefined)?.creator_id ?? undefined;
     const isCreator = (pid?: string) => !!creatorId && pid === creatorId;
+    const photo = (p: JoinedPlayer | null | undefined) => (p as any)?.avatar_path ?? null;
     const myTeam: PlayerLite[] = [
-      { name: meEntry?.p?.name ?? profile.name, lvl: lvlOf(meEntry?.p) ?? curLevel, me: true, isCreator: isCreator(id) },
-      ...(is2 && partnerEntry ? [{ id: partnerEntry.pid ?? undefined, name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p), isCreator: isCreator(partnerEntry.pid ?? undefined) }] : []),
+      { name: meEntry?.p?.name ?? profile.name, lvl: lvlOf(meEntry?.p) ?? curLevel, me: true, isCreator: isCreator(id), avatarPath: photo(meEntry?.p) ?? (profile as any).avatar_path ?? null },
+      ...(is2 && partnerEntry ? [{ id: partnerEntry.pid ?? undefined, name: displayName(partnerEntry.p, 'partner'), lvl: lvlOf(partnerEntry.p), isCreator: isCreator(partnerEntry.pid ?? undefined), avatarPath: photo(partnerEntry.p) }] : []),
     ];
-    const oppTeam: PlayerLite[] = opp.map(x => ({ id: x.pid ?? undefined, name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p), isCreator: isCreator(x.pid ?? undefined) }));
+    const oppTeam: PlayerLite[] = opp.map(x => ({ id: x.pid ?? undefined, name: displayName(x.p, 'opponent'), lvl: lvlOf(x.p), isCreator: isCreator(x.pid ?? undefined), avatarPath: photo(x.p) }));
     const sets = parseSets(m.score_text).map(([w, l]) => (win ? [w, l] : [l, w]) as [number, number]);
     const dt = new Date(m.game?.match_date ?? m.created_at);
     const dateStr = dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -1290,6 +1413,8 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
     >
       <ProfileHeader
+        avatarPath={(profile as any).avatar_path}
+        onPressAvatar={isSelf ? ouvrirActionsPhoto : undefined}
         name={profile.name}
         level={curLevel}
         leagueLabel={getLeagueLabel(league)}
@@ -1392,7 +1517,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
               <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: Colors.bgCardAlt }}>
                 {/* numberOfLines+adjustsFontSizeToFit+paddingRight : sans eux, en
                     grande police Android le titre wrappe et « profil » disparaît. */}
-                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+                <Text numberOfLines={2}
                   style={{ flexShrink: 1, fontSize: 22, lineHeight: 29, color: Colors.textPrimary, fontFamily: Fonts.welcome, paddingRight: 5 }}>
                   Modifier le <Text style={{ color: Colors.brand }}>profil</Text>
                 </Text>

@@ -39,6 +39,8 @@ export interface Player {
   preferred_court?: string;
   techniques?: string[];
   avatar_url?: string;
+  /** Photo de profil : chemin dans l'espace « avatars » (lib/avatars). */
+  avatar_path?: string | null;
   season_points?: number;
   push_token?: string | null;
   deleted_at?: string | null;
