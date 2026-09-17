@@ -6,7 +6,10 @@ import { describe, it, expect, vi } from 'vitest';
 // loin de `freeSpots`, dont il depend.
 vi.mock('../supabase', () => ({ supabase: {} }));
 
-import { isUrgentGame, minutesUntil, urgentDelayLabel, joinErrorLabel, URGENT_WINDOW_MINUTES } from '../games';
+import {
+  isUrgentGame, minutesUntil, urgentDelayLabel, joinErrorLabel, URGENT_WINDOW_MINUTES,
+  isOngoingGame, staysInUpcoming,
+} from '../games';
 
 const now = new Date(2026, 8, 5, 12, 0, 0);
 const dans = (minutes: number) => new Date(now.getTime() + minutes * 60_000).toISOString();
@@ -73,6 +76,82 @@ describe('une partie urgente : il manque UNE personne, et c est bientot', () => 
 
   it('une date illisible n est pas urgente non plus', () => {
     expect(isUrgentGame(partie(2, 'n importe quoi'), now)).toBe(false);
+  });
+});
+
+describe('un defi urgent : il manque un BINOME', () => {
+  const defi = (autres: number, match_date: string | null) => ({ ...partie(autres, match_date), is_challenge: true });
+
+  it('DEUX places libres : le defi est urgent', () => {
+    // Un defi se rejoint a deux. Avec la regle « exactement une place », un
+    // defi n'etait jamais urgent : releve sur telephone, defi dans 52 minutes
+    // sans pastille.
+    expect(isUrgentGame(defi(1, dans(52)), now)).toBe(true);
+    expect(isUrgentGame(defi(1, dans(120)), now)).toBe(true);
+  });
+
+  it('une place seule reste urgente (cas qui ne doit pas exister)', () => {
+    expect(isUrgentGame(defi(2, dans(60)), now)).toBe(true);
+  });
+
+  it('complet ou deux binomes manquants : pas urgent', () => {
+    expect(isUrgentGame(defi(3, dans(60)), now)).toBe(false);
+    expect(isUrgentGame(defi(0, dans(60)), now)).toBe(false);
+  });
+
+  it('la fenetre de six heures vaut aussi pour un defi', () => {
+    expect(isUrgentGame(defi(1, dans(URGENT_WINDOW_MINUTES)), now)).toBe(true);
+    expect(isUrgentGame(defi(1, dans(URGENT_WINDOW_MINUTES + 1)), now)).toBe(false);
+    expect(isUrgentGame(defi(1, dans(-1)), now)).toBe(false);
+  });
+
+  it('une partie NORMALE a deux places n est toujours pas urgente', () => {
+    expect(isUrgentGame(partie(1, dans(60)), now)).toBe(false);
+  });
+});
+
+describe('« en cours » : l heure est passee ET la partie est complete', () => {
+  it('complete, entre l heure et +1 h 30', () => {
+    expect(isOngoingGame(partie(3, dans(-5)), now)).toBe(true);
+    expect(isOngoingGame(partie(3, dans(-89)), now)).toBe(true);
+  });
+
+  it('INCOMPLETE : personne ne joue, donc jamais « en cours »', () => {
+    // Releve sur telephone le 2026-09-17 : une partie a qui il manquait un
+    // joueur s'affichait « EN COURS ».
+    expect(isOngoingGame(partie(2, dans(-5)), now)).toBe(false);
+  });
+
+  it('avant l heure, ou au-dela d 1 h 30 : non', () => {
+    expect(isOngoingGame(partie(3, dans(1)), now)).toBe(false);
+    expect(isOngoingGame(partie(3, dans(-91)), now)).toBe(false);
+  });
+
+  it('sans date ou date illisible : non', () => {
+    expect(isOngoingGame(partie(3, null), now)).toBe(false);
+    expect(isOngoingGame(partie(3, 'bof'), now)).toBe(false);
+  });
+});
+
+describe('rester dans « A venir »', () => {
+  it('avant l heure, toujours — complete ou pas', () => {
+    expect(staysInUpcoming(partie(3, dans(30)), now)).toBe(true);
+    expect(staysInUpcoming(partie(1, dans(30)), now)).toBe(true);
+  });
+
+  it('heure passee et COMPLETE : on la garde pendant le match', () => {
+    expect(staysInUpcoming(partie(3, dans(-30)), now)).toBe(true);
+    expect(staysInUpcoming(partie(3, dans(-91)), now)).toBe(false);
+  });
+
+  it('heure passee et INCOMPLETE : elle part tout de suite', () => {
+    expect(staysInUpcoming(partie(2, dans(-1)), now)).toBe(false);
+    expect(staysInUpcoming(partie(2, dans(-30)), now)).toBe(false);
+  });
+
+  it('sans date ou date illisible : on la garde', () => {
+    expect(staysInUpcoming(partie(2, null), now)).toBe(true);
+    expect(staysInUpcoming(partie(2, 'bof'), now)).toBe(true);
   });
 });
 

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { supabase } from '../../lib/supabase';
+import { staysInUpcoming } from '../../lib/games';
 import { Colors, Fonts } from '../../lib/theme';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { fetchPlayerTotals, EMPTY_TOTALS } from '../../lib/playerStats';
@@ -302,12 +303,12 @@ export default function HomeScreen() {
   // matchs en montrait 6.
   const matchCount = totals.played;
   const now = new Date();
-  // Une partie reste visible 1 h 30 APRÈS son heure de début (durée du match) :
-  // c'est la fenêtre du score en direct (démarrage possible jusqu'à H+2h), et
-  // « Le score » ne prend le relais qu'à match_date + 1 h 30 (isGameReadyToScore).
-  // Couper à l'heure pile rendait la partie introuvable pendant qu'on la joue.
-  const visibleUpcoming = upcomingGames.filter(g =>
-    !g.match_date || new Date(g.match_date).getTime() + 90 * 60_000 > now.getTime());
+  // Même règle que le lobby, écrite UNE fois (lib/games.staysInUpcoming) : une
+  // partie COMPLÈTE reste visible 1 h 30 après son heure de début (fenêtre du
+  // score en direct, « Le score » prend le relais à +1 h 30) ; une partie
+  // incomplète dont l'heure est passée part tout de suite, puisqu'elle ne peut
+  // ni se jouer ni se noter.
+  const visibleUpcoming = upcomingGames.filter(g => staysInUpcoming(g, now));
 
   // Le budget de hauteur de la colonne, calcule a UN SEUL endroit et teste
   // (lib/homeLayout). Il a deborde deux fois, et les deux fois le symptome ne

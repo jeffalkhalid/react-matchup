@@ -42,7 +42,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, gameEloRange, eloFitsGame, SCORE_WINDOW_MS } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
@@ -727,11 +727,11 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
     : null;
   const dt = game.match_date ? splitDate(game.match_date) : null;
 
-  // Voyant « EN COURS » : match en train de se jouer, entre l'heure de début
-  // et +90 min (même fenêtre que le maintien dans « À venir »).
-  const startMs = game.match_date ? new Date(game.match_date).getTime() : null;
-  const isOngoing = variant === 'upcoming' && startMs != null
-    && Date.now() >= startMs && Date.now() < startMs + 90 * 60_000;
+  // Voyant « EN COURS » : la partie se joue VRAIMENT — heure passée (de moins
+  // d'1 h 30) ET partie complète (lib/games.isOngoingGame). Le voyant ne
+  // regardait que l'heure : une partie à qui il manquait un joueur s'affichait
+  // « en cours » alors que personne ne pouvait jouer.
+  const isOngoing = variant === 'upcoming' && isOngoingGame(game);
 
   const showInlineSlots = variant !== 'history' && !!playerId;
 
@@ -2771,10 +2771,11 @@ export default function LobbyScreen() {
     // pas déjà scoré, et j'y ai joué (créateur ou accepté).
     const readyToScore = (g: EnrichedGame) => isGameReadyToScore(g, player.id, scoredGameIds);
 
-    // Fenêtre étendue à match_date + 1 h 30 : pendant le match, la partie reste
-    // dans « À venir » (accès à la fiche → score en direct) ; à +1 h 30,
-    // readyToScore la bascule dans « Le score ». Couper à l'heure pile la
-    // rendait introuvable pendant qu'on la joue.
+    // Maintien dans « À venir » : lib/games.staysInUpcoming — avant l'heure
+    // toujours ; après l'heure seulement si la partie est COMPLÈTE (pendant le
+    // match, accès à la fiche → score en direct ; à +1 h 30 readyToScore la
+    // bascule dans « Le score »). Une partie incomplète dont l'heure est
+    // passée ne peut ni se jouer ni se noter : elle part tout de suite.
     // Score déjà soumis (live finalisé ou saisie classique) ⇒ la partie quitte
     // « À venir » immédiatement, sans attendre le cap +1 h 30 : elle vit
     // désormais côté « Le score » (validation / contestation).
@@ -2782,7 +2783,7 @@ export default function LobbyScreen() {
       (g as any).status !== 'cancelled' &&
       !readyToScore(g) &&
       !scoredGameIds.has(g.id) &&
-      (!g.match_date || new Date(g.match_date).getTime() + 90 * 60_000 >= now.getTime())
+      staysInUpcoming(g, now)
     ));
     setPastCompleteGames(allUpcoming.filter(readyToScore));
     const deltas: Record<string, number> = {};

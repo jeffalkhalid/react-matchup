@@ -295,14 +295,62 @@ export function minutesUntil(iso: string, now: Date = new Date()): number {
  * heure n'est fixée.
  */
 export function isUrgentGame(
-  game: Parameters<typeof freeSpots>[0] & { match_date?: string | null },
+  game: Parameters<typeof freeSpots>[0] & { match_date?: string | null; is_challenge?: boolean | null },
   now: Date = new Date(),
 ): boolean {
-  if (freeSpots(game) !== 1) return false;
+  const libres = freeSpots(game);
+  // UN DÉFI SE REJOINT À DEUX : il lui manque un binôme entier, soit DEUX
+  // places, et c'est à un message de se compléter — exactement ce que la
+  // pastille annonce. Avec la règle « exactement une place », un défi n'était
+  // JAMAIS urgent (relevé sur téléphone le 2026-09-17 : défi dans 52 minutes,
+  // aucune pastille). Une place seule ne doit pas exister dans un défi
+  // (garde-fou serveur defi_no_lone_player.sql) ; si elle existe malgré tout,
+  // la partie est bien à un joueur près : on la marque aussi.
+  const attendu = game.is_challenge ? libres === 1 || libres === 2 : libres === 1;
+  if (!attendu) return false;
   if (!game.match_date) return false;
   const m = minutesUntil(game.match_date, now);
   if (Number.isNaN(m)) return false;
   return m > 0 && m <= URGENT_WINDOW_MINUTES;
+}
+
+/**
+ * La partie se joue-t-elle EN CE MOMENT ?
+ *
+ * Deux conditions, pas une : l'heure est passée (et de moins d'1 h 30), ET la
+ * partie est COMPLÈTE. La pastille « EN COURS » ne regardait que l'heure : une
+ * partie à qui il manquait un joueur s'affichait « en cours » alors que
+ * personne ne pouvait jouer (relevé sur téléphone le 2026-09-17).
+ */
+export function isOngoingGame(
+  game: Parameters<typeof freeSpots>[0] & { match_date?: string | null },
+  now: Date = new Date(),
+): boolean {
+  if (!game.match_date) return false;
+  const t = new Date(game.match_date).getTime();
+  if (Number.isNaN(t)) return false;
+  if (freeSpots(game) > 0) return false;
+  return now.getTime() >= t && now.getTime() < t + SCORE_OPEN_DELAY_MS;
+}
+
+/**
+ * Cette partie reste-t-elle dans « À venir » ?
+ *
+ * Avant l'heure : toujours. Après l'heure : seulement si elle est complète —
+ * elle se joue, puis la saisie du score la reprend à +1 h 30. Une partie
+ * incomplète dont l'heure est passée ne peut ni se jouer ni se noter : elle
+ * quitte la liste tout de suite (décision utilisateur, 2026-09-17), au lieu de
+ * s'y afficher « en cours » pendant 1 h 30 puis de disparaître sans un mot.
+ */
+export function staysInUpcoming(
+  game: Parameters<typeof freeSpots>[0] & { match_date?: string | null },
+  now: Date = new Date(),
+): boolean {
+  if (!game.match_date) return true;
+  const t = new Date(game.match_date).getTime();
+  if (Number.isNaN(t)) return true;
+  if (now.getTime() < t) return true;
+  return freeSpots(game) === 0 && now.getTime() < t + SCORE_OPEN_DELAY_MS;
 }
 
 /**
