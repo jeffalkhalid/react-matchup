@@ -6,6 +6,7 @@ import { Colors, Fonts } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
 import { getWatchPairingEnabled } from '../../lib/watchLink';
 import { getTournamentsEnabled } from '../../lib/tournaments';
+import { useOrigin } from '../../hooks/useOrigin';
 
 function Group({ title }: { title: string }) {
   return (
@@ -42,6 +43,7 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
   // côté serveur, clé absente = ÉTEINT (tournaments_flag.sql), et le brief est
   // formel — éteint, l'entrée n'apparaît NULLE PART, ni écran vide ni message.
   const [tournamentsOn, setTournamentsOn] = useState(false);
+  const { zoneAvailable } = useOrigin();
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
@@ -71,6 +73,8 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Row icon="pencil" label="Modifier le profil" onPress={() => act(onEdit)} />
           <Row icon="message" label="Qui peut commenter" onPress={() => act(onComments)} />
           <Row icon="mail" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
+          {/* Masquée tant que la migration player_zones n'est pas appliquée. */}
+          {zoneAvailable && <Row icon="mapPin" label="Ma zone" onPress={() => nav('/zone')} />}
           {watchOn && <Row icon="clock" label="Ma montre" onPress={() => nav('/watch-link')} />}
 
           <Group title="Raccourcis" />

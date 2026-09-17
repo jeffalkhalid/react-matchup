@@ -78,6 +78,8 @@ function RootNavigator() {
             Étaient des onglets cachés (singletons, sans historique) avant 2026-08-08. */}
         <Stack.Screen name="ranking" options={{ presentation: 'card' }} />
         <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
+        {/* Localisation : zone de référence du joueur (point + rayon). */}
+        <Stack.Screen name="zone" options={{ presentation: 'card' }} />
         {/* Tournois montante / descente. L'entrée du menu est masquée quand
             l'interrupteur serveur est éteint (défaut) ; ces écrans se referment
             alors d'eux-mêmes si on y arrive par un lien direct. */}

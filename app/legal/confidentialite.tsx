@@ -29,7 +29,7 @@ export default function ConfidentialiteScreen() {
       <Section n={2} icon="🗂️" title="Ce que nous collectons">
         <P>Uniquement ce qui sert à faire fonctionner le jeu et la communauté :</P>
         <Tags items={[
-          'E-mail', 'Pseudo / nom', 'Photo de profil', 'Niveau & ELO', 'Historique de matchs',
+          'E-mail', 'Pseudo / nom', 'Photo de profil', 'Zone de jeu (facultative)', 'Niveau & ELO', 'Historique de matchs',
           'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
         ]} />
         <P>
@@ -43,6 +43,13 @@ export default function ConfidentialiteScreen() {
           serveurs et n'est visible que des joueurs connectés à l'application : elle n'apparaît sur
           aucune page web publique. Vous pouvez la retirer à tout moment depuis votre profil, et elle
           est alors effacée. Une photo signalée peut être retirée par un arbitre.
+        </P>
+        <P>
+          La <B>localisation</B> est facultative. Si vous l'autorisez, la position de votre téléphone
+          sert uniquement à calculer, sur votre appareil, la distance des parties : elle n'est jamais
+          envoyée à nos serveurs. Si vous choisissez une <B>zone de jeu</B>, nous enregistrons un point
+          arrondi à environ 500 m et un rayon, visibles de vous seul. Vous pouvez la supprimer à tout
+          moment depuis le menu de votre profil ; elle est aussi effacée si vous supprimez votre compte.
         </P>
         <P>
           Les <B>Stories</B> sont générées sur votre appareil et partagées par vos soins : nous ne
