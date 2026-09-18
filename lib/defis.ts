@@ -248,6 +248,8 @@ export interface QueuedBinome {
   gameId: string;
   playerIds: [string, string];
   names: [string, string];
+  /** `players.avatar_path` de chacun — sa photo, si elle existe. */
+  avatarPaths: [string | null, string | null];
 }
 
 // ── Les binômes EN FILE ('queued') de plusieurs défis, en UNE requête. ──
@@ -272,6 +274,7 @@ export async function fetchQueuedBinomes(gameIds: string[]): Promise<Map<string,
       gameId: r.game_id,
       playerIds: [r.initiator_id, r.partner_id],
       names: [r.initiator?.name ?? '?', r.partner?.name ?? '?'],
+      avatarPaths: [r.initiator?.avatar_path ?? null, r.partner?.avatar_path ?? null],
     };
     const list = out.get(r.game_id);
     if (list) list.push(entry); else out.set(r.game_id, [entry]);

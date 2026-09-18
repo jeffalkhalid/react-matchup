@@ -1101,10 +1101,10 @@ function GameDetailsSheetContenu({
                               key={pid}
                               onPress={() => openProfile(pid)}
                               activeOpacity={0.75}
-                              style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                              style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                             >
-                              <Avatar name={b.names[k]} size={26} />
-                              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                              <Avatar name={b.names[k]} path={b.avatarPaths?.[k]} size={42} />
+                              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
                                 {b.names[k]}
                               </Text>
                             </TouchableOpacity>
