@@ -385,3 +385,13 @@ export async function cancelDefi(gameId: string): Promise<void> {
   const { error } = await supabase.rpc('cancel_defi', { p_game_id: gameId });
   if (error) throw error;
 }
+
+// ── Couleur d'une MISE de défi — même échelle partout (création, cartes, fiche).
+// Soft (×2 et moins) vert · Standard (jusqu'à ×3) jaune · High Stakes rouge.
+// Les anciens défis (×1.5, ×2.5) tombent dans le niveau le plus proche.
+export interface StakeTone { level: 'soft' | 'standard' | 'high'; bg: string; fg: string; soft: string }
+export function stakeTone(stake: number): StakeTone {
+  if (stake <= 2) return { level: 'soft', bg: '#10B981', fg: '#FFFFFF', soft: '#047857' };
+  if (stake <= 3) return { level: 'standard', bg: '#FFC11A', fg: '#0A0A0A', soft: '#B45309' };
+  return { level: 'high', bg: '#EF4444', fg: '#FFFFFF', soft: '#B91C1C' };
+}

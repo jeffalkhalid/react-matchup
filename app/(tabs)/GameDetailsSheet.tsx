@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange } from '../../lib/games';
-import { fetchQueuedBinomes, targetedOpponentsLine, type QueuedBinome } from '../../lib/defis';
+import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
 import { fetchPlayersTotals, type PlayerTotals } from '../../lib/playerStats';
 import { FitTitle } from '../../components/DisplayTitle';
 import { openInMaps, hasMapTarget } from '../../lib/maps';
@@ -839,9 +839,9 @@ function GameDetailsSheetContenu({
                 </View>
               )}
               {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
-                <View style={{ backgroundColor: 'rgba(255,193,26,0.16)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
-                  <Text style={{ color: '#FFC11A', fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
-                    ⚡ ×{(+(game as any).stake_multiplier).toFixed(1)}
+                <View style={{ backgroundColor: stakeTone(+(game as any).stake_multiplier).bg, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
+                  <Text style={{ color: stakeTone(+(game as any).stake_multiplier).fg, fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
+                    ⚡ ×{+(game as any).stake_multiplier}
                   </Text>
                 </View>
               )}

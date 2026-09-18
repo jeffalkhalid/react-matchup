@@ -180,7 +180,7 @@ export default function MatchmakingScreen() {
     if (t === 'relever' || t === 'mes' || t === 'invitations' || t === 'vitrine') setTab(t);
   }, [params.tab]);
   const [vitrine, setVitrine] = useState<ShowcaseBinome[]>([]);
-  const [myBinomes, setMyBinomes] = useState<{ id: string; name: string; elo_score: number }[]>([]);
+  const [myBinomes, setMyBinomes] = useState<{ id: string; name: string; elo_score: number; avatar_path?: string | null }[]>([]);
   const [binomeBusy, setBinomeBusy] = useState<Set<string>>(new Set());   // anti double-submit accepter/refuser
   const [otherBinomeCounts, setOtherBinomeCounts] = useState<Record<string, number>>({});   // « X autres binômes » par défi candidaté
   const [partnerInvites, setPartnerInvites] = useState<DefiInvite[]>([]);   // invitations défi (binôme du créateur / défi ciblé)
@@ -231,7 +231,7 @@ export default function MatchmakingScreen() {
     setVitrine(vit);
     setMyBinomes(actives.flatMap(bn => {
       const other = bn.player_a === player.id ? bn.b : bn.a;   // l'AUTRE joueur de la paire
-      return other ? [{ id: other.id, name: other.name, elo_score: other.elo_score }] : [];
+      return other ? [{ id: other.id, name: other.name, elo_score: other.elo_score, avatar_path: other.avatar_path ?? null }] : [];
     }));
     setLoading(false);
 
@@ -1040,7 +1040,7 @@ export default function MatchmakingScreen() {
                     {myBinomes.map(p => (
                       <TouchableOpacity key={p.id} onPress={() => router.push(`/player/${p.id}` as any)} activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
-                        <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={42} />
+                        <PlayerAvatar name={p.name} path={p.avatar_path} size={42} />
                         <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
                         <Pill variant="neutral">Niv. {eloToLevel(p.elo_score).toFixed(1)}</Pill>
                       </TouchableOpacity>

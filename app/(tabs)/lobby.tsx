@@ -53,7 +53,7 @@ import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { isBadgeVisible } from '../../lib/badges';
 import { Icon, type IconName } from '../../components/community/icons';
-import { fetchBinomeInvitations, fetchMyApplications, fetchQueuedBinomeCounts, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, applicationPairAverage, defiCreationPlan, type DefiApplication } from '../../lib/defis';
+import { fetchBinomeInvitations, fetchMyApplications, fetchQueuedBinomeCounts, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, applicationPairAverage, defiCreationPlan, stakeTone, type DefiApplication } from '../../lib/defis';
 import { defiRefusalMessage } from '../../lib/defiMessages';
 import { notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { registerTourAnchor, useTourInfo } from '../../lib/tourAnchors';
@@ -812,9 +812,9 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
           {isOngoing && <LiveDot s={ps} />}
           <TypePill game={game} s={ps} />
           {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
-            <CardTag bg={Colors.brand} fg={Colors.textOnBrand} s={ps}
-              icon={<Icon name="zap" size={10 * ps} color={Colors.textOnBrand} fill={Colors.textOnBrand} stroke={2} />}>
-              ×{(+(game as any).stake_multiplier).toFixed(1)}
+            <CardTag bg={stakeTone(+(game as any).stake_multiplier).bg} fg={stakeTone(+(game as any).stake_multiplier).fg} s={ps}
+              icon={<Icon name="zap" size={10 * ps} color={stakeTone(+(game as any).stake_multiplier).fg} fill={stakeTone(+(game as any).stake_multiplier).fg} stroke={2} />}>
+              ×{+(game as any).stake_multiplier}
             </CardTag>
           )}
           {isUrgent && <CardTag bg={Colors.bgCard} fg={pillAccent('danger')} border="rgba(239,68,68,0.45)" s={ps}>🔥 {urgentDelay}</CardTag>}

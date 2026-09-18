@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
-import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough } from '../../lib/defis';
+import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone } from '../../lib/defis';
 import { consumePickedVenue } from '../../lib/venuePicker';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import { Avatar as ClubAvatar } from '../../components/community/Avatar';
@@ -1245,43 +1245,108 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
   // ── Étape Défi : choisir mon binôme (Team A = moi + 1 partenaire) ──
   function renderDefiBinome() {
     const teamBSlots = (['B0', 'B1'] as const);
+    // Maquette « Binôme du défi » (2026-09-19) : deux cartes (Capitaine /
+    // Partenaire), la moyenne, le plancher, et une note d'équipe.
+    const carteJoueur = {
+      flex: 1, backgroundColor: 'rgba(255,193,26,0.08)', borderWidth: 1.5, borderColor: 'rgba(255,193,26,0.55)',
+      borderRadius: 18, paddingVertical: 16, paddingHorizontal: 10, alignItems: 'center', gap: 6,
+    } as const;
+    const pastille = (fond: string) => ({
+      flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: fond,
+      borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
+    }) as const;
     return (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        <Text style={sty.sectionLabel}>Mon binôme</Text>
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-          {/* Moi (A0) */}
-          <View style={{ flex: 1, backgroundColor: t.teamABg, borderWidth: 1.5, borderColor: t.teamABorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
-            <Avatar name={player?.name ?? '?'} path={(player as any)?.avatar_path} size={54} />
-            <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>Vous</Text>
-            <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {player ? formatPadelLevel(player.elo_score) : '—'}</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120, gap: 14 }}>
+        {/* En-tête de section */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icon name="users" size={18} color={Colors.brandDeep} stroke={2.4} />
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.6, textTransform: 'uppercase' }}>Binôme du défi</Text>
+          <Text numberOfLines={1} style={{ flex: 1, textAlign: 'right', fontSize: 11, fontStyle: 'italic', color: Colors.textMuted }}>
+            Un binôme. Un défi. Plus loin ensemble.
+          </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {/* Moi (A0) — le capitaine */}
+          <View style={carteJoueur}>
+            <View style={{ position: 'absolute', top: 10, left: 10, width: 30, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,193,26,0.25)', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="crown" size={13} color={Colors.brandDeep} stroke={2.4} />
+            </View>
+            <Avatar name={player?.name ?? '?'} path={(player as any)?.avatar_path} size={78} />
+            <Text style={{ fontSize: 17, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }} numberOfLines={1}>Toi</Text>
+            <View style={pastille('rgba(255,193,26,0.30)')}>
+              <Icon name="crown" size={12} color={Colors.brandDeep} stroke={2.4} />
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>Capitaine</Text>
+            </View>
+            <Text style={{ fontSize: 13, color: Colors.textMuted }}>Niv. {player ? formatPadelLevel(player.elo_score) : '—'}</Text>
           </View>
-          {/* Partenaire (A1) */}
+
+          {/* Partenaire (A1) — toucher pour choisir, ou pour changer */}
           <TouchableOpacity activeOpacity={0.8}
             onPress={() => defiPartner ? (() => { const ni = { ...form.invites }; delete ni['A1']; set('invites', ni); })() : openInvite('A1')}
-            style={{ flex: 1, backgroundColor: defiPartner ? t.teamABg : t.libreBg, borderWidth: 1.5, borderStyle: defiPartner ? 'solid' : 'dashed', borderColor: defiPartner ? t.teamABorder : t.libreBorder, borderRadius: 14, padding: 12, alignItems: 'center', gap: 6 }}>
+            accessibilityLabel={defiPartner ? 'Changer de partenaire' : 'Choisir mon partenaire'}
+            style={[carteJoueur, !defiPartner && { borderStyle: 'dashed', backgroundColor: t.libreBg, borderColor: t.libreBorder, justifyContent: 'center' }]}>
             {defiPartner ? (
               <>
-                <Avatar name={defiPartner.name} path={(defiPartner as any).avatar_path} size={54} />
-                <Text style={{ fontSize: 12.5, fontWeight: '900', color: Colors.textPrimary }} numberOfLines={1}>{defiPartner.name.split(' ')[0]}</Text>
-                <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(defiPartner.elo_score)}</Text>
+                <Avatar name={defiPartner.name} path={(defiPartner as any).avatar_path} size={78} />
+                <Text style={{ fontSize: 17, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }} numberOfLines={1}>{defiPartner.name.split(' ')[0]}</Text>
+                <View style={pastille(Colors.bgCardAlt)}>
+                  <Icon name="users" size={12} color={Colors.textSecondary} stroke={2.4} />
+                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>Partenaire</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: Colors.textMuted }}>Niv. {formatPadelLevel(defiPartner.elo_score)}</Text>
+                <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>Toucher pour changer</Text>
               </>
             ) : (
               <>
-                <View style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderStyle: 'dashed', borderColor: t.libreBorder, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 22, color: t.libreColor, fontWeight: '300' }}>+</Text>
+                <View style={{ width: 62, height: 62, borderRadius: 31, borderWidth: 2, borderStyle: 'dashed', borderColor: t.libreBorder, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 28, color: t.libreColor, fontWeight: '300' }}>+</Text>
                 </View>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: t.libreColor }}>Choisir</Text>
+                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: t.libreColor }}>Choisir mon partenaire</Text>
               </>
             )}
           </TouchableOpacity>
         </View>
 
-        {defiPartner && !targeted && (
-          <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 10, padding: 10, marginBottom: 12 }}>
-            <Text style={{ fontSize: 12, fontWeight: '900', color: t.eloColor, textAlign: 'center' }}>
-              Plancher d'éligibilité : niveau {defiFloorLevel.toFixed(2)} (moyenne du binôme)
-            </Text>
-          </View>
+        {defiPartner && (
+          <>
+            {/* Moyenne du binôme */}
+            <View style={{ alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: 'rgba(255,193,26,0.08)', borderWidth: 1.5, borderColor: 'rgba(255,193,26,0.45)', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 22 }}>
+              <Icon name="users" size={30} color={Colors.brand} stroke={2.2} />
+              <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: 'rgba(255,193,26,0.45)' }} />
+              <View>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 1 }}>MOYENNE DU BINÔME</Text>
+                <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>{defiFloorLevel.toFixed(2)}</Text>
+              </View>
+            </View>
+
+            {/* Plancher — sans objet pour un défi ciblé (adversaires déjà choisis) */}
+            {!targeted && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: 'rgba(255,193,26,0.10)', borderWidth: 1.5, borderColor: 'rgba(255,193,26,0.55)', borderRadius: 18, padding: 16 }}>
+                <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="trophy" size={24} color="#0A0A0A" stroke={2.2} />
+                </View>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Plancher du défi</Text>
+                  <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+                    Niveau minimum éligible : <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.brandDeep }}>{defiFloorLevel.toFixed(2)}</Text> (moyenne du binôme)
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, lineHeight: 17 }}>
+                    Seuls les binômes dont la moyenne est d'au moins {defiFloorLevel.toFixed(2)} pourront relever ton défi.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Note d'équipe */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.bgCardAlt, borderRadius: 16, padding: 14 }}>
+              <Icon name="radar" size={26} color={Colors.textPrimary} stroke={2} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Même objectif, même ambition.</Text>
+                <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 1 }}>Faites équipe et relevez le défi !</Text>
+              </View>
+            </View>
+          </>
         )}
 
         {/* En mode ciblé : afficher Team B verrouillée (lecture seule) */}
@@ -1355,6 +1420,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {DEFI_STAKES.map(p => {
               const on = form.stakeMultiplier === p.value;
+              const ton = stakeTone(p.value);
               return (
                 <TouchableOpacity
                   key={p.value}
@@ -1364,22 +1430,23 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   accessibilityState={{ selected: on }}
                   style={{
                     flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14,
-                    backgroundColor: on ? Colors.brand : Colors.bgCard,
-                    borderWidth: 1.5, borderColor: on ? Colors.brand : Colors.border,
+                    backgroundColor: on ? ton.bg : Colors.bgCard,
+                    borderWidth: 1.5, borderColor: on ? ton.bg : Colors.border,
+                    borderTopWidth: on ? 1.5 : 4, borderTopColor: ton.bg,
                   }}
                 >
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-                    style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: on ? '#0A0A0A' : Colors.textPrimary }}>
+                    style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: on ? ton.fg : Colors.textPrimary }}>
                     {p.label}
                   </Text>
-                  <Text style={{ fontSize: 24, fontFamily: Fonts.uiBlack, color: on ? '#0A0A0A' : Colors.textPrimary, marginTop: 2 }}>
+                  <Text style={{ fontSize: 24, fontFamily: Fonts.uiBlack, color: on ? ton.fg : ton.soft, marginTop: 2 }}>
                     ×{p.value}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textSecondary, textAlign: 'center', marginTop: 12 }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: stakeTone(form.stakeMultiplier).soft, textAlign: 'center', marginTop: 12 }}>
             Points ELO gagnés/perdus : ×{form.stakeMultiplier}
           </Text>
           <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', marginTop: 2 }}>

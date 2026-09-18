@@ -1,0 +1,23 @@
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../supabase', () => ({ supabase: {} }));
+import { stakeTone } from '../defis';
+
+describe('stakeTone — une couleur par niveau de mise', () => {
+  it('Soft (×2 et moins) = vert, Standard (jusqu\'à ×3) = jaune, High Stakes (au-delà) = rouge', () => {
+    expect(stakeTone(2).level).toBe('soft');
+    expect(stakeTone(3).level).toBe('standard');
+    expect(stakeTone(4).level).toBe('high');
+  });
+  it('les anciens défis (×1.5, ×2.5) tombent dans le bon niveau', () => {
+    expect(stakeTone(1.5).level).toBe('soft');
+    expect(stakeTone(2.5).level).toBe('standard');
+  });
+  it('chaque niveau a un fond et un texte lisible dessus', () => {
+    for (const v of [2, 3, 4]) {
+      const t = stakeTone(v);
+      expect(t.bg).toMatch(/^#/);
+      expect(t.fg).toMatch(/^#/);
+      expect(t.fg).not.toBe(t.bg);
+    }
+  });
+});
