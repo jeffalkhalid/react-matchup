@@ -584,6 +584,17 @@ export function ProfileHeader(props: {
               ring={3} ringColor={PM.inkSoft}
             />
           )}
+          {/* Crayon : sur MON profil, dit que la photo se change d'un appui. */}
+          {props.onPressAvatar && (
+            <View style={{
+              position: 'absolute', right: -2, bottom: -2,
+              width: 30, height: 30, borderRadius: 15,
+              backgroundColor: ACCENT, borderWidth: 2.5, borderColor: PM.ink,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon name="pencil" size={14} color={PM.ink} stroke={2.4} />
+            </View>
+          )}
         </TouchableOpacity>
         <View style={{ flex: 1, minWidth: 0 }}>
           {/* Nom + pill Ambassadeur sur la MÊME ligne (maquette) */}

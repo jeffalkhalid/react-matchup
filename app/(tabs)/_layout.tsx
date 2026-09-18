@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { fetchUnreadCounts } from '../../lib/directChats';
 import { Colors } from '../../lib/theme';
 import { AMB_REVEAL_SEEN_KEY, isAmbassador } from '../../lib/ambassador';
+import { WELCOME_PHOTO_SEEN_KEY, shouldOfferWelcomePhoto, onWelcomePhotoDone } from '../../lib/welcomePhoto';
 import HelpCenter from '../../components/HelpCenter';
 import { TabBarHiddenContext } from '../../components/TabBarVisibility';
 import GuidedTour from '../../components/tour/GuidedTour';
@@ -133,6 +134,28 @@ export default function TabLayout() {
     setHasSeenOnboarding(true);
   };
 
+  // Écran « Ta photo de profil » : une fois, après la visite guidée, pour un
+  // compte récent sans photo (lib/welcomePhoto). La révélation Cercle des 100
+  // attend qu'il soit fermé : un seul écran à la fois.
+  const [photoStepDone, setPhotoStepDone] = useState(false);
+  const photoTriggeredRef = useRef<string | null>(null);
+  useEffect(() => onWelcomePhotoDone(() => setPhotoStepDone(true)), []);
+  useEffect(() => {
+    if (!player?.id || hasSeenOnboarding !== true) return;
+    if (photoTriggeredRef.current === player.id) return;
+    photoTriggeredRef.current = player.id;
+    setPhotoStepDone(false);
+    (async () => {
+      let seen = true;
+      try { seen = !!(await AsyncStorage.getItem(WELCOME_PHOTO_SEEN_KEY(player.id))); } catch { /* stockage indisponible : on ne propose pas */ }
+      if (shouldOfferWelcomePhoto({ avatarPath: (player as any).avatar_path, createdAt: player.created_at, seen, now: Date.now() })) {
+        router.push('/welcome-photo' as any);
+      } else {
+        setPhotoStepDone(true);
+      }
+    })();
+  }, [player?.id, hasSeenOnboarding]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Révélation Cercle des 100 : une fois, après l'onboarding. Le `ref` évite un
   // double push si l'effet se ré-exécute avant que la clé AsyncStorage (posée
   // par l'écran lui-même dès son affichage) ne soit relue. On stocke l'id du
@@ -141,7 +164,7 @@ export default function TabLayout() {
   // session, jamais bloquée par le déclenchement d'un joueur précédent.
   const ambRevealTriggeredRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!player?.id || !isAmbassador(player) || hasSeenOnboarding !== true) return;
+    if (!player?.id || !isAmbassador(player) || hasSeenOnboarding !== true || !photoStepDone) return;
     if (ambRevealTriggeredRef.current === player.id) return;
     (async () => {
       const seen = await AsyncStorage.getItem(AMB_REVEAL_SEEN_KEY(player.id));
@@ -150,7 +173,7 @@ export default function TabLayout() {
         router.push('/ambassador-welcome');
       }
     })();
-  }, [player?.id, player?.member_number, hasSeenOnboarding]);
+  }, [player?.id, player?.member_number, hasSeenOnboarding, photoStepDone]);
 
   // Auth redirect is handled by the root _layout.tsx navigator — don't redirect here
   // as router.replace('/') from within tabs resolves to (tabs)/index, not app/index.tsx
