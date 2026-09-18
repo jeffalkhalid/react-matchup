@@ -1558,6 +1558,7 @@ function resetOne(r: ExploreReason): Partial<ExploreFilters> {
     case 'level':  return { level: 'all' };
     case 'gender': return { gender: 'all' };
     case 'spots':  return { spots: null };
+    case 'fill':   return { fill: 'any' };
     case 'urgent': return { urgentOnly: false };
     case 'players': return { players: [] };
     case 'known':  return { knownOnly: false };
@@ -1899,7 +1900,14 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         )}
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, marginBottom: 12 }}>
+      {/* Défile de côté : Filtres, Urgent, Ouvertes | Complètes et
+          Réinitialiser ne tiennent pas sur une ligne d'un petit téléphone. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginBottom: 12, flexGrow: 0 }}
+        contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14 }}
+      >
         <TouchableOpacity
           onPress={() => setSheetOpen(true)}
           activeOpacity={0.85}
@@ -1942,7 +1950,30 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
           </Text>
         </TouchableOpacity>
 
-        <View style={{ flex: 1 }} />
+        {/* Ouvertes | Complètes : un choix, ou aucun (les deux). Toucher le
+            bouton actif le retire. */}
+        <View style={{ flexDirection: 'row', padding: 3, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
+          {([['open', 'Parties ouvertes'], ['full', 'Complètes']] as const).map(([v, l]) => {
+            const on = filters.fill === v;
+            return (
+              <TouchableOpacity
+                key={v}
+                onPress={() => setFilters({ ...filters, fill: on ? 'any' : v })}
+                activeOpacity={0.85}
+                accessibilityState={{ selected: on }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  paddingVertical: 7, paddingHorizontal: 11, borderRadius: 9,
+                  backgroundColor: on ? Colors.brand : 'transparent',
+                }}
+              >
+                <Icon name="users" size={13} color={on ? '#0A0A0A' : Colors.textSecondary} stroke={2.3} />
+                <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: on ? '#0A0A0A' : Colors.textSecondary }}>{l}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
 
         {hasActiveFilter && (
           <TouchableOpacity
@@ -1955,7 +1986,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
             </Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
 
       {montrerEncart && (
         <View style={{

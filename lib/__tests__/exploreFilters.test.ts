@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, matchesDatePreset, matchesTimeSlot,
-  gameType, exploreRefusal, filterExplore, bestExploreFilterToDrop,
+  gameType, exploreRefusal, filterExplore, bestExploreFilterToDrop, REASON_LABEL,
   canPlayerSee, visibleGames, allowedGenderFilters, countCompanions, selectionSummary,
   type ExploreFilters, type ExploreContext, type ExploreGame,
 } from '../exploreFilters';
@@ -382,5 +382,25 @@ describe('distance max', () => {
   it('proposée comme filtre à retirer quand elle cache tout', () => {
     const best = bestExploreFilterToDrop([partie(), partie()], f({ maxKm: 5 }), ctx({ distanceOf: () => loin }));
     expect(best).toEqual({ reason: 'distance', unlocked: 2 });
+  });
+});
+
+describe('remplissage — filtre rapide « Parties ouvertes » / « Complètes »', () => {
+  it('ouvertes : au moins une place libre ; complètes : plus aucune', () => {
+    const libre = ctx({ freeSpots: () => 2 });
+    const pleine = ctx({ freeSpots: () => 0 });
+    expect(exploreRefusal(partie(), f({ fill: 'open' }), libre)).toBe(null);
+    expect(exploreRefusal(partie(), f({ fill: 'open' }), pleine)).toBe('fill');
+    expect(exploreRefusal(partie(), f({ fill: 'full' }), pleine)).toBe(null);
+    expect(exploreRefusal(partie(), f({ fill: 'full' }), libre)).toBe('fill');
+  });
+  it('par défaut, rien n\'est caché et le filtre ne compte pas', () => {
+    expect(NO_EXPLORE_FILTERS.fill).toBe('any');
+    expect(exploreRefusal(partie(), NO_EXPLORE_FILTERS, ctx({ freeSpots: () => 0 }))).toBe(null);
+    expect(activeExploreFilterCount(NO_EXPLORE_FILTERS)).toBe(0);
+    expect(activeExploreFilterCount(f({ fill: 'full' }))).toBe(1);
+  });
+  it('a son libellé pour la sortie « retire ce filtre »', () => {
+    expect(REASON_LABEL.fill).toBe('Ouvertes / complètes');
   });
 });

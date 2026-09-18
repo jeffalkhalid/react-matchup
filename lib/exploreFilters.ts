@@ -21,6 +21,9 @@ export type TimeSlot = 'any' | 'morning' | 'afternoon' | 'evening' | 'night';
 export type TypeFilter = 'all' | 'competitive' | 'friendly' | 'challenge';
 export type LevelFilter = 'all' | 'mine' | 'outside';
 export type GenderFilter = 'all' | 'men' | 'women' | 'mixed';
+/** Filtre rapide de remplissage : 'open' = au moins une place libre,
+ *  'full' = plus aucune (défi complet avec sa file, partie pleine). */
+export type FillFilter = 'any' | 'open' | 'full';
 
 export interface ExploreFilters {
   date: DatePreset;
@@ -36,6 +39,8 @@ export interface ExploreFilters {
   gender: GenderFilter;
   /** Nombre exact de places libres exigé. `null` = indifférent. */
   spots: number | null;
+  /** Filtre rapide « Parties ouvertes » / « Complètes ». 'any' = les deux. */
+  fill: FillFilter;
   urgentOnly: boolean;
   /** Joueurs retenus : la partie doit en compter au moins un. Vide = tous. */
   players: string[];
@@ -47,7 +52,7 @@ export interface ExploreFilters {
 export const NO_EXPLORE_FILTERS: ExploreFilters = {
   date: 'any', slot: 'any', clubs: [], cities: [], maxKm: null,
   type: 'all', level: 'all', gender: 'all',
-  spots: null, urgentOnly: false, players: [], knownOnly: false, search: '',
+  spots: null, fill: 'any', urgentOnly: false, players: [], knownOnly: false, search: '',
 };
 
 /** Combien de filtres sont actifs — le chiffre de la pastille « Filtres ». */
@@ -62,6 +67,7 @@ export function activeExploreFilterCount(f: ExploreFilters): number {
   if (f.level !== 'all') n++;
   if (f.gender !== 'all') n++;
   if (f.spots !== null) n++;
+  if (f.fill !== 'any') n++;
   if (f.urgentOnly) n++;
   if (f.players.length > 0) n++;
   if (f.knownOnly) n++;
@@ -146,7 +152,7 @@ export function gameType(g: { is_challenge?: boolean | null; game_format?: strin
 /** Ce qui a écarté une partie, ou `null` si elle passe. */
 export type ExploreReason =
   | 'date' | 'slot' | 'club' | 'city' | 'distance' | 'type' | 'level' | 'gender' | 'spots'
-  | 'urgent' | 'players' | 'known' | 'search';
+  | 'fill' | 'urgent' | 'players' | 'known' | 'search';
 
 export interface ExploreGame {
   location?: string | null;
@@ -213,6 +219,8 @@ export function exploreRefusal(g: ExploreGame, f: ExploreFilters, ctx: ExploreCo
   if (f.level === 'outside' && ctx.levelFit(g) === 'fit') return 'level';
   if (f.gender !== 'all' && (g.gender_pref ?? '') !== f.gender) return 'gender';
   if (f.spots !== null && ctx.freeSpots(g) !== f.spots) return 'spots';
+  if (f.fill === 'open' && ctx.freeSpots(g) <= 0) return 'fill';
+  if (f.fill === 'full' && ctx.freeSpots(g) > 0) return 'fill';
   if (f.urgentOnly && !ctx.isUrgent(g)) return 'urgent';
 
   if (f.players.length > 0 || f.knownOnly) {
@@ -257,6 +265,7 @@ export const REASON_LABEL: Record<ExploreReason, string> = {
   level: 'Niveau',
   gender: 'Genre',
   spots: 'Places libres',
+  fill: 'Ouvertes / complètes',
   urgent: 'Urgent',
   players: 'Joueurs',
   known: 'Matchs en commun',

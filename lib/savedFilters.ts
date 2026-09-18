@@ -38,7 +38,7 @@ export interface SavedFilter {
  *  (mesurée côté serveur depuis `player_zones`, jamais depuis le GPS). */
 export const ALERTABLE_KEYS = ['clubs', 'cities', 'type', 'gender', 'slot', 'level', 'maxKm'] as const;
 /** Ceux qui n'ont de sens qu'au moment où l'on regarde. */
-export const VIEW_ONLY_KEYS = ['date', 'spots', 'urgentOnly', 'search'] as const;
+export const VIEW_ONLY_KEYS = ['date', 'spots', 'fill', 'urgentOnly', 'search'] as const;
 
 /**
  * Les critères de ce filtre qu'une alerte surveillera réellement, et ceux
@@ -58,6 +58,7 @@ export function alertCoverage(f: ExploreFilters): { watched: string[]; ignored: 
   if (f.maxKm !== null) watched.push(`Distance : moins de ${f.maxKm} km de ta zone`);
   if (f.date !== 'any') ignored.push('Date');
   if (f.spots !== null) ignored.push('Places libres');
+  if (f.fill !== 'any') ignored.push(f.fill === 'open' ? 'Parties ouvertes' : 'Complètes');
   if (f.urgentOnly) ignored.push('Urgent');
   if (f.search.trim()) ignored.push('Recherche');
   return { watched, ignored };
@@ -110,6 +111,7 @@ export function hydrateFilter(raw: unknown): ExploreFilters {
     cities: Array.isArray(c.cities) ? c.cities : [],
     search: typeof c.search === 'string' ? c.search : '',
     maxKm: isZoneRadius(c.maxKm) ? c.maxKm : null,
+    fill: c.fill === 'open' || c.fill === 'full' ? c.fill : 'any',
   };
 }
 
