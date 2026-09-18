@@ -53,7 +53,7 @@ import { containsProfanity } from '../../lib/profanity';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { isBadgeVisible } from '../../lib/badges';
 import { Icon, type IconName } from '../../components/community/icons';
-import { fetchBinomeInvitations, fetchMyApplications, fetchQueuedBinomeCounts, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, applicationPairAverage, type DefiApplication } from '../../lib/defis';
+import { fetchBinomeInvitations, fetchMyApplications, fetchQueuedBinomeCounts, defiGameWithMyBinome, defiOtherBinomeCount, acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, cancelDefi, getPromotionWindowMinutes, isDefiQueueOpen, applicationPairAverage, defiCreationPlan, type DefiApplication } from '../../lib/defis';
 import { defiRefusalMessage } from '../../lib/defiMessages';
 import { notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { registerTourAnchor, useTourInfo } from '../../lib/tourAnchors';
@@ -3147,14 +3147,20 @@ export default function LobbyScreen() {
       if (!confirmed) throw new Error('CONFLICT_CANCELLED');
     }
 
-    // Défi NON ciblé : seule l'invitation du binôme (Team A) est valide —
-    // Team B se remplit par candidature (defi_apply/defi_accept). Des invites
-    // B arrivaient ici par « Défier » depuis un profil ou un vieux « Rejouer »
-    // (état invisible du wizard) et cassaient le cycle de vie ; le serveur
-    // les refuse aussi désormais (trg_defi_no_b_invite).
-    const isOpenDefi = data.gameType === 'Défi' && data.isTargeted !== true;
-    const invitedPlayers = data.confirmedPlayers
-      .filter(p => !isOpenDefi || String(p.team_side ?? 'A_GAU').startsWith('A'));
+    // Défi (ouvert ou CIBLÉ) : seule l'invitation du binôme (Team A) part
+    // maintenant — Team B ne se remplit/n'est notifiée qu'après son
+    // acceptation (candidature defi_apply/defi_accept pour un défi ouvert ;
+    // pour un ciblé, l'adversaire est seulement NOTÉ dans target_players,
+    // invité automatiquement côté serveur — fn_publish_defi_on_partner_accept
+    // — quand le partenaire accepte). Des invites B arrivaient ici par
+    // « Défier » depuis un profil ou un vieux « Rejouer » (état invisible du
+    // wizard) et cassaient le cycle de vie ; le serveur les refuse aussi
+    // désormais (trg_defi_no_b_invite).
+    const plan = defiCreationPlan({
+      gameType: data.gameType,
+      isTargeted: data.isTargeted,
+      players: data.confirmedPlayers,
+    });
 
     const { data: game, error } = await supabase
       .from('open_games')
@@ -3171,19 +3177,20 @@ export default function LobbyScreen() {
         has_reservation: data.hasReservation,
         min_elo: data.isTargeted ? null : padelLevelToElo(data.minLevel),
         max_elo: data.isTargeted ? null : padelLevelToElo(data.maxLevel),
-        status: data.gameType === 'Défi' ? (data.isTargeted ? 'open' : 'draft') : 'open',
-        spots_available: 3 - invitedPlayers.length,
+        status: plan.status,
+        spots_available: 3 - plan.invites.length,
+        target_players: plan.targetPlayers,
       })
       .select('id')
       .single();
 
     if (error || !game) { Alert.alert('Erreur', error?.message ?? 'Création échouée'); throw error; }
 
-    const invites = invitedPlayers.map(p => ({
+    const invites = plan.invites.map(p => ({
       game_id: game.id,
-      player_id: p.id,
+      player_id: p.player_id,
       status: 'invited' as const,
-      team_side: p.team_side ?? 'A_GAU',
+      team_side: p.team_side,
     }));
 
     console.log('[handlePublish] game created', { gameId: game.id, isChallenge: data.gameType === 'Défi', invites });
@@ -3215,7 +3222,12 @@ export default function LobbyScreen() {
 
     // Pousse une notif aux joueurs dont une alerte correspond à cette partie
     // (moteur de matching DB find_matching_alerts → send-push). Fire-and-forget.
-    notifyMatchingAlerts(game.id, data.location);
+    // Jamais pour un défi (ouvert ou ciblé) : les alertes de filtres enregistrés
+    // ignorent déjà les défis côté serveur, et un défi ciblé en brouillon n'a
+    // de toute façon rien de public à signaler.
+    if (data.gameType !== 'Défi') {
+      notifyMatchingAlerts(game.id, data.location);
+    }
 
     fetchData();
     return game.id;

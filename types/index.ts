@@ -91,6 +91,9 @@ export interface OpenGame {
   max_elo?: number;
   status: OpenGameStatus;
   is_challenge?: boolean;
+  is_targeted?: boolean;
+  /** Défi CIBLÉ en brouillon : adversaires NOTÉS (pas encore invités) — voir lib/defis.targetedOpponentsLine. */
+  target_players?: { player_id: string; team_side: string; name: string }[] | null;
   game_format: GameFormat;
   gender_pref?: Gender;
   notes?: string;
