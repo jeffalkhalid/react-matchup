@@ -534,7 +534,7 @@ function PlayerRow({ player, isMe, isFav, favLoading, showFavToggle, onPress, on
 
       {/* Avatar */}
       {isAmbassador(player) ? (
-        <AmbassadorRing size={38} radius={11} surface={Colors.bgCard}>
+        <AmbassadorRing size={46} radius={23} surface={Colors.bgCard}>
           <PlayerAvatar
             name={player.name}
             path={(player as any).avatar_path}

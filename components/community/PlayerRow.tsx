@@ -21,7 +21,7 @@ export function PlayerRow({ p, sub, onFollow, onPress, busy }: {
       {/* Zone joueur cliquable → profil (le bouton Suivre reste indépendant) */}
       <TouchableOpacity onPress={onPress} disabled={!onPress} activeOpacity={0.7} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {isAmbassador(p) ? (
-          <AmbassadorRing size={46} radius={14} surface={Colors.bgCard}>
+          <AmbassadorRing size={56} radius={28} surface={Colors.bgCard}>
             <Avatar name={p.name} path={p.avatar_path} size={56} league={p.league} />
           </AmbassadorRing>
         ) : (
