@@ -86,7 +86,7 @@ export default function WelcomePhotoScreen() {
     <View style={{ flex: 1, backgroundColor: Colors.bg, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 20, paddingHorizontal: 24 }}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18 }}>
         <Text
-          numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}
+          numberOfLines={2}
           style={{ alignSelf: 'stretch', textAlign: 'center', fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 38, color: Colors.textPrimary, paddingRight: 5 }}
         >
           {envoyee ? 'Belle photo' : 'Ta photo'} <Text style={{ color: Colors.brand }}>{envoyee ? '!' : 'de profil'}</Text>
