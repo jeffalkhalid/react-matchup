@@ -14,6 +14,7 @@ import { useOrigin } from '../hooks/useOrigin';
 import { buildZoneMapHtml } from '../lib/zoneMapHtml';
 import { initialZoneCenter, ZONE_RADII_KM, DEFAULT_RADIUS_KM, type LatLng } from '../lib/geo';
 import { gpsFailureMessage } from '../lib/originPolicy';
+import { listSavedFilters, distanceAlertCount, zoneDeletionMessage } from '../lib/savedFilters';
 
 export default function ZoneScreen() {
   const router = useRouter();
@@ -108,8 +109,16 @@ export default function ZoneScreen() {
     }
   };
 
-  const supprimer = () => {
-    Alert.alert('Supprimer ma zone ?', 'Les distances ne seront plus calculées depuis cette zone.', [
+  const supprimer = async () => {
+    // Compte les alertes avec distance AVANT de demander confirmation, pour
+    // prévenir qu'elles ne se déclencheront plus. Un échec de lecture ne doit
+    // jamais bloquer la suppression : on garde alors le message par défaut
+    // (zoneDeletionMessage(0)).
+    let n = 0;
+    try {
+      n = distanceAlertCount(await listSavedFilters());
+    } catch { /* lecture échouée : message par défaut, suppression jamais bloquée */ }
+    Alert.alert('Supprimer ma zone ?', zoneDeletionMessage(n), [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer', style: 'destructive',
