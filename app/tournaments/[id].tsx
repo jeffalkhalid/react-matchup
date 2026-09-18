@@ -987,7 +987,7 @@ export default function TournamentDetailScreen() {
             dayLabel={dayLabel(t.starts_at)}
             timeLabel={timeLabel(t.starts_at)}
             clubLine={t.club?.name ? `${t.club.name}${t.club.city ? ` · ${t.club.city}` : ''}` : 'Club à confirmer'}
-            distanceLine={distanceSentence(distanceOf(t.club?.name), origin) ?? undefined}
+            distanceLine={distanceSentence(distanceOf(t.club?.name), origin)}
             taken={taken}
             total={total}
             free={free}

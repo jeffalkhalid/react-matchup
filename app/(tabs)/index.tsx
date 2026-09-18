@@ -53,8 +53,8 @@ export default function HomeScreen() {
   const [myRank, setMyRank] = useState<number | null>(null);
   const [upcomingGames, setUpcomingGames] = useState<OpenGame[]>([]);
   const [openGames, setOpenGames] = useState<OpenGame[]>([]);
-  // Mes clubs favoris, par nom : troisième critère du classement des
-  // suggestions (après le niveau et l'urgence, cf. lib/homeSlot).
+  // Mes clubs favoris, par nom : quatrième critère du classement des
+  // suggestions (après le niveau, la proximité et l'urgence, cf. lib/homeSlot).
   const [favoris, setFavoris] = useState<string[]>([]);
   // Point de départ partagé (GPS récent, sinon ma zone) : sert au critère
   // « proche » des suggestions et à la distance de la carte « Prochain match ».
@@ -189,15 +189,15 @@ export default function HomeScreen() {
       // la même chose que sur une partie ouverte. Il a son propre onglet.
       .or('is_challenge.is.null,is_challenge.eq.false')
       .order('match_date', { ascending: true })
-      // Une QUARANTAINE, plus douze : le classement (niveau, urgence, club
-      // favori) peut préférer une partie plus lointaine. Ne lire que les douze
+      // Une QUARANTAINE, plus douze : le classement (niveau, proximité, urgence,
+      // club favori) peut préférer une partie plus lointaine. Ne lire que les douze
       // plus proches affichait « crée le tien » dès qu'elles étaient toutes
       // pleines ou réservées, alors qu'une partie plus loin convenait.
       .limit(40);
 
     setOpenGames((ouvertes as unknown as OpenGame[]) ?? []);
     // `loadClubFavorites` ne lève pas : en cas d'échec, liste vide — le
-    // classement perd son troisième critère, rien d'autre.
+    // classement perd son quatrième critère, rien d'autre.
     setFavoris(await loadClubFavorites(player.id));
 
     setLoading(false);

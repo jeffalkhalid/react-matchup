@@ -14,7 +14,7 @@
 // JUSQU'À TROIS PARTIES, EN CARROUSEL. L'accueil ne défile pas et une carte du
 // lobby en occupe déjà toute la place : trois empilées déborderaient. Elles
 // sont donc côte à côte, on les fait glisser, et la hauteur reste celle d'une
-// seule. Le classement (niveau, urgence, club favori) vit dans lib/homeSlot.
+// seule. Le classement (niveau, proximité, urgence, club favori) vit dans lib/homeSlot.
 //
 // CHAQUE PAGE A LA LARGEUR EXACTE DE LA CARTE D'AVANT, sans aperçu de la
 // suivante. Le carrousel des tournois montre un bout de la carte d'après,

@@ -821,7 +821,7 @@ function GameDetailsSheetContenu({
                 approximative du club) » quand le club est placé au centre de
                 sa ville. Rien sans point de départ : cf. lib/geo. */}
             {phraseDistance && (
-              <Text numberOfLines={2} style={{ fontSize: 12.5, fontFamily: Fonts.uiSemi, color: 'rgba(255,255,255,0.7)', marginTop: 2, marginLeft: 26 }}>
+              <Text numberOfLines={2} style={{ fontSize: 12.5, fontFamily: Fonts.uiSemi, color: 'rgba(255,255,255,0.7)', marginTop: 2, marginLeft: 26 /* icône 18 + écart 8 : aligné sous le nom du club */ }}>
                 {phraseDistance}
               </Text>
             )}

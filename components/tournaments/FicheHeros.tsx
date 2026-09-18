@@ -261,7 +261,7 @@ export function RegistrationCard({ dayLabel, timeLabel, clubLine, distanceLine, 
   clubLine: string;
   /** « 4,2 km depuis ta position » (lib/geo.distanceSentence). Absente quand
    *  on ne sait pas d'où mesurer, ou que le club n'a pas de position. */
-  distanceLine?: string;
+  distanceLine?: string | null;
   taken: number; total: number; free: number; waiting: number;
   courts: number;
   priceLabel: string;
