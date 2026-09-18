@@ -17,7 +17,7 @@ import type { DistanceOf, Origin } from '../../lib/geo';
 
 type PanelGame = Parameters<typeof panelRows>[0][number];
 
-export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm, distanceOf, onOpenGame }: {
+export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm, distanceOf, onOpenGame, ready, loadFailed, onRetry, filtersActive }: {
   height: number;
   markers: MapMarker[];
   unplaced: number;
@@ -26,9 +26,20 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
   radiusKm: number | null;
   distanceOf: DistanceOf;
   onOpenGame: (id: string) => void;
+  /** Le magasin des positions (zone + clubs) est prêt. */
+  ready: boolean;
+  /** Le dernier chargement des positions a échoué (réseau) — à réessayer. */
+  loadFailed: boolean;
+  onRetry: () => void;
+  /** Au moins un filtre est actif : change le conseil affiché sur carte vide. */
+  filtersActive: boolean;
 }) {
   const webref = useRef<WebView>(null);
-  const [webReady, setWebReady] = useState(false);
+  // Compteur incrémenté à chaque message 'ready' de la page (pas un booléen) :
+  // si le moteur de la WebView redémarre (Android en tâche de fond, etc.), un
+  // second 'ready' relance l'injection alors que webReady n'aurait pas bougé.
+  const [generation, setGeneration] = useState(0);
+  const webReady = generation > 0;
   const [tuiles, setTuiles] = useState<'inconnu' | 'ok' | 'ko'>('inconnu');
   const [selection, setSelection] = useState<string | null>(null);
   const source = useMemo(() => ({ html: buildExploreMapHtml(), baseUrl: 'https://localhost' }), []);
@@ -39,14 +50,14 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
 
   // Point de départ d'abord (la carte se centre dessus), puis les repères.
   useEffect(() => {
-    if (!webReady) return;
+    if (generation === 0) return;
     injecter(`window.setOrigin && window.setOrigin(${JSON.stringify(origin)}, ${JSON.stringify(radiusKm)})`);
-  }, [webReady, origin, radiusKm, injecter]);
+  }, [generation, origin, radiusKm, injecter]);
 
   useEffect(() => {
-    if (!webReady) return;
+    if (generation === 0) return;
     injecter(`window.setMarkers && window.setMarkers(${JSON.stringify(markers)})`);
-  }, [webReady, markers, injecter]);
+  }, [generation, markers, injecter]);
 
   // Un repère disparu (filtre changé) ferme son panneau.
   const repere = selection ? markers.find(m => m.key === selection) ?? null : null;
@@ -58,11 +69,20 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
     const brut = e.nativeEvent.data;
     try {
       const msg = JSON.parse(brut);
-      if (msg.type === 'ready') setWebReady(true);
+      if (msg.type === 'ready') setGeneration(g => g + 1);
       else if (msg.type === 'marker' && typeof msg.key === 'string') setSelection(msg.key);
       else if (msg.type === 'tiles') setTuiles(t => (t === 'ok' ? 'ok' : msg.ok ? 'ok' : 'ko'));
     } catch { /* message illisible : ignoré */ }
   }, []);
+
+  // Un seul message à la fois, dans cet ordre : le chargement du magasin des
+  // positions passe avant tout ; puis l'échec réseau (si aucun repère n'a pu
+  // être placé) ; puis le hors ligne (fond de carte) ; puis les cas vides.
+  const chargementEnCours = !webReady || !ready;
+  const echecPositions = !chargementEnCours && loadFailed && markers.length === 0 && unplaced > 0;
+  const horsLigne = !chargementEnCours && !echecPositions && tuiles === 'ko';
+  const carteVide = !chargementEnCours && !echecPositions && !horsLigne && markers.length === 0;
+  const auMoinsUneVille = markers.some(m => m.kind === 'city');
 
   const lignes = useMemo(
     () => (repere ? panelRows(games, repere, distanceOf) : []),
@@ -82,12 +102,21 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
         style={{ flex: 1, backgroundColor: '#e9eef2' }}
       />
 
-      {!webReady && (
+      {chargementEnCours && (
         <ActivityIndicator color={Colors.primary} style={{ position: 'absolute', top: 16, alignSelf: 'center' }} />
       )}
 
+      {echecPositions && (
+        <View style={{ position: 'absolute', top: 12, left: 12, right: 12, padding: 12, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Positions des clubs indisponibles</Text>
+          <TouchableOpacity onPress={onRetry} activeOpacity={0.85} style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 10, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border }}>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Hors ligne : la page est embarquée, mais le fond de carte vient du réseau. */}
-      {tuiles === 'ko' && (
+      {horsLigne && (
         <View style={{ position: 'absolute', top: 12, left: 12, right: 12, padding: 12, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
           <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Carte indisponible hors ligne</Text>
           <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2 }}>
@@ -96,12 +125,30 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
         </View>
       )}
 
-      {webReady && markers.length === 0 && tuiles !== 'ko' && (
+      {carteVide && unplaced > 0 && (
+        <View style={{ position: 'absolute', top: 12, left: 12, right: 12, padding: 12, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Aucune de ces parties n'a de position connue</Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2 }}>
+            Retrouve-les en « Liste ».
+          </Text>
+        </View>
+      )}
+
+      {carteVide && unplaced === 0 && (
         <View style={{ position: 'absolute', top: 12, left: 12, right: 12, padding: 12, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
           <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Aucune partie à placer sur la carte</Text>
           <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2 }}>
-            Élargis tes filtres, ou repasse en « Liste ».
+            {filtersActive ? 'Élargis tes filtres, ou repasse en « Liste ».' : 'Aucune partie ouverte pour l\'instant.'}
           </Text>
+        </View>
+      )}
+
+      {/* Légende du style atténué : seulement s'il existe au moins un repère
+          de ville (position approximative, plusieurs clubs regroupés), et pas
+          par-dessus le bandeau hors ligne (même coin, plein largeur). */}
+      {auMoinsUneVille && !horsLigne && (
+        <View style={{ position: 'absolute', top: 12, right: 12, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
+          <Text style={{ fontSize: 11, fontFamily: Fonts.ui, color: Colors.textSecondary }}>Cercle = club au centre de sa ville</Text>
         </View>
       )}
 
