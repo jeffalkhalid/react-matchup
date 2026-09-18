@@ -39,7 +39,7 @@ export interface ExploreFilters {
   gender: GenderFilter;
   /** Nombre exact de places libres exigé. `null` = indifférent. */
   spots: number | null;
-  /** Filtre rapide « Parties ouvertes » / « Complètes ». 'any' = les deux. */
+  /** Filtre rapide « Places libres » / « Complètes ». 'any' = les deux. */
   fill: FillFilter;
   urgentOnly: boolean;
   /** Joueurs retenus : la partie doit en compter au moins un. Vide = tous. */
@@ -264,8 +264,8 @@ export const REASON_LABEL: Record<ExploreReason, string> = {
   type: 'Type de match',
   level: 'Niveau',
   gender: 'Genre',
-  spots: 'Places libres',
-  fill: 'Ouvertes / complètes',
+  spots: 'Nombre de places libres',
+  fill: 'Places libres / complètes',
   urgent: 'Urgent',
   players: 'Joueurs',
   known: 'Matchs en commun',

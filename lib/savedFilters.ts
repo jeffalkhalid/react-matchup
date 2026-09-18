@@ -57,8 +57,8 @@ export function alertCoverage(f: ExploreFilters): { watched: string[]; ignored: 
   // depuis le GPS, jamais envoyé au serveur (supabase/migrations/saved_filters_distance.sql).
   if (f.maxKm !== null) watched.push(`Distance : moins de ${f.maxKm} km de ta zone`);
   if (f.date !== 'any') ignored.push('Date');
-  if (f.spots !== null) ignored.push('Places libres');
-  if (f.fill !== 'any') ignored.push(f.fill === 'open' ? 'Parties ouvertes' : 'Complètes');
+  if (f.spots !== null) ignored.push('Nombre de places libres');
+  if (f.fill !== 'any') ignored.push(f.fill === 'open' ? 'Places libres' : 'Complètes');
   if (f.urgentOnly) ignored.push('Urgent');
   if (f.search.trim()) ignored.push('Recherche');
   return { watched, ignored };

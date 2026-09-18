@@ -401,6 +401,6 @@ describe('remplissage — filtre rapide « Parties ouvertes » / « Complètes �
     expect(activeExploreFilterCount(f({ fill: 'full' }))).toBe(1);
   });
   it('a son libellé pour la sortie « retire ce filtre »', () => {
-    expect(REASON_LABEL.fill).toBe('Ouvertes / complètes');
+    expect(REASON_LABEL.fill).toBe('Places libres / complètes');
   });
 });

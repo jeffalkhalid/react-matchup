@@ -639,7 +639,7 @@ export function ExploreFilterSheet({
               </Section>
             )}
 
-            <Section title="Places disponibles" icon="users">
+            <Section title="Nombre de places libres" icon="users">
               <Row>
                 <Chip label="Toutes" flex={1} active={draft.spots === null} onPress={() => set('spots', null)} />
                 {[1, 2, 3].map(k => (

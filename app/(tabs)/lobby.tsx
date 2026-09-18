@@ -1953,7 +1953,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         {/* Ouvertes | Complètes : un choix, ou aucun (les deux). Toucher le
             bouton actif le retire. */}
         <View style={{ flexDirection: 'row', padding: 3, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
-          {([['open', 'Parties ouvertes'], ['full', 'Complètes']] as const).map(([v, l]) => {
+          {([['open', 'Places libres'], ['full', 'Complètes']] as const).map(([v, l]) => {
             const on = filters.fill === v;
             return (
               <TouchableOpacity

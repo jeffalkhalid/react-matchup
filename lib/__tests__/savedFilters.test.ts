@@ -27,7 +27,7 @@ describe('ce qu une alerte sait surveiller', () => {
   it('date, places, urgent et recherche sont IGNORES par l alerte', () => {
     const c = alertCoverage(f({ date: 'today', spots: 1, urgentOnly: true, search: 'anfa' }));
     expect(c.watched).toEqual([]);
-    expect(c.ignored).toEqual(['Date', 'Places libres', 'Urgent', 'Recherche']);
+    expect(c.ignored).toEqual(['Date', 'Nombre de places libres', 'Urgent', 'Recherche']);
   });
 });
 
