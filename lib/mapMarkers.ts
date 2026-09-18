@@ -56,7 +56,7 @@ export function groupMapMarkers<G extends MarkerGame>(
       m = { key, kind, lat: point.lat, lng: point.lng, label, clubs: [], gameIds: [] };
       parCle.set(key, m);
     }
-    if (!m.clubs.includes(lieu)) m.clubs.push(lieu);
+    if (!m.clubs.some(c => normClubName(c) === normClubName(lieu))) m.clubs.push(lieu);
     if (kind === 'club') m.label = m.clubs.join(' · ');
     m.gameIds.push(g.id);
   }

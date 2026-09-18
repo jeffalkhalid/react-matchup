@@ -10,13 +10,15 @@ import { levelRangeLabel } from '../games';
 const points: Record<string, { lat: number; lng: number; approx: boolean }> = {
   'Padel 4 Maroc': { lat: 33.53, lng: -7.64, approx: false },
   'Voisin Exact': { lat: 33.53, lng: -7.64, approx: false },       // même point exact
+  'padel 4 maroc': { lat: 33.53, lng: -7.64, approx: false },      // même club, casse différente
   'COC Padel': { lat: 33.5731, lng: -7.5898, approx: true },       // centre de Casablanca
   'Club Centre 2': { lat: 33.5731, lng: -7.5898, approx: true },   // même ville
+  'coc padel': { lat: 33.5731, lng: -7.5898, approx: true },       // même club centre-ville, casse différente
   'ACSA': { lat: 34.0209, lng: -6.8416, approx: true },            // centre de Rabat
 };
 const villes: Record<string, string> = {
-  'Padel 4 Maroc': 'Bouskoura', 'Voisin Exact': 'Bouskoura',
-  'COC Padel': 'Casablanca', 'Club Centre 2': 'Casablanca', 'ACSA': 'Rabat',
+  'Padel 4 Maroc': 'Bouskoura', 'Voisin Exact': 'Bouskoura', 'padel 4 maroc': 'Bouskoura',
+  'COC Padel': 'Casablanca', 'Club Centre 2': 'Casablanca', 'coc padel': 'Casablanca', 'ACSA': 'Rabat',
 };
 const pointOf = (l: string) => points[l] ?? null;
 const cityOf = (l: string) => villes[l] ?? null;
@@ -59,6 +61,18 @@ describe('regrouper les parties en repères', () => {
     const a = groupMapMarkers([g('a', 'ACSA'), g('b', 'Padel 4 Maroc'), g('c', 'COC Padel')], pointOf, cityOf);
     const b = groupMapMarkers([g('c', 'COC Padel'), g('a', 'ACSA'), g('b', 'Padel 4 Maroc')], pointOf, cityOf);
     expect(a.markers.map(m => m.key)).toEqual(b.markers.map(m => m.key));
+  });
+
+  it('même club PRÉCIS avec casses différentes : une seule fois, première orthographe conservée', () => {
+    const { markers } = groupMapMarkers([g('a', 'Padel 4 Maroc'), g('b', 'padel 4 maroc')], pointOf, cityOf);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({ kind: 'club', label: 'Padel 4 Maroc', clubs: ['Padel 4 Maroc'], gameIds: ['a', 'b'] });
+  });
+
+  it('même club CENTRE-VILLE avec casses différentes : une seule fois dans la liste', () => {
+    const { markers } = groupMapMarkers([g('a', 'COC Padel'), g('b', 'coc padel')], pointOf, cityOf);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({ kind: 'city', label: 'Casablanca', clubs: ['COC Padel'], gameIds: ['a', 'b'] });
   });
 });
 
