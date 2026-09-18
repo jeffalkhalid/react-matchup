@@ -44,7 +44,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
@@ -3631,14 +3631,24 @@ export default function LobbyScreen() {
     if (!player) return;
     const game = upcomingGames.find(g => g.id === gameId) ?? games.find(g => g.id === gameId);
 
+    // La ligne RÉELLE décide (lib/games.declineInvitationPlan) : une invitation
+    // reproposée après un retrait automatique est déjà 'declined' en base —
+    // la refuser efface seulement le marqueur, sans rendre une place de plus.
+    const { data: row } = await supabase
+      .from('game_participants')
+      .select('status, auto_declined')
+      .eq('id', participantId)
+      .maybeSingle();
+    const plan = declineInvitationPlan(row ?? { status: 'invited' });
+
     const { error } = await supabase
       .from('game_participants')
-      .update({ status: 'declined' })
+      .update(plan.update)
       .eq('id', participantId);
     if (error) { Alert.alert('Erreur', error.message); return; }
 
     // Free the spot that was held by the invitation
-    if (game) {
+    if (game && plan.freeSpot) {
       await supabase.from('open_games')
         .update({ spots_available: Math.min(3, (game.spots_available ?? 0) + 1) })
         .eq('id', gameId);

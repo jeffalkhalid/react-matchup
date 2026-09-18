@@ -383,3 +383,23 @@ export function urgentDelayLabel(iso: string | null | undefined, now: Date = new
   if (m < 60) return `${Math.max(1, Math.round(m))} min`;
   return `${Math.floor(m / 60)} h`;
 }
+
+/**
+ * Ce que fait « Refuser » sur une invitation de l'onglet « À venir ».
+ *
+ * Une invitation retirée automatiquement (créneau pris ailleurs ±2h : status
+ * 'declined' + auto_declined) est REPROPOSÉE par le lobby comme 'invited',
+ * pour que le joueur puisse revenir. La refuser, c'est seulement effacer le
+ * marqueur : elle devient un refus manuel, que le lobby cache. Sa place avait
+ * déjà été rendue et l'organisateur déjà prévenu au retrait automatique.
+ */
+export function declineInvitationPlan(row: { status: string; auto_declined?: boolean | null }): {
+  update: { status?: 'declined'; auto_declined: false };
+  freeSpot: boolean;
+  notifyCreator: boolean;
+} {
+  if (row.status === 'declined' && row.auto_declined) {
+    return { update: { auto_declined: false }, freeSpot: false, notifyCreator: false };
+  }
+  return { update: { status: 'declined', auto_declined: false }, freeSpot: true, notifyCreator: true };
+}
