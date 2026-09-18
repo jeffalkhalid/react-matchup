@@ -206,7 +206,10 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
   return (
     <View style={sty.badgeCard}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Text style={{ fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Pour {player.name}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 }}>
+          <PlayerAvatar name={player.name} path={player.avatar_path} size={44} backgroundColor={Colors.primary} textColor={Colors.textOnDark} fontFamily={Fonts.uiBlack} fontSize={16} />
+          <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Pour {player.name}</Text>
+        </View>
         {votes.length > 0 && (
           <View style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
             <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.brandDeep, fontFamily: Fonts.uiBlack }}>

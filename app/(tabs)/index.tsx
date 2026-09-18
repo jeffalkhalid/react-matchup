@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { staysInUpcoming } from '../../lib/games';
 import { useOrigin } from '../../hooks/useOrigin';
 import { Colors, Fonts } from '../../lib/theme';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { formatFrmtRanking } from '../../lib/frmt-match';
 import { fetchPlayerTotals, EMPTY_TOTALS } from '../../lib/playerStats';
 import { isAmbassador } from '../../lib/ambassador';
@@ -463,8 +464,9 @@ export default function HomeScreen() {
                         return (
                           <View key={p.id} style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 14, marginBottom: 12 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
-                                <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Pour {p.name}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 }}>
+                                <PlayerAvatar name={p.name} path={p.avatar_path} size={44} backgroundColor={Colors.primary} textColor={Colors.textOnDark} fontFamily={Fonts.uiBlack} fontSize={16} />
+                                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Pour {p.name}</Text>
                                 <View style={{ backgroundColor: isPartner ? '#DCFCE7' : '#F1F5F9', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
                                   <Text style={{ fontSize: 10, fontFamily: Fonts.uiBold, fontWeight: '900', color: isPartner ? '#166534' : '#475569' }}>
                                     {isPartner ? 'Binôme' : 'Adversaire'}
