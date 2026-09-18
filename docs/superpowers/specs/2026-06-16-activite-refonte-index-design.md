@@ -2,7 +2,7 @@
 
 **Date :** 2026-06-16
 **Statut :** Design validé, prêt pour les plans d'implémentation
-**Handoff source :** `C:\Users\jeffa\Bureau\Native\design_handoff_activity_tab\` (README + screenshots + prototypes `.dc.html`)
+**Handoff source :** `<Bureau>\Native\design_handoff_activity_tab\` (README + screenshots + prototypes `.dc.html`)
 
 ## Pourquoi un index
 

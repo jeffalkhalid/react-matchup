@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Repo : `c:\Users\jeffa\Bureau\Native\react-matchup`, travail **direct sur `main`**, changements **additifs et réversibles**. **AUCUN commit automatique** — l'utilisateur committe lui-même ou le demande explicitement. Ne jamais `git push`.
+- Repo : `<Bureau>\Native\react-matchup`, travail **direct sur `main`**, changements **additifs et réversibles**. **AUCUN commit automatique** — l'utilisateur committe lui-même ou le demande explicitement. Ne jamais `git push`.
 - La migration SQL est **écrite mais PAS appliquée** (l'utilisateur l'applique à la main dans le SQL Editor Supabase). Tout le code client doit fonctionner sans elle (`member_number` `undefined` → UI inchangée).
 - La table de profil s'appelle **`players`** (il n'existe pas de table `profiles`).
 - Couleurs : réutiliser `Colors.brand` `#FFC11A`, `Colors.brandDeep` `#E8A906`, `Colors.brandBright` `#FFD23F`, `PM.ink` `#0A0A0A`. Les teintes propres au concept (copiées du prototype) sont centralisées dans `AMB` de `lib/ambassador.ts` : `#16110A`, `#C98F08`, `#B8860B`, `#141010`, `#060607`, `#1C1C1E`, `#1C1710`.

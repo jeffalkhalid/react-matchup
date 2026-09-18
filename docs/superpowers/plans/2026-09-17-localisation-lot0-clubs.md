@@ -615,7 +615,7 @@ console.log(`Fichier écrit : ${sortie}`);
 
 - [ ] **Step 4 : générer le fichier sur les vraies données**
 
-Run: `node scripts/clubs-geo/fichier-verification.mjs "C:/Users/jeffa/.claude/uploads/f47875a7-56b3-4bbe-8a52-f4911a68b85f/c2d0f210-base_clubs_padel_maroc_PAGMATCH.xlsx" "C:/Users/jeffa/Bureau/clubs_verification.xlsx"`
+Run: `node scripts/clubs-geo/fichier-verification.mjs "<pièces jointes>/c2d0f210-base_clubs_padel_maroc_PAGMATCH.xlsx" "<Bureau>/clubs_verification.xlsx"`
 Expected: `80 clubs à vérifier → sans alerte N · douteux N · absents du fichier N` (total 80) et `Fichier écrit : …`.
 
 - [ ] **Step 5 : relire le fichier produit**
@@ -623,7 +623,7 @@ Expected: `80 clubs à vérifier → sans alerte N · douteux N · absents du fi
 Run (lecture de contrôle — exceljs vit dans `scripts/clubs-geo/node_modules`, jamais à la
 racine : ce `require` doit s'exécuter depuis `scripts/clubs-geo`, sinon il ne le trouve plus) :
 ```bash
-cd scripts/clubs-geo && node -e "const E=require('exceljs');(async()=>{const w=new E.Workbook();await w.xlsx.readFile('C:/Users/jeffa/Bureau/clubs_verification.xlsx');const f=w.getWorksheet('Vérification');console.log('lignes',f.rowCount-1);console.log(f.getRow(1).values.slice(1).join(' | '));const r=f.getRow(2);console.log(r.getCell(3).text,'=>',r.getCell(4).text,r.getCell(11).text);})()"
+cd scripts/clubs-geo && node -e "const E=require('exceljs');(async()=>{const w=new E.Workbook();await w.xlsx.readFile('<Bureau>/clubs_verification.xlsx');const f=w.getWorksheet('Vérification');console.log('lignes',f.rowCount-1);console.log(f.getRow(1).values.slice(1).join(' | '));const r=f.getRow(2);console.log(r.getCell(3).text,'=>',r.getCell(4).text,r.getCell(11).text);})()"
 ```
 Expected: `lignes 80`, l'en-tête des 13 colonnes dans l'ordre de l'interface, une ligne d'exemple lisible.
 
@@ -761,16 +761,16 @@ console.log(`Migration écrite : ${sortie}`);
 Préparer une copie de contrôle avec trois décisions (un `oui` sur la première ligne proposée sans alerte, un lien sur une ligne absente, un `peut-être`) :
 
 ```bash
-node -e "const E=require('exceljs');(async()=>{const w=new E.Workbook();await w.xlsx.readFile('C:/Users/jeffa/Bureau/clubs_verification.xlsx');const f=w.getWorksheet('Vérification');let oui=0,lien=0,autre=0;for(let i=2;i<=f.rowCount;i++){const r=f.getRow(i);const propose=r.getCell(4).text,alertes=r.getCell(11).text;if(!oui&&propose&&!alertes){r.getCell(12).value='oui';oui=1}else if(!lien&&!propose&&r.getCell(2).text==='Casablanca'){r.getCell(12).value='https://www.google.com/maps?q=33.5896,-7.6326';lien=1}else if(!autre&&propose){r.getCell(12).value='peut-être';autre=1}}await w.xlsx.writeFile('C:/Users/jeffa/AppData/Local/Temp/clubs_essai.xlsx');console.log('copie prête',oui,lien,autre)})()"
+node -e "const E=require('exceljs');(async()=>{const w=new E.Workbook();await w.xlsx.readFile('<Bureau>/clubs_verification.xlsx');const f=w.getWorksheet('Vérification');let oui=0,lien=0,autre=0;for(let i=2;i<=f.rowCount;i++){const r=f.getRow(i);const propose=r.getCell(4).text,alertes=r.getCell(11).text;if(!oui&&propose&&!alertes){r.getCell(12).value='oui';oui=1}else if(!lien&&!propose&&r.getCell(2).text==='Casablanca'){r.getCell(12).value='https://www.google.com/maps?q=33.5896,-7.6326';lien=1}else if(!autre&&propose){r.getCell(12).value='peut-être';autre=1}}await w.xlsx.writeFile('<dossier temporaire>/clubs_essai.xlsx');console.log('copie prête',oui,lien,autre)})()"
 ```
 Expected: `copie prête 1 1 1`.
 
-Run: `node scripts/clubs-geo/migration-clubs.mjs "C:/Users/jeffa/AppData/Local/Temp/clubs_essai.xlsx" "C:/Users/jeffa/AppData/Local/Temp/clubs_essai.sql"`
+Run: `node scripts/clubs-geo/migration-clubs.mjs "<dossier temporaire>/clubs_essai.xlsx" "<dossier temporaire>/clubs_essai.sql"`
 Expected: `Retenus : 2 · sans décision ou « non » : 77 · refusés : 1`, la ligne `✗ … — décision illisible : « peut-être »`, et un fichier SQL contenant exactement deux `UPDATE public.clubs … AND geo_confidence = 'city';` entre `BEGIN;` et `COMMIT;`.
 
 - [ ] **Step 3 : supprimer les fichiers d'essai**
 
-Run: `rm "C:/Users/jeffa/AppData/Local/Temp/clubs_essai.xlsx" "C:/Users/jeffa/AppData/Local/Temp/clubs_essai.sql"`
+Run: `rm "<dossier temporaire>/clubs_essai.xlsx" "<dossier temporaire>/clubs_essai.sql"`
 
 ---
 
@@ -781,11 +781,11 @@ Run: `rm "C:/Users/jeffa/AppData/Local/Temp/clubs_essai.xlsx" "C:/Users/jeffa/Ap
 
 - [ ] **Step 1 : remettre le fichier de vérification à l'utilisateur**
 
-Lui indiquer le chemin `C:\Users\jeffa\Bureau\clubs_verification.xlsx`, le résumé des comptes (tâche 2, étape 4) et la feuille « Mode d'emploi ». Attendre qu'il ait rempli la colonne « Décision ».
+Lui indiquer le chemin `<Bureau>\clubs_verification.xlsx`, le résumé des comptes (tâche 2, étape 4) et la feuille « Mode d'emploi ». Attendre qu'il ait rempli la colonne « Décision ».
 
 - [ ] **Step 2 : produire la migration**
 
-Run: `node scripts/clubs-geo/migration-clubs.mjs "C:/Users/jeffa/Bureau/clubs_verification.xlsx" "supabase/migrations/clubs_geo_precise.sql"`
+Run: `node scripts/clubs-geo/migration-clubs.mjs "<Bureau>/clubs_verification.xlsx" "supabase/migrations/clubs_geo_precise.sql"`
 Expected: le résumé `Retenus / sans décision / refusés`. S'il y a des refus, les montrer à l'utilisateur, le laisser corriger le fichier, relancer.
 
 - [ ] **Step 3 : faire appliquer la migration, puis vérifier**

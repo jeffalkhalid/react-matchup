@@ -3,7 +3,7 @@
 **Date :** 2026-06-17
 **Statut :** Design validé (oral), prêt pour le plan
 **Refonte de :** specs `2026-06-16-activite-*` (v1 déjà implémentée)
-**Design source :** `C:\Users\jeffa\Bureau\Native\design_handoff_activity_tab\designs\02-Bilan-Mensuel.dc.html` (+ `01-Activity-Tab.dc.html`, screenshots)
+**Design source :** `<Bureau>\Native\design_handoff_activity_tab\designs\02-Bilan-Mensuel.dc.html` (+ `01-Activity-Tab.dc.html`, screenshots)
 
 ## Pourquoi v2
 Retours utilisateur sur la v1 :

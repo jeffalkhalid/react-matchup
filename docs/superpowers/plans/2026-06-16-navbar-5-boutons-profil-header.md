@@ -8,7 +8,7 @@
 
 **Tech Stack:** React Native, expo-router, react-native-svg, TypeScript.
 
-**Vérification :** `npx tsc --noEmit` depuis `c:\Users\jeffa\Bureau\Native\react-matchup` à chaque tâche + contrôle visuel Expo final. **Aucun commit, aucune commande git** (l'utilisateur commitera lui-même ; changements non commités en cours à ne pas toucher).
+**Vérification :** `npx tsc --noEmit` depuis `<Bureau>\Native\react-matchup` à chaque tâche + contrôle visuel Expo final. **Aucun commit, aucune commande git** (l'utilisateur commitera lui-même ; changements non commités en cours à ne pas toucher).
 
 ---
 
