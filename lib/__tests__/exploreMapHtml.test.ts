@@ -28,4 +28,9 @@ describe('carte de l Explorer : contrat avec l écran', () => {
     expect(html).toContain('.ville');
     expect(html).toContain('emplacement exact inconnu');
   });
+
+  it('recadre quand le point de départ revient ou que le rayon change', () => {
+    expect(html).toContain('cadreSurDepart = false; return;');
+    expect(html).toContain('!== rayonCadre');
+  });
 });

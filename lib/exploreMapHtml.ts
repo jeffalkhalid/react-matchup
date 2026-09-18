@@ -52,6 +52,7 @@ export function buildExploreMapHtml(): string {
     var depart = L.layerGroup().addTo(map);
     var cercle = null, pointDepart = null, points = [];
     var cadreSurDepart = false, cadreSurReperes = false;
+    var rayonCadre = null;
 
     // Centrée sur le point de départ ; sinon cadrée sur les repères. Une seule
     // fois : ensuite la carte reste là où le joueur l'a laissée.
@@ -92,7 +93,7 @@ export function buildExploreMapHtml(): string {
       depart.clearLayers();
       cercle = null;
       pointDepart = null;
-      if (!ORIGIN) return;
+      if (!ORIGIN) { cadreSurDepart = false; return; }
       pointDepart = [ORIGIN.lat, ORIGIN.lng];
       var classe = ORIGIN.source === 'gps' ? 'gps' : 'zone';
       var taille = ORIGIN.source === 'gps' ? [16, 16] : [22, 22];
@@ -107,6 +108,7 @@ export function buildExploreMapHtml(): string {
           interactive: false,
         }).addTo(depart);
       }
+      if ((RADIUS_KM || null) !== rayonCadre) { cadreSurDepart = false; rayonCadre = RADIUS_KM || null; }
       cadrer();
     };
 
