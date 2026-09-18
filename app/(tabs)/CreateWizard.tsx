@@ -72,7 +72,16 @@ const TIMES = [
 // un écart pile de 2h (ex. 19h vs 21h) ne se chevauche pas → pas de conflit.
 const MATCH_DURATION_MS = 90 * 60 * 1000;   // 1h30 de jeu
 const BUFFER_MS         = 30 * 60 * 1000;   // marge déplacement/repos entre 2 courts
-const OVERLAP_MS = MATCH_DURATION_MS + BUFFER_MS;  // 2h — séparation min entre 2 débuts
+const OVERLAP_MS = MATCH_DURATION_MS + BUFFER_MS;
+
+// Paliers de mise d'un défi (maquette 2026-09-18). La base accepte 1.5 → 4.0
+// (defi_stake_4.sql) ; les anciens défis à ×1.5 / ×2.5 restent valides.
+const DEFI_STAKES = [
+  { label: 'Soft', value: 2 },
+  { label: 'Standard', value: 3 },
+  { label: 'High Stakes', value: 4 },
+] as const;
+const DEFAULT_DEFI_STAKE = 3;  // 2h — séparation min entre 2 débuts
 const FR_DAYS         = ['Dim.','Lun.','Mar.','Mer.','Jeu.','Ven.','Sam.'];
 const FR_MONTHS       = ['jan.','fév.','mar.','avr.','mai','juin','juil.','août','sep.','oct.','nov.','déc.'];
 const FR_MONTHS_LONG  = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
@@ -298,7 +307,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     genre:          'mixed' as Genre,
     minLevel:       defaultBand.min,
     maxLevel:       defaultBand.max,
-    stakeMultiplier: 2.0,
+    stakeMultiplier: DEFAULT_DEFI_STAKE,
     mySlot:         'A0' as string | null,
     invites:        {} as Record<string, InvitedPlayer>,
   });
@@ -356,7 +365,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     setFormState({
       day: QUICK_DAYS[1]?.val ?? '', time: '19:00', location: '',
       hasReservation: false, gameType, genre: defaultGenre,
-      minLevel: band.min, maxLevel: band.max, stakeMultiplier: 2.0, mySlot: 'A0', invites,
+      minLevel: band.min, maxLevel: band.max, stakeMultiplier: DEFAULT_DEFI_STAKE, mySlot: 'A0', invites,
     });
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -466,7 +475,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (step === 0) return !!form.day && !!form.time && !!form.location && !isPastSlot(form.day, form.time);
     if (step === 1) return !!form.gameType && (isDefi || isDefiBandWideEnough(form.minLevel, form.maxLevel));
     if (isDefi && step === 2) return defiPartnerChosen;          // Mon binôme
-    if (isDefi && step === 3) return isDefiBandWideEnough(form.minLevel, form.maxLevel) && form.stakeMultiplier >= 1.5 && form.stakeMultiplier <= 3.0;
+    if (isDefi && step === 3) return isDefiBandWideEnough(form.minLevel, form.maxLevel) && DEFI_STAKES.some(p => p.value === form.stakeMultiplier);
     return true; // L'équipe (non-défi) : publication libre comme aujourd'hui
   })();
 
@@ -1311,57 +1320,129 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     );
   }
 
-  // ── Étape Défi : mise (×1.5→×3) + plafond de niveau adverse ──
+  // ── Étape Défi : mise (3 paliers) + plafond de niveau adverse ──
+  // Maquette « Mise & plafond » (2026-09-18) : Soft ×2 · Standard ×3 ·
+  // High Stakes ×4 (contrainte serveur relevée à 4.0 : defi_stake_4.sql).
   function renderDefiSettings() {
-    const setStake = (v: number) => set('stakeMultiplier', +Math.min(3.0, Math.max(1.5, v)).toFixed(1));
     // Le plafond ne redescend jamais jusqu'au plancher : il resterait une
     // fourchette nulle, donc un défi que personne ne peut relever.
     const setCap   = (v: number) => set('maxLevel', +Math.min(8.0, Math.max(defiMinimumMaxLevel(defiFloorLevel), v)).toFixed(2));
+    const partenaire = defiPartner?.name?.split(' ')[0] ?? 'ton binôme';
+    const adversaires = ['B0', 'B1']
+      .map(k => form.invites[k]?.name?.split(' ')[0])
+      .filter((n): n is string => !!n);
+    const carte = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 16 } as const;
+    const pas = { width: 52, height: 52, borderRadius: 14, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' } as const;
     return (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120, gap: 14 }}>
         {/* Mise */}
-        <Text style={sty.sectionLabel}>Mise — points en jeu</Text>
-        <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 16, alignItems: 'center', gap: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <TouchableOpacity onPress={() => setStake(form.stakeMultiplier - 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>−</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 70, textAlign: 'center' }}>×{form.stakeMultiplier.toFixed(1)}</Text>
-            <TouchableOpacity onPress={() => setStake(form.stakeMultiplier + 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 20, color: Colors.textPrimary }}>+</Text>
-            </TouchableOpacity>
+        <Text style={[sty.sectionLabel, { marginBottom: -4 }]}>Mise du défi</Text>
+        <View style={carte}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+            <Icon name="zap" size={26} color={Colors.textPrimary} stroke={2} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Mise</Text>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 1 }}>Multiplicateur ELO</Text>
+            </View>
           </View>
-          <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: 'center' }}>Le delta ELO du match est multiplié par {form.stakeMultiplier.toFixed(1)} pour les 4 joueurs. Plus la mise est haute, plus on gagne… ou perd.</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {DEFI_STAKES.map(p => {
+              const on = form.stakeMultiplier === p.value;
+              return (
+                <TouchableOpacity
+                  key={p.value}
+                  onPress={() => set('stakeMultiplier', p.value)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={{
+                    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14,
+                    backgroundColor: on ? Colors.brand : Colors.bgCard,
+                    borderWidth: 1.5, borderColor: on ? Colors.brand : Colors.border,
+                  }}
+                >
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+                    style={{ fontSize: 13, fontFamily: Fonts.uiExtraBold, color: on ? '#0A0A0A' : Colors.textPrimary }}>
+                    {p.label}
+                  </Text>
+                  <Text style={{ fontSize: 24, fontFamily: Fonts.uiBlack, color: on ? '#0A0A0A' : Colors.textPrimary, marginTop: 2 }}>
+                    ×{p.value}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textSecondary, textAlign: 'center', marginTop: 12 }}>
+            Points ELO gagnés/perdus : ×{form.stakeMultiplier}
+          </Text>
+          <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', marginTop: 2 }}>
+            Choisis l'intensité du défi.
+          </Text>
         </View>
 
-        {/* Plafond de niveau adverse — masqué en mode ciblé (adversaires pré-désignés) */}
+        {/* Mon binôme : son niveau moyen fixe le plancher */}
+        <View style={[carte, { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.bgCardAlt }]}>
+          <Icon name="users" size={24} color={Colors.textPrimary} stroke={2} />
+          <Text style={{ flex: 1, fontSize: 14, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
+            <Text style={{ fontFamily: Fonts.uiBlack }}>Ton binôme</Text> : niveau moyen{' '}
+            <Text style={{ fontFamily: Fonts.uiBlack, color: t.eloColor }}>{defiFloorLevel.toFixed(2)}</Text>
+          </Text>
+          <TouchableOpacity
+            hitSlop={10}
+            accessibilityLabel="Explication"
+            onPress={() => Alert.alert(
+              'Niveau moyen du binôme',
+              `C'est la moyenne de ton niveau et de celui de ${partenaire}. `
+              + (targeted
+                ? 'Pour un défi ciblé, les adversaires sont déjà choisis : pas de plafond à régler.'
+                : 'Les binômes adverses doivent avoir au moins ce niveau moyen, et au plus le niveau maximum choisi ci-dessous.'),
+            )}
+          >
+            <Text style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.textSecondary, textAlign: 'center', lineHeight: 21, fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>i</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Niveau maximum adverse — masqué en mode ciblé (adversaires pré-désignés) */}
         {!targeted && (
           <>
-            <Text style={sty.sectionLabel}>Plafond de niveau adverse</Text>
-            <View style={{ backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, padding: 16, marginBottom: 12, alignItems: 'center', gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                <TouchableOpacity onPress={() => setCap(form.maxLevel - 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 20, color: Colors.textPrimary }}>−</Text>
+            <Text style={[sty.sectionLabel, { marginBottom: -4 }]}>Niveau maximum adverse</Text>
+            <View style={carte}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                <Icon name="signal" size={26} color={Colors.textPrimary} stroke={2.2} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Niveau maximum adverse</Text>
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 1 }}>Limite du niveau moyen du binôme</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22 }}>
+                <TouchableOpacity onPress={() => setCap(form.maxLevel - 0.1)} style={pas} accessibilityLabel="Baisser le niveau maximum">
+                  <Text style={{ fontSize: 26, color: Colors.textPrimary }}>−</Text>
                 </TouchableOpacity>
-                <Text style={{ fontSize: 30, fontFamily: Fonts.uiBlack, fontWeight: '900', color: t.eloColor, minWidth: 70, textAlign: 'center' }}>{form.maxLevel.toFixed(2)}</Text>
-                <TouchableOpacity onPress={() => setCap(form.maxLevel + 0.1)} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 20, color: Colors.textPrimary }}>+</Text>
+                <Text style={{ fontSize: 40, fontFamily: Fonts.uiBlack, color: t.eloColor, minWidth: 104, textAlign: 'center' }}>{form.maxLevel.toFixed(2)}</Text>
+                <TouchableOpacity onPress={() => setCap(form.maxLevel + 0.1)} style={pas} accessibilityLabel="Monter le niveau maximum">
+                  <Text style={{ fontSize: 26, color: Colors.textPrimary }}>+</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: t.eloColor, textAlign: 'center' }}>
-                Éligibles : binômes de moyenne {defiFloorLevel.toFixed(2)} → {form.maxLevel.toFixed(2)}
+              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: t.eloColor, textAlign: 'center', marginTop: 12 }}>
+                Binômes acceptés : {defiFloorLevel.toFixed(2)} → {form.maxLevel.toFixed(2)}
               </Text>
             </View>
           </>
         )}
 
-        <View style={{ backgroundColor: t.eloBg, borderWidth: 1, borderColor: t.eloBorder, borderRadius: 10, padding: 10 }}>
-          <Text style={{ fontSize: 11, color: Colors.textSecondary, textAlign: 'center', lineHeight: 16 }}>
-            {targeted
-              ? "Les adversaires sont pré-désignés. La partie démarre dès que les 3 invités acceptent."
-              : `À la publication, le défi reste invisible tant que ${defiPartner?.name?.split(' ')[0] ?? 'ton partenaire'} n'a pas accepté.`
-            }
-          </Text>
+        {/* Visibilité : le défi reste privé tant que le binôme n'a pas accepté */}
+        <View style={[carte, { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: t.eloBg, borderColor: t.eloBorder }]}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,193,26,0.18)', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="lock" size={20} color={Colors.textPrimary} stroke={2.3} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Défi privé jusqu'à acceptation</Text>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2, lineHeight: 17 }}>
+              {targeted
+                ? `${adversaires.length > 0 ? adversaires.join(' & ') : 'Tes adversaires'} seront prévenus dès que ${partenaire} accepte.`
+                : `La partie sera visible après l'acceptation de ${partenaire}.`}
+            </Text>
+          </View>
         </View>
       </ScrollView>
     );
