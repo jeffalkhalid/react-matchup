@@ -19,7 +19,7 @@ import { ManageClubsModal } from '../../components/ManageClubsModal';
 import { Pill } from '../../components/Pill';
 import { CreatorCrownBadge } from '../../components/CreatorCrownBadge';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
-import { Icon } from '../../components/community/icons';
+import { Icon, type IconName } from '../../components/community/icons';
 
 // ─── Types ────────────────────────────────────────────────────
 type GameType = 'Compétitif' | 'Amical' | 'Défi';
@@ -890,10 +890,12 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
   // ─── Step 1: The match ─────────────────────────────────────
   function renderStep1() {
-    const gameOptions: Array<{ val: GameType; icon: string; desc: string }> = [
-      { val: 'Compétitif', icon: '🏆', desc: 'Points ELO, matchs classés' },
-      { val: 'Amical',     icon: '😄', desc: 'Détente, sans classement' },
-      { val: 'Défi',       icon: '⚡', desc: 'Défier une équipe adverse' },
+    // Pictos au trait (registre Icon), comme le reste de l'app — plus d'emoji.
+    // Défi = les épées croisées de la barre de navigation.
+    const gameOptions: Array<{ val: GameType; icon: IconName; desc: string }> = [
+      { val: 'Compétitif', icon: 'trophy', desc: 'Points ELO, matchs classés' },
+      { val: 'Amical',     icon: 'heart',  desc: 'Détente, sans classement' },
+      { val: 'Défi',       icon: 'swords', desc: 'Défier une équipe adverse' },
     ];
     const genderOptions: Array<{ val: Genre; icon: string; label: string; desc: string }> =
       player?.gender === 'male'
@@ -931,8 +933,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
                   borderWidth: 2, borderColor: active ? ot.eloBorder : Colors.border,
                   backgroundColor: active ? ot.teamABg : Colors.bgCard,
                 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: active ? ot.btnBg : Colors.bgCardAlt, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 20 }}>{opt.icon}</Text>
+                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: active ? ot.btnBg : ot.eloBg, alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon
+                    name={opt.icon}
+                    size={21}
+                    stroke={2.2}
+                    color={active ? (opt.val === 'Défi' ? '#0A0A0A' : opt.val === 'Compétitif' ? Colors.brand : '#FFFFFF') : ot.accent}
+                  />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900', color: active ? ot.eloColor : Colors.textPrimary }}>{opt.val}</Text>
