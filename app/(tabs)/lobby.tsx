@@ -1591,7 +1591,7 @@ function exploreCtx(
   };
 }
 
-function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds, view, setView, viewportHeight }: {
+function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds, view, setView, viewportHeight, setMapFits }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
@@ -1613,6 +1613,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   setView: (v: 'list' | 'map') => void;
   /** Hauteur visible de la zone de contenu (mesurée par l'écran). */
   viewportHeight: number;
+  setMapFits: (fits: boolean) => void;
 }) {
   // Un défi ne se rejoint pas en solo : sa carte porte un CTA « Relever (à deux) »
   // qui ouvre le flux binôme dans le hub Défi. Si j'ai DÉJÀ candidaté, on affiche
@@ -1696,7 +1697,13 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   );
   // Hauteur mesurée des commandes au-dessus de la carte.
   const [commandesH, setCommandesH] = useState(0);
-  const hauteurCarte = Math.max(300, viewportHeight - commandesH - 100 - 12);
+  // La carte prend exactement la place qui reste quand elle tient ; sinon
+  // (petit écran, encart affiché) elle garde une hauteur lisible et la page
+  // redevient défilable, pour que rien ne soit hors d'atteinte.
+  const placeCarte = viewportHeight - commandesH - 100 - 12;
+  const carteTient = placeCarte >= 240;
+  const hauteurCarte = carteTient ? placeCarte : 360;
+  useEffect(() => { setMapFits(carteTient); }, [carteTient, setMapFits]);
 
   const hasActiveFilter = activeExploreFilterCount(filters) > 0;
   const recommended = useMemo(
@@ -1726,6 +1733,8 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   // toujours leur cible — rejoindre un match est LE geste que l'onboarding
   // enseigne. La carte disparaît dès la fin de la visite ('tour-active' false).
   const tourActive = useTourInfo('tour-active') === true;
+  // La visite guidée pointe des cartes de la LISTE : elle repasse en liste.
+  useEffect(() => { if (tourActive && view === 'map') setView('list'); }, [tourActive, view, setView]);
   const showTourDemo = tourActive && !showForYou && filtered.length === 0;
   const tourDemoGame = useMemo(() => {
     if (!showTourDemo) return null;
@@ -2477,6 +2486,7 @@ export default function LobbyScreen() {
   // prend les gestes) et on mesure la hauteur disponible pour la dimensionner.
   const [exploreView, setExploreView] = useState<'list' | 'map'>('list');
   const [viewportH, setViewportH] = useState(0);
+  const [carteTient, setCarteTient] = useState(true);
   // Le compteur de l'onglet applique la même distance que la liste.
   const { distanceOf: distanceOfBadge, reloadOrigin } = useOrigin();
 
@@ -3764,7 +3774,7 @@ export default function LobbyScreen() {
           style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-          scrollEnabled={!(tab === 'explorer' && exploreView === 'map')}
+          scrollEnabled={!(tab === 'explorer' && exploreView === 'map' && carteTient)}
           onLayout={e => { const h = e.nativeEvent.layout.height; setViewportH(prev => (Math.abs(prev - h) < 1 ? prev : h)); }}
         >
           {tab === 'explorer' && (
@@ -3795,6 +3805,7 @@ export default function LobbyScreen() {
               view={exploreView}
               setView={setExploreView}
               viewportHeight={viewportH}
+              setMapFits={setCarteTient}
             />
           )}
           {tab === 'upcoming' && (
