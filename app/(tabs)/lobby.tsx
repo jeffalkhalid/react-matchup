@@ -34,15 +34,17 @@ import {
 } from '../../lib/exploreFilters';
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
-import { formatGameDistance, sortByProximity, originLabel } from '../../lib/geo';
+import { formatGameDistance, sortByProximity, originLabel, normClubName } from '../../lib/geo';
 import { gpsFailureMessage } from '../../lib/originPolicy';
 import type { GpsPermission } from '../../lib/location';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
+import { ExploreMap } from '../../components/lobby/ExploreMap';
+import { groupMapMarkers } from '../../lib/mapMarkers';
 import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel } from '../../lib/games';
 import { matchNeedsMyAction } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
@@ -719,12 +721,8 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   ];
   // Fourchette via gameEloRange (source unique) : défi ciblé sans contrainte →
   // fourchette dérivée des joueurs confirmés. Bornes égales → valeur seule.
-  const eloRange = gameEloRange(game);
-  const levelRange = eloRange
-    ? (fmtLevel(eloRange.min) === fmtLevel(eloRange.max)
-        ? fmtLevel(eloRange.min)
-        : `${fmtLevel(eloRange.min)} – ${fmtLevel(eloRange.max)}`)
-    : null;
+  // Même libellé que le panneau de la carte (lib/games.levelRangeLabel).
+  const levelRange = levelRangeLabel(game);
   const dt = game.match_date ? splitDate(game.match_date) : null;
 
   // Voyant « EN COURS » : la partie se joue VRAIMENT — heure passée (de moins
@@ -1593,7 +1591,7 @@ function exploreCtx(
   };
 }
 
-function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds }: {
+function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds, view, setView, viewportHeight }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
@@ -1611,6 +1609,10 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   onCreate: () => void;
   onRelever: (gameId: string) => void;
   appliedDefiIds: Set<string>;
+  view: 'list' | 'map';
+  setView: (v: 'list' | 'map') => void;
+  /** Hauteur visible de la zone de contenu (mesurée par l'écran). */
+  viewportHeight: number;
 }) {
   // Un défi ne se rejoint pas en solo : sa carte porte un CTA « Relever (à deux) »
   // qui ouvre le flux binôme dans le hub Défi. Si j'ai DÉJÀ candidaté, on affiche
@@ -1638,7 +1640,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   const router = useRouter();
   const {
     origin, distanceOf, gpsAvailable, gpsPermission, zoneAvailable, loadFailed,
-    requestGps, refreshGps, reloadOrigin, ready, radiusKm,
+    requestGps, refreshGps, reloadOrigin, ready, radiusKm, clubIndex,
   } = useOrigin();
   // Tri de la liste : état d'affichage, jamais enregistré dans un filtre.
   const [sort, setSort] = useState<'date' | 'proximity'>('date');
@@ -1686,6 +1688,15 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     [games, filters, ctx],
   );
   const filtered = mainListAll;
+  // La carte montre EXACTEMENT les parties retenues par les filtres (recherche
+  // comprise) : même liste que la vue « Liste ».
+  const carte = useMemo(
+    () => groupMapMarkers(filtered, l => clubIndex.get(normClubName(l)) ?? null, villeDuClub),
+    [filtered, clubIndex, villeDuClub],
+  );
+  // Hauteur mesurée des commandes au-dessus de la carte.
+  const [commandesH, setCommandesH] = useState(0);
+  const hauteurCarte = Math.max(300, viewportHeight - commandesH - 100 - 12);
 
   const hasActiveFilter = activeExploreFilterCount(filters) > 0;
   const recommended = useMemo(
@@ -1815,13 +1826,31 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
 
   return (
     <View style={{ paddingBottom: 100 }}>
+      <View onLayout={e => { const h = e.nativeEvent.layout.height; setCommandesH(prev => (Math.abs(prev - h) < 1 ? prev : h)); }}>
+        {/* Liste | Carte : mêmes parties, mêmes filtres, deux façons de les voir. */}
+        <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 14, marginTop: 12, padding: 4, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
+          {([['list', 'Liste'], ['map', 'Carte']] as const).map(([v, l]) => {
+            const on = view === v;
+            return (
+              <TouchableOpacity
+                key={v}
+                onPress={() => setView(v)}
+                activeOpacity={0.85}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 9, backgroundColor: on ? Colors.primary : 'transparent' }}
+              >
+                <Icon name={v === 'list' ? 'bookOpen' : 'map'} size={14} color={on ? Colors.brand : Colors.textSecondary} stroke={2.3} />
+                <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: on ? Colors.textOnDark : Colors.textSecondary }}>{l}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       {/* La recherche reste a plat : c'est le geste le plus frequent, et le
           seul qui se fait en tapant. Tout le reste passe dans le volet — a
           neuf dimensions, des pastilles a plat mangeraient la liste qu'elles
           servent a trouver. */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14,
-        marginTop: 12, marginBottom: 10, backgroundColor: Colors.bgCard, borderRadius: 12,
+        marginTop: 10, marginBottom: 10, backgroundColor: Colors.bgCard, borderRadius: 12,
         borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
       }}>
         <Icon name="search" size={16} color={Colors.textMuted} stroke={2.2} />
@@ -2018,9 +2047,25 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         // sinon l'écran s'ouvre derrière elle.
         onChooseZone={() => { setSheetOpen(false); router.push('/zone' as any); }}
       />
+      </View>
+
+      {view === 'map' && (
+        <View style={{ paddingHorizontal: 14 }}>
+          <ExploreMap
+            height={hauteurCarte}
+            markers={carte.markers}
+            unplaced={carte.unplaced}
+            games={filtered}
+            origin={origin}
+            radiusKm={filters.maxKm}
+            distanceOf={distanceOf}
+            onOpenGame={id => { const g = filtered.find(x => x.id === id); if (g) onOpenGame(g); }}
+          />
+        </View>
+      )}
 
       {/* "Pour toi" — pile verticale des parties à ton niveau */}
-      {showForYou && (
+      {view === 'list' && showForYou && (
         <View style={{ marginBottom: 16 }}>
           <Text style={{
             fontSize: 11, fontWeight: '900', color: Colors.success,
@@ -2043,7 +2088,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
       )}
 
       {/* Carte d'exemple de la visite guidée — uniquement lobby vide + visite active. */}
-      {showTourDemo && tourDemoGame && (
+      {view === 'list' && showTourDemo && tourDemoGame && (
         <View style={{ paddingHorizontal: 14, marginBottom: 16 }}>
           <Text style={{
             fontSize: 11, fontWeight: '900', color: Colors.textSecondary,
@@ -2059,7 +2104,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
       )}
 
       {/* Main list — hidden entirely when "Pour toi" already covers every game */}
-      {(mainList.length > 0 || !showForYou) && (
+      {view === 'list' && (mainList.length > 0 || !showForYou) && (
         <View style={{ paddingHorizontal: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={{
@@ -2428,6 +2473,10 @@ export default function LobbyScreen() {
   // etats separes avaient deja produit trois copies divergentes de la meme
   // regle sans que rien ne le signale.
   const [exploreFilters, setExploreFilters] = useState<ExploreFilters>(NO_EXPLORE_FILTERS);
+  // Explorer : liste ou carte. En mode carte, la page ne défile plus (la carte
+  // prend les gestes) et on mesure la hauteur disponible pour la dimensionner.
+  const [exploreView, setExploreView] = useState<'list' | 'map'>('list');
+  const [viewportH, setViewportH] = useState(0);
   // Le compteur de l'onglet applique la même distance que la liste.
   const { distanceOf: distanceOfBadge, reloadOrigin } = useOrigin();
 
@@ -3715,6 +3764,8 @@ export default function LobbyScreen() {
           style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+          scrollEnabled={!(tab === 'explorer' && exploreView === 'map')}
+          onLayout={e => { const h = e.nativeEvent.layout.height; setViewportH(prev => (Math.abs(prev - h) < 1 ? prev : h)); }}
         >
           {tab === 'explorer' && (
             <ExploreTab
@@ -3741,6 +3792,9 @@ export default function LobbyScreen() {
               onCreate={() => setShowCreate(true)}
               onRelever={(id) => router.push((`/(tabs)/matchmaking?tab=relever&relever=${id}`) as any)}
               appliedDefiIds={appliedDefiIds}
+              view={exploreView}
+              setView={setExploreView}
+              viewportHeight={viewportH}
             />
           )}
           {tab === 'upcoming' && (
