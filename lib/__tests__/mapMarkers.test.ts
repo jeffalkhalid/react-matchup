@@ -6,6 +6,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 
 import { groupMapMarkers, panelRows, whenLabel, type MapMarker } from '../mapMarkers';
 import { levelRangeLabel } from '../games';
+import { normClubName } from '../geo';
 
 const points: Record<string, { lat: number; lng: number; approx: boolean }> = {
   'Padel 4 Maroc': { lat: 33.53, lng: -7.64, approx: false },
@@ -74,6 +75,14 @@ describe('regrouper les parties en repères', () => {
     expect(markers).toHaveLength(1);
     expect(markers[0]).toMatchObject({ kind: 'city', label: 'Casablanca', clubs: ['COC Padel'], gameIds: ['a', 'b'] });
   });
+
+  it('contrat de cityOf (celui construit par ExploreTab) : NORMALISÉ, même s il ne connaît que la graphie canonique — sinon un lieu saisi avec une autre casse retrouve sa position mais pas sa ville, et dessine un second cercle sur le même point', () => {
+    const villeParNomNormalise = new Map([['COC Padel', 'Casablanca']].map(([n, v]) => [normClubName(n), v]));
+    const cityOfNormalise = (l: string) => villeParNomNormalise.get(normClubName(l)) ?? null;
+    const { markers } = groupMapMarkers([g('a', 'COC Padel'), g('b', 'coc padel')], pointOf, cityOfNormalise);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({ kind: 'city', label: 'Casablanca', gameIds: ['a', 'b'] });
+  });
 });
 
 describe('libellé de niveau (même règle que la carte du lobby)', () => {
@@ -97,6 +106,16 @@ describe('le moment d une partie', () => {
   });
   it('sans date : « Date à fixer »', () => {
     expect(whenLabel(null, now)).toBe('Date à fixer');
+  });
+
+  it('« Demain » même la veille d un changement d heure (calcul par date calendaire, pas +24h en millisecondes)', () => {
+    // Le 28 mars 2026 (veille du passage à l heure d été le 29), +86 400 000 ms
+    // retombe le 30 mars (le 29 ne dure que 23h) : « demain » calculé en
+    // millisecondes saute un jour. Passer par les composants calendaires
+    // (année/mois/jour) évite le piège, quel que soit le fuseau du joueur.
+    const veilleChangementHeure = new Date(2026, 2, 28, 23, 30);
+    const lendemain = new Date(2026, 2, 29, 10, 0);
+    expect(whenLabel(lendemain.toISOString(), veilleChangementHeure)).toBe('Demain · 10:00');
   });
 });
 

@@ -75,7 +75,9 @@ export function whenLabel(iso: string | null | undefined, now: Date = new Date()
   if (Number.isNaN(d.getTime())) return 'Date à fixer';
   const heure = `${deux(d.getHours())}:${deux(d.getMinutes())}`;
   if (memeJour(d, now)) return `Aujourd'hui · ${heure}`;
-  const demain = new Date(now.getTime() + 86_400_000);
+  // Par composants calendaires, jamais +86 400 000 ms : un changement d'heure
+  // (jour de 23h ou 25h) ferait sauter ou redoubler « demain ».
+  const demain = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   if (memeJour(d, demain)) return `Demain · ${heure}`;
   const jour = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   return `${jour.charAt(0).toUpperCase()}${jour.slice(1)} · ${heure}`;
