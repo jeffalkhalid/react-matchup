@@ -1900,14 +1900,14 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         )}
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginBottom: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 6, paddingHorizontal: 14, marginBottom: 12 }}>
         <TouchableOpacity
           onPress={() => setSheetOpen(true)}
           activeOpacity={0.85}
           style={{
             flexDirection: 'row', alignItems: 'center', gap: 7,
             backgroundColor: hasActiveFilter ? Colors.primary : Colors.bgCard,
-            borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+            borderRadius: 12, paddingVertical: 10, paddingHorizontal: 11,
             borderWidth: 1, borderColor: hasActiveFilter ? Colors.primary : Colors.border,
           }}
         >
@@ -1928,7 +1928,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
           style={{
             flexDirection: 'row', alignItems: 'center', gap: 6,
             backgroundColor: filters.urgentOnly ? Colors.danger : Colors.bgCard,
-            borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+            borderRadius: 12, paddingVertical: 10, paddingHorizontal: 11,
             borderWidth: 1, borderColor: filters.urgentOnly ? Colors.danger : Colors.border,
           }}
         >
@@ -1943,47 +1943,40 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
           </Text>
         </TouchableOpacity>
 
-
-
-        <View style={{ flex: 1 }} />
-
-        {hasActiveFilter && (
-          <TouchableOpacity
-            onPress={() => setFilters(NO_EXPLORE_FILTERS)}
-            activeOpacity={0.8}
-            style={{ justifyContent: 'center', paddingHorizontal: 4 }}
-          >
-            <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
-              Tout effacer
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* À compléter | Complètes : sa propre rangée, pleine largeur comme
-          « Liste | Carte » — sur la ligne de « Filtres » elle débordait.
-          Un choix, ou aucun (les deux) : toucher le bouton actif le retire. */}
-      <View style={{ flexDirection: 'row', gap: 4, marginHorizontal: 14, marginBottom: 12, padding: 3, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
-        {([['open', 'À compléter', 'plus'], ['full', 'Complètes', 'lock']] as const).map(([v, l, ic]) => {
-          const on = filters.fill === v;
-          return (
-            <TouchableOpacity
-              key={v}
-              onPress={() => setFilters({ ...filters, fill: on ? 'any' : v })}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                paddingVertical: 8, borderRadius: 9,
-                backgroundColor: on ? Colors.brand : 'transparent',
-              }}
-            >
-              <Icon name={ic} size={13} color={on ? '#0A0A0A' : Colors.textSecondary} stroke={2.4} />
-              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: on ? '#0A0A0A' : Colors.textSecondary }}>{l}</Text>
-            </TouchableOpacity>
-          );
-        })}
+        {/* À compléter | Complètes, sur la même ligne : ils prennent la place
+            restante et le texte se réduit un peu sur un écran étroit.
+            Un choix, ou aucun (les deux) : toucher le bouton actif le retire.
+            « Tout effacer » n'est plus ici : « Réinitialiser les filtres »
+            l'offre juste au-dessus de la liste. */}
+        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', gap: 2, padding: 3, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
+          {([['open', 'À compléter', 'plus'], ['full', 'Complètes', 'lock']] as const).map(([v, l, ic]) => {
+            const on = filters.fill === v;
+            return (
+              <TouchableOpacity
+                key={v}
+                onPress={() => setFilters({ ...filters, fill: on ? 'any' : v })}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={{
+                  flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  paddingVertical: 7, paddingHorizontal: 4, borderRadius: 9,
+                  backgroundColor: on ? Colors.brand : 'transparent',
+                }}
+              >
+                <Icon name={ic} size={12} color={on ? '#0A0A0A' : Colors.textSecondary} stroke={2.4} />
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                  style={{ flexShrink: 1, fontSize: 12, fontFamily: Fonts.uiBlack, color: on ? '#0A0A0A' : Colors.textSecondary }}
+                >
+                  {l}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {montrerEncart && (
