@@ -17,7 +17,7 @@ export default function ConfidentialiteScreen() {
       kicker="Vie privée"
       title="Politique de confidentialité"
       sub="Vos données vous appartiennent. Voici, en clair, ce qu'on collecte, pourquoi, et comment vous gardez le contrôle."
-      updated={LEGAL.lastUpdate}
+      updated={LEGAL.privacyLastUpdate}
     >
       <Section n={1} icon="👤" title="Qui est responsable ?">
         <P>
@@ -52,6 +52,12 @@ export default function ConfidentialiteScreen() {
           moment depuis le menu de votre profil ; elle est aussi effacée si vous supprimez votre compte.
         </P>
         <P>
+          Si vous enregistrez une <B>alerte avec une distance</B> (« moins de 20 km »), nos serveurs
+          comparent votre zone de jeu à l'emplacement du club de chaque nouvelle partie, pour vous
+          prévenir. La position de votre téléphone n'est jamais utilisée pour cela : sans zone, ces
+          alertes ne se déclenchent pas.
+        </P>
+        <P>
           Les <B>Stories</B> sont générées sur votre appareil et partagées par vos soins : nous ne
           collectons ni ne stockons aucune photo ou vidéo sur nos serveurs.
         </P>
@@ -60,6 +66,7 @@ export default function ConfidentialiteScreen() {
       <Section n={3} icon="🎯" title="Pourquoi nous l'utilisons">
         <Bullet>Créer et gérer votre compte et votre profil.</Bullet>
         <Bullet>Organiser les parties, le matchmaking, le classement ELO et les défis.</Bullet>
+        <Bullet>Vous montrer la distance des parties et celles proches de vous, et vous alerter selon la distance.</Bullet>
         <Bullet>Faire vivre la messagerie et la communauté.</Bullet>
         <Bullet>Vous envoyer les notifications liées à vos parties.</Bullet>
         <Bullet>Sécuriser le service et prévenir la fraude et les abus.</Bullet>
@@ -82,6 +89,7 @@ export default function ConfidentialiteScreen() {
         <SubRow letter="G" color="#F59E0B" name="Google FCM" role="Notifications Android" />
         <SubRow letter="A" color="#52525B" name="Apple APNs" role="Notifications iOS" />
         <SubRow letter="C" color="#3B82F6" name="Cloudflare" role="Protection anti-robot (Turnstile)" />
+        <SubRow letter="O" color="#7EBC6F" name="OpenStreetMap" role="Fonds de carte (reçoit la zone de carte affichée)" />
       </Section>
 
       <Section n={6} icon="🌍" title="Hébergement hors du Maroc">
