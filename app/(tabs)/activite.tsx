@@ -219,7 +219,7 @@ export default function ActiviteTab() {
               <MomentsRail moments={moments} onShareMatch={() => setPickerOpen(true)} onOpen={(e) => setOpenMomentId(e.id)} />
               <WeekendRail games={weekend} onOpen={(id) => router.push(`/(tabs)/lobby?gameId=${id}` as any)} />
 
-              {player ? <FriendsRanking me={player} friends={friends} monthLabel={bilanRecap?.label} /> : null}
+              {player ? <FriendsRanking me={player} friends={friends} /> : null}
 
               <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 18 }} />
               <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} />

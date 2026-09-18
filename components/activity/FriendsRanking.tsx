@@ -3,9 +3,9 @@ import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { isAmbassador } from '../../lib/ambassador';
 import { AmbassadorChip, AmbassadorRing } from '../ambassador/primitives';
+import { PlayerAvatar } from '../PlayerAvatar';
 import type { Player, SocialPlayer } from '../../types';
 
-const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const RANK_COLOR = ['#E8A906', '#A1A1AA', '#0A0A0A'];
 
 // Classement « Top amis » — toi + tes amis, classés par points de saison
@@ -15,8 +15,8 @@ export function FriendsRanking({ me, friends, monthLabel, onSeeAll }: {
 }) {
   if (friends.length === 0) return null;
   const all = [
-    { id: me.id, name: 'Toi', pts: me.season_points ?? 0, level: eloToLevel(me.elo_score), isMe: true, member_number: me.member_number },
-    ...friends.map(f => ({ id: f.id, name: f.name, pts: f.season_points ?? 0, level: eloToLevel(f.elo_score), isMe: false, member_number: f.member_number })),
+    { id: me.id, name: 'Toi', pts: me.season_points ?? 0, level: eloToLevel(me.elo_score), isMe: true, member_number: me.member_number, avatar_path: (me as any).avatar_path ?? null, initialsOf: me.name },
+    ...friends.map(f => ({ id: f.id, name: f.name, pts: f.season_points ?? 0, level: eloToLevel(f.elo_score), isMe: false, member_number: f.member_number, avatar_path: (f as any).avatar_path ?? null, initialsOf: f.name })),
   ];
   const usePts = all.some(r => r.pts > 0);
   const metric = (r: typeof all[number]) => (usePts ? r.pts : r.level);
@@ -43,19 +43,24 @@ export function FriendsRanking({ me, friends, monthLabel, onSeeAll }: {
             ...(r.isMe ? { backgroundColor: 'rgba(255,193,26,0.12)', borderRadius: 9, paddingHorizontal: 6, marginHorizontal: -6 } : null),
           }}>
             <Text style={{ width: 20, textAlign: 'center', fontFamily: Fonts.uiBlack, fontSize: 13, color: RANK_COLOR[i] ?? Colors.textMuted }}>{i + 1}</Text>
-            {isAmbassador(r) ? (
-              <AmbassadorRing size={28} radius={9} showStar={false} surface={Colors.bgCard}>
-                <View style={{ width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: r.isMe ? '#0A0A0A' : Colors.brand, borderWidth: r.isMe ? 1.5 : 0, borderColor: Colors.brand }}>
-                  <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: r.isMe ? Colors.brand : '#0A0A0A' }}>{initials(r.name)}</Text>
-                </View>
-              </AmbassadorRing>
-            ) : (
-              <View style={{ width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: r.isMe ? '#0A0A0A' : Colors.brand, borderWidth: r.isMe ? 1.5 : 0, borderColor: Colors.brand }}>
-                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: r.isMe ? Colors.brand : '#0A0A0A' }}>{initials(r.name)}</Text>
-              </View>
-            )}
+            {/* Photo ronde (initiales sans photo), anneau doré pour un ambassadeur. */}
+            {(() => {
+              const photo = (
+                <PlayerAvatar
+                  name={r.initialsOf}
+                  path={r.avatar_path}
+                  size={32}
+                  backgroundColor={r.isMe ? '#0A0A0A' : Colors.brand}
+                  textColor={r.isMe ? Colors.brand : '#0A0A0A'}
+                  fontFamily={Fonts.uiExtraBold}
+                  fontSize={11}
+                  initialsMax={2}
+                />
+              );
+              return isAmbassador(r)
+                ? <AmbassadorRing size={32} radius={16} showStar={false} surface={Colors.bgCard}>{photo}</AmbassadorRing>
+                : photo;
+            })()}
             <View style={{ flex: 1 }}>
               {isAmbassador(r) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
