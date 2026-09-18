@@ -24,9 +24,10 @@ describe('carte de l Explorer : contrat avec l écran', () => {
     expect(html).toContain('esc(m.label)');
   });
 
-  it('les repères de ville sont atténués et disent « emplacement exact inconnu »', () => {
+  it('les repères de ville sont atténués : nombre + nom de ville seulement (« emplacement exact inconnu » reste dans le panneau, pas dans le cercle)', () => {
     expect(html).toContain('.ville');
-    expect(html).toContain('emplacement exact inconnu');
+    expect(html).toContain("<b>' + n + '</b>");
+    expect(html).not.toContain('emplacement exact inconnu');
   });
 
   it('recadre quand le point de départ revient ou que le rayon change', () => {

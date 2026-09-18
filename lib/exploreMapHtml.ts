@@ -23,8 +23,10 @@ export function buildExploreMapHtml(): string {
     .club b{transform:rotate(45deg);color:#FFC11A;font:800 12px system-ui}
     .ville{display:flex;flex-direction:column;align-items:center;justify-content:center;
       width:56px;height:56px;border-radius:50%;background:rgba(10,10,10,.35);
-      border:2px dashed rgba(255,255,255,.9);color:#fff;font:800 13px system-ui;text-align:center}
-    .ville small{font:600 8px system-ui;opacity:.95;line-height:1.1;max-width:50px}
+      border:2px dashed rgba(255,255,255,.9);color:#fff;text-align:center}
+    .ville b{font:800 14px system-ui}
+    .ville small{font:600 10px system-ui;opacity:.95;line-height:1.2;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis;max-width:52px}
     .gps{width:16px;height:16px;border-radius:50%;background:#1f6feb;border:3px solid #fff;
       box-shadow:0 0 0 6px rgba(31,111,235,.25)}
     .zone{width:22px;height:22px;border-radius:50% 50% 50% 0;background:#1f6feb;
@@ -77,7 +79,7 @@ export function buildExploreMapHtml(): string {
         var n = m.gameIds.length;
         var html = m.kind === 'club'
           ? '<div class="club" title="' + esc(m.label) + '"><b>' + n + '</b></div>'
-          : '<div class="ville">' + n + '<small>' + esc(m.label) + '<br/>emplacement exact inconnu</small></div>';
+          : '<div class="ville" title="' + esc(m.label) + '"><b>' + n + '</b><small>' + esc(m.label) + '</small></div>';
         var taille = m.kind === 'club' ? [32, 32] : [56, 56];
         var ancre = m.kind === 'club' ? [16, 32] : [28, 28];
         var icone = L.divIcon({ html: html, className: '', iconSize: taille, iconAnchor: ancre });
