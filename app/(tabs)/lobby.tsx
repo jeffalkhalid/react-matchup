@@ -1567,6 +1567,10 @@ function resetOne(r: ExploreReason): Partial<ExploreFilters> {
 
 /** Encart « près de toi » masqué par le joueur : il ne revient pas. */
 const ORIGIN_HINT_KEY = 'explore.originHint.dismissed';
+/** Place de la barre d'onglets, sous le contenu défilable de l'Explorer. */
+const EXPLORE_BOTTOM_PAD = 100;
+/** Espace entre les commandes de l'Explorer et la carte. */
+const MAP_GAP = 12;
 
 function exploreCtx(
   myElo: number,
@@ -1655,6 +1659,17 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     const m = new Map(clubs.map(c => [c.name, c.city]));
     return (n: string) => m.get(n) ?? null;
   }, [clubs]);
+  // Même clé que les positions (lib/geo.normClubName) : un lieu saisi avec une
+  // autre casse retrouve sa ville, et donc son cercle — pour la carte
+  // UNIQUEMENT (le filtre « Ville » garde villeDuClub, sensible à la casse).
+  const villeParNomNormalise = useMemo(
+    () => new Map(clubs.map(c => [normClubName(c.name), c.city])),
+    [clubs],
+  );
+  const villeDuLieu = useCallback(
+    (l: string) => villeParNomNormalise.get(normClubName(l)) ?? null,
+    [villeParNomNormalise],
+  );
   const knownPlayers = useMemo(() => new Set(topPlayers.map(p => p.id)), [topPlayers]);
   const ctx = useMemo(
     () => exploreCtx(myElo, villeDuClub, knownPlayers, distanceOf),
@@ -1692,15 +1707,15 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   // La carte montre EXACTEMENT les parties retenues par les filtres (recherche
   // comprise) : même liste que la vue « Liste ».
   const carte = useMemo(
-    () => groupMapMarkers(filtered, l => clubIndex.get(normClubName(l)) ?? null, villeDuClub),
-    [filtered, clubIndex, villeDuClub],
+    () => groupMapMarkers(filtered, l => clubIndex.get(normClubName(l)) ?? null, villeDuLieu),
+    [filtered, clubIndex, villeDuLieu],
   );
   // Hauteur mesurée des commandes au-dessus de la carte.
   const [commandesH, setCommandesH] = useState(0);
   // La carte prend exactement la place qui reste quand elle tient ; sinon
   // (petit écran, encart affiché) elle garde une hauteur lisible et la page
   // redevient défilable, pour que rien ne soit hors d'atteinte.
-  const placeCarte = viewportHeight - commandesH - 100 - 12;
+  const placeCarte = viewportHeight - commandesH - EXPLORE_BOTTOM_PAD - MAP_GAP;
   const carteTient = placeCarte >= 240;
   const hauteurCarte = carteTient ? placeCarte : 360;
   useEffect(() => { setMapFits(carteTient); }, [carteTient, setMapFits]);
@@ -1834,7 +1849,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     : `disponible${mainList.length > 1 ? 's' : ''}`;
 
   return (
-    <View style={{ paddingBottom: 100 }}>
+    <View style={{ paddingBottom: EXPLORE_BOTTOM_PAD }}>
       <View onLayout={e => { const h = e.nativeEvent.layout.height; setCommandesH(prev => (Math.abs(prev - h) < 1 ? prev : h)); }}>
         {/* Liste | Carte : mêmes parties, mêmes filtres, deux façons de les voir. */}
         <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 14, marginTop: 12, padding: 4, borderRadius: 12, backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border }}>
@@ -1977,7 +1992,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         </View>
       )}
 
-      {(gpsAvailable || zoneAvailable) && (
+      {view === 'list' && (gpsAvailable || zoneAvailable) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginBottom: 12 }}>
           <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.textSecondary }}>Trier</Text>
           {([['date', 'Date'], ['proximity', 'Proximité']] as const).map(([v, l]) => {
@@ -2069,6 +2084,10 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
             radiusKm={filters.maxKm}
             distanceOf={distanceOf}
             onOpenGame={id => { const g = filtered.find(x => x.id === id); if (g) onOpenGame(g); }}
+            ready={ready}
+            loadFailed={loadFailed}
+            onRetry={() => { void reloadOrigin({ force: true }); }}
+            filtersActive={hasActiveFilter}
           />
         </View>
       )}
@@ -2487,6 +2506,12 @@ export default function LobbyScreen() {
   const [exploreView, setExploreView] = useState<'list' | 'map'>('list');
   const [viewportH, setViewportH] = useState(0);
   const [carteTient, setCarteTient] = useState(true);
+  // La ScrollView du contenu : passage en carte, on remonte en haut, sinon
+  // iOS garde le décalage de la liste alors que la page ne défile plus.
+  const contenuRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (tab === 'explorer' && exploreView === 'map') contenuRef.current?.scrollTo({ y: 0, animated: false });
+  }, [tab, exploreView]);
   // Le compteur de l'onglet applique la même distance que la liste.
   const { distanceOf: distanceOfBadge, reloadOrigin } = useOrigin();
 
@@ -3771,6 +3796,7 @@ export default function LobbyScreen() {
         <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
       ) : (
         <ScrollView
+          ref={contenuRef}
           style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
