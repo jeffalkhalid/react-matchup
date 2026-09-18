@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange } from '../../lib/games';
-import { fetchQueuedBinomes, type QueuedBinome } from '../../lib/defis';
+import { fetchQueuedBinomes, targetedOpponentsLine, type QueuedBinome } from '../../lib/defis';
 import { fetchPlayersTotals, type PlayerTotals } from '../../lib/playerStats';
 import { FitTitle } from '../../components/DisplayTitle';
 import { openInMaps, hasMapTarget } from '../../lib/maps';
@@ -456,6 +456,10 @@ function GameDetailsSheetContenu({
   }, [filledIds]);
 
   const isCreator    = game.creator_id === playerId;
+  // Défi ciblé en brouillon : phrase visible au créateur ET à son partenaire
+  // invité — les adversaires notés (target_players) ne sont invités/notifiés
+  // qu'à l'acceptation du binôme (fn_publish_defi_on_partner_accept).
+  const targetedLine = targetedOpponentsLine(game, isCreator ? 'creator' : 'partner');
   const myParticipant = (game.participants ?? []).find((p: any) => p.player_id === playerId);
   const myStatus     = (myParticipant as any)?.status;
   // Une invitation expirée (cron pas encore passée) ne « réserve » plus la place :
@@ -889,6 +893,17 @@ function GameDetailsSheetContenu({
                     </View>
                   </View>
                 )}
+              </View>
+            )}
+
+            {/* Défi ciblé en brouillon : adversaires notés, pas encore invités. */}
+            {targetedLine && (
+              <View style={{ backgroundColor: VIOLET_SOFT, borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 18, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                <Text style={{ fontSize: 18 }}>⚔️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: VIOLET }}>Défi ciblé</Text>
+                  <Text style={{ fontSize: 11, color: Colors.textSecondary, marginTop: 2 }}>{targetedLine}</Text>
+                </View>
               </View>
             )}
 
