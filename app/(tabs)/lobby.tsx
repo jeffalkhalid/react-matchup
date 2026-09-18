@@ -2125,6 +2125,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
             loadFailed={loadFailed}
             onRetry={() => { void reloadOrigin({ force: true }); }}
             filtersActive={hasActiveFilter}
+            search={filters.search}
           />
         </View>
       )}

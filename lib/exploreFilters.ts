@@ -161,6 +161,8 @@ export interface ExploreGame {
   game_format?: string | null;
   is_challenge?: boolean | null;
   creator?: { name?: string | null } | null;
+  /** Les joueurs inscrits — la recherche les trouve aussi par leur nom. */
+  participants?: { player?: { name?: string | null } | null }[] | null;
 }
 
 export interface ExploreContext {
@@ -191,9 +193,9 @@ export interface ExploreContext {
  */
 /** Deux noms de club ou de ville identiques à la casse, aux accents et aux
  *  espaces près : « Fès », « fes » et « FES » sont la même ville. */
+const plain = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
 function sameName(a: string, b: string): boolean {
-  const n = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
-  return n(a) === n(b);
+  return plain(a) === plain(b);
 }
 
 export function exploreRefusal(g: ExploreGame, f: ExploreFilters, ctx: ExploreContext): ExploreReason | null {
@@ -229,11 +231,14 @@ export function exploreRefusal(g: ExploreGame, f: ExploreFilters, ctx: ExploreCo
     if (f.knownOnly && !dedans.some(id => ctx.knownPlayers.has(id))) return 'known';
   }
 
-  const q = f.search.trim().toLowerCase();
+  // Recherche : le club, sa VILLE, l'organisateur ou n'importe quel joueur
+  // inscrit — « Marrakech » ou « Rita » doivent trouver quelque chose.
+  const q = plain(f.search);
   if (q) {
-    const dans = lieu.toLowerCase().includes(q)
-      || (g.creator?.name ?? '').toLowerCase().includes(q);
-    if (!dans) return 'search';
+    const ville = lieu ? ctx.cityOfClub(lieu) : null;
+    const noms = [lieu, ville ?? '', g.creator?.name ?? '',
+      ...(g.participants ?? []).map(p => p.player?.name ?? '')];
+    if (!noms.some(n => plain(n).includes(q))) return 'search';
   }
   return null;
 }

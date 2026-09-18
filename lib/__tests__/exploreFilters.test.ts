@@ -404,3 +404,25 @@ describe('remplissage — filtre rapide « Parties ouvertes » / « Complètes �
     expect(REASON_LABEL.fill).toBe('À compléter / complètes');
   });
 });
+
+describe('recherche — club, ville ou joueur', () => {
+  const g = partie({
+    location: 'Padel 4 Maroc',
+    creator: { name: 'Youssef' },
+    participants: [{ player: { name: 'Rita' } }, { player: { name: 'Mehdi' } }],
+  } as any);
+  it('trouve la VILLE du club (Padel 4 Maroc est à Casablanca)', () => {
+    expect(exploreRefusal(g, f({ search: 'casa' }), ctx())).toBe(null);
+  });
+  it('trouve un joueur inscrit, pas seulement l\'organisateur', () => {
+    expect(exploreRefusal(g, f({ search: 'rita' }), ctx())).toBe(null);
+    expect(exploreRefusal(g, f({ search: 'meh' }), ctx())).toBe(null);
+  });
+  it('ignore accents et majuscules', () => {
+    const c = ctx({ cityOfClub: () => 'Fès' });
+    expect(exploreRefusal(g, f({ search: 'FES' }), c)).toBe(null);
+  });
+  it('rien ne correspond → écartée', () => {
+    expect(exploreRefusal(g, f({ search: 'agadir' }), ctx())).toBe('search');
+  });
+});

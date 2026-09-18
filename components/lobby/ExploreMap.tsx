@@ -17,7 +17,7 @@ import type { DistanceOf, Origin } from '../../lib/geo';
 
 type PanelGame = Parameters<typeof panelRows>[0][number];
 
-export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm, distanceOf, onOpenGame, ready, loadFailed, onRetry, filtersActive }: {
+export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm, distanceOf, onOpenGame, ready, loadFailed, onRetry, filtersActive, search = '' }: {
   height: number;
   markers: MapMarker[];
   unplaced: number;
@@ -33,6 +33,8 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
   onRetry: () => void;
   /** Au moins un filtre est actif : change le conseil affiché sur carte vide. */
   filtersActive: boolean;
+  /** Texte de la recherche : non vide → la carte se cadre sur les résultats. */
+  search?: string;
 }) {
   const webref = useRef<WebView>(null);
   // Compteur incrémenté à chaque message 'ready' de la page (pas un booléen) :
@@ -58,6 +60,18 @@ export function ExploreMap({ height, markers, unplaced, games, origin, radiusKm,
     if (generation === 0) return;
     injecter(`window.setMarkers && window.setMarkers(${JSON.stringify(markers)})`);
   }, [generation, markers, injecter]);
+
+  // Recherche (club, ville, joueur) : la carte se cadre sur ce qu'elle
+  // trouve, à chaque nouveau résultat. Effacée → retour au cadrage habituel.
+  // Placé APRÈS l'envoi des repères : la page les connaît déjà.
+  const recherche = search.trim();
+  const rechercheAvant = useRef('');
+  useEffect(() => {
+    if (generation === 0) return;
+    if (recherche) injecter('window.focusReperes && window.focusReperes()');
+    else if (rechercheAvant.current) injecter('window.recadrer && window.recadrer()');
+    rechercheAvant.current = recherche;
+  }, [generation, markers, recherche, injecter]);
 
   // Un repère disparu (filtre changé) ferme son panneau.
   const repere = selection ? markers.find(m => m.key === selection) ?? null : null;

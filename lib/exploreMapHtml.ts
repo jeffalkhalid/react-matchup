@@ -91,6 +91,21 @@ export function buildExploreMapHtml(): string {
       cadrer();
     };
 
+    // Recherche en cours : cadrer sur les repères trouvés (un seul → zoom
+    // dessus). Sans effet s'il n'y a rien : la carte ne saute pas dans le vide.
+    window.focusReperes = function(){
+      if (points.length === 0) return;
+      if (points.length === 1) map.setView(points[0], 14);
+      else map.fitBounds(points, { padding: [40, 40], maxZoom: 14 });
+    };
+
+    // Recherche effacée : retour au cadrage habituel (départ, sinon repères).
+    window.recadrer = function(){
+      cadreSurDepart = false;
+      cadreSurReperes = false;
+      cadrer();
+    };
+
     window.setOrigin = function(ORIGIN, RADIUS_KM){
       depart.clearLayers();
       cercle = null;
