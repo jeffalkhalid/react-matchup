@@ -34,11 +34,11 @@ export interface SavedFilter {
   last_alert_at?: string | null;
 }
 
-/** Les critères qu'une alerte sait surveiller. */
-export const ALERTABLE_KEYS = ['clubs', 'cities', 'type', 'gender', 'slot', 'level'] as const;
-/** Ceux qui n'ont de sens qu'au moment où l'on regarde — et la distance, que
- *  le serveur ne sait pas encore mesurer (lot 4 de la localisation). */
-export const VIEW_ONLY_KEYS = ['date', 'spots', 'urgentOnly', 'search', 'maxKm'] as const;
+/** Les critères qu'une alerte sait surveiller — la distance depuis le lot 4
+ *  (mesurée côté serveur depuis `player_zones`, jamais depuis le GPS). */
+export const ALERTABLE_KEYS = ['clubs', 'cities', 'type', 'gender', 'slot', 'level', 'maxKm'] as const;
+/** Ceux qui n'ont de sens qu'au moment où l'on regarde. */
+export const VIEW_ONLY_KEYS = ['date', 'spots', 'urgentOnly', 'search'] as const;
 
 /**
  * Les critères de ce filtre qu'une alerte surveillera réellement, et ceux
@@ -53,11 +53,13 @@ export function alertCoverage(f: ExploreFilters): { watched: string[]; ignored: 
   if (f.gender !== 'all') watched.push('Genre');
   if (f.slot !== 'any') watched.push('Plage horaire');
   if (f.level !== 'all') watched.push('Niveau');
+  // Mesurée depuis la zone du joueur au moment où la partie est créée — pas
+  // depuis le GPS, jamais envoyé au serveur (supabase/migrations/saved_filters_distance.sql).
+  if (f.maxKm !== null) watched.push(`Distance : moins de ${f.maxKm} km de ta zone`);
   if (f.date !== 'any') ignored.push('Date');
   if (f.spots !== null) ignored.push('Places libres');
   if (f.urgentOnly) ignored.push('Urgent');
   if (f.search.trim()) ignored.push('Recherche');
-  if (f.maxKm !== null) ignored.push('Distance');
   return { watched, ignored };
 }
 
@@ -76,6 +78,7 @@ export function suggestFilterName(f: ExploreFilters): string {
   else if (f.cities.length > 1) bouts.push(`${f.cities.length} villes`);
   if (f.clubs.length === 1) bouts.push(f.clubs[0]);
   else if (f.clubs.length > 1) bouts.push(`${f.clubs.length} clubs`);
+  if (f.maxKm !== null) bouts.push(`Moins de ${f.maxKm} km`);
   if (f.type === 'competitive') bouts.push('Compétitif');
   if (f.type === 'friendly') bouts.push('Amical');
   if (f.type === 'challenge') bouts.push('Défi');
@@ -114,6 +117,33 @@ export function hydrateFilter(raw: unknown): ExploreFilters {
 export function normalizeFilterName(name: string, f: ExploreFilters): string {
   const n = name.trim().replace(/\s+/g, ' ');
   return (n || suggestFilterName(f)).slice(0, 40);
+}
+
+/**
+ * Une alerte avec distance a besoin d'une zone pour se déclencher — le
+ * serveur mesure depuis `player_zones`, jamais depuis le GPS. Sans zone,
+ * l'alerte est enregistrable (elle marchera dès que la zone sera choisie),
+ * mais l'écran doit le dire avant d'enregistrer.
+ */
+export function alertNeedsZone(f: ExploreFilters, hasZone: boolean): boolean {
+  return f.maxKm !== null && !hasZone;
+}
+
+/** Combien de filtres enregistrés ont une alerte active ET portent une distance. */
+export function distanceAlertCount(saved: SavedFilter[]): number {
+  return saved.filter(sf => sf.alert && sf.criteria.maxKm !== null).length;
+}
+
+/**
+ * Le message avant de supprimer sa zone. Sans alerte à distance, rien ne
+ * change : le message reste celui d'avant le lot 4. Singulier pour une seule
+ * alerte — « tes 1 alertes » ne se dit pas.
+ */
+export function zoneDeletionMessage(n: number): string {
+  const base = 'Les distances ne seront plus calculées depuis cette zone.';
+  if (n <= 0) return base;
+  if (n === 1) return `${base} Ton alerte avec distance ne se déclenchera plus.`;
+  return `${base} Tes ${n} alertes avec distance ne se déclencheront plus.`;
 }
 
 // ─── Accès base ───────────────────────────────────────────────────────────

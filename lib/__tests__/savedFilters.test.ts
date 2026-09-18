@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   alertCoverage, canAlert, suggestFilterName, hydrateFilter, normalizeFilterName,
+  alertNeedsZone, distanceAlertCount, zoneDeletionMessage, type SavedFilter,
 } from '../savedFilters';
 import { NO_EXPLORE_FILTERS, type ExploreFilters } from '../exploreFilters';
 
@@ -98,15 +99,15 @@ describe('nom nettoye', () => {
   });
 });
 
-describe('distance max et alertes (lot 1)', () => {
-  it('la distance est enregistrée avec le filtre mais PAS encore surveillée par l alerte', () => {
+describe('distance max et alertes (lot 4)', () => {
+  it('maxKm rejoint desormais les criteres surveilles, avec le rayon dans le libelle', () => {
     const c = alertCoverage(f({ cities: ['Rabat'], maxKm: 10 }));
-    expect(c.watched).toEqual(['Ville']);
-    expect(c.ignored).toEqual(['Distance']);
+    expect(c.watched).toEqual(['Ville', 'Distance : moins de 10 km de ta zone']);
+    expect(c.ignored).toEqual([]);
   });
 
-  it('une distance seule ne suffit pas à faire une alerte', () => {
-    expect(canAlert(f({ maxKm: 10 }))).toBe(false);
+  it('une distance seule suffit desormais a faire une alerte', () => {
+    expect(canAlert(f({ maxKm: 10 }))).toBe(true);
   });
 
   it('relecture : maxKm absent ou aberrant → null ; valeur permise conservée', () => {
@@ -114,5 +115,77 @@ describe('distance max et alertes (lot 1)', () => {
     expect(hydrateFilter({ maxKm: 15 }).maxKm).toBeNull();
     expect(hydrateFilter({ maxKm: '10' }).maxKm).toBeNull();
     expect(hydrateFilter({ maxKm: 20 }).maxKm).toBe(20);
+  });
+});
+
+describe('nom propose avec une distance (lot 4)', () => {
+  it('ajoute « Moins de N km » apres la ville et le club', () => {
+    expect(suggestFilterName(f({ cities: ['Rabat'], maxKm: 10 })))
+      .toBe('Rabat · Moins de 10 km');
+  });
+
+  it('la limite a trois morceaux s applique toujours avec la distance', () => {
+    const n = suggestFilterName(f({
+      cities: ['Rabat'], clubs: ['ACSA'], maxKm: 20, slot: 'evening',
+    }));
+    expect(n.split(' · ')).toHaveLength(3);
+    expect(n).toBe('Rabat · ACSA · Moins de 20 km');
+  });
+});
+
+describe('alerte avec distance sans zone (lot 4)', () => {
+  it('signale qu il manque une zone quand une distance est posee sans zone', () => {
+    expect(alertNeedsZone(f({ maxKm: 10 }), false)).toBe(true);
+  });
+
+  it('ne signale rien des qu une zone existe', () => {
+    expect(alertNeedsZone(f({ maxKm: 10 }), true)).toBe(false);
+  });
+
+  it('ne signale rien sans critere de distance, zone ou pas', () => {
+    expect(alertNeedsZone(f({ cities: ['Rabat'] }), false)).toBe(false);
+    expect(alertNeedsZone(NO_EXPLORE_FILTERS, false)).toBe(false);
+  });
+});
+
+describe('compter les alertes avec distance (lot 4)', () => {
+  const sf = (o: Partial<SavedFilter> = {}): SavedFilter => ({
+    id: 'x', name: 'Test', criteria: NO_EXPLORE_FILTERS, alert: true,
+    created_at: '2026-01-01T00:00:00.000Z', ...o,
+  });
+
+  it('compte seulement les filtres actifs ET portant une distance', () => {
+    const saved: SavedFilter[] = [
+      sf({ id: 'a', alert: true, criteria: f({ maxKm: 10 }) }),
+      sf({ id: 'b', alert: false, criteria: f({ maxKm: 20 }) }),
+      sf({ id: 'c', alert: true, criteria: f({ cities: ['Rabat'] }) }),
+      sf({ id: 'd', alert: true, criteria: f({ maxKm: 5 }) }),
+    ];
+    expect(distanceAlertCount(saved)).toBe(2);
+  });
+
+  it('zero sur une liste vide ou sans aucune distance', () => {
+    expect(distanceAlertCount([])).toBe(0);
+    expect(distanceAlertCount([sf({ criteria: f({ cities: ['Rabat'] }) })])).toBe(0);
+  });
+});
+
+describe('message avant de supprimer sa zone (lot 4)', () => {
+  it('garde le message actuel sans alerte a distance', () => {
+    expect(zoneDeletionMessage(0)).toBe(
+      'Les distances ne seront plus calculées depuis cette zone.',
+    );
+  });
+
+  it('avertit au singulier pour une seule alerte', () => {
+    expect(zoneDeletionMessage(1)).toBe(
+      'Les distances ne seront plus calculées depuis cette zone. Ton alerte avec distance ne se déclenchera plus.',
+    );
+  });
+
+  it('avertit au pluriel, avec le compte, au-dela d une alerte', () => {
+    expect(zoneDeletionMessage(3)).toBe(
+      'Les distances ne seront plus calculées depuis cette zone. Tes 3 alertes avec distance ne se déclencheront plus.',
+    );
   });
 });
