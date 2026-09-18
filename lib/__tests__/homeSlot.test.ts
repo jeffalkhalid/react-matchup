@@ -99,7 +99,7 @@ describe('les parties qu on a le droit de proposer', () => {
   });
 });
 
-describe('le classement : niveau, puis urgence, puis club favori', () => {
+describe('le classement : niveau, puis proximite, puis urgence, puis club favori', () => {
   // Deux joueurs deja dedans : il reste UNE place (4 - createur - 2).
   const DEUX = [
     { player_id: 'x', status: 'accepted' },
@@ -216,12 +216,30 @@ describe('le critere « proche », juste apres le niveau', () => {
     expect(suggestibleGames([procheHorsNiveau, loinDansNiveau], ME, NOW).map(g => g.id)).toEqual(['loin', 'proche']);
   });
 
-  it('un club place au CENTRE DE SA VILLE ne compte pas comme proche', () => {
-    // Sa distance est approximative : mettre cette partie en avant serait une
-    // promesse fondee sur un point faux.
+  it('un club place au centre de sa ville compte AUSSI comme proche (decision utilisateur 2026-09-18)', () => {
+    // La distance d'un club place au centre de sa ville est approximative,
+    // mais elle suffit pour une PRIORITE : rien n'est promis au joueur, la
+    // carte affichera « ~ ». Exiger une position exacte favorisait les 28
+    // clubs verifies au detriment de parties reellement plus proches.
     const centre = G({ id: 'centre', location: 'CentreVille', match_date: dans(48) });
     const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
-    expect(suggestibleGames([centre, urgente], ME, NOW).map(g => g.id)).toEqual(['urgente', 'centre']);
+    expect(suggestibleGames([centre, urgente], ME, NOW).map(g => g.id)).toEqual(['centre', 'urgente']);
+  });
+
+  it('un club approximatif AU-DELA du rayon n est pas proche', () => {
+    const loinApprox = G({ id: 'loinApprox', location: 'CentreLoin', match_date: dans(48) });
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    const distanceOfLoinApprox = (l: string | null | undefined) =>
+      l === 'CentreLoin' ? { km: 30, approx: true } : distanceOf(l);
+    const ME20 = { ...ME, distanceOf: distanceOfLoinApprox, radiusKm: 20 };
+    expect(suggestibleGames([loinApprox, urgente], ME20, NOW).map(g => g.id)).toEqual(['urgente', 'loinApprox']);
+  });
+
+  it('a la borne exacte du rayon, la partie compte comme proche', () => {
+    const ME3 = { ...ME, radiusKm: 3 };
+    const pile = G({ id: 'pile', location: 'Pres', match_date: dans(48) }); // 3 km, rayon 3
+    const urgente = G({ id: 'urgente', location: 'Loin', match_date: dans(2), participants: DEUX });
+    expect(suggestibleGames([urgente, pile], ME3, NOW).map(g => g.id)).toEqual(['pile', 'urgente']);
   });
 
   it('au-dela du rayon de la zone, ce n est plus proche', () => {

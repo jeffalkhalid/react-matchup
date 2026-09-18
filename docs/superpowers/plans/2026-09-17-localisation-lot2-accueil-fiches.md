@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- `lib/homeSlot.ts` : critère « proche » inséré **après le niveau**. Proche = **club précis** et distance **≤ rayon de la zone** (20 km par défaut sans zone). Distance fournie **en paramètre**. Sans point de départ, critère **ignoré** (ordre actuel inchangé).
+- `lib/homeSlot.ts` : critère « proche » inséré **après le niveau**. Proche = **distance ≤ rayon de la zone**, que la position du club soit exacte ou approximative (décision utilisateur 2026-09-18 : exiger une position exacte favorisait les 28 clubs vérifiés au détriment de parties réellement plus proches) (20 km par défaut sans zone). Distance fournie **en paramètre**. Sans point de départ, critère **ignoré** (ordre actuel inchangé).
 - Ce sont des **priorités, pas des filtres** : une partie lointaine reste proposable s'il n'y a rien de mieux.
 - Carte « Prochain match » : distance **à côté du club**.
 - Fiche de partie et fiche de tournoi : « 4,2 km depuis ta position / ta zone », **à côté du bouton « Ouvrir dans Maps »**. Club au centre-ville : « ~12 km (position approximative du club) ». **Sans point de départ ou lieu inconnu : pas de ligne.**

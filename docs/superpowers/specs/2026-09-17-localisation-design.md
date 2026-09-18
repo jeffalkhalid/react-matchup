@@ -95,7 +95,7 @@ Le module `expo-location` n'est **jamais importé directement** : il est chargé
 
 ### Lot 2 — Accueil + fiches
 
-- `lib/homeSlot.ts` : critère « proche » inséré après le niveau. Proche = club précis et distance ≤ rayon de la zone (20 km par défaut sans zone). Distance fournie en paramètre. Sans point de départ, critère ignoré (ordre actuel inchangé). Tests : une partie proche passe devant une partie urgente éloignée ; sans position, rien ne change.
+- `lib/homeSlot.ts` : critère « proche » inséré après le niveau. Proche = distance ≤ rayon de la zone, que la position du club soit exacte ou approximative (décision utilisateur 2026-09-18 : exiger une position exacte favorisait les 28 clubs vérifiés au détriment de parties réellement plus proches) (20 km par défaut sans zone). Distance fournie en paramètre. Sans point de départ, critère ignoré (ordre actuel inchangé). Tests : une partie proche passe devant une partie urgente éloignée ; sans position, rien ne change.
 - Carte « Prochain match » : distance à côté du club.
 - Fiche de partie (« Informations de la partie ») et fiche de tournoi (près de l'adresse) : « 4,2 km depuis ta position / ta zone », à côté du bouton « Ouvrir dans Maps ». Club au centre-ville : « ~12 km (position approximative du club) ». Sans point de départ ou lieu inconnu : pas de ligne.
 

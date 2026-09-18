@@ -99,11 +99,14 @@ export interface SuggestionViewer {
  *   1. DANS MA FOURCHETTE DE NIVEAU — `eloFitsGame`, la même règle que le
  *      lobby. Hors fourchette, rejoindre passe par le vote des joueurs déjà
  *      dedans : c'est une partie qu'on n'aura peut-être pas ;
- *   2. PRÈS DE MOI — dans le rayon de ma zone, et seulement sur une position
- *      de club SÛRE : un club placé au centre de sa ville donnerait une
- *      distance fausse, et mettrait en avant une partie qui n'est peut-être
- *      pas proche du tout. Sans point de départ, le critère ne départage
- *      personne et l'ordre reste celui d'avant ;
+ *   2. PRÈS DE MOI — dans le rayon de ma zone, que la position du club soit
+ *      exacte ou approximative (DÉCISION UTILISATEUR 2026-09-18 : exiger une
+ *      position exacte favorisait les 28 clubs vérifiés au détriment de
+ *      parties réellement plus proches). La distance d'un club placé au
+ *      centre de sa ville est approximative, mais elle suffit pour une
+ *      PRIORITÉ : rien n'est promis au joueur, la carte affiche « ~ ». Sans
+ *      point de départ, le critère ne départage personne et l'ordre reste
+ *      celui d'avant ;
  *   3. URGENTE — `isUrgentGame`, le même prédicat que le filtre « Urgent » de
  *      l'Explorer (il était écrit trois fois avant de vivre à un seul
  *      endroit) : il manque une personne et ça se joue bientôt ;
@@ -121,10 +124,13 @@ export function suggestibleGames<G extends SuggestibleGame>(
 ): G[] {
   const favoris = new Set(me.favoriteClubs ?? []);
   const rayon = me.radiusKm ?? DEFAULT_RADIUS_KM;
-  /** Près de moi : position du club SÛRE et distance dans le rayon de ma zone. */
+  /** Près de moi : distance dans le rayon de ma zone, exacte ou approximative
+   *  (DÉCISION UTILISATEUR 2026-09-18 : la distance d'un club placé au centre
+   *  de sa ville est approximative mais suffit pour une priorité — rien n'est
+   *  promis au joueur, la carte affiche « ~ »). */
   const proche = (g: G): boolean => {
     const d = me.distanceOf?.(g.location);
-    return !!d && !d.approx && d.km <= rayon;
+    return !!d && d.km <= rayon;
   };
   // 0 = prioritaire, 1 = non. Comparés dans l'ordre, puis la date départage.
   const rang = (g: G): number[] => [
