@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { eloToLevel } from './theme';
 
 /** Vrai uniquement pour une invitation (status='invited') non expirée. */
 export function isInviteActive(p: { status: string; invite_expires_at?: string | null }): boolean {
@@ -227,6 +228,21 @@ export function gameEloRange(game: {
   }
   if (elos.length === 0) return null;
   return { min: Math.min(...elos), max: Math.max(...elos), derived: true };
+}
+
+/**
+ * Le libellé de niveau d'une partie : « 3.1 – 4.1 », une seule valeur quand
+ * les bornes se confondent, `null` sans fourchette connue.
+ *
+ * Source UNIQUE : la carte de partie du lobby et le panneau de la carte
+ * l'affichent ; deux copies finiraient par annoncer deux niveaux différents.
+ */
+export function levelRangeLabel(game: Parameters<typeof gameEloRange>[0]): string | null {
+  const r = gameEloRange(game);
+  if (!r) return null;
+  const bas = eloToLevel(r.min).toFixed(1);
+  const haut = eloToLevel(r.max).toFixed(1);
+  return bas === haut ? bas : `${bas} – ${haut}`;
 }
 
 // ─── Source de vérité UNIQUE : « dans ma fourchette de niveau » ─────────────
