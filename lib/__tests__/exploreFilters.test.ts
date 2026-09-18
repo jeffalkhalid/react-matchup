@@ -154,6 +154,16 @@ describe('refus, et sa raison', () => {
     expect(exploreRefusal(partie(), f({ cities: ['Agadir'] }), ctx())).toBe('city');
   });
 
+  it('ville et club : ni la casse ni les accents ni les espaces ne comptent', () => {
+    // Le referentiel dit « Casablanca », un vieux filtre enregistre « casablanca »,
+    // une partie saisie « padel 4 maroc » : c'est la meme ville, le meme club.
+    const c = ctx({ cityOfClub: n => (n === 'Padel 4 Maroc' ? 'Fès' : null) });
+    expect(exploreRefusal(partie(), f({ cities: ['fes'] }), c)).toBe(null);
+    expect(exploreRefusal(partie(), f({ cities: [' FÈS '] }), c)).toBe(null);
+    expect(exploreRefusal(partie(), f({ clubs: ['padel 4 maroc'] }), ctx())).toBe(null);
+    expect(exploreRefusal(partie({ location: ' PADEL 4 MAROC ' }), f({ clubs: ['Padel 4 Maroc'] }), ctx())).toBe(null);
+  });
+
   it('un lieu INCONNU du referentiel ne passe aucun filtre de ville', () => {
     // Sept lieux sur soixante et un ne correspondent a aucun club : ils ne
     // doivent pas se faufiler dans « Casablanca » par defaut.

@@ -183,15 +183,22 @@ export interface ExploreContext {
  * qu'il cache et quel filtre retirer — la leçon des tournois, où « aucun
  * résultat » était un cul-de-sac sans issue.
  */
+/** Deux noms de club ou de ville identiques à la casse, aux accents et aux
+ *  espaces près : « Fès », « fes » et « FES » sont la même ville. */
+function sameName(a: string, b: string): boolean {
+  const n = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return n(a) === n(b);
+}
+
 export function exploreRefusal(g: ExploreGame, f: ExploreFilters, ctx: ExploreContext): ExploreReason | null {
   if (!matchesDatePreset(g.match_date, f.date, ctx.now)) return 'date';
   if (!matchesTimeSlot(g.match_date, f.slot)) return 'slot';
 
   const lieu = (g.location ?? '').trim();
-  if (f.clubs.length > 0 && !f.clubs.includes(lieu)) return 'club';
+  if (f.clubs.length > 0 && !f.clubs.some(c => sameName(c, lieu))) return 'club';
   if (f.cities.length > 0) {
     const ville = lieu ? ctx.cityOfClub(lieu) : null;
-    if (!ville || !f.cities.includes(ville)) return 'city';
+    if (!ville || !f.cities.some(c => sameName(c, ville))) return 'city';
   }
 
   if (f.maxKm !== null) {

@@ -263,7 +263,7 @@ const jourCourt = (d: Date) =>
 export function ExploreFilterSheet({
   visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
   clubs, activeClubNames, myGender, favorites, gameCountByClub, gameCountByCity, topPlayers,
-  resultCount, onApply, onClose, origin, defaultMaxKm, gpsAvailable, zoneAvailable, onRequestOrigin, onChooseZone,
+  resultCount, onApply, onClose, origin, defaultMaxKm, gpsAvailable, offerGps = false, zoneAvailable, onRequestOrigin, onChooseZone,
   hasZone,
 }: {
   visible: boolean;
@@ -295,6 +295,8 @@ export function ExploreFilterSheet({
   /** Valeur prise à la première activation : rayon de la zone, 20 km sans zone. */
   defaultMaxKm: number;
   gpsAvailable: boolean;
+  /** Distances mesurées depuis la zone, GPS possible mais pas autorisé : proposer « Utiliser ma position ». */
+  offerGps?: boolean;
   zoneAvailable: boolean;
   /** Demande la position du téléphone (autorisation comprise). */
   onRequestOrigin: () => void;
@@ -332,13 +334,16 @@ export function ExploreFilterSheet({
   // referentiel donnait un mur de pastilles dont vingt-cinq rendaient une liste
   // vide — un filtre qui ne peut rien rendre n'est pas un filtre.
   const villes = useMemo(() => {
-    const actifs = new Set(activeClubNames);
-    const v = new Set<string>();
-    for (const c of clubs) if (c.city && actifs.has(c.name)) v.add(c.city);
+    // Casse ignorée : un lieu saisi « padel 4 maroc » compte pour son club, et
+    // « Casablanca » / « casablanca » ne font qu'une pastille.
+    const cle = (s: string) => s.trim().toLowerCase();
+    const actifs = new Set(activeClubNames.map(cle));
+    const v = new Map<string, string>();
+    for (const c of clubs) if (c.city && actifs.has(cle(c.name)) && !v.has(cle(c.city))) v.set(cle(c.city), c.city);
     // Une ville deja cochee reste visible meme si plus aucune partie ne s'y
     // joue : sinon on ne peut plus la decocher.
-    for (const x of draft.cities) v.add(x);
-    return [...v].sort((a, b) => a.localeCompare(b, 'fr'));
+    for (const x of draft.cities) if (!v.has(cle(x))) v.set(cle(x), x);
+    return [...v.values()].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [clubs, activeClubNames, draft.cities]);
 
 
@@ -528,6 +533,11 @@ export function ExploreFilterSheet({
                       thumbColor={Colors.bgCard}
                     />
                   </View>
+                  {offerGps && (
+                    <Row>
+                      <Chip label="Utiliser ma position" active={false} onPress={onRequestOrigin} />
+                    </Row>
+                  )}
                   {draft.maxKm !== null && (
                     <Row>
                       {ZONE_RADII_KM.map(r => (

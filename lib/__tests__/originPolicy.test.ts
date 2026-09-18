@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GPS_MAX_AGE_MS, type GpsFix } from '../geo';
-import { shouldReloadOrigin, shouldReadGps, gpsFailureMessage, ORIGIN_RELOAD_THROTTLE_MS } from '../originPolicy';
+import { shouldReloadOrigin, shouldReadGps, gpsFailureMessage, shouldOfferGps, ORIGIN_RELOAD_THROTTLE_MS } from '../originPolicy';
 
 const fix = (at: number): GpsFix => ({ lat: 33.5, lng: -7.5, at });
 
@@ -88,5 +88,23 @@ describe('gpsFailureMessage — message unique GPS indisponible', () => {
       title: 'Position indisponible',
       body: "Autorise la localisation dans les réglages du téléphone, ou place l'épingle à la main.",
     });
+  });
+});
+
+describe('shouldOfferGps — proposer le GPS à qui mesure depuis sa zone', () => {
+  it('propose quand les distances partent de la zone et que le GPS n\'est pas encore autorisé', () => {
+    expect(shouldOfferGps({ gpsAvailable: true, permission: 'undetermined', originSource: 'zone' })).toBe(true);
+    expect(shouldOfferGps({ gpsAvailable: true, permission: 'denied', originSource: 'zone' })).toBe(true);
+  });
+  it('ne propose pas quand le GPS est déjà autorisé (il sera relu tout seul)', () => {
+    expect(shouldOfferGps({ gpsAvailable: true, permission: 'granted', originSource: 'zone' })).toBe(false);
+  });
+  it('ne propose pas sans module GPS (ancien APK) ni quand la position vient déjà du GPS', () => {
+    expect(shouldOfferGps({ gpsAvailable: false, permission: 'undetermined', originSource: 'zone' })).toBe(false);
+    expect(shouldOfferGps({ gpsAvailable: true, permission: 'unavailable', originSource: 'zone' })).toBe(false);
+    expect(shouldOfferGps({ gpsAvailable: true, permission: 'undetermined', originSource: 'gps' })).toBe(false);
+  });
+  it('sans point de départ, c\'est l\'encart « Trouve les parties près de toi » qui propose, pas ce lien', () => {
+    expect(shouldOfferGps({ gpsAvailable: true, permission: 'undetermined', originSource: null })).toBe(false);
   });
 });

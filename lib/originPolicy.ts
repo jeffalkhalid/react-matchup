@@ -4,7 +4,7 @@
 // aucun module natif. Regroupe trois décisions qui étaient éparpillées et
 // divergentes dans le hook : quand relancer un chargement en échec, quand
 // relire le GPS, et quel message afficher quand la position est indisponible.
-import { GPS_MAX_AGE_MS, type GpsFix } from './geo';
+import { GPS_MAX_AGE_MS, type GpsFix, type OriginSource } from './geo';
 import type { GpsPermission } from './location';
 
 /** Entre deux tentatives de reloadOrigin() après un échec. */
@@ -64,4 +64,21 @@ export function gpsFailureMessage(
     : 'Autorise la localisation dans les réglages du téléphone';
   const fin = alternative ?? (zoneAvailable ? ', ou choisis ta zone.' : '.');
   return { title, body: `${debut}${fin}` };
+}
+
+/**
+ * Un joueur qui a choisi une zone mesure ses distances depuis elle. Si son
+ * téléphone sait donner sa position et qu'il ne l'a pas encore autorisée, on
+ * lui propose « Utiliser ma position » (décision utilisateur 2026-09-18) :
+ * plus juste que la zone quand il n'est pas chez lui. Jamais quand la
+ * permission est déjà accordée (la position est relue toute seule), ni sans
+ * module GPS, ni sans point de départ (l'encart de l'Explorer s'en charge).
+ */
+export function shouldOfferGps(params: {
+  gpsAvailable: boolean;
+  permission: GpsPermission;
+  originSource: OriginSource | null;
+}): boolean {
+  const { gpsAvailable, permission, originSource } = params;
+  return gpsAvailable && originSource === 'zone' && permission !== 'granted' && permission !== 'unavailable';
 }

@@ -35,7 +35,7 @@ import {
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
 import { formatGameDistance, sortByProximity, originLabel, normClubName } from '../../lib/geo';
-import { gpsFailureMessage } from '../../lib/originPolicy';
+import { gpsFailureMessage, shouldOfferGps } from '../../lib/originPolicy';
 import type { GpsPermission } from '../../lib/location';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
 import { ExploreMap } from '../../components/lobby/ExploreMap';
@@ -1655,13 +1655,8 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   useFocusEffect(useCallback(() => { void refreshGps(); void reloadOrigin(); }, []));
 
   const [sheetOpen, setSheetOpen] = useState(false);
-  const villeDuClub = useMemo(() => {
-    const m = new Map(clubs.map(c => [c.name, c.city]));
-    return (n: string) => m.get(n) ?? null;
-  }, [clubs]);
   // Même clé que les positions (lib/geo.normClubName) : un lieu saisi avec une
-  // autre casse retrouve sa ville, et donc son cercle — pour la carte
-  // UNIQUEMENT (le filtre « Ville » garde villeDuClub, sensible à la casse).
+  // autre casse retrouve sa ville — pour la carte ET pour le filtre « Ville ».
   const villeParNomNormalise = useMemo(
     () => new Map(clubs.map(c => [normClubName(c.name), c.city])),
     [clubs],
@@ -1670,6 +1665,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
     (l: string) => villeParNomNormalise.get(normClubName(l)) ?? null,
     [villeParNomNormalise],
   );
+  const villeDuClub = villeDuLieu;
   const knownPlayers = useMemo(() => new Set(topPlayers.map(p => p.id)), [topPlayers]);
   const ctx = useMemo(
     () => exploreCtx(myElo, villeDuClub, knownPlayers, distanceOf),
@@ -1845,6 +1841,16 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   const montrerEncart = ready && !origin && !encartMasque && !loadFailed
     && gpsPermission !== 'granted' && (gpsAvailable || zoneAvailable);
 
+  // Distances mesurées depuis la zone alors que le téléphone pourrait donner
+  // la position : on la propose (lib/originPolicy.shouldOfferGps).
+  const offrirGps = shouldOfferGps({ gpsAvailable, permission: gpsPermission, originSource: origin?.source ?? null });
+  const utiliserMaPosition = async () => {
+    const { gps, permission } = await requestGps();
+    if (gps) return;
+    const { title, body } = gpsFailureMessage(permission, false);
+    Alert.alert(title, body);
+  };
+
   const countLabel = filters.urgentOnly ? `urgente${mainList.length > 1 ? 's' : ''}`
     : `disponible${mainList.length > 1 ? 's' : ''}`;
 
@@ -2013,7 +2019,13 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
             );
           })}
           <View style={{ flex: 1 }} />
-          {origin && (sort === 'proximity' || filters.maxKm !== null) && (
+          {offrirGps ? (
+            <TouchableOpacity onPress={() => { void utiliserMaPosition(); }} hitSlop={8} activeOpacity={0.7}>
+              <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+                {originLabel(origin!)} · <Text style={{ color: Colors.brandDeep, fontFamily: Fonts.uiExtraBold }}>Utiliser ma position</Text>
+              </Text>
+            </TouchableOpacity>
+          ) : origin && (sort === 'proximity' || filters.maxKm !== null) && (
             <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>{originLabel(origin)}</Text>
           )}
         </View>
@@ -2062,6 +2074,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         gpsAvailable={gpsAvailable}
         zoneAvailable={zoneAvailable}
         hasZone={zone !== null}
+        offerGps={offrirGps}
         onRequestOrigin={async () => {
           const { gps, permission } = await requestGps();
           if (gps) return;
