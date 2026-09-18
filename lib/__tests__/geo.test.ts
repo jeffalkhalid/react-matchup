@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   haversineKm, formatKm, formatGameDistance, normClubName, buildClubIndex, makeDistanceOf,
-  sortByProximity, roundZoneCoord, isZoneRadius, resolveOrigin, originLabel, initialZoneCenter,
+  sortByProximity, sortByMatchDate, roundZoneCoord, isZoneRadius, resolveOrigin, originLabel, initialZoneCenter,
   DEFAULT_MAP_CENTER, GPS_MAX_AGE_MS, distanceSentence, type ClubRow,
 } from '../geo';
 
@@ -175,5 +175,22 @@ describe('la phrase des fiches', () => {
     expect(distanceSentence({ km: 4.2, approx: false }, null)).toBeNull();
     expect(distanceSentence(null, gps)).toBeNull();
     expect(distanceSentence(undefined, gps)).toBeNull();
+  });
+});
+
+describe('sortByMatchDate — le tri « Date » de l\'Explorer', () => {
+  it('la partie qui se joue le plus tôt d\'abord, quel que soit l\'ordre de création', () => {
+    const creees = [
+      { id: 'demain', match_date: '2026-09-19T14:30:00Z' },
+      { id: 'ce-soir', match_date: '2026-09-18T18:00:00Z' },
+      { id: 'sans-date', match_date: null },
+      { id: 'dans-une-heure', match_date: '2026-09-18T17:00:00Z' },
+    ];
+    expect(sortByMatchDate(creees).map(g => g.id)).toEqual(['dans-une-heure', 'ce-soir', 'demain', 'sans-date']);
+  });
+  it('ne modifie pas la liste reçue', () => {
+    const l = [{ match_date: '2026-09-19T00:00:00Z' }, { match_date: '2026-09-18T00:00:00Z' }];
+    sortByMatchDate(l);
+    expect(l[0].match_date).toBe('2026-09-19T00:00:00Z');
   });
 });

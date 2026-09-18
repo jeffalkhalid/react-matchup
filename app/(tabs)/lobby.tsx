@@ -34,7 +34,7 @@ import {
 } from '../../lib/exploreFilters';
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
-import { formatGameDistance, sortByProximity, originLabel, normClubName } from '../../lib/geo';
+import { formatGameDistance, sortByProximity, sortByMatchDate, originLabel, normClubName } from '../../lib/geo';
 import { gpsFailureMessage, shouldOfferGps } from '../../lib/originPolicy';
 import type { GpsPermission } from '../../lib/location';
 import { ExploreFilterSheet, type ClubRef } from '../../components/lobby/ExploreFilterSheet';
@@ -1786,13 +1786,14 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   const sortEffectif = sort === 'proximity' && origin ? 'proximity' : 'date';
 
   // « Proximité » : distances précises d'abord, puis approximatives, puis
-  // inconnues (lib/geo.sortByProximity). Sans point de départ, ordre des dates.
+  // inconnues (lib/geo.sortByProximity). Sinon « Date » : la partie qui se
+  // joue le plus tôt d'abord (la base les renvoie par date de CRÉATION).
   const recommendedShown = useMemo(
-    () => (sortEffectif === 'proximity' ? sortByProximity(recommended, distanceOf) : recommended),
+    () => (sortEffectif === 'proximity' ? sortByProximity(recommended, distanceOf) : sortByMatchDate(recommended)),
     [sortEffectif, recommended, distanceOf],
   );
   const mainListShown = useMemo(
-    () => (sortEffectif === 'proximity' ? sortByProximity(mainList, distanceOf) : mainList),
+    () => (sortEffectif === 'proximity' ? sortByProximity(mainList, distanceOf) : sortByMatchDate(mainList)),
     [sortEffectif, mainList, distanceOf],
   );
 

@@ -118,6 +118,19 @@ export function sortByProximity<T extends { location?: string | null; match_date
     .map(x => x.g);
 }
 
+/**
+ * Tri « Date » de l'Explorer : la partie qui se joue le plus tôt d'abord ;
+ * sans date, en dernier. La base renvoie les parties par date de CRÉATION —
+ * sans ce tri, « demain » passait avant « ce soir ». Ne modifie pas la liste.
+ */
+export function sortByMatchDate<T extends { match_date?: string | null }>(games: T[]): T[] {
+  const quand = (g: T) => {
+    const t = g.match_date ? new Date(g.match_date).getTime() : NaN;
+    return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+  };
+  return [...games].sort((a, b) => quand(a) - quand(b));
+}
+
 /** Arrondi au 0,005° le plus proche — le serveur applique la même règle. */
 export function roundZoneCoord(x: number): number {
   return Number((Math.round(x / ZONE_STEP_DEG) * ZONE_STEP_DEG).toFixed(3)) || 0;
