@@ -34,8 +34,12 @@ async function loadClubCoords(): Promise<Map<string, Coords>> {
   return loading;
 }
 
+/** Lieu posé sur les parties d'un club retiré de l'app (clubs_suppression_2.sql). */
+export const DELETED_CLUB_LOCATION = 'Club supprimé';
+
 export function hasMapTarget(location: string | null | undefined): boolean {
-  return !!location && location.trim().length > 0;
+  const l = (location ?? '').trim();
+  return l.length > 0 && l !== DELETED_CLUB_LOCATION;
 }
 
 export async function openInMaps(location: string | null | undefined): Promise<void> {
