@@ -292,6 +292,69 @@ export async function defiOtherBinomeCount(gameId: string): Promise<number> {
   return (data as number) ?? 0;
 }
 
+// ── Défi CIBLÉ : les adversaires ne sont prévenus qu'après l'acceptation du
+// binôme (« Défier ce binôme » depuis la vitrine). Pendant le brouillon, ils
+// sont seulement NOTÉS sur le défi (open_games.target_players, jsonb) —
+// aucune ligne game_participants pour eux, donc rien de visible ni de
+// notifié tant que le partenaire (Team A) n'a pas accepté. Le serveur
+// (fn_publish_defi_on_partner_accept) les invite alors et vide la colonne. ──
+
+export interface DefiCreationPlan {
+  status: 'draft' | 'open';
+  invites: { player_id: string; team_side: string }[];
+  targetPlayers: { player_id: string; team_side: string; name: string }[] | null;
+}
+
+/** Ce que `handlePublish` doit enregistrer à la création, selon le type de partie. */
+export function defiCreationPlan(input: {
+  gameType: string;
+  isTargeted: boolean;
+  players: { id: string; name: string; team_side?: string | null }[];
+}): DefiCreationPlan {
+  const withSide = input.players.map(p => ({ ...p, team_side: p.team_side ?? 'A_GAU' }));
+
+  // Partie normale (Amical/Compétitif) : tout le monde est invité, ouverte
+  // tout de suite — comportement inchangé.
+  if (input.gameType !== 'Défi') {
+    return {
+      status: 'open',
+      invites: withSide.map(p => ({ player_id: p.id, team_side: p.team_side })),
+      targetPlayers: null,
+    };
+  }
+
+  // Défi (ouvert ou ciblé) : brouillon, seul le partenaire (Team A) est
+  // invité — l'adversaire ne relève/n'est notifié qu'après son acceptation.
+  const aSide = withSide.filter(p => p.team_side.startsWith('A'));
+  const bSide = withSide.filter(p => !p.team_side.startsWith('A'));
+  return {
+    status: 'draft',
+    invites: aSide.map(p => ({ player_id: p.id, team_side: p.team_side })),
+    targetPlayers: input.isTargeted && bSide.length > 0
+      ? bSide.map(p => ({ player_id: p.id, team_side: p.team_side, name: p.name }))
+      : null,
+  };
+}
+
+/**
+ * Phrase affichée dans la fiche d'un défi ciblé encore en brouillon —
+ * `null` sinon (pas un ciblé, plus un brouillon, ou aucun adversaire noté).
+ */
+export function targetedOpponentsLine(
+  game: { status?: string | null; is_targeted?: boolean | null; target_players?: { name?: string | null }[] | null },
+  viewer: 'creator' | 'partner',
+): string | null {
+  if (game.status !== 'draft' || game.is_targeted !== true) return null;
+  const names = (game.target_players ?? [])
+    .map(p => p.name)
+    .filter((n): n is string => !!n);
+  if (names.length === 0) return null;
+  const joined = names.join(' & ');
+  return viewer === 'creator'
+    ? `${joined} seront prévenus dès que ton binôme accepte`
+    : `Vous affronterez ${joined} — ils seront prévenus dès que tu acceptes`;
+}
+
 // ── Mutations (RPC Phase 1) ──
 export async function applyToDefi(gameId: string, partnerId: string): Promise<string> {
   const { data, error } = await supabase.rpc('defi_apply', { p_game_id: gameId, p_partner_id: partnerId });
