@@ -266,6 +266,8 @@ export function useOrigin() {
     gpsPermission: s.gpsPermission,
     radiusKm: s.zone?.radiusKm ?? DEFAULT_RADIUS_KM,
     distanceOf: s.distanceOf,
+    /** Positions des clubs par nom normalisé (lib/geo.normClubName) — la carte de l'Explorer. */
+    clubIndex: s.index,
     requestGps,
     refreshGps,
     reloadOrigin,
