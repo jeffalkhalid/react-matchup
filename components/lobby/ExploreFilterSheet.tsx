@@ -22,7 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import {
-  alertCoverage, canAlert, suggestFilterName, type SavedFilter,
+  alertCoverage, canAlert, suggestFilterName, alertNeedsZone, type SavedFilter,
 } from '../../lib/savedFilters';
 import {
   NO_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates, allowedGenderFilters,
@@ -264,6 +264,7 @@ export function ExploreFilterSheet({
   visible, initial, saved, onUseSaved, onDeleteSaved, onSave,
   clubs, activeClubNames, myGender, favorites, gameCountByClub, gameCountByCity, topPlayers,
   resultCount, onApply, onClose, origin, defaultMaxKm, gpsAvailable, zoneAvailable, onRequestOrigin, onChooseZone,
+  hasZone,
 }: {
   visible: boolean;
   initial: ExploreFilters;
@@ -299,6 +300,8 @@ export function ExploreFilterSheet({
   onRequestOrigin: () => void;
   /** Ferme le volet et ouvre « Ma zone ». */
   onChooseZone: () => void;
+  /** Le joueur a-t-il déjà une zone enregistrée — une alerte avec distance en a besoin. */
+  hasZone: boolean;
 }) {
   const insets = useSafeAreaInsets();
   // On travaille sur un BROUILLON : fermer sans appliquer doit laisser la liste
@@ -695,6 +698,26 @@ export function ExploreFilterSheet({
                       Ne tiendra pas compte de {alertCoverage(draft).ignored.join(', ').toLowerCase()} :
                       ça dépend du moment où on regarde, pas de la partie.
                     </Text>
+                  )}
+                  {saveAlert && alertNeedsZone(draft, hasZone) && (
+                    <View style={{ gap: 8 }}>
+                      <Text style={{ fontSize: 10.5, fontFamily: Fonts.ui, color: Colors.textMuted, lineHeight: 15 }}>
+                        Pour être prévenu selon la distance, choisis d'abord ta zone.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={onChooseZone}
+                        activeOpacity={0.8}
+                        style={{
+                          alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 14,
+                          borderRadius: 10, backgroundColor: Colors.bgCard,
+                          borderWidth: 1, borderColor: Colors.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary }}>
+                          Choisir ma zone
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </>
               ) : (

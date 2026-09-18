@@ -1644,7 +1644,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
 
   const router = useRouter();
   const {
-    origin, distanceOf, gpsAvailable, gpsPermission, zoneAvailable, loadFailed,
+    origin, distanceOf, gpsAvailable, gpsPermission, zone, zoneAvailable, loadFailed,
     requestGps, refreshGps, reloadOrigin, ready, radiusKm, clubIndex,
   } = useOrigin();
   // Tri de la liste : état d'affichage, jamais enregistré dans un filtre.
@@ -2061,6 +2061,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
         defaultMaxKm={radiusKm}
         gpsAvailable={gpsAvailable}
         zoneAvailable={zoneAvailable}
+        hasZone={zone !== null}
         onRequestOrigin={async () => {
           const { gps, permission } = await requestGps();
           if (gps) return;
