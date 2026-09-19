@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
-import { availabilitySlots, slotLabel, isSlotActive, slotFromKey, AVAILABILITY_TTL_DAYS } from '../availability';
+import {
+  availabilitySlots, slotLabel, isSlotActive, slotFromKey, AVAILABILITY_TTL_DAYS,
+  slotShortLabel, slotTitle, missingPlayers, circleVisibilityLabel,
+} from '../availability';
 
 // Jeudi 17 septembre 2026, 9 h (heure locale du téléphone).
 const jeudi9h = new Date(2026, 8, 17, 9, 0, 0);
@@ -90,5 +93,38 @@ describe('slotFromKey — retrouver un créneau par sa clé', () => {
 describe('durée de vie', () => {
   it('une dispo ne traîne pas : elle expire au bout de quelques jours', () => {
     expect(AVAILABILITY_TTL_DAYS).toBeLessThanOrEqual(8);
+  });
+});
+
+describe('slotShortLabel / slotTitle — libellés de la carte Dispos', () => {
+  it('donne une forme courte par créneau', () => {
+    expect(slotShortLabel('tonight')).toBe('ce soir');
+    expect(slotShortLabel('tomorrow')).toBe('demain');
+    expect(slotShortLabel('saturday')).toBe('samedi matin');
+  });
+  it('« Dispos {créneau} » pour le titre de carte', () => {
+    expect(slotTitle('tonight')).toBe('Dispos ce soir');
+    expect(slotTitle('saturday')).toBe('Dispos samedi matin');
+  });
+});
+
+describe('missingPlayers — combien il manque pour former une partie à 4', () => {
+  it('me compte comme un des 4', () => {
+    expect(missingPlayers(0)).toBe(3);
+    expect(missingPlayers(2)).toBe(1);
+    expect(missingPlayers(3)).toBe(0);
+  });
+  it('ne descend jamais sous 0 (plus de 4 dispos)', () => {
+    expect(missingPlayers(6)).toBe(0);
+  });
+});
+
+describe('circleVisibilityLabel — qui voit ma dispo', () => {
+  it('invite à suivre des joueurs quand je n\'ai encore personne', () => {
+    expect(circleVisibilityLabel(0)).toMatch(/Suis des joueurs/);
+  });
+  it('accorde singulier/pluriel', () => {
+    expect(circleVisibilityLabel(1)).toBe('Ton ami le voit tout de suite.');
+    expect(circleVisibilityLabel(6)).toBe('Tes 6 amis le voient tout de suite.');
   });
 });

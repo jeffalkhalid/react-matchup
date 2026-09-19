@@ -71,6 +71,18 @@ export function slotFromKey(key: SlotKey, now: Date = new Date()): Slot | null {
   return availabilitySlots(now).find(s => s.key === key) ?? null;
 }
 
+const SLOT_SHORT: Record<SlotKey, string> = { tonight: 'ce soir', tomorrow: 'demain', saturday: 'samedi matin' };
+
+/** « ce soir » / « demain » / « samedi matin » — pour une phrase (« 3 joueurs dispos demain »). */
+export function slotShortLabel(key: SlotKey): string {
+  return SLOT_SHORT[key];
+}
+
+/** « Dispos ce soir » — titre de la carte du même nom, selon le créneau affiché. */
+export function slotTitle(key: SlotKey): string {
+  return `Dispos ${slotShortLabel(key)}`;
+}
+
 const heure = (d: Date) => (d.getHours() === 0 ? 'minuit' : `${d.getHours()}h${d.getMinutes() ? String(d.getMinutes()).padStart(2, '0') : ''}`);
 const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
@@ -104,6 +116,18 @@ export function isSlotActive(slot: Slot, mine: Pick<AvailabilityRow, 'slot_start
     if (Number.isNaN(s) || Number.isNaN(e)) return false;
     return Math.abs(s - slot.start.getTime()) < PROCHE_MS && Math.abs(e - slot.end.getTime()) < PROCHE_MS;
   });
+}
+
+/** Combien de joueurs manquent pour former une partie (4), moi inclus. */
+export function missingPlayers(othersDispoCount: number): number {
+  return Math.max(0, 4 - (othersDispoCount + 1));
+}
+
+/** La phrase sous les chips de dispo : qui voit ma dispo dès que je la déclare. */
+export function circleVisibilityLabel(friendsCount: number): string {
+  if (friendsCount <= 0) return 'Suis des joueurs pour qu\'ils voient tes dispos.';
+  if (friendsCount === 1) return 'Ton ami le voit tout de suite.';
+  return `Tes ${friendsCount} amis le voient tout de suite.`;
 }
 
 // ─── Base de données ──────────────────────────────────────────────────────
