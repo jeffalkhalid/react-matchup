@@ -13,6 +13,7 @@ import {
   type EloSimResult,
 } from '../../lib/elo';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { DisputeEvidence } from '../../components/admin/DisputeEvidence';
 import { AdminJournal } from '../../components/admin/AdminJournal';
 import { SearchBar, SearchResults } from '../../components/admin/GlobalSearch';
@@ -720,9 +721,11 @@ function FrmtTab({ entries, events, allPlayers, loading, onLink, onUnlink, onRef
               renderItem={({ item: p }) => (
                 <TouchableOpacity onPress={() => handleLink(p.id)} disabled={linking}
                   style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 }}>
-                  <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.brand, fontFamily: Fonts.uiBlack }}>{(p.name || '?').charAt(0).toUpperCase()}</Text>
-                  </View>
+                  <PlayerAvatar
+                    name={p.name} path={(p as any).avatar_path} size={34}
+                    backgroundColor={Colors.bg} textColor={Colors.brand}
+                    fontFamily={Fonts.uiBlack} fontSize={14}
+                  />
                   <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.textPrimary, flexShrink: 1, fontFamily: Fonts.uiBold }} numberOfLines={1}>{p.name}</Text>
                   <Text style={{ fontSize: 12, color: Colors.textSecondary, fontWeight: '700', flex: 1 }}>
                     {p.birth_year != null ? `[${p.birth_year}]` : ''}
@@ -1093,7 +1096,7 @@ export default function AdminScreen() {
     }
     // birth_year : pour comparer l'année déclarée du joueur à celle de
     // l'entrée FRMT au moment d'une liaison manuelle (homonymes).
-    const { data: players } = await supabase.from('players').select('id,name,birth_year').is('deleted_at', null).order('name');
+    const { data: players } = await supabase.from('players').select('id,name,birth_year,avatar_path').is('deleted_at', null).order('name');
     // Journal d'audit anti-usurpation (frmt_link_events, lecture admin RLS).
     const { data: events } = await supabase.from('frmt_link_events')
       .select('*').order('created_at', { ascending: false }).limit(12);
@@ -1117,7 +1120,7 @@ export default function AdminScreen() {
     setGenderLoading(true);
     const { data } = await supabase
       .from('gender_change_requests')
-      .select('id, player_id, current_gender, requested_gender, reason, status, created_at, player:player_id(name, gender, elo_score)')
+      .select('id, player_id, current_gender, requested_gender, reason, status, created_at, player:player_id(name, gender, elo_score, avatar_path)')
       .eq('status', 'pending')
       .order('created_at', { ascending: true });
     setGenderReqs(data ?? []);
@@ -2215,11 +2218,11 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
           padding: 16,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 999, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>
-                {(req.player?.name ?? '?').charAt(0).toUpperCase()}
-              </Text>
-            </View>
+            <PlayerAvatar
+              name={req.player?.name ?? '?'} path={(req.player as any)?.avatar_path} size={40}
+              backgroundColor={Colors.brand} textColor={Colors.textOnBrand}
+              fontFamily={Fonts.uiBlack} fontSize={16}
+            />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{req.player?.name ?? '?'}</Text>
               <Text style={{ fontSize: 10, color: Colors.textMuted, marginTop: 2 }}>

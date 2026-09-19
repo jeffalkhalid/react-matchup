@@ -1,8 +1,8 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Fonts } from '../../../lib/theme';
 import type { MonthlyRecap } from '../../../lib/bilan';
+import { PlayerAvatar } from '../../PlayerAvatar';
 
-const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
 // Slide 4 — Meilleur duo (fond noir, accents jaune).
 export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onProposer: () => void }) {
@@ -29,9 +29,12 @@ export function SlideDuo({ recap, onProposer }: { recap: MonthlyRecap; onPropose
       {/* Avatar block — horizontally centered per HTML */}
       <View style={{ alignItems: 'center', marginTop: 36 }}>
         <View style={{ width: 164, height: 164, borderRadius: 999, borderWidth: 2, borderColor: 'rgba(255,193,26,0.4)', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: 140, height: 140, borderRadius: 999, backgroundColor: '#FFC11A', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: Fonts.display, fontSize: 54, lineHeight: 70, color: '#0A0A0A', letterSpacing: -1 }}>{initials(p.name)}</Text>
-          </View>
+          {/* Sa photo ; ses initiales s'il n'en a pas (components/PlayerAvatar). */}
+          <PlayerAvatar
+            name={p.name} path={p.avatarPath} size={140}
+            backgroundColor="#FFC11A" textColor="#0A0A0A"
+            fontFamily={Fonts.display} fontSize={54} initialsMax={2}
+          />
         </View>
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 36, color: '#FFFFFF', lineHeight: 47, marginTop: 18, paddingRight: 5 }}>{p.name}</Text>
         <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>@{first.toLowerCase()}</Text>

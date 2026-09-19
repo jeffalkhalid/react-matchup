@@ -254,8 +254,8 @@ export default function MatchmakingScreen() {
     const a = sb.a, b = sb.b;
     if (!a || !b) return;
     router.push(('/(tabs)/lobby?create=1&challenge=1&targeted=1'
-      + `&b0=${a.id}&b0n=${encodeURIComponent(a.name)}&b0e=${a.elo_score}`
-      + `&b1=${b.id}&b1n=${encodeURIComponent(b.name)}&b1e=${b.elo_score}`) as any);
+      + `&b0=${a.id}&b0n=${encodeURIComponent(a.name)}&b0e=${a.elo_score}&b0a=${encodeURIComponent(a.avatar_path ?? '')}`
+      + `&b1=${b.id}&b1n=${encodeURIComponent(b.name)}&b1e=${b.elo_score}&b1a=${encodeURIComponent(b.avatar_path ?? '')}`) as any);
   };
 
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));

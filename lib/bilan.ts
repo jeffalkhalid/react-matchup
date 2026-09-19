@@ -6,10 +6,12 @@ import { eloToLevel, getLeague, getLeagueLabel } from './theme';
 import { ACHIEVEMENT_DEFS } from './achievements';
 import type { League } from '../types';
 
-export type RecapPartner = { userId: string; name: string; matchesTogether: number; winsTogether: number };
+export type RecapPartner = { userId: string; name: string; matchesTogether: number; winsTogether: number; avatarPath?: string | null };
 export type RecapBestMatch = {
   date: string; sets: [number, number][]; partnerName?: string;
   opponents: string[]; venue: string;
+  /** Photos (players.avatar_path) : partenaire, puis adversaires dans l'ordre de `opponents`. */
+  partnerAvatar?: string | null; opponentAvatars?: (string | null)[];
 };
 export type RecapBadge = { key: string; name: string; glyph: string };
 
@@ -37,7 +39,7 @@ const MONTHS_FR = ['JANV', 'FÉVR', 'MARS', 'AVRIL', 'MAI', 'JUIN', 'JUIL', 'AO�
 function labelOf(key: string): string { const m = parseInt(key.slice(5, 7), 10) - 1; return MONTHS_FR[m] ?? key; }
 function monthKey(d: Date): string { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; }
 
-type PRef = { name: string; deleted_at?: string | null } | null;
+type PRef = { name: string; deleted_at?: string | null; avatar_path?: string | null } | null;
 type MatchRow = {
   id: string; created_at: string; score_text: string | null;
   winner_id: string | null; loser_id: string | null; winner_id_2: string | null; loser_id_2: string | null;
@@ -77,7 +79,7 @@ export async function getMonthlyRecap(uid: string, month: string): Promise<Month
     // 2) Matches du mois (date via game.match_date sinon created_at).
     const { data: matchData } = await supabase.from('matches').select(`
       id, created_at, score_text, winner_id, loser_id, winner_id_2, loser_id_2,
-      winner:winner_id(name, deleted_at), loser:loser_id(name, deleted_at), winner_2:winner_id_2(name, deleted_at), loser_2:loser_id_2(name, deleted_at),
+      winner:winner_id(name, deleted_at, avatar_path), loser:loser_id(name, deleted_at, avatar_path), winner_2:winner_id_2(name, deleted_at, avatar_path), loser_2:loser_id_2(name, deleted_at, avatar_path),
       game:game_id(location, match_date)`)
       .or(`winner_id.eq.${uid},loser_id.eq.${uid},winner_id_2.eq.${uid},loser_id_2.eq.${uid}`)
       .order('created_at', { ascending: true });
@@ -107,20 +109,20 @@ export async function getMonthlyRecap(uid: string, month: string): Promise<Month
 
     // 4) Top partenaire (doubles) du mois. On exclut les COMPTES SUPPRIMÉS :
     //    si le meilleur partenaire est supprimé, on prend le suivant ; sinon skip.
-    const partnerStat = new Map<string, { name: string; n: number; w: number; deleted: boolean }>();
+    const partnerStat = new Map<string, { name: string; n: number; w: number; deleted: boolean; avatarPath: string | null }>();
     for (const m of monthMatches) {
       const iWon = m.winner_id === uid || m.winner_id_2 === uid;
       const partner = iWon
         ? (m.winner_id === uid ? m.winner_2 : m.winner)
         : (m.loser_id === uid ? m.loser_2 : m.loser);
       if (!partner?.name) continue;
-      const cur2 = partnerStat.get(partner.name) ?? { name: partner.name, n: 0, w: 0, deleted: !!partner.deleted_at };
+      const cur2 = partnerStat.get(partner.name) ?? { name: partner.name, n: 0, w: 0, deleted: !!partner.deleted_at, avatarPath: partner.avatar_path ?? null };
       cur2.n += 1; if (iWon) cur2.w += 1; cur2.deleted = cur2.deleted || !!partner.deleted_at;
       partnerStat.set(partner.name, cur2);
     }
     const bestPartner = [...partnerStat.values()].filter(p => !p.deleted).sort((a, b) => b.n - a.n)[0];
     const topPartner: RecapPartner | null = bestPartner
-      ? { userId: '', name: bestPartner.name, matchesTogether: bestPartner.n, winsTogether: bestPartner.w }
+      ? { userId: '', name: bestPartner.name, matchesTogether: bestPartner.n, winsTogether: bestPartner.w, avatarPath: bestPartner.avatarPath }
       : null;
 
     // 5) Best match : la victoire avec le plus gros écart de jeux.
@@ -132,6 +134,8 @@ export async function getMonthlyRecap(uid: string, month: string): Promise<Month
       sets: parseSets(best.score_text),
       partnerName: best.winner_id === uid ? best.winner_2?.name ?? undefined : best.winner?.name ?? undefined,
       opponents: [best.loser?.name, best.loser_2?.name].filter(Boolean) as string[],
+      partnerAvatar: best.winner_id === uid ? best.winner_2?.avatar_path ?? null : best.winner?.avatar_path ?? null,
+      opponentAvatars: [best.loser, best.loser_2].filter(p => p?.name).map(p => p?.avatar_path ?? null),
       venue: best.game?.location ?? 'Match',
     } : null;
 

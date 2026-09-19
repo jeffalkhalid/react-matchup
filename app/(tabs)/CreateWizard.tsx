@@ -46,7 +46,7 @@ interface Props {
   player: { id: string; name: string; elo_score: number; gender?: string } | null;
   initialGameType?: GameType;
   initialInvite?: { id: string; name: string; elo_score: number; court_side?: string };
-  initialInvites?: Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>>;
+  initialInvites?: Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number; avatar_path?: string | null }>>;
   targeted?: boolean;
 }
 

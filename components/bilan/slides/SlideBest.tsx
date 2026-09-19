@@ -3,12 +3,12 @@ import Svg from 'react-native-svg';
 import { Fonts } from '../../../lib/theme';
 import { Glyph } from '../../profile/glyphs';
 import type { MonthlyRecap } from '../../../lib/bilan';
+import { PlayerAvatar } from '../../PlayerAvatar';
 
-const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const fmtDate = (iso: string) => { try { return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }); } catch { return iso; } };
 
 // Slide 5 — Match du mois (fond gris foncé, score VERT, badge jaune).
-export function SlideBest({ recap }: { recap: MonthlyRecap }) {
+export function SlideBest({ recap, meAvatarPath }: { recap: MonthlyRecap; meAvatarPath?: string | null }) {
   const b = recap.bestMatch;
   const badge = recap.badges[0];
   return (
@@ -33,8 +33,8 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ gap: 6 }}>
-                <Row label="Toi" mono="black" />
-                {b.partnerName ? <Row label={b.partnerName.split(' ')[0]} mono="black" initialsName={b.partnerName} /> : null}
+                <Row label="Toi" mono="black" path={meAvatarPath} />
+                {b.partnerName ? <Row label={b.partnerName.split(' ')[0]} mono="black" initialsName={b.partnerName} path={b.partnerAvatar} /> : null}
               </View>
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 {b.sets.map(([a, c], i) => (
@@ -45,7 +45,7 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
                 ))}
               </View>
               <View style={{ gap: 6, alignItems: 'flex-end' }}>
-                {b.opponents.slice(0, 2).map((o, i) => <Row key={i} label={o.split(' ')[0]} mono="yellow" initialsName={o} right />)}
+                {b.opponents.slice(0, 2).map((o, i) => <Row key={i} label={o.split(' ')[0]} mono="yellow" initialsName={o} path={b.opponentAvatars?.[i]} right />)}
               </View>
             </View>
           </View>
@@ -68,12 +68,15 @@ export function SlideBest({ recap }: { recap: MonthlyRecap }) {
   );
 }
 
-function Row({ label, mono, initialsName, right }: { label: string; mono: 'black' | 'yellow'; initialsName?: string; right?: boolean }) {
+function Row({ label, mono, initialsName, right, path }: { label: string; mono: 'black' | 'yellow'; initialsName?: string; right?: boolean; path?: string | null }) {
+  // Photo ronde ; initiales s'il n'en a pas (components/PlayerAvatar).
   const av = (
-    <View style={{ width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: mono === 'black' ? '#0A0A0A' : '#FFC11A', borderWidth: mono === 'black' ? 1 : 0, borderColor: '#FFC11A' }}>
-      <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9, color: mono === 'black' ? '#FFC11A' : '#0A0A0A' }}>{initials(initialsName ?? label)}</Text>
-    </View>
+    <PlayerAvatar
+      name={initialsName ?? label} path={path} size={24}
+      backgroundColor={mono === 'black' ? '#0A0A0A' : '#FFC11A'} textColor={mono === 'black' ? '#FFC11A' : '#0A0A0A'}
+      fontFamily={Fonts.uiExtraBold} fontSize={9}
+      ring={mono === 'black' ? 1 : 0} ringColor="#FFC11A" initialsMax={2}
+    />
   );
   const txt = <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#FFFFFF' }}>{label}</Text>;
   return (

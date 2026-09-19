@@ -2529,7 +2529,7 @@ export default function LobbyScreen() {
   const { player } = usePlayer();
   const { reload: reloadNotifs } = useNotificationCount();
   const insets = useSafeAreaInsets();
-  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, backToDefi, rematch: rematchParam, targeted, b0, b0n, b0e, b1, b1n, b1e } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; backToDefi?: string; rematch?: string; targeted?: string; b0?: string; b0n?: string; b0e?: string; b1?: string; b1n?: string; b1e?: string }>();
+  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, backToDefi, rematch: rematchParam, targeted, b0, b0n, b0e, b0a, b1, b1n, b1e, b1a } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; backToDefi?: string; rematch?: string; targeted?: string; b0?: string; b0n?: string; b0e?: string; b0a?: string; b1?: string; b1n?: string; b1e?: string; b1a?: string }>();
   const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>('explorer');
@@ -2627,7 +2627,7 @@ export default function LobbyScreen() {
   const [openDefiMode, setOpenDefiMode] = useState(false);
   const [rematchInvites, setRematchInvites] = useState<Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
   const [rematchGameType, setRematchGameType] = useState<'Compétitif' | 'Amical' | 'Défi' | undefined>(undefined);
-  const [targetedInvites, setTargetedInvites] = useState<Partial<Record<'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
+  const [targetedInvites, setTargetedInvites] = useState<Partial<Record<'B0' | 'B1', { id: string; name: string; elo_score: number; avatar_path?: string | null }>> | null>(null);
   const [targetedMode, setTargetedMode] = useState(false);
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
@@ -2925,12 +2925,13 @@ export default function LobbyScreen() {
       if (targeted === '1' && b0 && b1) {
         // Défi ciblé (« Défier ce binôme » depuis la vitrine) → wizard en mode Défi + invites pré-remplies
         setTargetedInvites({
-          B0: { id: b0, name: decodeURIComponent(b0n ?? ''), elo_score: Number(b0e ?? 0) },
-          B1: { id: b1, name: decodeURIComponent(b1n ?? ''), elo_score: Number(b1e ?? 0) },
+          // Photos transmises par « Défier ce binôme » (vitrine) : b0a / b1a.
+          B0: { id: b0, name: decodeURIComponent(b0n ?? ''), elo_score: Number(b0e ?? 0), avatar_path: b0a ? decodeURIComponent(b0a) : null },
+          B1: { id: b1, name: decodeURIComponent(b1n ?? ''), elo_score: Number(b1e ?? 0), avatar_path: b1a ? decodeURIComponent(b1a) : null },
         });
         setTargetedMode(true);
         setOpenDefiMode(true);
-        router.setParams({ create: undefined, challenge: undefined, targeted: undefined, b0: undefined, b0n: undefined, b0e: undefined, b1: undefined, b1n: undefined, b1e: undefined });
+        router.setParams({ create: undefined, challenge: undefined, targeted: undefined, b0: undefined, b0n: undefined, b0e: undefined, b0a: undefined, b1: undefined, b1n: undefined, b1e: undefined, b1a: undefined });
       } else if (challenge === '1' && withId) {
         setChallengeWith({
           id: withId,

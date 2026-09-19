@@ -241,6 +241,7 @@ export default function ActiviteTab() {
         <BilanStory
           recap={liveMoment.payload.recap as MonthlyRecap}
           authorName={liveMoment.actor?.name}
+          authorAvatarPath={(liveMoment.actor as any)?.avatar_path}
           myId={myId ?? ''}
           reactions={liveMoment.reactions}
           onReact={() => { if (openMomentId) react(openMomentId); }}

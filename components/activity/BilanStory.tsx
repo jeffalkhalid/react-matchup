@@ -22,9 +22,11 @@ const BG: string[][] = [
   ['#1F2937', '#0A0A0A'], ['#0A0A0A', '#1A1A1C'], ['#1F2937', '#0F172A'],
 ];
 
-export function BilanStory({ recap, authorName, myId, reactions, onReact, onComment, onClose }: {
+export function BilanStory({ recap, authorName, authorAvatarPath, myId, reactions, onReact, onComment, onClose }: {
   recap: MonthlyRecap;
   authorName?: string;
+  /** Photo de l'auteur du bilan (players.avatar_path). */
+  authorAvatarPath?: string | null;
   myId: string;
   reactions?: Record<string, string[]>;
   onReact: () => void;
@@ -69,7 +71,7 @@ export function BilanStory({ recap, authorName, myId, reactions, onReact, onComm
             {slide === 2 && <SlideForme recap={recap} />}
             {slide === 3 && <SlideElo recap={recap} />}
             {slide === 4 && <SlideDuo recap={recap} onProposer={() => {}} />}
-            {slide === 5 && <SlideBest recap={recap} />}
+            {slide === 5 && <SlideBest recap={recap} meAvatarPath={authorAvatarPath} />}
 
             {/* Zones de tap g/d */}
             <View style={{ position: 'absolute', top: 60, bottom: 64, left: 0, right: 0, flexDirection: 'row' }} pointerEvents="box-none">

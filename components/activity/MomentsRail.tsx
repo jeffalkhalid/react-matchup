@@ -6,16 +6,18 @@ import { track } from '../../lib/analytics';
 import { BadgePill } from '../profile/BadgePill';
 import { Icon } from '../community/icons';
 import type { ActivityEvent } from '../../types';
+import { PlayerAvatar } from '../PlayerAvatar';
 
-const initials = (n?: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-
-// En-tête d'une tuile : avatar (cercle jaune) + prénom.
-function TileHeader({ name }: { name?: string }) {
+// En-tête d'une tuile : photo (initiales sur cercle jaune sans photo) + prénom.
+function TileHeader({ name, path }: { name?: string; path?: string | null }) {
   return (
     <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <View style={{ width: 22, height: 22, borderRadius: 999, backgroundColor: Colors.brand, borderWidth: 1.5, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8.5, color: '#0A0A0A' }}>{initials(name)}</Text>
-      </View>
+      <PlayerAvatar
+        name={name} path={path} size={22}
+        backgroundColor={Colors.brand} textColor="#0A0A0A"
+        fontFamily={Fonts.uiExtraBold} fontSize={8.5}
+        ring={1.5} ringColor="#FFFFFF" initialsMax={2}
+      />
       <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, color: '#FFFFFF', maxWidth: 80 }}>{name?.split(' ')[0] ?? 'Joueur'}</Text>
     </View>
   );
@@ -32,7 +34,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.9}
         style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: '#1F2937', overflow: 'hidden' }}>
-        <TileHeader name={name} />
+        <TileHeader name={name} path={(e.actor as any)?.avatar_path} />
         {/* « terrain » avec le score écrit dedans */}
         <View style={{ position: 'absolute', top: '28%', bottom: '30%', left: '12%', right: '12%', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 6, backgroundColor: 'rgba(255,193,26,0.08)', alignItems: 'center', justifyContent: 'center' }}>
           <Svg width="100%" height="100%" style={{ position: 'absolute' }}><Line x1="0" y1="50%" x2="100%" y2="50%" stroke="rgba(255,255,255,0.22)" strokeWidth={1} /></Svg>
@@ -52,7 +54,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.9}
         style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: Colors.brand, overflow: 'hidden' }}>
-        <TileHeader name={name} />
+        <TileHeader name={name} path={(e.actor as any)?.avatar_path} />
         <View style={{ position: 'absolute', top: '34%', alignSelf: 'center' }}>
           <Icon name="trophy" size={44} color="#0A0A0A" stroke={2} />
         </View>
@@ -71,7 +73,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.9}
         style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: Colors.brand, overflow: 'hidden' }}>
-        <TileHeader name={name} />
+        <TileHeader name={name} path={(e.actor as any)?.avatar_path} />
         <View style={{ position: 'absolute', top: '34%', left: 10, right: 10, alignItems: 'center' }}>
           <Text style={{ fontFamily: Fonts.display, fontSize: 30, color: '#0A0A0A', lineHeight: 39 }}>{e.payload.matches ?? 0}</Text>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9, color: 'rgba(10,10,10,0.7)', letterSpacing: 0.5, textTransform: 'uppercase' }}>matchs · {e.payload.winRate ?? 0}%</Text>
@@ -90,7 +92,7 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9}
       style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: '#0A0A0A', overflow: 'hidden' }}>
-      <TileHeader name={name} />
+      <TileHeader name={name} path={(e.actor as any)?.avatar_path} />
       <View style={{ position: 'absolute', top: '32%', alignSelf: 'center' }}>
         <BadgePill badge={e.payload.badge_label ?? ''} size={56} />
       </View>
