@@ -66,8 +66,8 @@ export default function ApplicationNoteSheet({ visible, onSubmit, onCancel }: Pr
           </Text>
           <TouchableOpacity
             onPress={() => close(true, note.trim())}
-            style={{ backgroundColor: Colors.success, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
-            <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 15 }}>Envoyer ma demande</Text>
+            style={{ backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+            <Text style={{ color: Colors.textOnBrand, fontWeight: '900', fontSize: 15 }}>Envoyer ma demande</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => close(true, '')} style={{ paddingVertical: 8, alignItems: 'center' }}>
             <Text style={{ color: Colors.textSecondary, fontWeight: '700', fontSize: 13 }}>Envoyer sans message</Text>

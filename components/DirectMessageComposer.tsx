@@ -77,13 +77,13 @@ export default function DirectMessageComposer({ visible, recipientName, onSubmit
             onPress={handleSubmit}
             disabled={!canSend}
             style={{
-              backgroundColor: Colors.success,
+              backgroundColor: Colors.brand,
               borderRadius: 14,
               paddingVertical: 14,
               alignItems: 'center',
               opacity: canSend ? 1 : 0.4,
             }}>
-            <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 15 }}>Envoyer la demande</Text>
+            <Text style={{ color: Colors.textOnBrand, fontWeight: '900', fontSize: 15 }}>Envoyer la demande</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleCancel} style={{ paddingVertical: 8, alignItems: 'center' }}>
             <Text style={{ color: Colors.textMuted, fontSize: 13 }}>Annuler</Text>

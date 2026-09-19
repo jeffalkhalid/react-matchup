@@ -250,12 +250,12 @@ export default function ShowcaseManager({ visible, onClose, player }: Props) {
             activeOpacity={0.85}
             style={{
               flex: 1.5, paddingVertical: 9, borderRadius: 10, alignItems: 'center',
-              backgroundColor: Colors.success, opacity: busy ? 0.5 : 1,
+              backgroundColor: Colors.brand, opacity: busy ? 0.5 : 1,
             }}
           >
             {busyConfirm
-              ? <ActivityIndicator size="small" color={Colors.textOnDark} />
-              : <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Confirmer</Text>
+              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
+              : <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>Confirmer</Text>
             }
           </TouchableOpacity>
         </View>

@@ -633,11 +633,15 @@ function GameDetailsSheetContenu({
     if (alreadyIn) {
       if (isInvited && myParticipant) {
         const isChallenge = !!game.is_challenge;
+        // Invité côté A d'un défi = le créateur me demande d'être son BINÔME
+        // (« Tu as été défié » n'avait pas de sens) ; côté B = on me défie.
+        const isBinome = isChallenge && String((myParticipant as any).team_side ?? '').startsWith('A');
+        const createur = ((game as any).creator?.name ?? '').trim().split(/\s+/)[0] || 'Le créateur';
         return (
           <View style={{ flex: 1, gap: 8 }}>
             <View style={{ height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,193,26,0.14)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
               <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brandDeep }}>
-                {isChallenge ? '⚡ Tu as été défié !' : '✉️ Tu es invité'}
+                {isBinome ? `${createur} t'invite comme binôme` : isChallenge ? '⚡ Tu as été défié !' : '✉️ Tu es invité'}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -649,10 +653,10 @@ function GameDetailsSheetContenu({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => onAcceptInvitation((myParticipant as any).id, game.id)}
-                style={[sty.ctaBtn, { backgroundColor: Colors.success, elevation: 6, shadowColor: Colors.success, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
+                style={[sty.ctaBtn, { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
               >
-                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
-                  {isChallenge ? '⚡ Relever le défi' : '✓ Accepter'}
+                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>
+                  {isBinome ? 'Rejoindre le binôme' : isChallenge ? '⚡ Relever le défi' : '✓ Accepter'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -795,11 +799,16 @@ function GameDetailsSheetContenu({
               <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontFamily: Fonts.uiBold, fontWeight: '700', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 1.5 }}>
                 {dateStr}
               </Text>
-              <View style={{ flexShrink: 0, backgroundColor: placesTone, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-                <Text numberOfLines={1} style={{ color: confirmedFull ? Colors.textOnDark : Colors.textPrimary, fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
-                  {placesText}
-                </Text>
-              </View>
+              {/* « N places libres » se lit déjà dans « Les joueurs » (confirmés ·
+                  libres) : la pastille ne s'affiche que pour ce qui n'y est pas —
+                  complet (et sa file), ou places tenues par des invitations. */}
+              {(confirmedFull || isFull) && (
+                <View style={{ flexShrink: 0, backgroundColor: placesTone, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Text numberOfLines={1} style={{ color: confirmedFull ? Colors.textOnDark : Colors.textPrimary, fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
+                    {placesText}
+                  </Text>
+                </View>
+              )}
             </View>
             <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ alignSelf: 'stretch', fontSize: 52, lineHeight: 62, fontFamily: Fonts.welcome, color: Colors.textOnDark, paddingRight: 8 }}>{timeStr || '—'}</Text>
 
@@ -841,7 +850,7 @@ function GameDetailsSheetContenu({
               {game.is_challenge && Number((game as any).stake_multiplier) > 1 && (
                 <View style={{ backgroundColor: stakeTone(+(game as any).stake_multiplier).bg, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
                   <Text style={{ color: stakeTone(+(game as any).stake_multiplier).fg, fontSize: 11, fontFamily: Fonts.uiBlack, fontWeight: '900' }}>
-                    ⚡ ×{+(game as any).stake_multiplier}
+                    ⚡ Défi ×{+(game as any).stake_multiplier}
                   </Text>
                 </View>
               )}
@@ -992,8 +1001,8 @@ function GameDetailsSheetContenu({
                             <View style={{ flexDirection: 'row', gap: 6 }}>
                               <TouchableOpacity
                                 onPress={() => onApprovePending(p.id, game.id, p.player_id, approvals)}
-                                style={{ width: 36, height: 36, backgroundColor: Colors.success, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                                <Icon name="check" size={14} color={Colors.textOnDark} stroke={2.6} />
+                                style={{ width: 36, height: 36, backgroundColor: Colors.brand, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
+                                <Icon name="check" size={14} color={Colors.textOnBrand} stroke={2.6} />
                               </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() => onDeclinePending(p.id)}

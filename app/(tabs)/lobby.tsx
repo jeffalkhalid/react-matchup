@@ -918,9 +918,9 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation?.(); onAcceptInvitation((myPart as any).id, game.id); }}
                   activeOpacity={0.8}
-                  style={{ flex: 1, backgroundColor: Colors.success, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
+                  style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
                 >
-                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand, letterSpacing: 0.3 }}>
                     {isBinome ? 'Rejoindre le binôme' : game.is_challenge ? '⚡ Relever le défi' : '✓ Accepter'}
                   </Text>
                 </TouchableOpacity>
@@ -1207,13 +1207,13 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                           disabled={isValidating}
                           activeOpacity={0.85}
                           style={{
-                            flex: 1, backgroundColor: Colors.success, borderRadius: 12,
+                            flex: 1, backgroundColor: Colors.brand, borderRadius: 12,
                             paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
                           }}
                         >
                           {isValidating
-                            ? <ActivityIndicator color={Colors.textOnDark} />
-                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Accepter leur score</Text>}
+                            ? <ActivityIndicator color={Colors.textOnBrand} />
+                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>✅ Accepter leur score</Text>}
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => { setDisputingId(m.id); setDisputeReason(''); }}
@@ -1277,13 +1277,13 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                               disabled={isValidating}
                               activeOpacity={0.85}
                               style={{
-                                flex: 1, backgroundColor: Colors.success, borderRadius: 12,
+                                flex: 1, backgroundColor: Colors.brand, borderRadius: 12,
                                 paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
                               }}
                             >
                               {isValidating
-                                ? <ActivityIndicator color={Colors.textOnDark} />
-                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Valider</Text>}
+                                ? <ActivityIndicator color={Colors.textOnBrand} />
+                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>✅ Valider</Text>}
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => { onContest(m.id); onClose(); }}
@@ -1454,13 +1454,13 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                   disabled={validating}
                   activeOpacity={0.85}
                   style={{
-                    flex: 1, backgroundColor: Colors.success, borderRadius: 14,
+                    flex: 1, backgroundColor: Colors.brand, borderRadius: 14,
                     paddingVertical: 14, alignItems: 'center', opacity: validating ? 0.6 : 1,
                   }}
                 >
                   {validating
-                    ? <ActivityIndicator color={Colors.textOnDark} />
-                    : <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>✅ Valider</Text>}
+                    ? <ActivityIndicator color={Colors.textOnBrand} />
+                    : <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand, letterSpacing: 0.3 }}>✅ Valider</Text>}
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => { onContest?.(match.id); onClose(); }}

@@ -2259,12 +2259,12 @@ function GenderTab({ requests, loading, resolvingId, onApprove, onReject, onRefr
             <TouchableOpacity
               disabled={resolvingId === req.id}
               onPress={() => onApprove(req)}
-              style={{ flex: 1.4, paddingVertical: 11, borderRadius: 12, alignItems: 'center', backgroundColor: Colors.success, opacity: resolvingId === req.id ? 0.5 : 1 }}
+              style={{ flex: 1.4, paddingVertical: 11, borderRadius: 12, alignItems: 'center', backgroundColor: Colors.brand, opacity: resolvingId === req.id ? 0.5 : 1 }}
             >
               {resolvingId === req.id ? (
-                <ActivityIndicator color={Colors.textOnDark} />
+                <ActivityIndicator color={Colors.textOnBrand} />
               ) : (
-                <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✓ Approuver</Text>
+                <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>✓ Approuver</Text>
               )}
             </TouchableOpacity>
           </View>
