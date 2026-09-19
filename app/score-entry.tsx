@@ -199,9 +199,12 @@ function ScoreCardEntry({ sets, meId, myTeam, oppTeam, onCell, onRemoveLast, can
 }
 
 // ─── Badge grid ───────────────────────────────────────────────
-function BadgeGrid({ player, votes, badges, onToggle }: {
+function BadgeGrid({ player, votes, badges, onToggle, isPartner }: {
   player: Participant; votes: string[];
   badges: VoteBadge[]; onToggle: (key: string) => void;
+  /** Mon binôme sur ce match (sinon adversaire) — même pastille que la
+   *  distribution de badges de l'accueil. */
+  isPartner: boolean;
 }) {
   return (
     <View style={sty.badgeCard}>
@@ -209,6 +212,11 @@ function BadgeGrid({ player, votes, badges, onToggle }: {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 }}>
           <PlayerAvatar name={player.name} path={player.avatar_path} size={44} backgroundColor={Colors.primary} textColor={Colors.textOnDark} fontFamily={Fonts.uiBlack} fontSize={16} />
           <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, fontWeight: '900', color: Colors.textPrimary, fontFamily: Fonts.uiBlack }}>Pour {player.name}</Text>
+          <View style={{ backgroundColor: isPartner ? '#DCFCE7' : '#F1F5F9', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+            <Text style={{ fontSize: 10, fontFamily: Fonts.uiBold, fontWeight: '900', color: isPartner ? '#166534' : '#475569' }}>
+              {isPartner ? 'Binôme' : 'Adversaire'}
+            </Text>
+          </View>
         </View>
         {votes.length > 0 && (
           <View style={{ backgroundColor: 'rgba(255,193,26,0.14)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
@@ -914,7 +922,7 @@ export default function ScoreEntryScreen() {
                         Optionnel — tu peux en donner plusieurs par joueur
                       </Text>
                       {others.map(p => (
-                        <BadgeGrid key={p.id} player={p} votes={votes[p.id] ?? []} badges={badges} onToggle={label => toggleVote(p.id, label)} />
+                        <BadgeGrid key={p.id} player={p} votes={votes[p.id] ?? []} badges={badges} onToggle={label => toggleVote(p.id, label)} isPartner={p.id === partnerId} />
                       ))}
                     </View>
                   )}
