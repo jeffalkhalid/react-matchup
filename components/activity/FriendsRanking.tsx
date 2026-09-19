@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { isAmbassador } from '../../lib/ambassador';
-import { AmbassadorChip, AmbassadorRing } from '../ambassador/primitives';
+import { AmbassadorRing } from '../ambassador/primitives';
 import { PlayerAvatar } from '../PlayerAvatar';
 import type { Player, SocialPlayer } from '../../types';
 
@@ -62,14 +62,9 @@ export function FriendsRanking({ me, friends, monthLabel, onSeeAll }: {
                 : photo;
             })()}
             <View style={{ flex: 1 }}>
-              {isAmbassador(r) ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textPrimary }}>{r.name}</Text>
-                  <AmbassadorChip number={r.member_number!} />
-                </View>
-              ) : (
-                <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textPrimary }}>{r.name}</Text>
-              )}
+              {/* Pas de pastille « N° » ambassadeur ici (demande utilisateur
+                  2026-09-19) : l'anneau doré autour de la photo suffit. */}
+              <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textPrimary }}>{r.name}</Text>
               <View style={{ backgroundColor: '#F6F5F3', height: 4, borderRadius: 999, marginTop: 3, overflow: 'hidden' }}>
                 <View style={{ width: `${Math.round((metric(r) / max) * 100)}%`, height: 4, backgroundColor: Colors.brand, borderRadius: 999 }} />
               </View>

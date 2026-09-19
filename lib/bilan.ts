@@ -40,6 +40,8 @@ export type MonthlyRecap = {
   favoriteClub?: { name: string; count: number } | null;
   /** Niveau moyen de la paire la plus forte battue (niveau actuel des adversaires). */
   bestWinLevel?: number | null;
+  /** « V » / « D » de chaque match du mois, dans l'ordre où ils ont été joués. */
+  results?: ('V' | 'D')[];
 };
 
 const MONTHS_FR = ['JANV', 'FÉVR', 'MARS', 'AVRIL', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCT', 'NOV', 'DÉC'];
@@ -57,7 +59,7 @@ type MatchRow = {
 
 // Parseur PARTAGÉ (normalise vainqueur-premier) — pas de copie locale.
 import { parseSetsLocal as parseSets } from './matchView';
-import { maxWinStreak, defisWon, favoriteClub, bestWinLevel } from './bilanStats';
+import { maxWinStreak, defisWon, favoriteClub, bestWinLevel, chronoResults } from './bilanStats';
 
 // Liste des mois disponibles (clé + label), du plus récent au plus ancien.
 export async function getRecapMonths(uid: string): Promise<{ key: string; label: string }[]> {
@@ -204,12 +206,14 @@ export async function getMonthlyRecap(uid: string, month: string): Promise<Month
           winner_id: x.winner_id, winner_id_2: x.winner_id_2, loser_id: x.loser_id, loser_id_2: x.loser_id_2,
           stake_multiplier: x.stake_multiplier, location: x.game?.location ?? null,
           loserLevels: [x.loser, x.loser_2].filter(p => p?.elo_score != null).map(p => eloToLevel(p!.elo_score!)),
+          when: x.game?.match_date ?? x.created_at,
         }));
         return {
           maxWinStreak: maxWinStreak(stat, uid),
           defisWon: defisWon(stat, uid),
           favoriteClub: favoriteClub(stat),
           bestWinLevel: bestWinLevel(stat, uid),
+          results: chronoResults(stat, uid),
         };
       })(),
     };

@@ -5,8 +5,12 @@ import { bilanTone, formeCardLine } from '../../../lib/bilanCopy';
 
 // Slide 2 — Forme. Winrate en VERT (handoff) ; label "TA FORME" jaune ; carrés V/D vert/rouge (sémantique).
 export function SlideForme({ recap }: { recap: MonthlyRecap }) {
-  // grille V/D : uniquement les vrais matchs (pas de cases vides).
-  const cells: ('V' | 'D')[] = [...Array(recap.wins).fill('V'), ...Array(recap.losses).fill('D')];
+  // grille V/D : uniquement les vrais matchs (pas de cases vides), dans l'ORDRE
+  // où ils ont été joués (recap.results). Avant : toutes les victoires puis
+  // toutes les défaites. Repli pour un bilan publié avant cet ajout.
+  const cells: ('V' | 'D')[] = recap.results && recap.results.length > 0
+    ? recap.results
+    : [...Array(recap.wins).fill('V'), ...Array(recap.losses).fill('D')];
 
   return (
     <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 30, paddingTop: 12, paddingBottom: 34 }}>

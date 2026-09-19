@@ -10,6 +10,20 @@ export interface StatMatch {
   location?: string | null;
   /** Niveaux des deux perdants (niveau ACTUEL : on ne garde pas celui du jour du match). */
   loserLevels?: (number | null)[];
+  /** Date du match (heure de jeu, sinon saisie du score) — pour l'ordre chronologique. */
+  when?: string | null;
+}
+
+const quand = (x: StatMatch) => { const t = x.when ? Date.parse(x.when) : NaN; return Number.isNaN(t) ? 0 : t; };
+
+/** Les matchs dans l'ordre où ils ont été JOUÉS (le score peut être saisi plus tard). */
+export function inPlayOrder<T extends StatMatch>(matches: T[]): T[] {
+  return [...matches].sort((a, b) => quand(a) - quand(b));
+}
+
+/** « V » / « D » de chaque match, dans l'ordre où ils ont été joués. */
+export function chronoResults(matches: StatMatch[], uid: string): ('V' | 'D')[] {
+  return inPlayOrder(matches).map(x => (x.winner_id === uid || x.winner_id_2 === uid ? 'V' : 'D'));
 }
 
 const aGagne = (x: StatMatch, uid: string) => x.winner_id === uid || x.winner_id_2 === uid;
@@ -17,7 +31,7 @@ const aGagne = (x: StatMatch, uid: string) => x.winner_id === uid || x.winner_id
 /** Plus longue suite de victoires, matchs dans l'ordre chronologique. */
 export function maxWinStreak(matches: StatMatch[], uid: string): number {
   let best = 0, cur = 0;
-  for (const x of matches) {
+  for (const x of inPlayOrder(matches)) {
     cur = aGagne(x, uid) ? cur + 1 : 0;
     best = Math.max(best, cur);
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { maxWinStreak, defisWon, favoriteClub, bestWinLevel, type StatMatch } from '../bilanStats';
+import { maxWinStreak, defisWon, favoriteClub, bestWinLevel, chronoResults, type StatMatch } from '../bilanStats';
 
 const me = 'me';
 const m = (o: Partial<StatMatch>): StatMatch => ({
@@ -25,5 +25,16 @@ describe('bilanStats — les chiffres de la carte « Recap du mois »', () => {
   it('meilleure perf = la victoire contre la paire adverse au niveau moyen le plus haut', () => {
     expect(bestWinLevel([m({ loserLevels: [5, 5.2] }), m({ loserLevels: [6, 5.84] }), perdu({ loserLevels: [7, 7] })], me)).toBe(5.92);
     expect(bestWinLevel([perdu()], me)).toBe(null);
+  });
+});
+
+describe('chronoResults — la grille « Tes matchs » suit l’ordre des matchs', () => {
+  it('trie par date du match (pas par date de saisie du score) et garde V/D dans l’ordre', () => {
+    const r = chronoResults([
+      { ...m({}), when: '2026-08-20T18:00:00Z' },
+      { ...perdu(), when: '2026-08-02T18:00:00Z' },
+      { ...m({}), when: '2026-08-10T18:00:00Z' },
+    ], me);
+    expect(r).toEqual(['D', 'V', 'V']);
   });
 });
