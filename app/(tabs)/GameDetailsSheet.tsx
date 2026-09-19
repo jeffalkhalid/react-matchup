@@ -647,15 +647,15 @@ function GameDetailsSheetContenu({
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
                 onPress={() => onDeclineInvitation((myParticipant as any).id, game.id)}
-                style={[sty.ctaBtn, sty.ctaDanger]}
+                style={[sty.ctaBtn, { backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border }]}
               >
-                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Refuser</Text>
+                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Refuser</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => onAcceptInvitation((myParticipant as any).id, game.id)}
-                style={[sty.ctaBtn, { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
+                style={[sty.ctaBtn, { backgroundColor: Colors.primary, elevation: 6, shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
               >
-                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>
+                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
                   {isBinome ? 'Rejoindre le binôme' : isChallenge ? '⚡ Relever le défi' : '✓ Accepter'}
                 </Text>
               </TouchableOpacity>

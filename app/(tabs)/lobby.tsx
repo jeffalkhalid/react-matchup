@@ -911,16 +911,16 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation?.(); onDeclineInvitation((myPart as any).id, game.id); }}
                   activeOpacity={0.8}
-                  style={{ flex: 1, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
+                  style={{ flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
                 >
-                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger, letterSpacing: 0.3 }}>Refuser</Text>
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, letterSpacing: 0.3 }}>Refuser</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation?.(); onAcceptInvitation((myPart as any).id, game.id); }}
                   activeOpacity={0.8}
-                  style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
+                  style={{ flex: 1, backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
                 >
-                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand, letterSpacing: 0.3 }}>
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>
                     {isBinome ? 'Rejoindre le binôme' : game.is_challenge ? '⚡ Relever le défi' : '✓ Accepter'}
                   </Text>
                 </TouchableOpacity>
@@ -1207,13 +1207,13 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                           disabled={isValidating}
                           activeOpacity={0.85}
                           style={{
-                            flex: 1, backgroundColor: Colors.brand, borderRadius: 12,
+                            flex: 1, backgroundColor: Colors.primary, borderRadius: 12,
                             paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
                           }}
                         >
                           {isValidating
-                            ? <ActivityIndicator color={Colors.textOnBrand} />
-                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>✅ Accepter leur score</Text>}
+                            ? <ActivityIndicator color={Colors.textOnDark} />
+                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Accepter leur score</Text>}
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => { setDisputingId(m.id); setDisputeReason(''); }}
@@ -1277,23 +1277,23 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                               disabled={isValidating}
                               activeOpacity={0.85}
                               style={{
-                                flex: 1, backgroundColor: Colors.brand, borderRadius: 12,
+                                flex: 1, backgroundColor: Colors.primary, borderRadius: 12,
                                 paddingVertical: 12, alignItems: 'center', opacity: isValidating ? 0.6 : 1,
                               }}
                             >
                               {isValidating
-                                ? <ActivityIndicator color={Colors.textOnBrand} />
-                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand }}>✅ Valider</Text>}
+                                ? <ActivityIndicator color={Colors.textOnDark} />
+                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Valider</Text>}
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => { onContest(m.id); onClose(); }}
                               activeOpacity={0.85}
                               style={{
-                                flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.50)',
+                                flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border,
                                 borderRadius: 12, paddingVertical: 11, alignItems: 'center',
                               }}
                             >
-                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: '#B45309' }}>✏️ Contester</Text>
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>✏️ Contester</Text>
                             </TouchableOpacity>
                           </View>
                         )}
@@ -1454,23 +1454,23 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                   disabled={validating}
                   activeOpacity={0.85}
                   style={{
-                    flex: 1, backgroundColor: Colors.brand, borderRadius: 14,
+                    flex: 1, backgroundColor: Colors.primary, borderRadius: 14,
                     paddingVertical: 14, alignItems: 'center', opacity: validating ? 0.6 : 1,
                   }}
                 >
                   {validating
-                    ? <ActivityIndicator color={Colors.textOnBrand} />
-                    : <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnBrand, letterSpacing: 0.3 }}>✅ Valider</Text>}
+                    ? <ActivityIndicator color={Colors.textOnDark} />
+                    : <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>✅ Valider</Text>}
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => { onContest?.(match.id); onClose(); }}
                   activeOpacity={0.85}
                   style={{
-                    flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.50)',
+                    flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border,
                     borderRadius: 14, paddingVertical: 13, alignItems: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: '#B45309', letterSpacing: 0.3 }}>✏️ Contester</Text>
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>✏️ Contester</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -2327,12 +2327,12 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       <TouchableOpacity onPress={() => onDeclineBinome(app)}
-                        style={{ flex: 1, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Refuser</Text>
+                        style={{ flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary }}>Refuser</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => onAcceptBinome(app)}
-                        style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>Accepter</Text>
+                        style={{ flex: 1, backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>Accepter</Text>
                       </TouchableOpacity>
                     </View>
                   </View>

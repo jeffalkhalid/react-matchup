@@ -110,14 +110,14 @@ function BinomeInviteCard({ app, onAccept, onDecline, busy }: { app: DefiApplica
         {app.game ? <Text style={{ fontSize: 11, color: Colors.textMuted }}>{bandLabel(app.game)} · ⚡ ×{(app.game.stake_multiplier ?? 1).toFixed(1)}</Text> : null}
         <View style={{ flexDirection: 'row', gap: 8, opacity: busy ? 0.5 : 1 }}>
           {onDecline && (
-            <TouchableOpacity onPress={onDecline} disabled={busy} style={[sty.actionBtn, { flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }]}>
-              <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+            <TouchableOpacity onPress={onDecline} disabled={busy} style={[sty.actionBtn, { flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border }]}>
+              <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={onAccept} disabled={busy} style={[sty.actionBtn, { flex: 1.6, backgroundColor: Colors.brand }]}>
+          <TouchableOpacity onPress={onAccept} disabled={busy} style={[sty.actionBtn, { flex: 1.6, backgroundColor: Colors.primary }]}>
             {busy
-              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
-              : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
+              ? <ActivityIndicator size="small" color={Colors.textOnDark} />
+              : <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -903,14 +903,14 @@ export default function MatchmakingScreen() {
                         </Text>
                         <View style={{ flexDirection: 'row', gap: 8, opacity: binomeBusy.has(key) ? 0.5 : 1 }}>
                           <TouchableOpacity onPress={() => handleDeclinePartnerInvite(inv)} disabled={binomeBusy.has(key)}
-                            style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
-                            <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+                            style={{ flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                            <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
                           </TouchableOpacity>
                           <TouchableOpacity onPress={() => handleAcceptPartnerInvite(inv)} disabled={binomeBusy.has(key)}
-                            style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                            style={{ flex: 1, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
                             {binomeBusy.has(key)
-                              ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
-                              : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>{isTeamA ? 'Rejoindre le binôme' : 'Relever le défi'}</Text>}
+                              ? <ActivityIndicator size="small" color={Colors.textOnDark} />
+                              : <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>{isTeamA ? 'Rejoindre le binôme' : 'Relever le défi'}</Text>}
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -928,14 +928,14 @@ export default function MatchmakingScreen() {
                       </Text>
                       <View style={{ flexDirection: 'row', gap: 8, opacity: binomeBusy.has(c.id) ? 0.5 : 1 }}>
                         <TouchableOpacity onPress={() => handleDeclineBinome(c)} disabled={binomeBusy.has(c.id)}
-                          style={{ flex: 1, backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
-                          <Text style={{ color: Colors.danger, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
+                          style={{ flex: 1, backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+                          <Text style={{ color: Colors.textPrimary, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Refuser</Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => handleAcceptBinome(c)} disabled={binomeBusy.has(c.id)}
-                          style={{ flex: 1, backgroundColor: Colors.brand, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                          style={{ flex: 1, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
                           {binomeBusy.has(c.id)
-                            ? <ActivityIndicator size="small" color={Colors.textOnBrand} />
-                            : <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
+                            ? <ActivityIndicator size="small" color={Colors.textOnDark} />
+                            : <Text style={{ color: Colors.textOnDark, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>Accepter</Text>}
                         </TouchableOpacity>
                       </View>
                     </View>
