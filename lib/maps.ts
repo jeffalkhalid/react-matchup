@@ -2,6 +2,7 @@
 import { Linking } from 'react-native';
 import { supabase } from './supabase';
 import { normClubName as norm } from './geo';
+import { DELETED_CLUB_LOCATION } from './mapsConstants';
 
 type Coords = { lat: number; lng: number };
 let clubCache: Map<string, Coords> | null = null;
@@ -34,8 +35,7 @@ async function loadClubCoords(): Promise<Map<string, Coords>> {
   return loading;
 }
 
-/** Lieu posé sur les parties d'un club retiré de l'app (clubs_suppression_2.sql). */
-export const DELETED_CLUB_LOCATION = 'Club supprimé';
+export { DELETED_CLUB_LOCATION };
 
 export function hasMapTarget(location: string | null | undefined): boolean {
   const l = (location ?? '').trim();

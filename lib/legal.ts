@@ -22,5 +22,5 @@ export const LEGAL = {
   lastUpdate: '10 juin 2026',
   /** Date de dernière mise à jour de la politique de confidentialité, qui
    *  évolue seule (localisation et alertes par distance : 2026-09-18). */
-  privacyLastUpdate: '18 septembre 2026',
+  privacyLastUpdate: '19 septembre 2026',
 } as const;

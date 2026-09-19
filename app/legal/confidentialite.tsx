@@ -41,7 +41,8 @@ export default function ConfidentialiteScreen() {
         <P>
           La <B>photo de profil</B> est facultative. Si vous en ajoutez une, elle est stockée sur nos
           serveurs et n'est visible que des joueurs connectés à l'application : elle n'apparaît sur
-          aucune page web publique. Vous pouvez la retirer à tout moment depuis votre profil, et elle
+          aucune page web publique, sauf si vous partagez vous-même la carte de votre bilan mensuel
+          en dehors de l'application (story, message, galerie). Vous pouvez la retirer à tout moment depuis votre profil, et elle
           est alors effacée. Une photo signalée peut être retirée par un arbitre.
         </P>
         <P>

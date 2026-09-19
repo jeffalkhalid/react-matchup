@@ -33,22 +33,31 @@ export type MonthlyRecap = {
   nextLeague: League | null;      // clé de la ligue au-dessus (pour sa couleur)
   nextLeagueGap: number | null;   // distance EN NIVEAU jusqu'à la prochaine ligue
   lowActivity: boolean; // < 3 matchs (frame C, sous-projet C)
+  // Carte « Recap du mois » (slide Partage, lib/bilanStats). Optionnels : un
+  // bilan déjà publié dans le fil avant leur ajout ne les porte pas.
+  maxWinStreak?: number;
+  defisWon?: number;
+  favoriteClub?: { name: string; count: number } | null;
+  /** Niveau moyen de la paire la plus forte battue (niveau actuel des adversaires). */
+  bestWinLevel?: number | null;
 };
 
 const MONTHS_FR = ['JANV', 'FÉVR', 'MARS', 'AVRIL', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCT', 'NOV', 'DÉC'];
 function labelOf(key: string): string { const m = parseInt(key.slice(5, 7), 10) - 1; return MONTHS_FR[m] ?? key; }
 function monthKey(d: Date): string { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; }
 
-type PRef = { name: string; deleted_at?: string | null; avatar_path?: string | null } | null;
+type PRef = { name: string; deleted_at?: string | null; avatar_path?: string | null; elo_score?: number | null } | null;
 type MatchRow = {
   id: string; created_at: string; score_text: string | null;
   winner_id: string | null; loser_id: string | null; winner_id_2: string | null; loser_id_2: string | null;
   winner: PRef; loser: PRef; winner_2: PRef; loser_2: PRef;
+  stake_multiplier?: number | null;
   game: { location: string | null; match_date: string | null } | null;
 };
 
 // Parseur PARTAGÉ (normalise vainqueur-premier) — pas de copie locale.
 import { parseSetsLocal as parseSets } from './matchView';
+import { maxWinStreak, defisWon, favoriteClub, bestWinLevel } from './bilanStats';
 
 // Liste des mois disponibles (clé + label), du plus récent au plus ancien.
 export async function getRecapMonths(uid: string): Promise<{ key: string; label: string }[]> {
@@ -78,8 +87,8 @@ export async function getMonthlyRecap(uid: string, month: string): Promise<Month
 
     // 2) Matches du mois (date via game.match_date sinon created_at).
     const { data: matchData } = await supabase.from('matches').select(`
-      id, created_at, score_text, winner_id, loser_id, winner_id_2, loser_id_2,
-      winner:winner_id(name, deleted_at, avatar_path), loser:loser_id(name, deleted_at, avatar_path), winner_2:winner_id_2(name, deleted_at, avatar_path), loser_2:loser_id_2(name, deleted_at, avatar_path),
+      id, created_at, score_text, winner_id, loser_id, winner_id_2, loser_id_2, stake_multiplier,
+      winner:winner_id(name, deleted_at, avatar_path), loser:loser_id(name, deleted_at, avatar_path, elo_score), winner_2:winner_id_2(name, deleted_at, avatar_path), loser_2:loser_id_2(name, deleted_at, avatar_path, elo_score),
       game:game_id(location, match_date)`)
       .or(`winner_id.eq.${uid},loser_id.eq.${uid},winner_id_2.eq.${uid},loser_id_2.eq.${uid}`)
       .order('created_at', { ascending: true });
@@ -190,6 +199,19 @@ export async function getMonthlyRecap(uid: string, month: string): Promise<Month
       eloDelta: Math.round(eloDelta), levelDelta: Math.round((toLvl - fromLvl) * 100) / 100, fromLvl, toLvl,
       topPartner, bestMatch, badges, eloTimeline, barChart6, monthTrend, nextLeagueLabel, nextLeague, nextLeagueGap,
       lowActivity: matches < 3,
+      ...(() => {
+        const stat = monthMatches.map(x => ({
+          winner_id: x.winner_id, winner_id_2: x.winner_id_2, loser_id: x.loser_id, loser_id_2: x.loser_id_2,
+          stake_multiplier: x.stake_multiplier, location: x.game?.location ?? null,
+          loserLevels: [x.loser, x.loser_2].filter(p => p?.elo_score != null).map(p => eloToLevel(p!.elo_score!)),
+        }));
+        return {
+          maxWinStreak: maxWinStreak(stat, uid),
+          defisWon: defisWon(stat, uid),
+          favoriteClub: favoriteClub(stat),
+          bestWinLevel: bestWinLevel(stat, uid),
+        };
+      })(),
     };
   } catch {
     return null;

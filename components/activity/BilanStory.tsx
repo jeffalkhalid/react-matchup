@@ -11,15 +11,18 @@ import { SlideForme } from '../bilan/slides/SlideForme';
 import { SlideElo } from '../bilan/slides/SlideElo';
 import { SlideDuo } from '../bilan/slides/SlideDuo';
 import { SlideBest } from '../bilan/slides/SlideBest';
+import { RecapCard } from '../bilan/RecapCard';
 import type { MonthlyRecap } from '../../lib/bilan';
 
 // Lecteur PLEIN ÉCRAN d'un bilan partagé, en « succession de slides » (comme l'original).
-// Lecture seule : pas de sélecteur de mois, pas de slide « Partager ». Cover→Best (6 slides).
+// Lecture seule : pas de sélecteur de mois ni de boutons de partage. Cover→Best,
+// puis la carte « Recap du mois » (7 slides).
 // Réactions (🔥/💬) sur le POST via le bandeau du bas.
-const COUNT = 6;
+const COUNT = 7;
 const BG: string[][] = [
   ['#FFC11A', '#E8A906', '#7C2D12'], ['#064E3B', '#022C22'], ['#0A0A0A', '#1A1A1C'],
   ['#1F2937', '#0A0A0A'], ['#0A0A0A', '#1A1A1C'], ['#1F2937', '#0F172A'],
+  ['#FFC11A', '#E8A906', '#7C2D12'],
 ];
 
 export function BilanStory({ recap, authorName, authorAvatarPath, myId, reactions, onReact, onComment, onClose }: {
@@ -47,7 +50,7 @@ export function BilanStory({ recap, authorName, authorAvatarPath, myId, reaction
 
   const next = () => setSlide(s => Math.min(COUNT - 1, s + 1));
   const prev = () => setSlide(s => Math.max(0, s - 1));
-  const darkText = slide === 0;
+  const darkText = slide === 0 || slide === 6;
   const fire = reactions?.['🔥'] ?? [];
   const liked = !!myId && fire.includes(myId);
 
@@ -72,6 +75,11 @@ export function BilanStory({ recap, authorName, authorAvatarPath, myId, reaction
             {slide === 3 && <SlideElo recap={recap} />}
             {slide === 4 && <SlideDuo recap={recap} onProposer={() => {}} />}
             {slide === 5 && <SlideBest recap={recap} meAvatarPath={authorAvatarPath} />}
+            {slide === 6 && (
+              <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 20 }}>
+                <RecapCard recap={recap} playerName={authorName ?? 'Joueur'} avatarPath={authorAvatarPath} level={recap.toLvl} />
+              </View>
+            )}
 
             {/* Zones de tap g/d */}
             <View style={{ position: 'absolute', top: 60, bottom: 64, left: 0, right: 0, flexDirection: 'row' }} pointerEvents="box-none">

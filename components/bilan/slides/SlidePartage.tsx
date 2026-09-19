@@ -1,24 +1,23 @@
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { Fonts } from '../../../lib/theme';
-import { Icon } from '../../community/icons';
+import { Icon, type IconName } from '../../community/icons';
 import type { MonthlyRecap } from '../../../lib/bilan';
 import { bilanTone, partageTitle } from '../../../lib/bilanCopy';
+import { RecapCard } from '../RecapCard';
 
-const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-const firstName = (n: string) => (n || '').split(' ')[0];
-
-// Slide 6 — Recap + partage IN-APP (post dans le fil) + export image. Fond jaune->brun (conteneur).
-export function SlidePartage({ recap, playerName, level, posted, busy, onPost }: {
-  recap: MonthlyRecap; playerName: string; level: number; posted: boolean; busy: boolean; onPost: () => void;
+// Slide 6 — Recap + partage IN-APP (publié dans le fil d'activité) + export de
+// la carte en image. Maquette « Partager mon bilan » (2026-09-19). Fond
+// jaune → brun (conteneur).
+export function SlidePartage({ recap, playerName, avatarPath, level, posted, busy, onPost }: {
+  recap: MonthlyRecap; playerName: string; avatarPath?: string | null; level: number;
+  posted: boolean; busy: boolean; onPost: () => void;
 }) {
   const cardRef = useRef<View>(null);
   const [exporting, setExporting] = useState(false);
-  const badgeCount = recap.badges.length;
   const title = partageTitle(bilanTone(recap));
 
   const captureCard = async (): Promise<string> => {
@@ -61,113 +60,78 @@ export function SlidePartage({ recap, playerName, level, posted, busy, onPost }:
     }
   };
 
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 26, paddingTop: 12, paddingBottom: 34 }}>
-      {/* Label */}
-      <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#0A0A0A', letterSpacing: 2, textTransform: 'uppercase' }}>Recap {recap.shortLabel}</Text>
+  // Story IG et WhatsApp passent par le partage du téléphone (où Instagram et
+  // WhatsApp apparaissent) tant que l'APK n'embarque pas de module de partage
+  // direct vers ces applications.
+  const sorties: [string, IconName][] = [['Story IG', 'camera'], ['WhatsApp', 'message'], ['Plus…', 'share']];
 
-      {/* Title */}
+  return (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 30 }}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Label + titre (la phrase dépend du mois : lib/bilanCopy) */}
+      <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#0A0A0A', letterSpacing: 2.4, textTransform: 'uppercase' }}>Recap {recap.shortLabel}</Text>
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 42, color: '#0A0A0A', lineHeight: 55, marginTop: 4, paddingRight: 5 }}>
         {title.pre}<Text style={{ color: '#FFFFFF' }}>{title.accent}</Text>{title.post}
       </Text>
+      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10.5, color: '#0A0A0A', letterSpacing: 2, textTransform: 'uppercase', marginTop: 2, lineHeight: 16 }}>
+        {"Des matchs aujourd'hui,\nun meilleur toi demain."}
+      </Text>
 
-      {/* Recap card noire — wrapped in ref for capture */}
-      <View ref={cardRef} collapsable={false} style={{ marginTop: 20, backgroundColor: '#0A0A0A', borderRadius: 18, padding: 18 }}>
-        {/* Player header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <View style={{ width: 36, height: 36, borderRadius: 999, backgroundColor: '#0A0A0A', borderWidth: 2, borderColor: '#FFC11A', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: '#FFC11A' }}>{initials(playerName)}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: '#FFFFFF' }} numberOfLines={1}>{playerName}</Text>
-            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 10.5, color: '#A1A1AA' }}>Niv. {level.toFixed(2)}</Text>
-          </View>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#FFC11A', letterSpacing: 1 }}>{recap.label} {recap.month.slice(0, 4)}</Text>
-        </View>
-
-        {/* 2x2 stats grid */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          <Cell n={recap.matches} l="Matchs" c="#FFFFFF" bg="rgba(255,255,255,0.04)" lc="#A1A1AA" />
-          <Cell n={`${recap.winRate}%`} l="Winrate" c="#FFC11A" bg="rgba(255,193,26,0.12)" lc="#FFC11A" />
-          <Cell n={`${recap.levelDelta >= 0 ? '+' : ''}${recap.levelDelta.toFixed(2)}`} l="Niveau" c="#FFC11A" bg="rgba(255,193,26,0.12)" lc="#FFC11A" />
-          <Cell n={`+${badgeCount}`} l="Badge" c="#FFFFFF" bg="rgba(255,255,255,0.04)" lc="#A1A1AA" />
-        </View>
-
-        {/* Best duo footer */}
-        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View>
-            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 10, color: '#A1A1AA' }}>Meilleur duo</Text>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#FFFFFF', marginTop: 2 }}>
-              {recap.topPartner ? `avec ${firstName(recap.topPartner.name)} · ${recap.topPartner.winsTogether}/${recap.topPartner.matchesTogether}` : '—'}
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Svg width={14} height={14} viewBox="0 0 24 24">
-              <Circle cx={9} cy={9} r={6} stroke="#FFC11A" strokeWidth={2} fill="none" />
-              <Circle cx={9} cy={9} r={2} fill="#FFC11A" />
-              <Path d="M13 13 L20 20" stroke="#FFC11A" strokeWidth={2} strokeLinecap="round" />
-            </Svg>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#FFC11A', letterSpacing: 0.5 }}>PAGMATCH</Text>
-          </View>
-        </View>
+      {/* La carte — c'est elle qui est capturée en image */}
+      <View style={{ marginTop: 16 }}>
+        <RecapCard ref={cardRef} recap={recap} playerName={playerName} avatarPath={avatarPath} level={level} />
       </View>
 
-      {/* Share section */}
-      <View style={{ marginTop: 24, paddingTop: 14 }}>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: '#0A0A0A', letterSpacing: 1.5, textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>
+      {/* Partage */}
+      <View style={{ marginTop: 18 }}>
+        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#0A0A0A', letterSpacing: 2.2, textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>
           Partage ton bilan
         </Text>
 
-        {/* In-app post button */}
+        {/* Dans l'app : publié dans le fil d'activité (les amis le voient en slides) */}
         <TouchableOpacity
           onPress={onPost}
           disabled={busy || posted}
           activeOpacity={0.85}
-          style={{ backgroundColor: '#0A0A0A', borderRadius: 13, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10 }}
+          style={{ backgroundColor: '#0A0A0A', borderRadius: 14, paddingVertical: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}
         >
-          <Icon name={posted ? 'check' : 'share'} size={15} color="#FFC11A" stroke={2} />
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: '#FFC11A' }}>
-            {posted ? 'Publie dans ton fil' : busy ? 'Publication…' : 'Partager mon bilan'}
+          <Icon name={posted ? 'check' : 'share'} size={17} color="#FFC11A" stroke={2.2} />
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 15, color: '#FFC11A' }}>
+            {posted ? 'Publié dans ton fil d’activité' : busy ? 'Publication…' : 'Partager mon bilan'}
           </Text>
         </TouchableOpacity>
 
-        {/* 3-button row: Story IG / WhatsApp / Plus */}
+        {/* Hors de l'app : l'image de la carte */}
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          {(['Story IG', 'WhatsApp', 'Plus…'] as const).map(label => (
+          {sorties.map(([label, ic]) => (
             <TouchableOpacity
               key={label}
               onPress={shareImg}
               disabled={exporting}
               activeOpacity={0.8}
-              style={{ flex: 1, backgroundColor: '#0A0A0A', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+              style={{ flex: 1, backgroundColor: '#0A0A0A', borderRadius: 13, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >
-              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: '#FFC11A' }}>{label}</Text>
+              <Icon name={ic} size={15} color="#FFC11A" stroke={2.2} />
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: '#FFC11A' }}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Save to gallery button */}
         <TouchableOpacity
           onPress={saveImg}
           disabled={exporting}
           activeOpacity={0.85}
-          style={{ backgroundColor: '#FFFFFF', borderRadius: 13, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+          style={{ backgroundColor: '#FFFFFF', borderRadius: 14, paddingVertical: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
         >
-          <Icon name="download" size={15} color="#0A0A0A" stroke={2} />
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: '#0A0A0A' }}>
+          <Icon name="download" size={17} color="#0A0A0A" stroke={2.2} />
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 15, color: '#0A0A0A' }}>
             {exporting ? 'Export…' : "Enregistrer l'image"}
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
-  );
-}
-
-function Cell({ n, l, c, bg, lc }: { n: number | string; l: string; c: string; bg: string; lc: string }) {
-  return (
-    <View style={{ width: '47%', flexGrow: 1, backgroundColor: bg, borderRadius: 11, padding: 10 }}>
-      <Text style={{ fontFamily: Fonts.display, fontSize: 28, color: c, lineHeight: 36 }}>{n}</Text>
-      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, color: lc, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 3 }}>{l}</Text>
-    </View>
+    </ScrollView>
   );
 }

@@ -144,7 +144,7 @@ export default function BilanScreen() {
             {slide === 3 && <SlideElo recap={recap} />}
             {slide === 4 && <SlideDuo recap={recap} onProposer={() => router.push('/(tabs)/lobby?create=1' as any)} />}
             {slide === 5 && <SlideBest recap={recap} meAvatarPath={(player as any)?.avatar_path} />}
-            {slide === 6 && <SlidePartage recap={recap} playerName={player?.name ?? ''} level={level} posted={posted} busy={busy} onPost={doPost} />}
+            {slide === 6 && <SlidePartage recap={recap} playerName={player?.name ?? ''} avatarPath={(player as any)?.avatar_path} level={level} posted={posted} busy={busy} onPost={doPost} />}
 
             {slide !== 0 && slide !== 6 && (
               <View style={{ position: 'absolute', top: 60, bottom: 0, left: 0, right: 0, flexDirection: 'row' }} pointerEvents="box-none">
