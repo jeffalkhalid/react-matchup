@@ -8,6 +8,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
+import { AMB } from '../../lib/ambassador';
 import { levelRangeLabel, isCreatorConflict, declineInvitationPlan } from '../../lib/games';
 import { fetchMyInvitation, invitingDuo, invitationTitle, invitationDatePill, type HubInvitation } from '../../lib/hubInvitation';
 import { notifyPlayers } from '../../lib/notify';
@@ -119,7 +120,7 @@ export function InvitationCard({ playerId }: { playerId: string }) {
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 0.4 }}>{datePill}</Text>
           </View>
         ) : <View />}
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: '#B8860B', letterSpacing: 0.8 }}>ON T'ATTEND</Text>
+        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: AMB.chipText, letterSpacing: 0.8 }}>ON T'ATTEND</Text>
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 }}>
