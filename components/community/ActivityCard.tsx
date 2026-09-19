@@ -1,5 +1,5 @@
 // Carte d'activité : entête acteur + bloc (résultat / badge / promotion) + réactions.
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts, getLeague } from '../../lib/theme';
 import { Avatar } from './Avatar';
@@ -8,6 +8,8 @@ import { Icon } from './icons';
 import { MatchCard as MatchScoreCard } from '../profile/components';
 import { BadgePill } from '../profile/BadgePill';
 import { matchToView } from '../../lib/matchView';
+import { reactionFor } from '../../lib/activityReactions';
+import { AMB } from '../../lib/ambassador';
 import type { ActivityEvent, League } from '../../types';
 
 function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
@@ -21,15 +23,16 @@ function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
   }
 }
 
-export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer, onOpen }: {
+export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer, onOpen, onDefi }: {
   e: ActivityEvent;
   myId: string;
-  onReact?: () => void;        // absent = 🔥 désactivé (ex: ses propres posts)
+  onReact?: () => void;        // absent = réaction désactivée (ex: ses propres posts)
   onPressActor?: () => void;   // ouvre le profil de l'acteur
   onReport?: () => void;       // signaler l'activité (absent si c'est la mienne)
   onPressComments?: () => void; // ouvre la feuille de commentaires
   onPressPlayer?: (id: string) => void; // ouvre le profil d'un joueur de la carte de match
   onOpen?: () => void;          // tap sur le contenu → vue plein écran
+  onDefi?: () => void;          // « Revanche ? » (défaite) → ouvre l'onglet Défi
 }) {
   const win = e.type === 'match_win';
   const isMatch = e.type === 'match_win' || e.type === 'match_loss';
@@ -38,6 +41,26 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
   const liked = fireIds.includes(myId);
   const likes = fireIds.length;
   const league = (e.league ?? (e.actor ? getLeague(e.actor.elo_score) : 'discovery')) as League;
+
+  // Réaction contextuelle : le bouton (libellé/icône/bascule) dépend du type
+  // d'événement — « Revanche ? » (action) reste séparé des réactions 🔥
+  // (« Machine ! », « Féliciter ») qui, elles, passent toujours par onReact.
+  const reaction = reactionFor(e.type);
+  const [defiSent, setDefiSent] = useState(false);
+  const reactionActive = reaction.kind === 'reaction' ? liked : defiSent;
+  const reactionBg = reactionActive
+    ? (reaction.kind === 'action' ? '#0A0A0A' : 'rgba(255,193,26,0.14)')
+    : '#FFFFFF';
+  const reactionBorder = reactionActive
+    ? (reaction.kind === 'action' ? '#0A0A0A' : Colors.brand)
+    : Colors.border;
+  const reactionText = reactionActive
+    ? (reaction.kind === 'action' ? Colors.brand : AMB.chipText)
+    : Colors.textSecondary;
+  const onPressReaction = () => {
+    if (reaction.kind === 'action') { setDefiSent(true); onDefi?.(); }
+    else onReact?.();
+  };
 
   return (
     <Card pad={16}>
@@ -158,12 +181,22 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
       ) : null}
       </TouchableOpacity>
 
-      {/* Réactions */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-        <TouchableOpacity onPress={onReact} disabled={!onReact} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 17, opacity: liked ? 1 : 0.5 }}>🔥</Text>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: liked ? Colors.brandDeep : Colors.textMuted }}>
-            {likes}
+      {/* Réactions — le bouton dépend du type d'événement (lib/activityReactions) */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <TouchableOpacity
+          onPress={onPressReaction}
+          disabled={reaction.kind === 'reaction' ? !onReact : defiSent}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, borderWidth: 1,
+            backgroundColor: reactionBg, borderColor: reactionBorder,
+          }}
+        >
+          <Icon name={reaction.icon} size={14} color={reactionText} stroke={2} />
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: reactionText }}>
+            {reactionActive ? reaction.activeLabel : reaction.label}
+            {reaction.kind === 'reaction' && likes > 0 ? ` · ${likes}` : ''}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onPressComments} disabled={!onPressComments} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
