@@ -102,7 +102,7 @@ export interface AvailabilityRow {
   slot_start: string;
   slot_end: string;
   club_id?: string | null;
-  player?: { id: string; name: string; elo_score: number; avatar_path?: string | null } | null;
+  player?: { id: string; name: string; elo_score: number; avatar_path?: string | null; member_number?: number | null } | null;
 }
 
 /** Tolérance : l'heure a pu avancer entre la déclaration et l'affichage. */
@@ -178,7 +178,7 @@ export async function fetchCircleAvailability(playerIds: string[], slot: Slot): 
   if (playerIds.length === 0) return [];
   const { data, error } = await supabase
     .from('availability')
-    .select('id, player_id, slot_start, slot_end, club_id, player:player_id(id, name, elo_score, avatar_path)')
+    .select('id, player_id, slot_start, slot_end, club_id, player:player_id(id, name, elo_score, avatar_path, member_number)')
     .in('player_id', playerIds)
     .lt('slot_start', slot.end.toISOString())
     .gt('slot_end', slot.start.toISOString())
