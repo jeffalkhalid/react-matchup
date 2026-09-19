@@ -2,7 +2,7 @@
 // un re-render des badges quand la base répond. Les composants lisent un badge
 // via le hook useBadge(key) pour rester à jour sans rechargement de l'app.
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getActiveVoteBadges, getBadge, loadBadgeDefs, type BadgeDef, type VoteBadge } from '../../lib/badges';
+import { getActiveVoteBadges, getNeutralVoteBadges, getBadge, loadBadgeDefs, type BadgeDef, type VoteBadge } from '../../lib/badges';
 
 // La valeur = un compteur de version, incrémenté quand les defs changent.
 const BadgeDefsContext = createContext(0);
@@ -27,4 +27,10 @@ export function useBadge(key: string): BadgeDef {
 export function useActiveVoteBadges(): VoteBadge[] {
   useContext(BadgeDefsContext); // s'abonne aux changements de version
   return getActiveVoteBadges();
+}
+
+/** Sous-ensemble neutre (ni rouge ni vert) — carte de vote du hub Activité. */
+export function useNeutralVoteBadges(): VoteBadge[] {
+  useContext(BadgeDefsContext); // s'abonne aux changements de version
+  return getNeutralVoteBadges();
 }
