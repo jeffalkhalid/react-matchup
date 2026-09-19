@@ -656,7 +656,7 @@ function GameDetailsSheetContenu({
                 style={[sty.ctaBtn, { backgroundColor: Colors.primary, elevation: 6, shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}
               >
                 <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnDark }}>
-                  {isBinome ? 'Rejoindre le binôme' : isChallenge ? '⚡ Relever le défi' : '✓ Accepter'}
+                  {isBinome ? 'Rejoindre le binôme' : isChallenge ? 'Relever le défi' : 'Accepter'}
                 </Text>
               </TouchableOpacity>
             </View>

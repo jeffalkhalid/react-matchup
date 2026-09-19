@@ -921,7 +921,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
                   style={{ flex: 1, backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}
                 >
                   <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>
-                    {isBinome ? 'Rejoindre le binôme' : game.is_challenge ? '⚡ Relever le défi' : '✓ Accepter'}
+                    {isBinome ? 'Rejoindre le binôme' : game.is_challenge ? 'Relever le défi' : 'Accepter'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1213,7 +1213,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                         >
                           {isValidating
                             ? <ActivityIndicator color={Colors.textOnDark} />
-                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Accepter leur score</Text>}
+                            : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Accepter leur score</Text>}
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => { setDisputingId(m.id); setDisputeReason(''); }}
@@ -1283,7 +1283,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                             >
                               {isValidating
                                 ? <ActivityIndicator color={Colors.textOnDark} />
-                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>✅ Valider</Text>}
+                                : <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Valider</Text>}
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => { onContest(m.id); onClose(); }}
@@ -1293,7 +1293,7 @@ function PendingValidationSheet({ matches, playerId, onClose, onValidated, onCon
                                 borderRadius: 12, paddingVertical: 11, alignItems: 'center',
                               }}
                             >
-                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>✏️ Contester</Text>
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Contester</Text>
                             </TouchableOpacity>
                           </View>
                         )}
@@ -1460,7 +1460,7 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                 >
                   {validating
                     ? <ActivityIndicator color={Colors.textOnDark} />
-                    : <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>✅ Valider</Text>}
+                    : <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, letterSpacing: 0.3 }}>Valider</Text>}
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => { onContest?.(match.id); onClose(); }}
@@ -1470,7 +1470,7 @@ function MatchDetailSheet({ match, playerId, onClose, onValidated, onContest, on
                     borderRadius: 14, paddingVertical: 13, alignItems: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>✏️ Contester</Text>
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3 }}>Contester</Text>
                 </TouchableOpacity>
               </View>
             </View>
