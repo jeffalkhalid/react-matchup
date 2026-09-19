@@ -19,6 +19,8 @@ export interface CircleBilan {
   /** « AOÛT », tel que publié avec le bilan. */
   label: string;
   createdAt: string;
+  /** Réactions du post (🔥), pour le lecteur plein écran. */
+  reactions: Record<string, string[]>;
   recap: MonthlyRecap;
 }
 
@@ -45,14 +47,14 @@ export async function fetchCircleBilans(myId: string, limit = 12): Promise<Circl
 
   const { data: events, error } = await supabase
     .from('activity_events')
-    .select('id, player_id, payload, created_at')
+    .select('id, player_id, payload, reactions, created_at')
     .eq('type', 'bilan')
     .in('player_id', ids)
     .order('created_at', { ascending: false })
     .limit(limit * 2);
   if (error) { console.warn('[bilanCircle] events', error); return []; }
 
-  const rows = (events ?? []) as { id: string; player_id: string; payload: any; created_at: string }[];
+  const rows = (events ?? []) as { id: string; player_id: string; payload: any; reactions: Record<string, string[]> | null; created_at: string }[];
   const avecRecap = rows.filter(e => e.payload?.recap);
   if (avecRecap.length === 0) return [];
 
@@ -72,6 +74,7 @@ export async function fetchCircleBilans(myId: string, limit = 12): Promise<Circl
       memberNumber: p?.member_number ?? null,
       label: String(e.payload?.label ?? e.payload?.recap?.label ?? ''),
       createdAt: e.created_at,
+      reactions: e.reactions ?? {},
       recap: e.payload.recap as MonthlyRecap,
     };
   });

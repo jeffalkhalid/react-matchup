@@ -5,7 +5,7 @@ import { keepLatestPerPlayer, type CircleBilan } from '../bilanCircle';
 
 const b = (playerId: string, createdAt: string, label: string): CircleBilan => ({
   eventId: `${playerId}-${label}`, playerId, name: playerId, avatarPath: null, memberNumber: null,
-  label, createdAt, recap: {} as any,
+  label, createdAt, reactions: {}, recap: {} as any,
 });
 
 describe('keepLatestPerPlayer — un bilan par joueur dans le bloc du cercle', () => {

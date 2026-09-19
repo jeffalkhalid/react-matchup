@@ -18,6 +18,7 @@ import {
   shareMatchMoment, type WeekStats, type WeekendGame, type ActivityState,
 } from '../../lib/activityFeed';
 import { getRecapMonths, getMonthlyRecap, type MonthlyRecap } from '../../lib/bilan';
+import { fetchCircleBilans, type CircleBilan } from '../../lib/bilanCircle';
 import { WeekStatsCard } from '../../components/activity/WeekStatsCard';
 import { WeekendRail } from '../../components/activity/WeekendRail';
 import { MomentOverlay } from '../../components/activity/MomentOverlay';
@@ -26,6 +27,7 @@ import { OnboardingChecklist } from '../../components/activity/OnboardingCheckli
 import { DiscoveryRail } from '../../components/activity/DiscoveryRail';
 import { FriendsRanking } from '../../components/activity/FriendsRanking';
 import { BilanBanner } from '../../components/activity/BilanBanner';
+import { CircleBilansRail } from '../../components/activity/CircleBilansRail';
 import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
 import { InvitationCard } from '../../components/activity/InvitationCard';
@@ -62,6 +64,9 @@ export default function ActiviteTab() {
   const [suggestions, setSuggestions] = useState<SocialPlayer[]>([]);
   const [openGames, setOpenGames] = useState<WeekendGame[]>([]);
   const [bilanRecap, setBilanRecap] = useState<MonthlyRecap | null>(null);
+  // Les bilans des joueurs suivis, hors fil (le fil s'arrête à 14 jours).
+  const [circleBilans, setCircleBilans] = useState<CircleBilan[]>([]);
+  const [openBilanId, setOpenBilanId] = useState<string | null>(null);
   // Partage in-app d'un match (compositeur Moment).
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<StoryMatchData | null>(null);
@@ -73,17 +78,17 @@ export default function ActiviteTab() {
     if (!myId) return;
     setLoading(true);
     (async () => {
-      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months] = await Promise.all([
+      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months, cb] = await Promise.all([
         getFriends(myId), getActivityFeed(myId, 50, true), getHiddenPlayerIds(myId),
         getWeekStats(myId), fetchMyAvailability(myId),
         getMyMatchCount(myId), getMyGameCount(myId),
         player ? getSuggestions(player, 8) : Promise.resolve([] as SocialPlayer[]),
-        getOpenGames(myId, 8), getRecapMonths(myId),
+        getOpenGames(myId, 8), getRecapMonths(myId), fetchCircleBilans(myId, 12),
       ]);
       setFriends(fr); setFeed(fd); setHiddenIds(hidden);
       setWeek(w); setMyAvailability(av);
       setTotalMatches(mc); setTotalGames(gc);
-      setSuggestions(sugg); setOpenGames(og); setLoading(false); setReady(true);
+      setSuggestions(sugg); setOpenGames(og); setCircleBilans(cb); setLoading(false); setReady(true);
       const latest = months[0];
       setBilanRecap(latest ? await getMonthlyRecap(myId, latest.key) : null);
     })();
@@ -121,6 +126,25 @@ export default function ActiviteTab() {
     if (updated) setFeed(prev => prev.map(e => e.id === eventId ? { ...e, reactions: updated } : e));
   };
 
+  // Réaction 🔥 sur un bilan du cercle. Le post n'est pas forcément dans le fil
+  // (il peut dater de plus de 14 jours) : on met à jour la liste du bloc dédié,
+  // pas `feed`.
+  const reactCircleBilan = async (eventId: string) => {
+    if (!myId) return;
+    setCircleBilans(prev => prev.map(b => {
+      if (b.eventId !== eventId) return b;
+      const fire = b.reactions['🔥'] ?? [];
+      const has = fire.includes(myId);
+      const next = has ? fire.filter(id => id !== myId) : [...fire, myId];
+      const reactions = { ...b.reactions };
+      if (next.length) reactions['🔥'] = next; else delete reactions['🔥'];
+      track('activity_like_toggled', { activity_id: eventId, liked: !has });
+      return { ...b, reactions };
+    }));
+    const updated = await toggleReaction(eventId);
+    if (updated) setCircleBilans(prev => prev.map(b => b.eventId === eventId ? { ...b, reactions: updated } : b));
+  };
+
   const reportActivity = (e: ActivityEvent) => {
     if (!myId || e.player_id === myId) return;
     Alert.alert('Cette activité', undefined, [
@@ -150,6 +174,8 @@ export default function ActiviteTab() {
   const recentFeed = visibleFeed.filter(e => Date.now() - new Date(e.created_at).getTime() <= TWO_WEEKS);
   const shown = sel ? recentFeed.filter(e => e.player_id === sel) : recentFeed;
   const liveMoment = openMomentId ? visibleFeed.find(e => e.id === openMomentId) ?? null : null;
+  const circleBilansShown = circleBilans.filter(b => !hiddenIds.has(b.playerId));
+  const openBilan = openBilanId ? circleBilans.find(b => b.eventId === openBilanId) ?? null : null;
 
   const recentFriendActivity = feed.filter(
     e => e.player_id !== myId && Date.now() - new Date(e.created_at).getTime() <= 7 * 24 * 60 * 60 * 1000,
@@ -258,6 +284,10 @@ export default function ActiviteTab() {
               <WeekStatsCard stats={week} />
               {player ? <FriendsRanking me={player} friends={friends} /> : null}
 
+              {/* Place dédiée aux bilans des autres : le fil les perd au bout
+                  de 14 jours, ici ils restent consultables. */}
+              <CircleBilansRail bilans={circleBilansShown} myId={myId} onOpen={(b) => setOpenBilanId(b.eventId)} />
+
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 4 }}>
                 <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6, flexShrink: 1 }}>
                   Ce que ton cercle a fait
@@ -280,6 +310,20 @@ export default function ActiviteTab() {
           )}
         </ScrollView>
       )}
+
+      {/* Lecteur d'un bilan ouvert depuis le bloc du cercle. */}
+      {openBilan ? (
+        <BilanStory
+          recap={openBilan.recap}
+          authorName={openBilan.name}
+          authorAvatarPath={openBilan.avatarPath}
+          myId={myId ?? ''}
+          reactions={openBilan.reactions}
+          onReact={() => reactCircleBilan(openBilan.eventId)}
+          onComment={() => { const id = openBilan.eventId; setOpenBilanId(null); router.push(`/community/comments/${id}` as any); }}
+          onClose={() => setOpenBilanId(null)}
+        />
+      ) : null}
 
       {liveMoment?.type === 'bilan' && liveMoment.payload.recap ? (
         <BilanStory
