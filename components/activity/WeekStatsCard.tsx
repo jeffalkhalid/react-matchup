@@ -1,5 +1,4 @@
 import { View, Text } from 'react-native';
-import Svg, { Polyline } from 'react-native-svg';
 import { Colors, Fonts } from '../../lib/theme';
 import type { WeekStats } from '../../lib/activityFeed';
 
@@ -17,24 +16,17 @@ function weekRange(): string {
     : `${mon.getDate()} ${mName(mon)} – ${sun.getDate()} ${mName(sun)}`;
 }
 
-export function WeekStatsCard({ stats, levelDelta }: { stats: WeekStats; levelDelta: number }) {
+// La tuile « Niveau » (delta ELO sur 7 j) a été retirée du hub Activité :
+// un delta de niveau sur une semaine est presque toujours ±0.0x, une
+// information qui n'aide personne à décider de jouer (handoff
+// design_handoff_activite_hub/README.md § « Ce qui est retiré »). La carte
+// reste, avec les deux tuiles qui restent utiles (Matchs, Forme).
+export function WeekStatsCard({ stats }: { stats: WeekStats }) {
   const wins = stats.results.filter(r => r === 'W').length;
   const losses = stats.results.filter(r => r === 'L').length;
   // Forme : 4 dernières + 1 "?" si < 5 (fidèle au handoff).
   const cells: (('W' | 'L') | null)[] = [...stats.results].slice(-4);
   while (cells.length < 5) cells.push(null);
-  const deltaStr = `${levelDelta > 0 ? '+' : ''}${levelDelta.toFixed(2)}`;
-  const deltaColor = levelDelta > 0 ? Colors.success : levelDelta < 0 ? Colors.danger : Colors.textMuted;
-  // Sparkline cumulée à partir des résultats (V = +1, D = −1).
-  let acc = 0; const seq = stats.results.map(r => (acc += r === 'W' ? 1 : -1));
-  const pts = seq.length >= 2
-    ? seq.map((v, i) => {
-        const x = (i / (seq.length - 1)) * 80;
-        const max = Math.max(1, ...seq.map(Math.abs));
-        const y = 7 - (v / max) * 6;
-        return `${x.toFixed(0)},${y.toFixed(0)}`;
-      }).join(' ')
-    : '0,7 80,7';
 
   return (
     <View style={{ backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 14 }}>
@@ -52,7 +44,7 @@ export function WeekStatsCard({ stats, levelDelta }: { stats: WeekStats; levelDe
         </View>
 
         {/* Forme */}
-        <View style={{ flex: 1.3, backgroundColor: TILE, borderWidth: 1, borderColor: TILE_BD, borderRadius: 12, padding: 10 }}>
+        <View style={{ flex: 1, backgroundColor: TILE, borderWidth: 1, borderColor: TILE_BD, borderRadius: 12, padding: 10 }}>
           <Label>Forme</Label>
           <View style={{ flexDirection: 'row', gap: 4, marginTop: 8 }}>
             {cells.map((c, i) => (
@@ -66,15 +58,6 @@ export function WeekStatsCard({ stats, levelDelta }: { stats: WeekStats; levelDe
             ))}
           </View>
           <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10, color: Colors.textSecondary, marginTop: 6 }}>{wins}V · {losses}D</Text>
-        </View>
-
-        {/* Niveau */}
-        <View style={{ flex: 1, backgroundColor: TILE, borderWidth: 1, borderColor: TILE_BD, borderRadius: 12, padding: 10 }}>
-          <Label>Niveau</Label>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: Fonts.display, fontSize: 26, color: deltaColor, lineHeight: 34, marginTop: 6 }}>{deltaStr}</Text>
-          <Svg width="100%" height={14} viewBox="0 0 80 14" style={{ marginTop: 2 }}>
-            <Polyline points={pts} fill="none" stroke={deltaColor} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-          </Svg>
         </View>
       </View>
     </View>

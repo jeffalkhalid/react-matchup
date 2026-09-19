@@ -3,34 +3,44 @@ import { View, Text, Image, ScrollView, Alert, TouchableOpacity, ActivityIndicat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { usePlayer } from '../../hooks/usePlayer';
-import { Colors, Fonts, eloToLevel } from '../../lib/theme';
+import { Colors, Fonts } from '../../lib/theme';
 import { HeaderActions } from '../../components/HeaderActions';
 import { FriendsBar, FeedList } from '../../components/community/ActivityFeed';
 import { getFriends, getActivityFeed, toggleReaction, getSuggestions, setFollow } from '../../lib/community';
 import { getHiddenPlayerIds, reportContent } from '../../lib/moderation';
-import { notifyPlayers } from '../../lib/notify';
+import { isAmbassador } from '../../lib/ambassador';
 import {
-  getWeekStats, getSuggestedGame, getWeekendGames, getOpenGames, pickMoments, getMyMatchCount, getMyGameCount, deriveActivityState,
-  shareMatchMoment, type WeekStats, type SuggestedGame, type WeekendGame, type ActivityState,
+  availabilitySlots, isSlotActive, declareAvailability, clearAvailability, fetchMyAvailability,
+  circleVisibilityLabel, type AvailabilityRow, type Slot,
+} from '../../lib/availability';
+import {
+  getWeekStats, getOpenGames, getMyMatchCount, getMyGameCount, deriveActivityState,
+  shareMatchMoment, type WeekStats, type WeekendGame, type ActivityState,
 } from '../../lib/activityFeed';
 import { getRecapMonths, getMonthlyRecap, type MonthlyRecap } from '../../lib/bilan';
 import { WeekStatsCard } from '../../components/activity/WeekStatsCard';
-import { JoinHeroCard } from '../../components/activity/JoinHeroCard';
 import { WeekendRail } from '../../components/activity/WeekendRail';
-import { MomentsRail } from '../../components/activity/MomentsRail';
 import { MomentOverlay } from '../../components/activity/MomentOverlay';
 import { BilanStory } from '../../components/activity/BilanStory';
-import { EmptyHero } from '../../components/activity/EmptyHero';
 import { OnboardingChecklist } from '../../components/activity/OnboardingChecklist';
 import { DiscoveryRail } from '../../components/activity/DiscoveryRail';
-import { QuietFeedCard } from '../../components/activity/QuietFeedCard';
 import { FriendsRanking } from '../../components/activity/FriendsRanking';
 import { BilanBanner } from '../../components/activity/BilanBanner';
 import { MomentComposer } from '../../components/activity/MomentComposer';
+import { DispoCard } from '../../components/activity/DispoCard';
+import { InvitationCard } from '../../components/activity/InvitationCard';
+import { PostMatchVoteCard } from '../../components/activity/PostMatchVoteCard';
 import StoryMatchPicker from '../../components/StoryMatchPicker';
 import type { StoryMatchData } from '../../components/story/storyTheme';
 import { track } from '../../lib/analytics';
 import type { SocialPlayer, ActivityEvent } from '../../types';
+
+// Bannière Bilan : limitée aux 7 premiers jours du mois (README « Ce qui est
+// retiré ») — un bilan du mois précédent n'a plus rien à dire passé cette
+// fenêtre.
+function isBilanWindow(now = new Date()): boolean {
+  return now.getDate() <= 7;
+}
 
 export default function ActiviteTab() {
   const insets = useSafeAreaInsets();
@@ -45,8 +55,7 @@ export default function ActiviteTab() {
   const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false); // 1er chargement terminé (évite le flash onboarding)
   const [week, setWeek] = useState<WeekStats>({ matches: 0, results: [], eloDelta: 0 });
-  const [hero, setHero] = useState<SuggestedGame | null>(null);
-  const [weekend, setWeekend] = useState<WeekendGame[]>([]);
+  const [myAvailability, setMyAvailability] = useState<AvailabilityRow[]>([]);
   const [openMomentId, setOpenMomentId] = useState<string | null>(null);
   const [totalMatches, setTotalMatches] = useState(0);
   const [totalGames, setTotalGames] = useState(0);
@@ -64,21 +73,30 @@ export default function ActiviteTab() {
     if (!myId) return;
     setLoading(true);
     (async () => {
-      const [fr, fd, hidden, w, h, we, mc, gc, sugg, og, months] = await Promise.all([
+      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months] = await Promise.all([
         getFriends(myId), getActivityFeed(myId, 50, true), getHiddenPlayerIds(myId),
-        getWeekStats(myId), getSuggestedGame(myId), getWeekendGames(myId),
+        getWeekStats(myId), fetchMyAvailability(myId),
         getMyMatchCount(myId), getMyGameCount(myId),
         player ? getSuggestions(player, 8) : Promise.resolve([] as SocialPlayer[]),
         getOpenGames(myId, 8), getRecapMonths(myId),
       ]);
       setFriends(fr); setFeed(fd); setHiddenIds(hidden);
-      setWeek(w); setHero(h); setWeekend(we);
+      setWeek(w); setMyAvailability(av);
       setTotalMatches(mc); setTotalGames(gc);
       setSuggestions(sugg); setOpenGames(og); setLoading(false); setReady(true);
       const latest = months[0];
       setBilanRecap(latest ? await getMonthlyRecap(myId, latest.key) : null);
     })();
   }, [myId]);
+
+  // Coche/décoche un créneau de dispo — chips du header ET, en état calme,
+  // celles (identiques) de DispoCard.
+  const toggleSlot = async (slot: Slot) => {
+    if (!myId) return;
+    const active = isSlotActive(slot, myAvailability);
+    if (active) await clearAvailability(myId, slot); else await declareAvailability(myId, slot);
+    setMyAvailability(await fetchMyAvailability(myId));
+  };
 
   useFocusEffect(useCallback(() => { track('activity_tab_opened', { source: 'tab' }); load(); }, [load]));
 
@@ -114,12 +132,6 @@ export default function ActiviteTab() {
     ]);
   };
 
-  const pingFriend = (f: SocialPlayer) => {
-    if (!player) return;
-    notifyPlayers({ playerIds: [f.id], title: `${player.name} veut jouer 🔥`, body: 'Propose-lui une partie cette semaine !', data: { type: 'ping' } });
-    Alert.alert('Envoyé', `${f.name.split(' ')[0]} a reçu ton ping.`);
-  };
-
   const followPlayer = (id: string) => { if (myId) setFollow(myId, id, true); };
 
   const publishMoment = async (caption: string) => {
@@ -137,16 +149,16 @@ export default function ActiviteTab() {
   const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
   const recentFeed = visibleFeed.filter(e => Date.now() - new Date(e.created_at).getTime() <= TWO_WEEKS);
   const shown = sel ? recentFeed.filter(e => e.player_id === sel) : recentFeed;
-  const moments = pickMoments(visibleFeed, myId);
   const liveMoment = openMomentId ? visibleFeed.find(e => e.id === openMomentId) ?? null : null;
 
   const recentFriendActivity = feed.filter(
     e => e.player_id !== myId && Date.now() - new Date(e.created_at).getTime() <= 7 * 24 * 60 * 60 * 1000,
   ).length;
   const state: ActivityState = deriveActivityState({ totalMatches, totalGames, friendsCount: friends.length, recentFriendActivity });
-  // Δ niveau de la semaine (depuis l'ELO interne ; jamais d'ELO affiché).
-  const curElo = player?.elo_score ?? 0;
-  const weekLevelDelta = player ? eloToLevel(curElo) - eloToLevel(curElo - week.eloDelta) : 0;
+  // Ville (club faute de mieux — voir rapport) + date du jour, en toutes lettres.
+  const today = new Date();
+  const dateEnLettres = today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+  const headerSubtitle = [player?.clubs?.[0], dateEnLettres].filter(Boolean).join(' · ');
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -159,10 +171,38 @@ export default function ActiviteTab() {
         <View style={{ alignItems: 'center' }}>
           <Text numberOfLines={2}
             style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center', paddingRight: 5 }}>
-            L'<Text style={{ color: Colors.brand }}>Activité</Text>
+            Qui <Text style={{ color: Colors.brand }}>joue</Text> ?
           </Text>
-          <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>Partage tes matchs, anime ta communauté</Text>
+          {headerSubtitle ? (
+            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>{headerSubtitle}</Text>
+          ) : null}
         </View>
+
+        {/* Bloc dispo : « Tu es dispo quand ? » + trois chips multi-sélection. */}
+        {myId ? (
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, letterSpacing: 0.8, textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>
+              TU ES DISPO QUAND ?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              {availabilitySlots().map(s => {
+                const on = isSlotActive(s, myAvailability);
+                return (
+                  <TouchableOpacity key={s.key} onPress={() => toggleSlot(s)} activeOpacity={0.85} style={{
+                    flex: 1, borderRadius: 999, paddingVertical: 11, alignItems: 'center',
+                    backgroundColor: on ? Colors.brand : 'transparent',
+                    borderWidth: 1.5, borderColor: on ? Colors.brand : 'rgba(255,255,255,0.28)',
+                  }}>
+                    <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12.5, color: on ? Colors.primary : '#FFFFFF' }}>{s.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginTop: 10, textAlign: 'center' }}>
+              {circleVisibilityLabel(friends.length)}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {!myId ? null : !ready ? (
@@ -175,9 +215,9 @@ export default function ActiviteTab() {
             <>
               {/* Accueil */}
               <View style={{ marginTop: 14 }}>
-                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary, paddingRight: 5 }}>Bienvenue {player.name.split(' ')[0]} 👋</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 31, color: Colors.textPrimary, paddingRight: 5 }}>Bienvenue {player.name.split(' ')[0]}</Text>
                 <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 13, color: Colors.textSecondary, marginTop: 4 }}>
-                  L'Activité, c'est ton fil padel : tes matchs, ceux de tes amis, et les parties à rejoindre. Commence ici 👇
+                  L'Activité, c'est ton fil padel : tes matchs, ceux de tes amis, et les parties à rejoindre. Commence ici :
                 </Text>
               </View>
 
@@ -194,34 +234,38 @@ export default function ActiviteTab() {
               {/* Joueurs à suivre */}
               <DiscoveryRail players={suggestions} title="Joueurs à suivre" onPress={(id) => router.push(`/player/${id}` as any)} onFollow={followPlayer} />
             </>
-          ) : state === 'friends_inactive' ? (
-            <>
-              <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} />
-              <WeekStatsCard stats={week} levelDelta={weekLevelDelta} />
-              {/* Mes propres moments restent visibles même quand les amis sont
-                  inactifs ; sinon on invite à en partager un. */}
-              {moments.length > 0 ? (
-                <MomentsRail moments={moments} onShareMatch={() => setPickerOpen(true)} onOpen={(e) => setOpenMomentId(e.id)} />
-              ) : (
-                <EmptyHero variant="expand"
-                  subtitle="Anime le fil — partage un moment ou propose une partie."
-                  ctaLabel="Partage un moment"
-                  onPress={() => setPickerOpen(true)} />
-              )}
-              <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} dimmed />
-              <QuietFeedCard friends={friends} onPing={pingFriend} />
-            </>
           ) : (
             <>
-              <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} />
-              <WeekStatsCard stats={week} levelDelta={weekLevelDelta} />
-              {hero ? <JoinHeroCard game={hero} onOpen={(id) => router.push(`/(tabs)/lobby?gameId=${id}` as any)} /> : null}
-              <MomentsRail moments={moments} onShareMatch={() => setPickerOpen(true)} onOpen={(e) => setOpenMomentId(e.id)} />
-              <WeekendRail games={weekend} onOpen={(id) => router.push(`/(tabs)/lobby?gameId=${id}` as any)} />
+              {/* Bilan : seulement en tout début de mois, sinon il n'a plus
+                  grand-chose à dire (README « Ce qui est retiré »). */}
+              {isBilanWindow() ? <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} /> : null}
 
+              {/* Qui joue quand : dispo ce soir, puis l'invitation reçue. */}
+              <DispoCard
+                playerId={myId}
+                playerName={player.name}
+                playerAvatarPath={player.avatar_path}
+                playerIsAmbassador={isAmbassador(player)}
+                friendIds={friends.map(f => f.id)}
+                mine={myAvailability}
+                onToggleSlot={toggleSlot}
+              />
+              <InvitationCard playerId={myId} />
+
+              {/* Qu'est-ce qui s'est passé : le vote d'après-match remonté. */}
+              <PostMatchVoteCard playerId={myId} />
+
+              <WeekStatsCard stats={week} />
               {player ? <FriendsRanking me={player} friends={friends} /> : null}
 
-              <View style={{ height: 1, backgroundColor: Colors.border, marginVertical: 18 }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 4 }}>
+                <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6, flexShrink: 1 }}>
+                  Ce que ton cercle a fait
+                </Text>
+                <TouchableOpacity onPress={() => selectFriend(null)} hitSlop={8}>
+                  <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textSecondary }}>Tout le fil →</Text>
+                </TouchableOpacity>
+              </View>
               <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} />
               {sel && selName ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
