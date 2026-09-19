@@ -10,7 +10,10 @@ import type { MonthlyRecap } from '../../lib/bilan';
 export function BilanRecapFull({ recap }: { recap: MonthlyRecap }) {
   const up = recap.levelDelta >= 0;
   const deltaColor = up ? '#10B981' : '#EF4444';
-  const cells: ('V' | 'D')[] = [...Array(recap.wins).fill('V'), ...Array(recap.losses).fill('D')];
+  // Ordre où les matchs ont été joués (recap.results), comme la slide Forme.
+  const cells: ('V' | 'D')[] = recap.results && recap.results.length > 0
+    ? recap.results
+    : [...Array(recap.wins).fill('V'), ...Array(recap.losses).fill('D')];
   const p = recap.topPartner;
   const b = recap.bestMatch;
 
