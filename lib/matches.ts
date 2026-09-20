@@ -58,6 +58,38 @@ export function isValidationOpen(m: ActionMatch, now: Date = new Date()): boolea
   return now.getTime() >= opens;
 }
 
+/**
+ * Suis-je le PARTENAIRE de l'auteur du score ? (Lui-même exclu.)
+ *
+ * Sert deux fois, et c'est la raison de l'extraire : le partenaire n'a rien à
+ * valider (il a soumis avec l'auteur), mais il doit voir le score en attente
+ * dans son historique — les deux règles doivent parler du même binôme.
+ */
+export function isAuthorsPartner(m: ActionMatch, playerId: string): boolean {
+  const cb = m.created_by;
+  if (!cb || cb === playerId) return false;
+  return (
+    (cb === m.winner_id   && m.winner_id_2 === playerId) ||
+    (cb === m.winner_id_2 && m.winner_id   === playerId) ||
+    (cb === m.loser_id    && m.loser_id_2  === playerId) ||
+    (cb === m.loser_id_2  && m.loser_id    === playerId)
+  );
+}
+
+/**
+ * Ce score en attente est-il le MIEN — celui que j'ai saisi, ou celui que mon
+ * binôme a saisi pour nous deux ?
+ *
+ * Une fois le score soumis, la partie quitte « À venir » et le match n'est pas
+ * encore dans l'historique validé : sans ça, il ne reste aucune trace du match
+ * pour le camp qui l'a saisi. Le camp adverse, lui, n'est pas concerné — de
+ * son côté c'est `matchNeedsMyAction` qui répond 'validate'.
+ */
+export function isMyPendingScore(m: ActionMatch, playerId: string): boolean {
+  if (m.status !== 'pending') return false;
+  return m.created_by === playerId || isAuthorsPartner(m, playerId);
+}
+
 export function matchNeedsMyAction(m: ActionMatch, playerId: string, now: Date = new Date()): MatchAction {
   if (m.status === 'counter_proposed') {
     // Une contestation ne peut exister qu'APRÈS l'ouverture : l'auteur tranche
@@ -69,12 +101,6 @@ export function matchNeedsMyAction(m: ActionMatch, playerId: string, now: Date =
   // Trop tôt : pour l'adversaire, ce score n'existe pas encore.
   if (!isValidationOpen(m, now)) return null;
   // Le partenaire de l'auteur n'a rien à valider non plus.
-  const cb = m.created_by;
-  if (
-    (cb === m.winner_id   && m.winner_id_2 === playerId) ||
-    (cb === m.winner_id_2 && m.winner_id   === playerId) ||
-    (cb === m.loser_id    && m.loser_id_2  === playerId) ||
-    (cb === m.loser_id_2  && m.loser_id    === playerId)
-  ) return null;
+  if (isAuthorsPartner(m, playerId)) return null;
   return 'validate';
 }

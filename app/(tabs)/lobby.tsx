@@ -45,7 +45,7 @@ import {
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan } from '../../lib/games';
-import { matchNeedsMyAction } from '../../lib/matches';
+import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
 import ApplicationNoteSheet from '../../components/ApplicationNoteSheet';
@@ -1488,17 +1488,26 @@ function needsMyValidation(m: Match, playerId: string): boolean {
 }
 
 // ─── Match card (history) ─────────────────────────────────────
-function MatchCard({ match, playerId, onPress, onRematch, onShare, delta }: {
+function MatchCard({ match, playerId, onPress, onRematch, onShare, delta, statusNote }: {
   match: Match;
   playerId: string;
-  onPress: () => void;
+  onPress?: () => void;
   onRematch?: (matchId: string) => void;
   onShare?: () => void;
   delta?: number;
+  /** Ligne d'état sous la carte (ex. « en attente de validation »). */
+  statusNote?: string;
 }) {
   const router = useRouter();
   const canRematch = onRematch && match.status === 'validated';
-  const footer = (canRematch || onShare) ? (
+  const footer = statusNote ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt, paddingTop: 10 }}>
+      <Pill variant="warning">En attente</Pill>
+      <Text style={{ flex: 1, fontSize: 10.5, fontWeight: '600', color: Colors.textMuted }} numberOfLines={2}>
+        {statusNote}
+      </Text>
+    </View>
+  ) : (canRematch || onShare) ? (
     <View style={{ flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: Colors.bgCardAlt, paddingTop: 10 }}>
       {canRematch && (
         <TouchableOpacity
@@ -2452,6 +2461,10 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
   };
 
   const toScore = matches.filter(m => needsMyValidation(m, playerId)).filter(byType).filter(matchSearch);
+  // Mon score saisi (par moi ou par mon binôme) : la partie a quitté « À venir »
+  // et le match n'est pas encore validé — sans cette section, il n'en resterait
+  // aucune trace de notre côté. Règle partagée : lib/matches.isMyPendingScore.
+  const waiting = matches.filter(m => isMyPendingScore(m, playerId)).filter(byType).filter(matchSearch);
   const past = matches.filter(m => m.status === 'validated').filter(byType).filter(matchSearch);
   const pastGames = pastCompleteGames.filter(gameSearch);
 
@@ -2505,6 +2518,20 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
           ))}
         </Section>
       )}
+      {waiting.length > 0 && (
+        <Section title="En attente de validation" count={waiting.length} color={Colors.warning}>
+          {waiting.map(m => (
+            <View key={m.id} style={{ marginBottom: 10 }}>
+              <MatchCard
+                match={m} playerId={playerId}
+                statusNote={m.created_by === playerId
+                  ? "Tu as saisi ce score. Tes adversaires le valideront un peu après la fin du match."
+                  : "Ton binôme a saisi ce score. Vos adversaires le valideront un peu après la fin du match."}
+              />
+            </View>
+          ))}
+        </Section>
+      )}
       {past.length > 0 && (
         <Section title="Matchs passés" count={past.length} color={Colors.textSecondary}>
           {past.map(m => (
@@ -2514,7 +2541,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
           ))}
         </Section>
       )}
-      {pastGames.length + toScore.length + past.length === 0 && (
+      {pastGames.length + toScore.length + waiting.length + past.length === 0 && (
         <EmptyState
           text={q ? 'Aucun résultat' : matches.length === 0 ? 'Aucun match joué encore' : 'Aucun match de ce type'}
           sub={q ? 'Essaie un autre nom de joueur ou de lieu' : matches.length === 0 ? 'Rejoins une partie depuis Explorer !' : undefined}
@@ -2687,7 +2714,7 @@ export default function LobbyScreen() {
     const myMatchOr = `winner_id.eq.${player.id},loser_id.eq.${player.id},winner_id_2.eq.${player.id},loser_id_2.eq.${player.id}`;
     const scoreWindowAgo = new Date(Date.now() - SCORE_WINDOW_MS).toISOString();
 
-    const [explorerRes, createdRes, matchesActionRes, matchesHistoryRes, scoredRecentRes, binomeInvitesRes, myAppsRes, eloHistRes] = await Promise.all([
+    const [explorerRes, createdRes, matchesActionRes, matchesHistoryRes, scoredRecentRes, binomeInvitesRes, myAppsRes, eloHistRes, binomePendingRes] = await Promise.all([
       supabase
         .from('open_games')
         .select(GAME_SELECT)
@@ -2752,6 +2779,18 @@ export default function LobbyScreen() {
         .from('elo_history')
         .select('match_id, elo_score, elo_change')
         .eq('player_id', player.id),
+      // Le score saisi par MON BINÔME. La requête d'au-dessus ne me le sert
+      // pas encore : avant l'heure d'ouverture, elle ne rend que mes propres
+      // saisies. Or je suis du même côté que lui — ce match doit rester
+      // visible chez moi aussi. On ne demande ici QUE les colonnes de
+      // décision, jamais le score : le camp adverse ne doit rien pouvoir
+      // lire avant l'heure, même par accident.
+      supabase
+        .from('matches')
+        .select(MATCH_ACTION_FIELDS)
+        .or(myMatchOr)
+        .eq('status', 'pending')
+        .neq('created_by', player.id),
     ]);
     setBinomeInvites(binomeInvitesRes);
     setAppliedDefiIds(new Set((myAppsRes ?? []).map(a => a.game_id).filter(Boolean)));
@@ -2877,8 +2916,23 @@ export default function LobbyScreen() {
           : g));
     const now = new Date();
     // Actions d'abord (tri created_at desc préservé par section), historique ensuite.
+    const dejaChargees = new Set([
+      ...(matchesActionRes.data ?? []),
+      ...(matchesHistoryRes.data ?? []),
+    ].map((m: any) => m.id as string));
+    // Parmi les scores en attente qui ne sont pas de moi, ceux de mon binôme :
+    // eux seuls sont chargés en entier.
+    const idsBinome = ((binomePendingRes.data ?? []) as any[])
+      .filter(m => !dejaChargees.has(m.id) && isMyPendingScore(m, player.id))
+      .map(m => m.id as string);
+    let lignesBinome: Match[] = [];
+    if (idsBinome.length > 0) {
+      const { data } = await supabase.from('matches').select(MATCH_SELECT).in('id', idsBinome);
+      lignesBinome = (data ?? []) as Match[];
+    }
     const matchRows = [
       ...(matchesActionRes.data ?? []),
+      ...lignesBinome,
       ...(matchesHistoryRes.data ?? []),
     ] as Match[];
     const scoredGameIds = new Set(
