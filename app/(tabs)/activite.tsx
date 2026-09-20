@@ -36,7 +36,6 @@ import { FeaturedClash } from '../../components/activity/FeaturedClash';
 import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
 import { InvitationCard } from '../../components/activity/InvitationCard';
-import { PostMatchVoteCard } from '../../components/activity/PostMatchVoteCard';
 import { HeadToHeadCard } from '../../components/activity/HeadToHeadCard';
 import StoryMatchPicker from '../../components/StoryMatchPicker';
 import type { StoryMatchData } from '../../components/story/storyTheme';
@@ -343,10 +342,11 @@ export default function ActiviteTab() {
               />
               <InvitationCard playerId={myId} />
 
-              {/* Qu'est-ce qui s'est passé : le vote d'après-match remonté,
-                  puis le rival de la saison (il ne s'affiche qu'à partir de
-                  trois duels contre la même personne). */}
-              <PostMatchVoteCard playerId={myId} />
+              {/* Qu'est-ce qui s'est passé : le rival de la saison. Il ne
+                  s'affiche qu'à partir de trois duels contre la même
+                  personne. La carte de vote d'après-match a été retirée : la
+                  fenêtre de l'Accueil pose déjà cette question, et la poser
+                  deux fois n'en faisait pas une bonne. */}
               <HeadToHeadCard
                 myId={myId}
                 myName={player.name}
