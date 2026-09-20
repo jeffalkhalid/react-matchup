@@ -15,6 +15,7 @@
 // (supabase/migrations/predictions.sql), qui peut ne pas exister encore.
 import { supabase } from './supabase';
 import { eloToLevel } from './theme';
+import { occupiesSpot } from './games';
 
 export type Team = 'A' | 'B';
 
@@ -95,6 +96,36 @@ export function pickClash(games: ClashGame[], now: Date = new Date()): Clash | n
   return best;
 }
 
+/** Une ligne de `game_participants`, telle que la base la rend. */
+export interface ClashParticipant {
+  player_id: string;
+  status: string;
+  team_side?: string | null;
+  invite_expires_at?: string | null;
+  player?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null } | null;
+}
+
+/**
+ * Les joueurs d'une partie, au sens du reste de l'app : `occupiesSpot`.
+ *
+ * Un joueur invité et non expiré occupe sa place — le Lobby l'affiche déjà
+ * sur la carte et compte la partie « COMPLET ». Filtrer sur
+ * `status === 'accepted'` écartait ces parties, qui n'apparaissaient donc
+ * jamais comme choc alors qu'elles étaient pleines à l'écran.
+ */
+export function clashPlayersFrom(participants: ClashParticipant[]): ClashPlayer[] {
+  return participants
+    .filter(p => occupiesSpot(p) && teamOf(p.team_side))
+    .map(p => ({
+      id: p.player_id,
+      name: p.player?.name ?? 'Joueur',
+      avatarPath: p.player?.avatar_path ?? null,
+      memberNumber: p.player?.member_number ?? null,
+      elo: p.player?.elo_score ?? null,
+      team: teamOf(p.team_side) as Team,
+    }));
+}
+
 export interface PredictionCounts { A: number; B: number; total: number }
 
 /** Compte les avis par camp. */
@@ -144,11 +175,19 @@ export function clashReasonLabel(c: Pick<Clash, 'gap' | 'city'>): string {
 const MANQUE = (e: { code?: string; message?: string } | null) =>
   !!e && (e.code === '42P01' || /does not exist/i.test(e.message ?? ''));
 
-/** Les parties complètes d'un intervalle, avec leurs quatre joueurs. */
+/**
+ * Les parties complètes d'un intervalle, avec leurs quatre joueurs.
+ *
+ * Qui « joue » se lit avec `occupiesSpot`, comme partout ailleurs : un joueur
+ * invité et non expiré occupe sa place, et le Lobby l'affiche déjà sur la
+ * carte de la partie. Le filtre brut `status === 'accepted'` écartait ces
+ * parties-là — elles s'affichaient « COMPLET » dans le Lobby et restaient
+ * invisibles ici.
+ */
 export async function fetchClashCandidates(start: Date, end: Date, limit = 40): Promise<ClashGame[]> {
   const { data, error } = await supabase
     .from('open_games')
-    .select('id, match_date, location, status, participants:game_participants(player_id, status, team_side, player:player_id(id, name, elo_score, avatar_path, member_number))')
+    .select('id, match_date, location, status, participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, member_number))')
     .neq('status', 'cancelled')
     .gte('match_date', start.toISOString())
     .lte('match_date', end.toISOString())
@@ -161,16 +200,7 @@ export async function fetchClashCandidates(start: Date, end: Date, limit = 40): 
     matchDate: g.match_date,
     location: g.location ?? null,
     city: null,
-    players: ((g.participants ?? []) as any[])
-      .filter(p => p.status === 'accepted' && teamOf(p.team_side))
-      .map(p => ({
-        id: p.player_id,
-        name: p.player?.name ?? 'Joueur',
-        avatarPath: p.player?.avatar_path ?? null,
-        memberNumber: p.player?.member_number ?? null,
-        elo: p.player?.elo_score ?? null,
-        team: teamOf(p.team_side) as Team,
-      })),
+    players: clashPlayersFrom((g.participants ?? []) as ClashParticipant[]),
   }));
 }
 

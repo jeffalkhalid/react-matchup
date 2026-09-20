@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   teamOf, teamLevel, pickClash, countPredictions, predictionShare, agreementLabel,
-  clashWhenLabel, clashReasonLabel, predictionWindow, PREDICTION_DAYS,
+  clashWhenLabel, clashReasonLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
   type ClashGame, type ClashPlayer, type Team,
 } from '../weekendClash';
 
@@ -162,5 +162,49 @@ describe('libellés du choc', () => {
   });
   it('sans ville, la phrase reste correcte', () => {
     expect(clashReasonLabel({ gap: 0.5, city: null })).toBe("L'écart de niveau le plus serré en ce moment (0.50).");
+  });
+});
+
+describe('clashPlayersFrom — qui compte comme joueur de la partie', () => {
+  const part = (id: string, status: string, side: string | null, over: Record<string, any> = {}) => ({
+    player_id: id, status, team_side: side,
+    player: { name: id, elo_score: 1500, avatar_path: null, member_number: null },
+    ...over,
+  });
+
+  it('garde les joueurs acceptés', () => {
+    expect(clashPlayersFrom([part('a', 'accepted', 'A_GAU')]).map(p => p.id)).toEqual(['a']);
+  });
+
+  it('garde un INVITÉ non expiré — le Lobby le compte déjà, la partie est « COMPLET »', () => {
+    const demain = new Date(Date.now() + 86_400_000).toISOString();
+    const out = clashPlayersFrom([part('a', 'invited', 'A_GAU', { invite_expires_at: demain })]);
+    expect(out.map(p => p.id)).toEqual(['a']);
+  });
+
+  it('écarte une invitation expirée', () => {
+    const hier = new Date(Date.now() - 86_400_000).toISOString();
+    expect(clashPlayersFrom([part('a', 'invited', 'A_GAU', { invite_expires_at: hier })])).toEqual([]);
+  });
+
+  it('écarte une candidature et une liste d\'attente', () => {
+    expect(clashPlayersFrom([part('a', 'pending', 'A_GAU'), part('b', 'waitlist', 'B_GAU')])).toEqual([]);
+  });
+
+  it('écarte un joueur sans camp — on ne saurait pas de quel côté le mettre', () => {
+    expect(clashPlayersFrom([part('a', 'accepted', null)])).toEqual([]);
+  });
+
+  it('une partie pleine avec deux invités reste pronostiquable', () => {
+    const demain = new Date(Date.now() + 86_400_000).toISOString();
+    const out = clashPlayersFrom([
+      part('a1', 'accepted', 'A_GAU'),
+      part('a2', 'invited', 'A_DRO', { invite_expires_at: demain }),
+      part('b1', 'accepted', 'B_GAU'),
+      part('b2', 'invited', 'B_DRO', { invite_expires_at: demain }),
+    ]);
+    expect(out).toHaveLength(4);
+    expect(out.filter(p => p.team === 'A')).toHaveLength(2);
+    expect(out.filter(p => p.team === 'B')).toHaveLength(2);
   });
 });
