@@ -354,9 +354,10 @@ export default function ActiviteTab() {
                 <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6, flexShrink: 1 }}>
                   Ce que ton cercle a fait
                 </Text>
-                <TouchableOpacity onPress={() => selectFriend(null)} hitSlop={8}>
-                  <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textSecondary }}>Tout le fil →</Text>
-                </TouchableOpacity>
+                {/* « Tout le fil → » ne menait nulle part : il retirait le
+                    filtre par ami, ce que « Tout voir » fait déjà juste en
+                    dessous quand un ami est sélectionné. Sans filtre actif, le
+                    lien ne faisait rien du tout. */}
               </View>
               <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} />
 

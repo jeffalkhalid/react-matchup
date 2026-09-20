@@ -9,19 +9,9 @@ import { MatchCard as MatchScoreCard } from '../profile/components';
 import { BadgePill } from '../profile/BadgePill';
 import { matchToView } from '../../lib/matchView';
 import { reactionFor } from '../../lib/activityReactions';
+import { headlineFor } from '../../lib/activityHeadline';
 import { AMB } from '../../lib/ambassador';
 import type { ActivityEvent, League } from '../../types';
-
-function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
-  switch (e.type) {
-    case 'match_win':  return { verb: 'a gagné' };
-    case 'match_loss': return { verb: 'a perdu' };
-    case 'badge':      return { verb: 'a débloqué un badge' };
-    case 'promotion':  return { verb: 'monte en', accent: e.payload.promo_label ?? '' };
-    case 'bilan':      return { verb: 'a partagé son bilan', accent: e.payload.label ?? '' };
-    default:           return { verb: '' };
-  }
-}
 
 export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer, onOpen, onDefi }: {
   e: ActivityEvent;
@@ -36,7 +26,10 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
 }) {
   const win = e.type === 'match_win';
   const isMatch = e.type === 'match_win' || e.type === 'match_loss';
-  const { verb, accent } = verbFor(e);
+  // « Khalid a gagné » sur sa propre carte : le sujet et le verbe s'accordent
+  // (lib/activityHeadline).
+  const accentBrut = e.type === 'promotion' ? e.payload.promo_label : e.type === 'bilan' ? e.payload.label : null;
+  const { subject, verb, accent } = headlineFor(e.type, e.player_id === myId, e.actor?.name, accentBrut);
   const fireIds = e.reactions?.['🔥'] ?? [];
   const liked = fireIds.includes(myId);
   const likes = fireIds.length;
@@ -70,7 +63,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
           <Avatar name={e.actor?.name} path={(e.actor as any)?.avatar_path} size={52} league={league} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 14, color: Colors.textPrimary }}>
-              <Text style={{ fontFamily: Fonts.uiExtraBold }}>{e.actor?.name ?? 'Joueur'}</Text>
+              <Text style={{ fontFamily: Fonts.uiExtraBold }}>{subject}</Text>
               <Text style={{ color: Colors.textSecondary }}> {verb}</Text>
               {accent ? <Text style={{ fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}> {accent}</Text> : null}
             </Text>
