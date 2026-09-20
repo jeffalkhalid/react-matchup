@@ -2,7 +2,9 @@ import { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
+// SDK 57 : l'API historique (saveToLibraryAsync) lève une erreur depuis le
+// point d'entrée principal ; elle reste servie par le sous-module « /legacy ».
+import * as MediaLibrary from 'expo-media-library/legacy';
 import { Fonts } from '../../../lib/theme';
 import { Icon, type IconName } from '../../community/icons';
 import type { MonthlyRecap } from '../../../lib/bilan';
