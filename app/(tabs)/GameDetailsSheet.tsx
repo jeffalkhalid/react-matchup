@@ -9,7 +9,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
-import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange } from '../../lib/games';
+import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking } from '../../lib/games';
 import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
 import { fetchPlayersTotals, type PlayerTotals } from '../../lib/playerStats';
 import { FitTitle } from '../../components/DisplayTitle';
@@ -861,6 +861,26 @@ function GameDetailsSheetContenu({
                   </Text>
                 </View>
               )}
+              {/* Terrain réservé ou non — même règle que la carte du lobby
+                  (lib/games.courtBooking), en version longue : ici la place
+                  ne manque pas. */}
+              {(() => {
+                const b = courtBooking(game as any);
+                if (!b) return null;
+                return (
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
+                    paddingHorizontal: 10, paddingVertical: 4,
+                    backgroundColor: b.booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
+                  }}>
+                    <Icon name={b.booked ? 'check' : 'clock'} size={12}
+                      color={b.booked ? Colors.brand : 'rgba(255,255,255,0.8)'} stroke={b.booked ? 3 : 2.4} />
+                    <Text style={{ color: b.booked ? Colors.brand : 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
+                      {b.long}
+                    </Text>
+                  </View>
+                );
+              })()}
             </View>
           </View>
 
