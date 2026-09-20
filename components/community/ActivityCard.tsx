@@ -1,5 +1,5 @@
 // Carte d'activité : entête acteur + bloc (résultat / badge / promotion) + réactions.
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts, getLeague } from '../../lib/theme';
 import { Avatar } from './Avatar';
@@ -8,36 +8,53 @@ import { Icon } from './icons';
 import { MatchCard as MatchScoreCard } from '../profile/components';
 import { BadgePill } from '../profile/BadgePill';
 import { matchToView } from '../../lib/matchView';
+import { reactionFor } from '../../lib/activityReactions';
+import { headlineFor } from '../../lib/activityHeadline';
+import { AMB } from '../../lib/ambassador';
 import type { ActivityEvent, League } from '../../types';
 
-function verbFor(e: ActivityEvent): { verb: string; accent?: string } {
-  switch (e.type) {
-    case 'match_win':  return { verb: 'a gagné' };
-    case 'match_loss': return { verb: 'a perdu' };
-    case 'badge':      return { verb: 'a débloqué un badge' };
-    case 'promotion':  return { verb: 'monte en', accent: e.payload.promo_label ?? '' };
-    case 'bilan':      return { verb: 'a partagé son bilan', accent: e.payload.label ?? '' };
-    default:           return { verb: '' };
-  }
-}
-
-export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer, onOpen }: {
+export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemove, onPressComments, onPressPlayer, onOpen, onDefi }: {
   e: ActivityEvent;
   myId: string;
-  onReact?: () => void;        // absent = 🔥 désactivé (ex: ses propres posts)
+  onReact?: () => void;        // absent = réaction désactivée (ex: ses propres posts)
   onPressActor?: () => void;   // ouvre le profil de l'acteur
   onReport?: () => void;       // signaler l'activité (absent si c'est la mienne)
+  onRemove?: () => void;       // retirer MA publication (bilan ou moment partagé)
   onPressComments?: () => void; // ouvre la feuille de commentaires
   onPressPlayer?: (id: string) => void; // ouvre le profil d'un joueur de la carte de match
   onOpen?: () => void;          // tap sur le contenu → vue plein écran
+  onDefi?: () => void;          // « Revanche ? » (défaite) → ouvre l'onglet Défi
 }) {
   const win = e.type === 'match_win';
   const isMatch = e.type === 'match_win' || e.type === 'match_loss';
-  const { verb, accent } = verbFor(e);
+  // « Khalid a gagné » sur sa propre carte : le sujet et le verbe s'accordent
+  // (lib/activityHeadline).
+  const accentBrut = e.type === 'promotion' ? e.payload.promo_label : e.type === 'bilan' ? e.payload.label : null;
+  const { subject, verb, accent } = headlineFor(e.type, e.player_id === myId, e.actor?.name, accentBrut);
   const fireIds = e.reactions?.['🔥'] ?? [];
   const liked = fireIds.includes(myId);
   const likes = fireIds.length;
   const league = (e.league ?? (e.actor ? getLeague(e.actor.elo_score) : 'discovery')) as League;
+
+  // Réaction contextuelle : le bouton (libellé/icône/bascule) dépend du type
+  // d'événement — « Revanche ? » (action) reste séparé des réactions 🔥
+  // (« Machine ! », « Féliciter ») qui, elles, passent toujours par onReact.
+  const reaction = reactionFor(e.type);
+  const [defiSent, setDefiSent] = useState(false);
+  const reactionActive = reaction.kind === 'reaction' ? liked : defiSent;
+  const reactionBg = reactionActive
+    ? (reaction.kind === 'action' ? '#0A0A0A' : 'rgba(255,193,26,0.14)')
+    : '#FFFFFF';
+  const reactionBorder = reactionActive
+    ? (reaction.kind === 'action' ? '#0A0A0A' : Colors.brand)
+    : Colors.border;
+  const reactionText = reactionActive
+    ? (reaction.kind === 'action' ? Colors.brand : AMB.chipText)
+    : Colors.textSecondary;
+  const onPressReaction = () => {
+    if (reaction.kind === 'action') { setDefiSent(true); onDefi?.(); }
+    else onReact?.();
+  };
 
   return (
     <Card pad={16}>
@@ -47,7 +64,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
           <Avatar name={e.actor?.name} path={(e.actor as any)?.avatar_path} size={52} league={league} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontFamily: Fonts.ui, fontSize: 14, color: Colors.textPrimary }}>
-              <Text style={{ fontFamily: Fonts.uiExtraBold }}>{e.actor?.name ?? 'Joueur'}</Text>
+              <Text style={{ fontFamily: Fonts.uiExtraBold }}>{subject}</Text>
               <Text style={{ color: Colors.textSecondary }}> {verb}</Text>
               {accent ? <Text style={{ fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}> {accent}</Text> : null}
             </Text>
@@ -56,16 +73,22 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
             </Text>
           </View>
         </TouchableOpacity>
-        {onReport ? (
-          <TouchableOpacity onPress={onReport} hitSlop={8} activeOpacity={0.7}
+        {onReport || onRemove ? (
+          <TouchableOpacity onPress={onReport ?? onRemove} hitSlop={8} activeOpacity={0.7}
+            accessibilityLabel={onReport ? 'Signaler' : 'Retirer ma publication'}
             style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 18, lineHeight: 18, color: Colors.textSecondary, marginTop: -4 }}>⋯</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
+        ) : onOpen ? (
+          /* Sur mes propres cartes il n'y a rien à signaler : la flèche prend
+             la place du « ⋯ ». Elle ouvre la vue plein écran — avant, c'était
+             une simple image qui ne réagissait pas au doigt. */
+          <TouchableOpacity onPress={onOpen} hitSlop={8} activeOpacity={0.7}
+            accessibilityLabel="Ouvrir en plein écran"
+            style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="arrowRight" size={16} color={Colors.textSecondary} stroke={2.4} rotate={-45} />
-          </View>
-        )}
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Contenu tappable → vue plein écran */}
@@ -158,12 +181,22 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
       ) : null}
       </TouchableOpacity>
 
-      {/* Réactions */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-        <TouchableOpacity onPress={onReact} disabled={!onReact} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 17, opacity: liked ? 1 : 0.5 }}>🔥</Text>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: liked ? Colors.brandDeep : Colors.textMuted }}>
-            {likes}
+      {/* Réactions — le bouton dépend du type d'événement (lib/activityReactions) */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <TouchableOpacity
+          onPress={onPressReaction}
+          disabled={reaction.kind === 'reaction' ? !onReact : defiSent}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, borderWidth: 1,
+            backgroundColor: reactionBg, borderColor: reactionBorder,
+          }}
+        >
+          <Icon name={reaction.icon} size={14} color={reactionText} stroke={2} />
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: reactionText }}>
+            {reactionActive ? reaction.activeLabel : reaction.label}
+            {reaction.kind === 'reaction' && likes > 0 ? ` · ${likes}` : ''}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onPressComments} disabled={!onPressComments} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

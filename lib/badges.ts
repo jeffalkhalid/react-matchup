@@ -100,6 +100,28 @@ export function getActiveVoteBadges(): VoteBadge[] {
     .map(r => ({ key: r.key, label: r.label ?? r.key, iconKey: r.icon_key || FALLBACK.iconKey, color: r.color || COLORS.slate }));
 }
 
+// Couleurs réservées à victoire/défaite (charte) : un badge de ces teintes
+// créerait une ambiguïté sur un écran où vert/rouge signifient déjà
+// gagné/perdu (hub Activité, carte de vote d'après-match). Cf. handoff
+// design_handoff_activite_hub/README.md § « Couleurs des badges ».
+const WARM_COLORS: ReadonlySet<string> = new Set([COLORS.red, COLORS.green]);
+
+/** Vrai si cette couleur de badge est neutre (ni victoire, ni défaite). */
+export function isNeutralBadgeColor(color: string): boolean {
+  return !WARM_COLORS.has(color);
+}
+
+/**
+ * Badges NEUTRES proposables au vote — sous-ensemble de `getActiveVoteBadges`
+ * qui exclut « La Bombe »/« Le Smash » (rouges) et « Fair-Play »/« Ponctuel »/
+ * « Bonne Ambiance »/« 3e Mi-temps » (verts), ainsi que MVP (pas un badge
+ * d'après-match). Utilisé par la carte de vote du hub Activité, dont les
+ * couleurs vert/rouge sont déjà prises par victoire/défaite.
+ */
+export function getNeutralVoteBadges(): VoteBadge[] {
+  return getActiveVoteBadges().filter(b => b.key !== 'MVP' && isNeutralBadgeColor(b.color));
+}
+
 function applyRows(fetched: BadgeRow[]) {
   const clean = (fetched ?? []).filter(r => r?.key);
   if (clean.length === 0) return; // base vide/illisible → on garde le défaut

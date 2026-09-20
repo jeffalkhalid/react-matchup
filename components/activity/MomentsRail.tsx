@@ -106,26 +106,34 @@ function MomentTile({ e, onPress }: { e: ActivityEvent; onPress: () => void }) {
   );
 }
 
-export function MomentsRail({ moments, onShareMatch, onOpen }: {
+export function MomentsRail({ moments, onShareMatch, onOpen, title = "Ce qu'on a vécu" }: {
   moments: ActivityEvent[];
   onShareMatch: () => void;
   onOpen: (e: ActivityEvent) => void;
+  title?: string;
 }) {
   return (
     <View style={{ marginTop: 18 }}>
-      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 17, lineHeight: 22, color: Colors.textPrimary, marginBottom: 10, paddingRight: 5 }}>Moments de la semaine</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontFamily: Fonts.welcome, fontSize: 17, lineHeight: 22, color: Colors.textPrimary, marginBottom: 2, paddingRight: 5 }}>{title}</Text>
+      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textSecondary, marginBottom: 10 }}>
+        Raconte ta partie, les autres réagissent.
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={{ marginHorizontal: -16 }} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
+        {/* La tuile « partager » vient EN PREMIER : c'est une invitation à
+            s'exprimer, pas une option de fin de liste. */}
+        <TouchableOpacity onPress={onShareMatch} activeOpacity={0.85}
+          style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 14 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: '#0A0A0A', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="camera" size={19} color={Colors.brand} stroke={2.2} />
+          </View>
+          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 12, color: '#0A0A0A', textAlign: 'center', lineHeight: 16 }}>
+            Raconte ton dernier match
+          </Text>
+        </TouchableOpacity>
         {moments.map(e => (
           <MomentTile key={e.id} e={e} onPress={() => { track('activity_moment_opened', { friend_id: e.player_id, moment_type: e.type }); onOpen(e); }} />
         ))}
-        {/* Slot Partager — ouvre le compositeur in-app */}
-        <TouchableOpacity onPress={onShareMatch} activeOpacity={0.85}
-          style={{ width: 128, height: 184, borderRadius: 18, backgroundColor: '#F6F5F3', borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14 }}>
-          <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#0A0A0A', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 20, color: Colors.brand, lineHeight: 22 }}>＋</Text>
-          </View>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textPrimary, textAlign: 'center', lineHeight: 14 }}>Partage ton dernier match</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );

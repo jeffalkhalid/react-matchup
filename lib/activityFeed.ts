@@ -127,6 +127,58 @@ export function pickMoments(feed: ActivityEvent[], myId?: string, max = 6, days 
   return [...mine, ...others].slice(0, max);
 }
 
+/**
+ * Ce que je peux retirer de MON fil, et ce que ça veut dire.
+ *
+ *  • 'delete'   — un bilan : publication volontaire, elle s'efface.
+ *  • 'unshare'  — un moment : « partager » avait mis un match en avant avec
+ *                 une légende ; on défait ça, le match reste dans le fil.
+ *  • null       — une victoire, une défaite, un badge, une montée de ligue :
+ *                 l'app les a constatés à la validation d'un score. Pouvoir
+ *                 effacer ses défaites viderait de son sens tout ce qui en
+ *                 dépend (ELO, face-à-face, bilans, classements).
+ *
+ * `is_highlight` est fiable pour distinguer les deux : il vaut `false` par
+ * défaut et seules `share_match_moment` et `post_bilan` le passent à `true`.
+ */
+export type ActivityRemoval = 'delete' | 'unshare' | null;
+
+export function activityRemovalFor(
+  e: { type: string; player_id: string; is_highlight?: boolean | null },
+  myId: string | null | undefined,
+): ActivityRemoval {
+  if (!myId || e.player_id !== myId) return null;
+  if (e.type === 'bilan') return 'delete';
+  return e.is_highlight ? 'unshare' : null;
+}
+
+/** Le libellé de confirmation, qui doit dire ce qui va VRAIMENT se passer. */
+export function removalPrompt(kind: Exclude<ActivityRemoval, null>): { title: string; message: string; action: string } {
+  return kind === 'delete'
+    ? {
+        title: 'Supprimer ce bilan ?',
+        message: 'Il disparaîtra du fil de tous tes amis. Tu pourras le republier plus tard.',
+        action: 'Supprimer',
+      }
+    : {
+        title: 'Retirer ce moment ?',
+        message: 'Ta légende et la mise en avant disparaissent. Le match, lui, reste dans le fil — il fait partie de tes résultats.',
+        action: 'Retirer',
+      };
+}
+
+/** Retire une de mes publications. Renvoie un message si ça n'a pas marché. */
+export async function removeMyActivity(eventId: string): Promise<string | null> {
+  const { error } = await supabase.rpc('delete_my_activity', { p_event_id: eventId });
+  if (!error) return null;
+  const m = (error.message ?? '').toLowerCase();
+  if (m.includes('could not find') || m.includes('does not exist')) return "Le retrait n'est pas encore activé.";
+  if (m.includes('introuvable')) return "Cette publication n'est plus là.";
+  if (m.includes('ne peut pas')) return 'Cette publication ne peut pas être retirée.';
+  console.warn('[activityFeed] removeMyActivity', error);
+  return "Le retrait n'a pas pu se faire. Réessaie.";
+}
+
 // ── Partage in-app ───────────────────────────────────────────
 // Renvoie null si OK, sinon le message d'erreur (pour l'afficher à l'utilisateur).
 export async function shareMatchMoment(matchId: string, caption: string): Promise<string | null> {

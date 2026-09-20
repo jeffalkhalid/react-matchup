@@ -48,6 +48,9 @@ interface Props {
   initialGameType?: GameType;
   initialInvite?: { id: string; name: string; elo_score: number; court_side?: string };
   initialInvites?: Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number; avatar_path?: string | null }>>;
+  /** Créneau pré-rempli (« monter la partie avec les dispos de ce soir »). */
+  initialDay?: string;
+  initialTime?: string;
   targeted?: boolean;
 }
 
@@ -258,7 +261,7 @@ function MiniCalendar({ selectedVal, onSelect, t, allDays, daysWithGames }: {
 }
 
 // ─── Main component ───────────────────────────────────────────
-export default function CreateWizard({ visible, onClose, onPublishedDone, onPublish, player, initialGameType, initialInvite, initialInvites, targeted }: Props) {
+export default function CreateWizard({ visible, onClose, onPublishedDone, onPublish, player, initialGameType, initialInvite, initialInvites, initialDay, initialTime, targeted }: Props) {
   const insets = useSafeAreaInsets();
   const ALL_DAYS   = buildDays(92);
   const QUICK_DAYS = ALL_DAYS.slice(0, 7);
@@ -356,7 +359,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       player?.gender === 'male' ? 'men' : player?.gender === 'female' ? 'women' : 'mixed';
     const band = defaultLevelBand(gameType, lv);
     setFormState({
-      day: QUICK_DAYS[1]?.val ?? '', time: '19:00', location: '',
+      day: initialDay || QUICK_DAYS[1]?.val || '', time: initialTime || '19:00', location: '',
       hasReservation: false, gameType, genre: defaultGenre,
       minLevel: band.min, maxLevel: band.max, stakeMultiplier: DEFAULT_DEFI_STAKE, mySlot: 'A0', invites,
     });

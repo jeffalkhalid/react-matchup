@@ -48,17 +48,23 @@ export function FriendsBar({ friends, sel, onSelect, dimmed = false }: {
 }
 
 // ── Liste filtrée (export) ──
-export function FeedList({ shown, myId, loading, selName, onReact, onReport, router, onOpen }: {
+export function FeedList({ shown, myId, loading, selName, onReact, onReport, onRemove, router, onOpen }: {
   shown: ActivityEvent[]; myId: string; loading: boolean; selName?: string;
-  onReact: (id: string) => void; onReport: (e: ActivityEvent) => void; router: ReturnType<typeof useRouter>;
+  onReact: (id: string) => void; onReport: (e: ActivityEvent) => void;
+  /** Retirer MA publication — absent tant que l'écran ne le propose pas. */
+  onRemove?: (e: ActivityEvent) => void;
+  router: ReturnType<typeof useRouter>;
   onOpen?: (e: ActivityEvent) => void;
 }) {
+  // « Revanche ? » (défaite) : ouvre l'onglet Défi — même destination que
+  // « M'ouvrir aux défis » de la carte d'invitation calme.
+  const onDefi = () => router.push('/(tabs)/matchmaking' as any);
   return (
     <View style={{ gap: 14, marginTop: 14 }}>
       {loading ? (
         <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
       ) : shown.length > 0 ? (
-        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onOpen={onOpen ? () => onOpen(e) : undefined} />)
+        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onRemove={onRemove && e.player_id === myId ? () => onRemove(e) : undefined} onOpen={onOpen ? () => onOpen(e) : undefined} onDefi={onDefi} />)
       ) : (
         <EmptyState name={selName?.split(' ')[0]} />
       )}
