@@ -15,7 +15,7 @@ import {
 } from '../../lib/availability';
 import {
   getWeekStats, getOpenGames, getMyMatchCount, getMyGameCount, deriveActivityState,
-  shareMatchMoment, type WeekStats, type WeekendGame, type ActivityState,
+  pickMoments, shareMatchMoment, type WeekStats, type WeekendGame, type ActivityState,
 } from '../../lib/activityFeed';
 import { getRecapMonths, getMonthlyRecap, type MonthlyRecap } from '../../lib/bilan';
 import { fetchCircleBilans, type CircleBilan } from '../../lib/bilanCircle';
@@ -29,6 +29,7 @@ import { DiscoveryRail } from '../../components/activity/DiscoveryRail';
 import { FriendsRanking } from '../../components/activity/FriendsRanking';
 import { BilanBanner } from '../../components/activity/BilanBanner';
 import { CircleBilansRail } from '../../components/activity/CircleBilansRail';
+import { MomentsRail } from '../../components/activity/MomentsRail';
 import { FeaturedTaulier } from '../../components/activity/FeaturedTaulier';
 import { FeaturedMercato } from '../../components/activity/FeaturedMercato';
 import { FeaturedPantheon } from '../../components/activity/FeaturedPantheon';
@@ -204,6 +205,9 @@ export default function ActiviteTab() {
   const recentFeed = visibleFeed.filter(e => Date.now() - new Date(e.created_at).getTime() <= TWO_WEEKS);
   const shown = sel ? recentFeed.filter(e => e.player_id === sel) : recentFeed;
   const liveMoment = openMomentId ? visibleFeed.find(e => e.id === openMomentId) ?? null : null;
+  // Un mois, pas une semaine : avec peu de joueurs, une fenêtre de 7 jours
+  // vide le rail et il n'y a plus rien à quoi réagir.
+  const moments = pickMoments(visibleFeed, myId, 8, 30);
   const circleBilansShown = circleBilans.filter(b => !hiddenIds.has(b.playerId));
   const openBilan = openBilanId ? circleBilans.find(b => b.eventId === openBilanId) ?? null : null;
 
@@ -368,6 +372,15 @@ export default function ActiviteTab() {
               <WeekStatsCard stats={week} />
               {player ? <FriendsRanking me={player} friends={friends} /> : null}
 
+              {/* Les moments : l'occasion de raconter la partie, et pour les
+                  autres d'y réagir. La tuile « raconte » ouvre le
+                  compositeur. */}
+              <MomentsRail
+                moments={moments}
+                onShareMatch={() => { track('activity_moment_opened', { source: 'share' }); setPickerOpen(true); }}
+                onOpen={(e) => setOpenMomentId(e.id)}
+              />
+
               {/* Place dédiée aux bilans des autres : le fil les perd au bout
                   de 14 jours, ici ils restent consultables. */}
               <CircleBilansRail bilans={circleBilansShown} myId={myId} onOpen={(b) => setOpenBilanId(b.eventId)} />
@@ -382,23 +395,6 @@ export default function ActiviteTab() {
               </View>
               <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} />
 
-              {/* Point d'entrée de « Partager un moment ». Le rail des Moments
-                  a été retiré (doublon du fil), mais l'action, elle, n'avait
-                  plus aucun bouton pour l'appeler. */}
-              {totalMatches > 0 ? (
-                <TouchableOpacity
-                  onPress={() => { track('activity_moment_opened', { source: 'share' }); setPickerOpen(true); }}
-                  activeOpacity={0.85}
-                  style={{
-                    backgroundColor: Colors.bgCard, borderRadius: 999, borderWidth: 1, borderColor: Colors.border,
-                    paddingVertical: 11, alignItems: 'center', marginTop: 12,
-                  }}
-                >
-                  <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textPrimary }}>
-                    Partager un moment
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
               {sel && selName ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
                   <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: Colors.textPrimary }}>Activité de {selName.split(' ')[0]}</Text>
