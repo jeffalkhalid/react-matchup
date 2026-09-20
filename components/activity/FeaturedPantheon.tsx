@@ -25,10 +25,12 @@ import {
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 8 } as const;
 const SEPARATEUR = '#EDEBE9';
 
-export function FeaturedPantheon({ city, myId }: {
+export function FeaturedPantheon({ city, myId, onContent }: {
   /** Ville mise en avant — celle du club favori du joueur. */
   city: string;
   myId: string;
+  /** Prévient l'écran quand le bloc a — ou n'a plus — quelque chose à dire. */
+  onContent?: (has: boolean) => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -46,11 +48,17 @@ export function FeaturedPantheon({ city, myId }: {
       ]);
       if (!vivant) return;
       setRows(top); setMaPlace(mienne); setLoading(false);
+      onContent?.(top.length > 0);
     })();
     return () => { vivant = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city, myId]);
 
   useFocusEffect(useCallback(() => { const stop = load(); return stop; }, [load]));
+
+  // Aucun vote cette semaine : le bloc ne s'affiche pas. Un encart « les votes
+  // arrivent » en tête d'écran repoussait vers le bas ce qui sert vraiment.
+  if (loading || rows.length === 0) return null;
 
   const semaineNum = isoWeekNumber(new Date());
 
@@ -66,19 +74,6 @@ export function FeaturedPantheon({ city, myId }: {
         </View>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={Colors.primary} style={{ marginVertical: 18 }} />
-      ) : rows.length === 0 ? (
-        <>
-          <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13.5, color: Colors.textPrimary, marginTop: 10 }}>
-            Les votes de la semaine arrivent
-          </Text>
-          <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 17, color: Colors.textSecondary, marginTop: 4 }}>
-            Après chaque match, tu peux dire ce que ton adversaire a fait de mieux. Ce sont ces votes qui remplissent le panthéon.
-          </Text>
-        </>
-      ) : (
-        <>
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 6 }}>
             Agrégé depuis les votes de fin de match de la semaine.
           </Text>
@@ -126,8 +121,6 @@ export function FeaturedPantheon({ city, myId }: {
               Ta réputation →
             </Text>
           </Text>
-        </>
-      )}
     </View>
   );
 }

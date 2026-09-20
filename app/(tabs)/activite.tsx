@@ -86,6 +86,10 @@ export default function ActiviteTab() {
   const [openBilanId, setOpenBilanId] = useState<string | null>(null);
   // Ville du club favori — sous-titre du header et Panthéon du dimanche.
   const [city, setCity] = useState<string | null>(null);
+  // « À la une » : l'en-tête ne s'affiche que si le bloc du jour a vraiment
+  // quelque chose à dire. Chaque bloc le signale en se chargeant ; sinon on
+  // posait deux encarts d'attente au-dessus des dispos, qui sont l'utile.
+  const [uneContent, setUneContent] = useState<Record<string, boolean>>({});
   // Partage in-app d'un match (compositeur Moment).
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<StoryMatchData | null>(null);
@@ -126,6 +130,10 @@ export default function ActiviteTab() {
   };
 
   useFocusEffect(useCallback(() => { track('activity_tab_opened', { source: 'tab' }); load(); }, [load]));
+
+  const marquerUne = useCallback((cle: string, has: boolean) => {
+    setUneContent(v => (v[cle] === has ? v : { ...v, [cle]: has }));
+  }, []);
 
   const selectFriend = (id: string | null) => {
     setSel(id);
@@ -213,6 +221,7 @@ export default function ActiviteTab() {
   // suis déjà déclaré sur le week-end visé.
   const featured = featuredBlock(today);
   const weekend = weekendWindow(today);
+  const uneAQuelqueChose = Object.values(uneContent).some(Boolean);
   const iAmInWeekend = myAvailability.some(r =>
     Date.parse(r.slot_start) < weekend.end.getTime() && Date.parse(r.slot_end) > weekend.start.getTime());
 
@@ -302,9 +311,10 @@ export default function ActiviteTab() {
               {/* À la une : un seul sujet par jour — le club en début de
                   semaine, le week-end au milieu, le bilan de la semaine le
                   dimanche (handoff §4). */}
-              <FeaturedHeader day={featuredDayLabel(today)} />
+              {uneAQuelqueChose ? <FeaturedHeader day={featuredDayLabel(today)} /> : null}
               {featured === 'taulier' ? (
-                <FeaturedTaulier club={monClub} myId={myId} onOpenPlayer={(id) => router.push(`/player/${id}` as any)} />
+                <FeaturedTaulier club={monClub} myId={myId} onOpenPlayer={(id) => router.push(`/player/${id}` as any)}
+                  onContent={(has) => marquerUne('taulier', has)} />
               ) : featured === 'mercato' ? (
                 <FeaturedMercato
                   myId={myId}
@@ -316,13 +326,14 @@ export default function ActiviteTab() {
                     const samedi = availabilitySlots(today).find(s => s.start.getDay() === 6);
                     if (samedi) toggleSlot(samedi);
                   }}
+                  onContent={(has) => marquerUne('mercato', has)}
                 />
               ) : (
                 /* Dimanche : le choc encore à jouer, puis la semaine qu'on
                    referme (handoff §4c). */
                 <>
-                  <FeaturedClash myId={myId} city={city} />
-                  <FeaturedPantheon city={city ?? ''} myId={myId} />
+                  <FeaturedClash myId={myId} city={city} onContent={(has) => marquerUne('choc', has)} />
+                  <FeaturedPantheon city={city ?? ''} myId={myId} onContent={(has) => marquerUne('pantheon', has)} />
                 </>
               )}
 

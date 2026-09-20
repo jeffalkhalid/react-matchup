@@ -37,11 +37,13 @@ function CouronneMedaillon({ size = 26 }: { size?: number }) {
   );
 }
 
-export function FeaturedTaulier({ club, myId, onOpenPlayer }: {
+export function FeaturedTaulier({ club, myId, onOpenPlayer, onContent }: {
   /** Le club mis en avant — club favori du joueur. */
   club: string;
   myId: string;
   onOpenPlayer?: (playerId: string) => void;
+  /** Prévient l'écran quand le bloc a — ou n'a plus — quelque chose à dire. */
+  onContent?: (has: boolean) => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -63,8 +65,10 @@ export function FeaturedTaulier({ club, myId, onOpenPlayer }: {
       }
       if (!vivant) return;
       setLeaders(rows); setMois(affiche); setLoading(false);
+      onContent?.(rows.length > 0);
     })();
     return () => { vivant = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [club]);
 
   useFocusEffect(useCallback(() => { const stop = load(); return stop; }, [load]));
@@ -82,27 +86,10 @@ export function FeaturedTaulier({ club, myId, onOpenPlayer }: {
     />
   ) : null;
 
-  // Sans club favori, on n'a pas de communauté à afficher : on dit lequel
-  // manque plutôt que d'inventer un classement.
-  if (!club) {
-    return (
-      <View style={{ backgroundColor: SOMBRE, borderRadius: 18, padding: 16, marginTop: 8 }}>
-        <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 10, letterSpacing: 0.8, color: Colors.brand }}>
-          {`TAULIER DU CLUB · ${monthLabel(mois).toUpperCase()}`}
-        </Text>
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 28, color: '#FFFFFF', marginTop: 12, paddingRight: 6 }}>
-          Tu n'as pas encore de club
-        </Text>
-        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 17, color: BLANC_60, marginTop: 6 }}>
-          Choisis tes clubs favoris au moment de créer une partie : on te montrera alors qui les fait vivre chaque mois.
-        </Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/lobby?create=1' as any)} activeOpacity={0.85}
-          style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 14 }}>
-          <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>Choisir mes clubs</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  // Sans club favori, ou sans personne au classement, le bloc ne s'affiche
+  // pas du tout : un encart d'attente en tête d'écran repoussait vers le bas
+  // ce qui sert vraiment (les dispos, l'invitation).
+  if (!club || loading || !taulier) return null;
 
   return (
     <View style={{ backgroundColor: SOMBRE, borderRadius: 18, padding: 16, marginTop: 8 }}>
@@ -110,23 +97,6 @@ export function FeaturedTaulier({ club, myId, onOpenPlayer }: {
         {`TAULIER DE ${club.toUpperCase()} · ${monthLabel(mois).toUpperCase()}`}
       </Text>
 
-      {loading ? (
-        <ActivityIndicator color={Colors.brand} style={{ marginVertical: 24 }} />
-      ) : !taulier ? (
-        <>
-          <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 28, color: '#FFFFFF', marginTop: 12, paddingRight: 6 }}>
-            Personne n'a encore joué ici ce mois-ci
-          </Text>
-          <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 17, color: BLANC_60, marginTop: 6 }}>
-            Le premier match du mois ouvre le classement du club. Ça peut être le tien.
-          </Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} activeOpacity={0.85}
-            style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 14 }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>Trouver une partie</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 }}>
             <TouchableOpacity
               activeOpacity={onOpenPlayer ? 0.85 : 1}
@@ -181,8 +151,6 @@ export function FeaturedTaulier({ club, myId, onOpenPlayer }: {
               Voir le classement du club →
             </Text>
           </Text>
-        </>
-      )}
     </View>
   );
 }

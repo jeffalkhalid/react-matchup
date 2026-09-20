@@ -24,7 +24,7 @@ import {
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 8 } as const;
 const CARTE_LARGEUR = 154;
 
-export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend, onDeclare }: {
+export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend, onDeclare, onContent }: {
   myId: string;
   myElo?: number | null;
   myClubs?: string[];
@@ -33,6 +33,8 @@ export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend,
   iAmInWeekend: boolean;
   /** Même geste que les pastilles du header, pour l'état calme. */
   onDeclare: () => void;
+  /** Prévient l'écran quand le bloc a — ou n'a plus — quelque chose à dire. */
+  onContent?: (has: boolean) => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -48,8 +50,10 @@ export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend,
         fetchWeekendPartners(myId, start, end),
       ]);
       if (!vivant) return;
-      setRows(pickMercato(dispos, { myId, myElo, friendIds, myClubs, excludeIds: dejaAvecMoi }));
+      const retenus = pickMercato(dispos, { myId, myElo, friendIds, myClubs, excludeIds: dejaAvecMoi });
+      setRows(retenus);
       setLoading(false);
+      onContent?.(retenus.length > 0);
     })();
     return () => { vivant = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,6 +67,10 @@ export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend,
     const elo = r.elo != null ? `&pelo=${r.elo}` : '';
     router.push(`/(tabs)/lobby?create=1&with=${r.playerId}&pname=${encodeURIComponent(r.name)}${elo}` as any);
   };
+
+  // Personne de dispo : le bloc ne s'affiche pas. La carte « Dispos » plus bas
+  // dit déjà quoi faire, et `onDeclare` reste branché pour elle.
+  if (loading || rows.length === 0) return null;
 
   const bande = mercatoBandLabel(myElo);
   const clubsPhrase = (myClubs ?? []).length > 0 ? ', dans tes clubs' : '';
@@ -83,23 +91,6 @@ export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend,
         ) : null}
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={Colors.primary} style={{ marginVertical: 18 }} />
-      ) : rows.length === 0 ? (
-        <>
-          <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13.5, color: Colors.textPrimary, marginTop: 10 }}>
-            Personne n'a encore déclaré le week-end
-          </Text>
-          <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 17, color: Colors.textSecondary, marginTop: 4 }}>
-            Déclare-toi le premier : tes amis le voient tout de suite, et c'est souvent ce qui lance le week-end.
-          </Text>
-          <TouchableOpacity onPress={onDeclare} activeOpacity={0.85}
-            style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 12 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>Prévenir mon cercle</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <>
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 6 }}>
             {`Ils se sont déclarés libres samedi ou dimanche${bande ? `, à ton niveau (${bande})` : ''}${clubsPhrase}.`}
           </Text>
@@ -155,8 +146,6 @@ export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend,
                 : "Tu n'apparais pas encore : déclare ta dispo en haut pour entrer dans le mercato."}
             </Text>
           ) : null}
-        </>
-      )}
     </View>
   );
 }

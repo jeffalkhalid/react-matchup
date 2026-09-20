@@ -59,7 +59,11 @@ function Cote({ players, choisi, onPress }: {
   );
 }
 
-export function FeaturedClash({ myId, city }: { myId: string; city?: string | null }) {
+export function FeaturedClash({ myId, city, onContent }: {
+  myId: string; city?: string | null;
+  /** Prévient l'écran quand le bloc a — ou n'a plus — quelque chose à dire. */
+  onContent?: (has: boolean) => void;
+}) {
   const router = useRouter();
   const [clash, setClash] = useState<Clash | null>(null);
   const [counts, setCounts] = useState<PredictionCounts>({ A: 0, B: 0, total: 0 });
@@ -79,13 +83,17 @@ export function FeaturedClash({ myId, city }: { myId: string; city?: string | nu
       setCounts(countPredictions(avis));
       setMine(avis.find(a => a.playerId === myId)?.team ?? null);
       setCharge(true);
+      onContent?.(!!choc);
     })();
     return () => { vivant = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myId, city]);
 
   useFocusEffect(useCallback(() => { const stop = load(); return stop; }, [load]));
 
-  if (!charge) return null;
+  // Rien à raconter : le bloc ne s'affiche pas du tout. Un état calme posé
+  // en tête d'écran repoussait vers le bas ce qui sert vraiment (les dispos).
+  if (!charge || !clash) return null;
 
   const voter = async (team: Team) => {
     if (!clash) return;
@@ -102,7 +110,7 @@ export function FeaturedClash({ myId, city }: { myId: string; city?: string | nu
     if (souci) { setMine(avant); setErreur(souci); load(); }
   };
 
-  const joueJeMeme = !!clash && clash.players.some(p => p.id === myId);
+  const joueJeMeme = clash.players.some(p => p.id === myId);
 
   return (
     <View style={CARD}>
@@ -120,22 +128,7 @@ export function FeaturedClash({ myId, city }: { myId: string; city?: string | nu
         ) : null}
       </View>
 
-      {!clash ? (
-        <>
-          <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13.5, color: Colors.textPrimary, marginTop: 10 }}>
-            Pas de choc ce week-end
-          </Text>
-          <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 17, color: Colors.textSecondary, marginTop: 4 }}>
-            Il faut une partie complète, deux contre deux, encore à jouer. Monte la tienne et elle pourra devenir le choc de la semaine.
-          </Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} activeOpacity={0.85}
-            style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 12 }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>Voir les parties</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <>
-          <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 6 }}>
+      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 6 }}>
             {`${clashWhenLabel(clash)} · ${clashReasonLabel(clash).charAt(0).toLowerCase()}${clashReasonLabel(clash).slice(1)}`}
           </Text>
 
@@ -167,8 +160,6 @@ export function FeaturedClash({ myId, city }: { myId: string; city?: string | nu
               {erreur}
             </Text>
           ) : null}
-        </>
-      )}
     </View>
   );
 }
