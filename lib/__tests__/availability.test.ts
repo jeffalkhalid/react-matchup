@@ -187,3 +187,31 @@ describe('suggestedStart / slotFormFields — l\'heure proposée à la création
     expect(slotFormFields(demain, jeudi9h)).toEqual({ day: '2026-09-18', time: '08:00' });
   });
 });
+
+describe('« Ce soir » disparaît quand il est trop tard pour jouer', () => {
+  const ce = (h: number, min = 0) => availabilitySlots(new Date(2026, 8, 17, h, min, 0))[0];
+
+  it('à 20 h, il reste de quoi jouer', () => {
+    expect(ce(20).label).toBe('Ce soir');
+  });
+
+  it('à 21 h 30, c\'est la limite — le temps d\'y aller plus un match', () => {
+    expect(ce(21, 30).label).toBe('Ce soir');
+  });
+
+  it('à 22 h, « ce soir » n\'est plus proposé', () => {
+    expect(ce(22).label).toBe('Demain');
+  });
+
+  it('à 23 h non plus — le cas qui a motivé la règle', () => {
+    expect(ce(23).label).toBe('Demain');
+  });
+
+  it('la ligne reste pleine quand la soirée tombe', () => {
+    expect(availabilitySlots(new Date(2026, 8, 17, 23, 0, 0))).toHaveLength(AVAILABILITY_DAYS);
+  });
+
+  it('l\'après-midi, rien ne change', () => {
+    expect(ce(14).label).toBe('Ce soir');
+  });
+});

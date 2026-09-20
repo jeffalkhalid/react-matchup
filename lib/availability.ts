@@ -34,6 +34,17 @@ export interface Slot {
 const SOIR_DEBUT = 18;      // « ce soir » commence à 18 h
 const JOURNEE_DEBUT = 8;    // une journée de padel commence à 8 h
 
+/**
+ * Ce qu'il faut de temps devant soi pour que « ce soir » veuille encore dire
+ * quelque chose : le temps d'aller au club (1 h) plus un match (1 h 30).
+ *
+ * Sans ça, la pastille restait proposée jusqu'à minuit — à 23 h, « je suis
+ * dispo ce soir » est une promesse que personne ne peut tenir.
+ */
+const DELAI_DEPLACEMENT_MS = 60 * 60_000;
+const DUREE_MATCH_MS = 90 * 60_000;
+const SOIREE_MINIMALE_MS = DELAI_DEPLACEMENT_MS + DUREE_MATCH_MS;
+
 const a = (d: Date, jours: number, h: number, min = 0) => {
   const x = new Date(d);
   x.setDate(x.getDate() + jours);
@@ -62,7 +73,8 @@ export function availabilitySlots(now: Date = new Date(), jours: number = AVAILA
       if (now.getHours() < JOURNEE_DEBUT - 2) continue;
       const debut = now.getHours() >= SOIR_DEBUT ? new Date(now) : a(now, 0, SOIR_DEBUT);
       const fin = a(now, 1, 0);
-      if (debut.getTime() >= fin.getTime()) continue;
+      // Trop tard pour jouer : on ne propose pas un créneau intenable.
+      if (fin.getTime() - debut.getTime() < SOIREE_MINIMALE_MS) continue;
       out.push({ key: cle(now), label: 'Ce soir', start: debut, end: fin });
       continue;
     }
@@ -136,7 +148,7 @@ export function isSlotActive(slot: Slot, mine: Pick<AvailabilityRow, 'slot_start
  * jamais une heure passée — ni « dans cinq minutes », le temps d'y aller.
  */
 export function suggestedStart(slot: Slot, now: Date = new Date()): Date {
-  const plancher = new Date(now.getTime() + 60 * 60_000);
+  const plancher = new Date(now.getTime() + DELAI_DEPLACEMENT_MS);
   const base = slot.start.getTime() >= plancher.getTime() ? new Date(slot.start) : plancher;
   // Arrondi à la demi-heure supérieure : l'assistant ne propose que celles-là.
   const min = base.getMinutes();
