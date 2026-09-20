@@ -19,7 +19,7 @@ import { AmbassadorRing } from '../ambassador/primitives';
 import {
   weekendWindow, fetchAvailabilityWindow, fetchWeekendPartners, pickMercato,
   mercatoSlotLabel, mercatoBandLabel, type MercatoRow,
-} from '../../lib/hubFeatured';
+} from '../../lib/mercato';
 
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 8 } as const;
 const CARTE_LARGEUR = 154;

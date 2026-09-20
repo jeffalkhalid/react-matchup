@@ -19,7 +19,7 @@ import {
 } from '../../lib/activityFeed';
 import { getRecapMonths, getMonthlyRecap, type MonthlyRecap } from '../../lib/bilan';
 import { fetchCircleBilans, type CircleBilan } from '../../lib/bilanCircle';
-import { featuredBlock, featuredDayLabel, fetchClubCity, weekendWindow } from '../../lib/hubFeatured';
+import { fetchClubCity, weekendWindow } from '../../lib/mercato';
 import { WeekStatsCard } from '../../components/activity/WeekStatsCard';
 import { WeekendRail } from '../../components/activity/WeekendRail';
 import { MomentOverlay } from '../../components/activity/MomentOverlay';
@@ -30,9 +30,7 @@ import { FriendsRanking } from '../../components/activity/FriendsRanking';
 import { BilanBanner } from '../../components/activity/BilanBanner';
 import { CircleBilansRail } from '../../components/activity/CircleBilansRail';
 import { MomentsRail } from '../../components/activity/MomentsRail';
-import { FeaturedTaulier } from '../../components/activity/FeaturedTaulier';
 import { FeaturedMercato } from '../../components/activity/FeaturedMercato';
-import { FeaturedPantheon } from '../../components/activity/FeaturedPantheon';
 import { FeaturedClash } from '../../components/activity/FeaturedClash';
 import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
@@ -48,18 +46,6 @@ import type { SocialPlayer, ActivityEvent } from '../../types';
 // fenêtre.
 function isBilanWindow(now = new Date()): boolean {
   return now.getDate() <= 7;
-}
-
-// En-tête commun des trois blocs « À la une » (handoff §4).
-function FeaturedHeader({ day }: { day: string }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16 }}>
-      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.brand }} />
-      <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 9.5, letterSpacing: 1.4, color: Colors.textMuted }}>
-        {`À LA UNE · ${day}`}
-      </Text>
-    </View>
-  );
 }
 
 export default function ActiviteTab() {
@@ -87,10 +73,6 @@ export default function ActiviteTab() {
   const [openBilanId, setOpenBilanId] = useState<string | null>(null);
   // Ville du club favori — sous-titre du header et Panthéon du dimanche.
   const [city, setCity] = useState<string | null>(null);
-  // « À la une » : l'en-tête ne s'affiche que si le bloc du jour a vraiment
-  // quelque chose à dire. Chaque bloc le signale en se chargeant ; sinon on
-  // posait deux encarts d'attente au-dessus des dispos, qui sont l'utile.
-  const [uneContent, setUneContent] = useState<Record<string, boolean>>({});
   // Partage in-app d'un match (compositeur Moment).
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<StoryMatchData | null>(null);
@@ -131,10 +113,6 @@ export default function ActiviteTab() {
   };
 
   useFocusEffect(useCallback(() => { track('activity_tab_opened', { source: 'tab' }); load(); }, [load]));
-
-  const marquerUne = useCallback((cle: string, has: boolean) => {
-    setUneContent(v => (v[cle] === has ? v : { ...v, [cle]: has }));
-  }, []);
 
   const selectFriend = (id: string | null) => {
     setSel(id);
@@ -221,11 +199,8 @@ export default function ActiviteTab() {
   const monClub = player?.clubs?.[0] ?? '';
   const dateEnLettres = today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
   const headerSubtitle = [city ?? monClub, dateEnLettres].filter(Boolean).join(' · ');
-  // « À la une » : un bloc par jour. Le mercato a besoin de savoir si je me
-  // suis déjà déclaré sur le week-end visé.
-  const featured = featuredBlock(today);
+  // Le mercato a besoin de savoir si je me suis déjà déclaré sur le week-end.
   const weekend = weekendWindow(today);
-  const uneAQuelqueChose = Object.values(uneContent).some(Boolean);
   const iAmInWeekend = myAvailability.some(r =>
     Date.parse(r.slot_start) < weekend.end.getTime() && Date.parse(r.slot_end) > weekend.start.getTime());
 
@@ -321,31 +296,23 @@ export default function ActiviteTab() {
               {/* À la une : un seul sujet par jour — le club en début de
                   semaine, le week-end au milieu, le bilan de la semaine le
                   dimanche (handoff §4). */}
-              {uneAQuelqueChose ? <FeaturedHeader day={featuredDayLabel(today)} /> : null}
-              {featured === 'taulier' ? (
-                <FeaturedTaulier club={monClub} myId={myId} onOpenPlayer={(id) => router.push(`/player/${id}` as any)}
-                  onContent={(has) => marquerUne('taulier', has)} />
-              ) : featured === 'mercato' ? (
-                <FeaturedMercato
-                  myId={myId}
-                  myElo={player?.elo_score}
-                  myClubs={player?.clubs}
-                  friendIds={friends.map(f => f.id)}
-                  iAmInWeekend={iAmInWeekend}
-                  onDeclare={() => {
-                    const samedi = availabilitySlots(today).find(s => s.start.getDay() === 6);
-                    if (samedi) toggleSlot(samedi);
-                  }}
-                  onContent={(has) => marquerUne('mercato', has)}
-                />
-              ) : (
-                <FeaturedPantheon city={city ?? ''} myId={myId} onContent={(has) => marquerUne('pantheon', has)} />
-              )}
-
-              {/* Le choc n'est plus réservé au dimanche : un pronostic ne
-                  coûte rien et c'est ce qui fait regarder le match des
-                  autres. Il s'affiche dès qu'il y a une partie à pronostiquer. */}
-              <FeaturedClash myId={myId} city={city} onContent={(has) => marquerUne('choc', has)} />
+              {/* Plus de rotation par jour : chaque bloc s'affiche dès qu'il
+                  a quelque chose à dire, et se tait sinon. Le Taulier et le
+                  Panthéon ont été retirés — ils découpaient une activité déjà
+                  rare (par club, par ville, par semaine) et n'avaient presque
+                  jamais rien à montrer. */}
+              <FeaturedMercato
+                myId={myId}
+                myElo={player?.elo_score}
+                myClubs={player?.clubs}
+                friendIds={friends.map(f => f.id)}
+                iAmInWeekend={iAmInWeekend}
+                onDeclare={() => {
+                  const samedi = availabilitySlots(today).find(s => s.start.getDay() === 6);
+                  if (samedi) toggleSlot(samedi);
+                }}
+              />
+              <FeaturedClash myId={myId} city={city} />
 
               {/* Bilan : seulement en tout début de mois, sinon il n'a plus
                   grand-chose à dire (README « Ce qui est retiré »). */}

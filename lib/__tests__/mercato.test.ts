@@ -1,69 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
-  featuredBlock, featuredDayLabel, monthLabel, monthKey, weekKey, isoWeekNumber,
   weekendWindow, mercatoSlotLabel, mercatoBandLabel, pickMercato, MERCATO_LEVEL_BAND,
   type MercatoRow,
-} from '../hubFeatured';
+} from '../mercato';
 
 // Semaine repère : lundi 14 → dimanche 20 septembre 2026.
 const j = (jour: number, h = 10) => new Date(2026, 8, 13 + jour, h, 0, 0); // 13 sept. = dimanche
-// j(0) = dimanche 13, j(1) = lundi 14, … j(7) = dimanche 20.
-
-describe('featuredBlock — un seul bloc par jour', () => {
-  it('lundi, mardi, mercredi → le taulier du club', () => {
-    expect(featuredBlock(j(1))).toBe('taulier');
-    expect(featuredBlock(j(2))).toBe('taulier');
-    expect(featuredBlock(j(3))).toBe('taulier');
-  });
-  it('jeudi, vendredi, samedi → le mercato du week-end', () => {
-    expect(featuredBlock(j(4))).toBe('mercato');
-    expect(featuredBlock(j(5))).toBe('mercato');
-    expect(featuredBlock(j(6))).toBe('mercato');
-  });
-  it('dimanche → le panthéon', () => {
-    expect(featuredBlock(j(7))).toBe('pantheon');
-    expect(featuredBlock(j(0))).toBe('pantheon');
-  });
-  it('les sept jours sont couverts, sans trou', () => {
-    const vus = [0, 1, 2, 3, 4, 5, 6].map(d => featuredBlock(j(d)));
-    expect(vus.filter(Boolean)).toHaveLength(7);
-  });
-});
-
-describe('featuredDayLabel — la fin de « À LA UNE · … »', () => {
-  it('donne le jour en capitales', () => {
-    expect(featuredDayLabel(j(1))).toBe('LUNDI');
-    expect(featuredDayLabel(j(4))).toBe('JEUDI');
-    expect(featuredDayLabel(j(7))).toBe('DIMANCHE');
-  });
-});
-
-describe('clés de période — doivent coller aux vues SQL', () => {
-  it('monthKey = le 1er du mois', () => {
-    expect(monthKey(new Date(2026, 7, 31))).toBe('2026-08-01');
-    expect(monthKey(new Date(2026, 0, 1))).toBe('2026-01-01');
-  });
-  it('weekKey = le lundi de la semaine, dimanche compris', () => {
-    expect(weekKey(j(1))).toBe('2026-09-14'); // lundi
-    expect(weekKey(j(4))).toBe('2026-09-14'); // jeudi
-    expect(weekKey(j(7))).toBe('2026-09-14'); // dimanche 20 → lundi 14
-  });
-  it('monthLabel est en toutes lettres', () => {
-    expect(monthLabel(new Date(2026, 7, 3))).toBe('août');
-  });
-});
-
-describe('isoWeekNumber — la pastille « SEMAINE n »', () => {
-  it('numérote la semaine du 14 au 20 septembre 2026', () => {
-    expect(isoWeekNumber(j(1))).toBe(isoWeekNumber(j(7)));
-    expect(isoWeekNumber(j(1))).toBe(38);
-  });
-  it('le 4 janvier est toujours en semaine 1', () => {
-    expect(isoWeekNumber(new Date(2026, 0, 4))).toBe(1);
-    expect(isoWeekNumber(new Date(2024, 0, 4))).toBe(1);
-  });
-});
 
 describe('weekendWindow — samedi 8 h → dimanche minuit', () => {
   it('en semaine, vise le samedi qui vient', () => {
