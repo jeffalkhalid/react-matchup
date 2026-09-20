@@ -1,4 +1,4 @@
-// lib/headToHead.ts — « Face-à-face de la saison » du hub Activité.
+// lib/headToHead.ts — « Face-à-face » du hub Activité.
 //
 // Le handoff « Hub Activite » le place en 5ᵉ priorité et note sa charge
 // émotionnelle : ce n'est pas une statistique de plus, c'est un rival. On ne

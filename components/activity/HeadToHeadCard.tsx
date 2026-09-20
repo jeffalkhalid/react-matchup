@@ -1,4 +1,4 @@
-// components/activity/HeadToHeadCard.tsx — « Face-à-face de la saison ».
+// components/activity/HeadToHeadCard.tsx — « Face-à-face ».
 //
 // Le rival, pas une statistique (handoff « Hub Activite », bloc face-à-face,
 // capture 03 vignette 3b). Trois duels minimum : en dessous, deux matchs
@@ -93,7 +93,7 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
   return (
     <View style={{ backgroundColor: SOMBRE, borderRadius: 18, padding: 16, marginTop: 14 }}>
       <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 10, letterSpacing: 0.8, color: Colors.brand }}>
-        FACE-À-FACE DE LA SAISON
+        FACE-À-FACE
       </Text>
 
       {sousLeSeuil ? (
