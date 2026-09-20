@@ -41,13 +41,6 @@ import type { StoryMatchData } from '../../components/story/storyTheme';
 import { track } from '../../lib/analytics';
 import type { SocialPlayer, ActivityEvent } from '../../types';
 
-// Bannière Bilan : limitée aux 7 premiers jours du mois (README « Ce qui est
-// retiré ») — un bilan du mois précédent n'a plus rien à dire passé cette
-// fenêtre.
-function isBilanWindow(now = new Date()): boolean {
-  return now.getDate() <= 7;
-}
-
 export default function ActiviteTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -297,14 +290,15 @@ export default function ActiviteTab() {
             </>
           ) : (
             <>
-              {/* À la une : un seul sujet par jour — le club en début de
-                  semaine, le week-end au milieu, le bilan de la semaine le
-                  dimanche (handoff §4). */}
-              {/* Plus de rotation par jour : chaque bloc s'affiche dès qu'il
-                  a quelque chose à dire, et se tait sinon. Le Taulier et le
-                  Panthéon ont été retirés — ils découpaient une activité déjà
-                  rare (par club, par ville, par semaine) et n'avaient presque
-                  jamais rien à montrer. */}
+              {/* MON bilan d'abord — sa génération est le geste qui lance
+                  tout le reste — puis ceux des joueurs que je suis. Le
+                  handoff limitait la bannière aux 7 premiers jours du mois :
+                  elle est de nouveau permanente, comme avant. */}
+              <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} />
+              <CircleBilansRail bilans={circleBilansShown} myId={myId} onOpen={(b) => setOpenBilanId(b.eventId)} />
+
+              {/* Puis le reste. Chaque bloc s'affiche dès qu'il a quelque
+                  chose à dire, et se tait sinon — plus de rotation par jour. */}
               <FeaturedMercato
                 myId={myId}
                 myElo={player?.elo_score}
@@ -318,9 +312,6 @@ export default function ActiviteTab() {
               />
               <FeaturedClash myId={myId} city={city} />
 
-              {/* Bilan : seulement en tout début de mois, sinon il n'a plus
-                  grand-chose à dire (README « Ce qui est retiré »). */}
-              {isBilanWindow() ? <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} /> : null}
 
               {/* Qui joue quand : dispo ce soir, puis l'invitation reçue. */}
               <DispoCard
@@ -358,10 +349,6 @@ export default function ActiviteTab() {
                 onShareMatch={() => { track('activity_moment_opened', { source: 'share' }); setPickerOpen(true); }}
                 onOpen={(e) => setOpenMomentId(e.id)}
               />
-
-              {/* Place dédiée aux bilans des autres : le fil les perd au bout
-                  de 14 jours, ici ils restent consultables. */}
-              <CircleBilansRail bilans={circleBilansShown} myId={myId} onOpen={(b) => setOpenBilanId(b.eventId)} />
 
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 4 }}>
                 <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6, flexShrink: 1 }}>
