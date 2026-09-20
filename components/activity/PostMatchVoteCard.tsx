@@ -10,6 +10,7 @@ import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { MatchCard } from '../profile/components';
 import { BadgePill } from '../profile/BadgePill';
+import { PlayerAvatar } from '../PlayerAvatar';
 import { useNeutralVoteBadges } from '../profile/BadgeDefsProvider';
 import { matchToView } from '../../lib/matchView';
 import { getPendingVoteMatch, featuredReceiver, submitSingleVote, getTopBadgeCounts } from '../../lib/postMatchVote';
@@ -52,6 +53,17 @@ export function PostMatchVoteCard({ playerId }: { playerId: string }) {
     await submitSingleVote(match.id, playerId, receiver.id, [key]);
   };
 
+  // Passer : sans ça, un joueur qui ne veut voter pour personne gardait la
+  // carte indéfiniment. Même circuit que la modale de l'accueil (un vote vide
+  // s'enregistre dans badge_prompt_skips et vaut pour les deux écrans).
+  const passer = async () => {
+    if (!match || !receiver) return;
+    const m = match;
+    setMatch(null);
+    setReputation(await getTopBadgeCounts(playerId));
+    await submitSingleVote(m.id, playerId, receiver.id, []);
+  };
+
   // ── État calme : rien à voter ────────────────────────────────
   if (!match || !receiver) {
     return (
@@ -89,7 +101,7 @@ export function PostMatchVoteCard({ playerId }: { playerId: string }) {
     );
   }
 
-  const pronoun = receiver.gender === 'female' ? 'elle' : 'il';
+  const prenomReceveur = receiver.name.trim().split(/\s+/)[0];
 
   return (
     <View style={CARD}>
@@ -104,9 +116,21 @@ export function PostMatchVoteCard({ playerId }: { playerId: string }) {
         <MatchCard m={matchToView(match, playerId, true)} showActions={false} showDelta={false} compact />
       </View>
 
-      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 13, color: Colors.textPrimary, marginBottom: 10 }}>
-        Qu'est-ce qu'{pronoun} a fait de mieux ?
-      </Text>
+      {/* La question NOMME le joueur : la carte montre les quatre, un
+          « qu'est-ce qu'il a fait de mieux ? » ne disait pas de qui on parle. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <PlayerAvatar
+          name={receiver.name} path={(receiver as any).avatar_path} size={26}
+          backgroundColor={Colors.brand} textColor={Colors.primary}
+          fontFamily={Fonts.uiBlack} fontSize={10} initialsMax={2}
+        />
+        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 13, color: Colors.textPrimary }}>
+          Qu'est-ce que <Text style={{ fontFamily: Fonts.uiBlack }}>{prenomReceveur}</Text> a fait de mieux ?
+        </Text>
+        <TouchableOpacity onPress={passer} hitSlop={10}>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textMuted }}>Passer</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {badges.map(b => (

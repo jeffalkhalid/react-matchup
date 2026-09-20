@@ -10,8 +10,18 @@ describe('featuredReceiver — le joueur mis en avant par « Ton match d\'hier �
     expect(featuredReceiver(match as any, 'me')?.id).toBe('omar');
   });
 
-  it('en double, si je suis vainqueur, met en avant mon binôme avant l\'adversaire', () => {
+  it('en double, met en avant un ADVERSAIRE, jamais mon binôme', () => {
     const match = { winner: p('me'), winner_2: p('binome'), loser: p('adv1'), loser_2: p('adv2') };
+    expect(featuredReceiver(match as any, 'me')?.id).toBe('adv1');
+  });
+
+  it('même chose quand j\'ai perdu : celui d\'en face avant mon binôme', () => {
+    const match = { winner: p('adv1'), winner_2: p('adv2'), loser: p('me'), loser_2: p('binome') };
+    expect(featuredReceiver(match as any, 'me')?.id).toBe('adv1');
+  });
+
+  it('si le camp d\'en face est inconnu, retombe sur mon binôme plutôt que rien', () => {
+    const match = { winner: p('me'), winner_2: p('binome'), loser: null, loser_2: null };
     expect(featuredReceiver(match as any, 'me')?.id).toBe('binome');
   });
 

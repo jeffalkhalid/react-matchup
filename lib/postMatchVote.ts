@@ -26,20 +26,27 @@ const MATCH_SELECT = [
 ].join(', ');
 
 /**
- * Le joueur mis en avant par la carte « Ton match d'hier » : le premier
- * autre joueur du match, dans l'ordre [vainqueur, vainqueur_2, perdant,
- * perdant_2] — le même ordre que la modale de vote de l'accueil, pour rester
- * cohérent avec elle. Ce n'est PAS toujours l'adversaire : si mon binôme
- * apparaît avant l'adversaire dans cet ordre (je suis vainqueur_1), c'est lui
- * qui est mis en avant — « qu'est-ce qu'il a fait de mieux ? » vaut aussi
- * bien pour un coéquipier que pour un adversaire.
+ * Le joueur sur qui porte la question « qu'est-ce qu'il a fait de mieux ? ».
+ *
+ * L'ADVERSAIRE d'abord, mon binôme ensuite. L'ordre brut [vainqueur,
+ * vainqueur_2, perdant, perdant_2] mettait en avant mon propre coéquipier dès
+ * que j'étais vainqueur_1 : la question portait alors sur quelqu'un qu'on ne
+ * nommait pas, dans une carte qui montre les quatre joueurs. On juge d'abord
+ * celui d'en face — et dans tous les cas la carte écrit son nom.
  */
 export function featuredReceiver(
   match: Pick<Match, 'winner' | 'winner_2' | 'loser' | 'loser_2'>,
   myId: string,
 ): Player | null {
-  const candidates = [match.winner, match.winner_2, match.loser, match.loser_2];
-  for (const p of candidates) {
+  const vainqueurs = [match.winner, match.winner_2];
+  const perdants = [match.loser, match.loser_2];
+  const jeSuisVainqueur = vainqueurs.some(p => p?.id === myId);
+  const jeSuisPerdant = perdants.some(p => p?.id === myId);
+  const adversaires = jeSuisVainqueur ? perdants : jeSuisPerdant ? vainqueurs : [];
+  const monCamp = jeSuisVainqueur ? vainqueurs : jeSuisPerdant ? perdants : [];
+  // Le dernier bloc ne sert que si je ne suis pas dans ce match : on rend
+  // alors le premier joueur identifiable plutôt que rien.
+  for (const p of [...adversaires, ...monCamp, ...vainqueurs, ...perdants]) {
     if (p && p.id !== myId) return p as Player;
   }
   return null;
