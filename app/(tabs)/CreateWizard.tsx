@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
+import { OVERLAP_MS, fetchBusyPlayerIds } from '../../lib/slotConflict';
 import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone } from '../../lib/defis';
 import { consumePickedVenue } from '../../lib/venuePicker';
 import { loadClubFavorites } from '../../lib/clubFavorites';
@@ -65,14 +66,6 @@ const TIMES = [
   '16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30',
   '20:00','20:30','21:00','21:30','22:00','22:30','23:00','23:30',
 ];
-// Fenêtre d'anti-chevauchement (identique au pre-check du publish dans lobby.tsx).
-// Un match occupe sa durée de jeu + une marge déplacement/repos ; deux matchs
-// entrent en conflit quand leurs intervalles [début, début+durée+marge) se
-// chevauchent, soit |début1 − début2| < (durée + marge). Comparaison STRICTE :
-// un écart pile de 2h (ex. 19h vs 21h) ne se chevauche pas → pas de conflit.
-const MATCH_DURATION_MS = 90 * 60 * 1000;   // 1h30 de jeu
-const BUFFER_MS         = 30 * 60 * 1000;   // marge déplacement/repos entre 2 courts
-const OVERLAP_MS = MATCH_DURATION_MS + BUFFER_MS;
 
 // Paliers de mise d'un défi (maquette 2026-09-18). La base accepte 1.5 → 4.0
 // (defi_stake_4.sql) ; les anciens défis à ×1.5 / ×2.5 restent valides.
@@ -452,6 +445,27 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
 
     return () => { cancelled = true; };
   }, [visible, player]);
+
+  // ── Qui, parmi les invitables, est déjà pris sur CE créneau ──────────
+  // Le serveur refuse déjà un chevauchement à l'acceptation (trigger
+  // block_accepted_overlaps) : autant ne pas proposer quelqu'un dont
+  // l'invitation serait recalée. Règle partagée : lib/slotConflict.
+  const [busyInviteeIds, setBusyInviteeIds] = useState<Set<string>>(new Set());
+  const slotTs = useMemo(() => {
+    if (!form.day || !form.time) return NaN;
+    return new Date(`${form.day}T${form.time}`).getTime();
+  }, [form.day, form.time]);
+  const candidateIds = useMemo(
+    () => [...new Set([...freqPlayers.map(p => p.id), ...searchRes.map(p => p.id)])].sort().join(','),
+    [freqPlayers, searchRes],
+  );
+
+  useEffect(() => {
+    if (!visible || !Number.isFinite(slotTs) || !candidateIds) { setBusyInviteeIds(new Set()); return; }
+    let cancelled = false;
+    fetchBusyPlayerIds(candidateIds.split(','), slotTs).then(ids => { if (!cancelled) setBusyInviteeIds(ids); });
+    return () => { cancelled = true; };
+  }, [visible, slotTs, candidateIds]);
 
   // Player search
   useEffect(() => {
@@ -1208,33 +1222,46 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             <>
               <Text style={[sty.sectionLabel, { marginBottom: 6 }]}>Habituels</Text>
               <View style={{ gap: 5, marginBottom: searchAvail.length > 0 ? 10 : 0 }}>
-                {freqAvail.map(p => (
+                {freqAvail.map(p => {
+                  const pris = busyInviteeIds.has(p.id);
+                  return (
                   <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard }}>
+                    disabled={pris} activeOpacity={pris ? 1 : 0.8}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard, opacity: pris ? 0.45 : 1 }}>
                     <Avatar name={p.name} path={(p as any).avatar_path} size={40} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
-                      <Text style={{ fontSize: 10, color: Colors.textMuted }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
+                      <Text style={{ fontSize: 10, color: Colors.textMuted }}>
+                        {pris ? 'Déjà une partie à cette heure-là' : `Niv. ${formatPadelLevel(p.elo_score)}`}
+                      </Text>
                     </View>
-                    <Pill variant="brand">Habituel</Pill>
+                    {pris ? <Pill variant="neutral">Indisponible</Pill> : <Pill variant="brand">Habituel</Pill>}
                   </TouchableOpacity>
-                ))}
+                  );
+                })}
               </View>
             </>
           )}
           {/* Search results */}
           {searchAvail.length > 0 && (
             <View style={{ gap: 5 }}>
-              {searchAvail.map(p => (
+              {searchAvail.map(p => {
+                const pris = busyInviteeIds.has(p.id);
+                return (
                 <TouchableOpacity key={p.id} onPress={() => assignPlayer(p)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }}>
+                  disabled={pris} activeOpacity={pris ? 1 : 0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff', opacity: pris ? 0.45 : 1 }}>
                   <Avatar name={p.name} path={(p as any).avatar_path} size={40} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a' }}>{p.name}</Text>
-                    <Text style={{ fontSize: 10, color: '#94a3b8' }}>Niv. {formatPadelLevel(p.elo_score)}</Text>
+                    <Text style={{ fontSize: 10, color: '#94a3b8' }}>
+                      {pris ? 'Déjà une partie à cette heure-là' : `Niv. ${formatPadelLevel(p.elo_score)}`}
+                    </Text>
                   </View>
+                  {pris ? <Pill variant="neutral">Indisponible</Pill> : null}
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>

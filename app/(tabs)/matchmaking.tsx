@@ -23,6 +23,7 @@ import { PlayerAvatar as Photo } from '../../components/PlayerAvatar';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { isCreatorConflict } from '../../lib/games';
+import { OVERLAP_MS } from '../../lib/slotConflict';
 import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
@@ -381,7 +382,6 @@ export default function MatchmakingScreen() {
         const myElo = player.elo_score;
         const minE = releverGame.min_elo ?? 0;
         const maxE = releverGame.max_elo ?? 999999;
-        const OVERLAP_MS = 2 * 60 * 60 * 1000; // même fenêtre ±2h que l'anti-chevauchement
         const slotTs = releverGame.match_date ? new Date(releverGame.match_date).getTime() : null;
 
         let cands = (freqPlayers as any[]).filter(p => {
