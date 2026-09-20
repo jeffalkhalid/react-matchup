@@ -140,6 +140,9 @@ export function duelSinceLabel(h: HeadToHead): string {
   return `${matchs} depuis ${MOIS_LONG[d.getMonth()]}`;
 }
 
+/** Ajoute un point final, sauf si la phrase en a déjà un (« le 4 sept. »). */
+const pointFinal = (t: string) => (t.endsWith('.') ? t : `${t}.`);
+
 /** La phrase de contexte sous les barres d'historique. */
 export function duelSentence(h: HeadToHead, opponentFirstName: string, now: Date = new Date()): string {
   const tete = h.wins > h.losses
@@ -148,8 +151,19 @@ export function duelSentence(h: HeadToHead, opponentFirstName: string, now: Date
       ? `${opponentFirstName} mène ${h.losses}–${h.wins}.`
       : `Vous êtes à égalité, ${h.wins} partout.`;
   const quand = relativeDayLabel(h.lastAt, now);
-  if (!h.lastScore) return quand ? `${tete} Dernier duel ${quand}.` : tete;
-  return `${tete} Ton dernier duel : ${h.lastScore}${quand ? `, ${quand}` : ''}.`;
+  if (!h.lastScore) return quand ? pointFinal(`${tete} Dernier duel ${quand}`) : tete;
+  return pointFinal(`${tete} Ton dernier duel : ${h.lastScore}${quand ? `, ${quand}` : ''}`);
+}
+
+/**
+ * Le libellé du bouton. Une revanche se DEMANDE quand on perd : proposer à
+ * quelqu'un qu'on mène 9–3 de « demander la revanche » n'avait aucun sens.
+ * C'est alors à nous de la lui donner ; à égalité, on joue la belle.
+ */
+export function rematchLabel(h: Pick<HeadToHead, 'wins' | 'losses'>, opponentFirstName: string): string {
+  if (h.wins > h.losses) return `Donner sa revanche à ${opponentFirstName}`;
+  if (h.wins < h.losses) return `Demander la revanche à ${opponentFirstName}`;
+  return `Jouer la belle avec ${opponentFirstName}`;
 }
 
 // ─── Base de données ──────────────────────────────────────────────────────

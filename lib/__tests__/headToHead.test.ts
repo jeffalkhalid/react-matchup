@@ -3,7 +3,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   opponentsOf, headToHeadFrom, pickRival, closestOpponent,
   relativeDayLabel, duelSinceLabel, duelSentence,
-  RIVAL_MIN_DUELS, HISTORY_LENGTH, rivals, type DuelMatch,
+  RIVAL_MIN_DUELS, HISTORY_LENGTH, rivals, rematchLabel, type DuelMatch,
 } from '../headToHead';
 
 const MOI = 'moi';
@@ -207,5 +207,31 @@ describe('rivals — plusieurs face-à-face, pas un seul', () => {
 
   it('sans aucun match, liste vide', () => {
     expect(rivals([], MOI)).toEqual([]);
+  });
+});
+
+describe('rematchLabel — une revanche, c\'est celui qui perd qui la demande', () => {
+  it('quand je mène, c\'est à moi de la lui donner', () => {
+    expect(rematchLabel({ wins: 9, losses: 3 }, 'Kay')).toBe('Donner sa revanche à Kay');
+  });
+  it('quand il mène, je la demande', () => {
+    expect(rematchLabel({ wins: 3, losses: 9 }, 'Kay')).toBe('Demander la revanche à Kay');
+  });
+  it('à égalité, on joue la belle', () => {
+    expect(rematchLabel({ wins: 5, losses: 5 }, 'Kay')).toBe('Jouer la belle avec Kay');
+  });
+});
+
+describe('duelSentence — pas de double point', () => {
+  const now = new Date(2026, 8, 20, 12, 0, 0);
+  it('quand la date finit déjà par un point', () => {
+    const h = headToHeadFrom([1, 2, 3].map(i => m(String(i), `2026-09-0${i}`, true, ['omar', 'x'], '6-3 6-3')), MOI).get('omar')!;
+    const phrase = duelSentence(h, 'Omar', now);
+    expect(phrase.endsWith('..')).toBe(false);
+    expect(phrase.endsWith('.')).toBe(true);
+  });
+  it('quand la date n\'en a pas', () => {
+    const h = headToHeadFrom([1, 2, 3].map(i => m(String(i), `2026-09-1${i}`, true, ['omar', 'x'], '6-3 6-3')), MOI).get('omar')!;
+    expect(duelSentence(h, 'Omar', now).endsWith('.')).toBe(true);
   });
 });

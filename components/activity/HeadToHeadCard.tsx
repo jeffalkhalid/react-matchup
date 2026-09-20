@@ -18,7 +18,7 @@ import { PlayerAvatar } from '../PlayerAvatar';
 import { AmbassadorRing } from '../ambassador/primitives';
 import {
   fetchDuels, fetchRivalPlayer, pickRival, closestOpponent, rivals as listeRivaux,
-  duelSentence, duelSinceLabel,
+  duelSentence, duelSinceLabel, rematchLabel,
   RIVAL_MIN_DUELS, type HeadToHead, type RivalPlayer,
 } from '../../lib/headToHead';
 
@@ -158,8 +158,9 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
 
           <TouchableOpacity onPress={defier} activeOpacity={0.85}
             style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 14 }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>
-              {`Demander la revanche à ${prenom}`}
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+              style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>
+              {rematchLabel(duelVu, prenom)}
             </Text>
           </TouchableOpacity>
 
