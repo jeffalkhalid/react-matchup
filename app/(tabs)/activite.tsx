@@ -310,7 +310,7 @@ export default function ActiviteTab() {
                   if (samedi) toggleSlot(samedi);
                 }}
               />
-              <FeaturedClash myId={myId} city={city} />
+              <FeaturedClash myId={myId} />
 
 
               {/* Qui joue quand : dispo ce soir, puis l'invitation reçue. */}

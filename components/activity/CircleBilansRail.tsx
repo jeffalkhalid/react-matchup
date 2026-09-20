@@ -44,10 +44,10 @@ export function CircleBilansRail({ bilans, myId, onOpen }: {
           const prenom = moi ? 'Toi' : b.name.trim().split(/\s+/)[0];
           const photo = (
             <PlayerAvatar
-              name={b.name} path={b.avatarPath} size={22}
-              backgroundColor={Colors.brand} textColor={Colors.primary}
-              fontFamily={Fonts.uiExtraBold} fontSize={8.5}
-              ring={1.5} ringColor="#FFFFFF" initialsMax={2}
+              name={b.name} path={b.avatarPath} size={68}
+              backgroundColor={Colors.primary} textColor="#FFFFFF"
+              fontFamily={Fonts.uiBlack} fontSize={24}
+              ring={2} ringColor="#FFFFFF" initialsMax={2}
             />
           );
           return (
@@ -59,29 +59,17 @@ export function CircleBilansRail({ bilans, myId, onOpen }: {
               style={{ width: TILE_W, height: TILE_H, borderRadius: 18, overflow: 'hidden' }}
             >
               <GradientBg colors={COUVERTURE} angle={160}>
-                <View style={{ flex: 1, padding: 10, justifyContent: 'space-between' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {b.memberNumber != null
-                      ? <AmbassadorRing size={22} radius={11} showStar={false} surface="transparent">{photo}</AmbassadorRing>
-                      : photo}
-                    <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, color: '#FFFFFF', flexShrink: 1 }}>
-                      {prenom}
-                    </Text>
-                  </View>
-
-                  <View>
-                    <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 8.5, letterSpacing: 1.2, color: 'rgba(10,10,10,0.55)' }}>
-                      BILAN
-                    </Text>
-                    <Text
-                      numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
-                      style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 34, color: Colors.primary, paddingRight: 4 }}>
-                      {(b.label || 'Le mois').toLowerCase().replace(/^./, c => c.toUpperCase())}
-                    </Text>
-                    <Text style={{ fontFamily: Fonts.uiBold, fontSize: 10.5, color: 'rgba(10,10,10,0.7)', marginTop: 2 }}>
-                      {b.recap?.matches != null ? `${b.recap.matches} match${b.recap.matches > 1 ? 's' : ''}` : 'Voir le bilan'}
-                    </Text>
-                  </View>
+                {/* Une couverture, pas une fiche : le visage dit qui c'est,
+                    le mois dit quoi. Le reste se lit en ouvrant. */}
+                <View style={{ flex: 1, padding: 12, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+                  {b.memberNumber != null
+                    ? <AmbassadorRing size={68} radius={34} showStar={false} surface="transparent">{photo}</AmbassadorRing>
+                    : photo}
+                  <Text
+                    numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}
+                    style={{ fontFamily: Fonts.welcome, fontSize: 30, lineHeight: 34, color: Colors.primary, paddingRight: 4, alignSelf: 'stretch', textAlign: 'center' }}>
+                    {(b.label || 'Le mois').toLowerCase().replace(/^./, c => c.toUpperCase())}
+                  </Text>
                 </View>
               </GradientBg>
             </TouchableOpacity>

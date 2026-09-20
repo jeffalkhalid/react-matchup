@@ -69,12 +69,15 @@ export function teamLevel(players: ClashPlayer[]): number | null {
 }
 
 /**
- * Le choc : parmi les parties complètes (2 contre 2) encore à venir, celle
- * dont l'écart de niveau entre les deux paires est le plus faible. À égalité,
- * la plus proche dans le temps.
+ * Toutes les parties pronostiquables : complètes (2 contre 2), encore à
+ * venir, et dont on connaît le niveau des deux paires. Rendues dans l'ordre
+ * du calendrier — la plus proche d'abord, c'est celle qui presse.
+ *
+ * N'en montrer qu'UNE (le « choc ») laissait douze autres parties sans
+ * personne pour en parler.
  */
-export function pickClash(games: ClashGame[], now: Date = new Date()): Clash | null {
-  let best: Clash | null = null;
+export function clashesToPredict(games: ClashGame[], now: Date = new Date(), limit = 8): Clash[] {
+  const out: Clash[] = [];
   for (const g of games) {
     const debut = Date.parse(g.matchDate);
     if (Number.isNaN(debut) || debut <= now.getTime()) continue;
@@ -87,13 +90,30 @@ export function pickClash(games: ClashGame[], now: Date = new Date()): Clash | n
     const nb = teamLevel(teamB);
     if (na == null || nb == null) continue;
 
-    const gap = Math.round(Math.abs(na - nb) * 100) / 100;
-    const candidat: Clash = { ...g, teamA, teamB, gap };
-    if (!best || gap < best.gap || (gap === best.gap && Date.parse(g.matchDate) < Date.parse(best.matchDate))) {
-      best = candidat;
-    }
+    out.push({ ...g, teamA, teamB, gap: Math.round(Math.abs(na - nb) * 100) / 100 });
   }
-  return best;
+  return out
+    .sort((a, b) => Date.parse(a.matchDate) - Date.parse(b.matchDate))
+    .slice(0, limit);
+}
+
+/** L'identifiant de la partie la plus serrée — elle porte la pastille « LE CHOC ». */
+export function tightestClashId(clashes: Clash[]): string | null {
+  let best: Clash | null = null;
+  for (const c of clashes) {
+    if (!best || c.gap < best.gap || (c.gap === best.gap && Date.parse(c.matchDate) < Date.parse(best.matchDate))) best = c;
+  }
+  return best?.gameId ?? null;
+}
+
+/**
+ * Le choc : la partie la plus serrée. Gardée pour les appels qui n'en veulent
+ * qu'une.
+ */
+export function pickClash(games: ClashGame[], now: Date = new Date()): Clash | null {
+  const tous = clashesToPredict(games, now, Number.MAX_SAFE_INTEGER);
+  const id = tightestClashId(tous);
+  return tous.find(c => c.gameId === id) ?? null;
 }
 
 /** Une ligne de `game_participants`, telle que la base la rend. */
@@ -203,12 +223,6 @@ export function clashWhenLabel(c: Pick<ClashGame, 'matchDate' | 'location'>, now
   return c.location ? `${quand} · ${c.location}` : quand;
 }
 
-/** Le motif de la sélection, en une phrase. */
-export function clashReasonLabel(c: Pick<Clash, 'gap' | 'city'>): string {
-  const ou = c.city ? ` de ${c.city}` : '';
-  return `L'écart de niveau le plus serré${ou} en ce moment (${c.gap.toFixed(2)}).`;
-}
-
 // ─── Base de données ──────────────────────────────────────────────────────
 
 const MANQUE = (e: { code?: string; message?: string } | null) =>
@@ -245,12 +259,27 @@ export async function fetchClashCandidates(start: Date, end: Date, limit = 40): 
 
 /** Tous les pronostics d'une partie. */
 export async function fetchPredictions(gameId: string): Promise<{ playerId: string; team: Team }[]> {
+  return (await fetchPredictionsForGames([gameId])).get(gameId) ?? [];
+}
+
+/** Les pronostics de plusieurs parties, en UNE requête. */
+export async function fetchPredictionsForGames(gameIds: string[]): Promise<Map<string, { playerId: string; team: Team }[]>> {
+  const out = new Map<string, { playerId: string; team: Team }[]>();
+  const ids = [...new Set(gameIds.filter(Boolean))];
+  if (ids.length === 0) return out;
+
   const { data, error } = await supabase
     .from('predictions')
-    .select('player_id, team')
-    .eq('game_id', gameId);
-  if (error) { if (!MANQUE(error)) console.warn('[weekendClash] predictions', error); return []; }
-  return ((data ?? []) as any[]).map(r => ({ playerId: r.player_id, team: r.team as Team }));
+    .select('game_id, player_id, team')
+    .in('game_id', ids);
+  if (error) { if (!MANQUE(error)) console.warn('[weekendClash] predictions', error); return out; }
+
+  for (const r of (data ?? []) as any[]) {
+    const liste = out.get(r.game_id) ?? [];
+    liste.push({ playerId: r.player_id, team: r.team as Team });
+    out.set(r.game_id, liste);
+  }
+  return out;
 }
 
 /**

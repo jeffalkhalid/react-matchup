@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   teamOf, teamLevel, pickClash, countPredictions, predictionShare, agreementLabel,
-  clashWhenLabel, clashReasonLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
+  clashWhenLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
+  clashesToPredict, tightestClashId,
   type ClashGame, type ClashPlayer, type Team,
 } from '../weekendClash';
 
@@ -156,13 +157,6 @@ describe('libellés du choc', () => {
   it('date illisible → on retombe sur le club', () => {
     expect(clashWhenLabel({ matchDate: 'nawak', location: 'Padel Art' })).toBe('Padel Art');
   });
-  it('le motif nomme la ville et l\'écart', () => {
-    expect(clashReasonLabel({ gap: 0.08, city: 'Casablanca' }))
-      .toBe("L'écart de niveau le plus serré de Casablanca en ce moment (0.08).");
-  });
-  it('sans ville, la phrase reste correcte', () => {
-    expect(clashReasonLabel({ gap: 0.5, city: null })).toBe("L'écart de niveau le plus serré en ce moment (0.50).");
-  });
 });
 
 describe('clashPlayersFrom — qui compte comme joueur de la partie', () => {
@@ -259,5 +253,52 @@ describe('clashPlayersFrom — le créateur compte aussi', () => {
       ], partie),
     }];
     expect(pickClash(jeux, now)?.gameId).toBe('g');
+  });
+});
+
+describe('clashesToPredict — plusieurs matchs, pas un seul', () => {
+  const futur = (jours: number) => new Date(now.getTime() + jours * 86_400_000).toISOString();
+
+  it('rend toutes les parties valides, la plus proche d\'abord', () => {
+    const out = clashesToPredict([
+      partie('tard', futur(5), [1500, 1500, 1500, 1500]),
+      partie('tot', futur(1), [1400, 1400, 1900, 1900]),
+      partie('milieu', futur(3), [1500, 1500, 1500, 1500]),
+    ], now);
+    expect(out.map(c => c.gameId)).toEqual(['tot', 'milieu', 'tard']);
+  });
+
+  it('écarte les parties passées et incomplètes', () => {
+    const passee = partie('passee', new Date(now.getTime() - 3600_000).toISOString(), [1500, 1500, 1500, 1500]);
+    const bancale = partie('bancale', futur(1), [1500, 1500, 1500, 1500]);
+    bancale.players = bancale.players.slice(0, 3);
+    expect(clashesToPredict([passee, bancale], now)).toEqual([]);
+  });
+
+  it('respecte la limite demandée', () => {
+    const jeux = [1, 2, 3, 4].map(i => partie(`g${i}`, futur(i), [1500, 1500, 1500, 1500]));
+    expect(clashesToPredict(jeux, now, 2)).toHaveLength(2);
+  });
+
+  it('tightestClashId désigne la plus serrée, pas la plus proche', () => {
+    const out = clashesToPredict([
+      partie('large', futur(1), [1400, 1400, 1900, 1900]),
+      partie('serre', futur(4), [1500, 1520, 1510, 1505]),
+    ], now);
+    expect(out[0].gameId).toBe('large');            // la plus proche en tête
+    expect(tightestClashId(out)).toBe('serre');     // mais le choc, c'est l'autre
+  });
+
+  it('pickClash reste la plus serrée', () => {
+    const jeux = [
+      partie('large', futur(1), [1400, 1400, 1900, 1900]),
+      partie('serre', futur(4), [1500, 1520, 1510, 1505]),
+    ];
+    expect(pickClash(jeux, now)?.gameId).toBe('serre');
+  });
+
+  it('aucune partie → liste vide et aucun choc', () => {
+    expect(clashesToPredict([], now)).toEqual([]);
+    expect(tightestClashId([])).toBeNull();
   });
 });

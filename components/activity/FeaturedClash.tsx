@@ -1,39 +1,41 @@
-// components/activity/FeaturedClash.tsx — « Le choc à venir ».
+// components/activity/FeaturedClash.tsx — « Qui va gagner ? »
 //
-// La partie la plus serrée parmi celles à venir, et l'avis du reste du club
-// (handoff « Hub Activite » §4c, capture 10). Un pronostic n'engage rien : ni
-// place, ni ELO, ni notification. C'est une conversation, pas un pari.
+// Les parties à venir qu'on peut pronostiquer, et l'avis du reste du club. Un
+// pronostic n'engage rien : ni place, ni ELO, ni notification. C'est une
+// conversation, pas un pari.
 //
-// Écart assumé avec le handoff : il réservait ce bloc au week-end et au
-// dimanche. Essayé sur téléphone, on ne voyait jamais rien — la mécanique la
-// moins chère du lot était étouffée par sa fenêtre. Elle vaut pour toutes les
-// parties à venir, tous les jours.
+// Deux écarts assumés avec le handoff (§4c), tous deux vus sur téléphone :
+//  • il réservait le bloc au week-end et au dimanche — on ne voyait jamais
+//    rien. Il vaut pour toutes les parties à venir, tous les jours.
+//  • il n'en montrait qu'UNE, « le choc ». Douze autres parties restaient
+//    sans personne pour en parler. Elles défilent maintenant toutes, la plus
+//    proche d'abord, et la plus serrée porte la pastille « LE CHOC ».
+//
+// Fond sombre : entre les cartes blanches du dessus et du dessous, le bloc se
+// noyait.
 //
 // Données : table `predictions` (supabase/migrations/predictions.sql). Tant
-// qu'elle n'existe pas, la carte s'affiche mais le vote répond qu'il n'est
-// pas encore ouvert.
+// qu'elle n'existe pas, les cartes s'affichent mais le vote répond qu'il
+// n'est pas encore ouvert.
 import { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts, formatPadelLevel } from '../../lib/theme';
-import { AMB } from '../../lib/ambassador';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import {
-  predictionWindow,
-  fetchClashCandidates, fetchPredictions, castPrediction, pickClash,
-  countPredictions, predictionShare, agreementLabel, clashWhenLabel, clashReasonLabel,
-  type Clash, type ClashPlayer, type PredictionCounts, type Team,
+  predictionWindow, fetchClashCandidates, fetchPredictionsForGames, castPrediction,
+  clashesToPredict, tightestClashId, countPredictions, predictionShare, agreementLabel,
+  clashWhenLabel, type Clash, type ClashPlayer, type PredictionCounts, type Team,
 } from '../../lib/weekendClash';
 
-const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 8 } as const;
-const JAUNE_DOUX = 'rgba(255,193,26,0.14)';
+const SOMBRE = '#0A0A0A';
+const TUILE = '#1A1A1C';
+const BLANC_60 = 'rgba(255,255,255,0.6)';
+const BLANC_45 = 'rgba(255,255,255,0.45)';
+const JAUNE_DOUX = 'rgba(255,193,26,0.16)';
 
-/**
- * Une paire, présentée comme sur la carte de match du Lobby : chaque joueur a
- * sa photo, son prénom et son niveau. Les visages superposés avec un
- * « Yassir & Kenza » sous les deux ne disaient pas qui était qui.
- */
+/** Une paire, présentée comme sur la carte de match : photo, prénom, niveau. */
 function Cote({ players, choisi, onPress }: {
   players: ClashPlayer[];
   choisi: boolean;
@@ -44,24 +46,25 @@ function Cote({ players, choisi, onPress }: {
       onPress={onPress}
       activeOpacity={0.85}
       style={{
-        flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8,
-        flexDirection: 'row', justifyContent: 'center', gap: 6,
-        backgroundColor: choisi ? JAUNE_DOUX : Colors.bgCard,
-        borderWidth: choisi ? 1.5 : 1, borderColor: choisi ? Colors.brand : Colors.border,
+        flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 6,
+        flexDirection: 'row', justifyContent: 'center', gap: 4,
+        backgroundColor: choisi ? JAUNE_DOUX : TUILE,
+        borderWidth: choisi ? 1.5 : 1,
+        borderColor: choisi ? Colors.brand : 'rgba(255,255,255,0.08)',
       }}
     >
       {players.map(p => (
         <View key={p.id} style={{ alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
           <PlayerAvatar
-            name={p.name} path={p.avatarPath} size={54}
+            name={p.name} path={p.avatarPath} size={50}
             backgroundColor={Colors.brand} textColor={Colors.primary}
-            fontFamily={Fonts.uiBlack} fontSize={19} initialsMax={2}
+            fontFamily={Fonts.uiBlack} fontSize={17} initialsMax={2}
           />
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textPrimary }}>
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: '#FFFFFF' }}>
             {p.name.trim().split(/\s+/)[0]}
           </Text>
           {p.elo != null ? (
-            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: AMB.chipText }}>
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: Colors.brand }}>
               Niv {formatPadelLevel(p.elo)}
             </Text>
           ) : null}
@@ -71,15 +74,17 @@ function Cote({ players, choisi, onPress }: {
   );
 }
 
-export function FeaturedClash({ myId, city, onContent }: {
-  myId: string; city?: string | null;
+export function FeaturedClash({ myId, onContent }: {
+  myId: string;
   /** Prévient l'écran quand le bloc a — ou n'a plus — quelque chose à dire. */
   onContent?: (has: boolean) => void;
 }) {
   const router = useRouter();
-  const [clash, setClash] = useState<Clash | null>(null);
-  const [counts, setCounts] = useState<PredictionCounts>({ A: 0, B: 0, total: 0 });
-  const [mine, setMine] = useState<Team | null>(null);
+  const { width } = useWindowDimensions();
+  const [clashes, setClashes] = useState<Clash[]>([]);
+  const [choc, setChoc] = useState<string | null>(null);
+  const [counts, setCounts] = useState<Record<string, PredictionCounts>>({});
+  const [mine, setMine] = useState<Record<string, Team>>({});
   const [erreur, setErreur] = useState<string | null>(null);
   const [charge, setCharge] = useState(false);
 
@@ -88,90 +93,136 @@ export function FeaturedClash({ myId, city, onContent }: {
     (async () => {
       const { start, end } = predictionWindow();
       const parties = await fetchClashCandidates(start, end);
-      const choc = pickClash(parties);
-      const avis = choc ? await fetchPredictions(choc.gameId) : [];
+      const liste = clashesToPredict(parties);
+      const avis = await fetchPredictionsForGames(liste.map(c => c.gameId));
       if (!vivant) return;
-      setClash(choc ? { ...choc, city: city ?? null } : null);
-      setCounts(countPredictions(avis));
-      setMine(avis.find(a => a.playerId === myId)?.team ?? null);
-      setCharge(true);
-      onContent?.(!!choc);
+      const c: Record<string, PredictionCounts> = {};
+      const m: Record<string, Team> = {};
+      for (const clash of liste) {
+        const rows = avis.get(clash.gameId) ?? [];
+        c[clash.gameId] = countPredictions(rows);
+        const mien = rows.find(r => r.playerId === myId)?.team;
+        if (mien) m[clash.gameId] = mien;
+      }
+      setClashes(liste); setChoc(tightestClashId(liste));
+      setCounts(c); setMine(m); setCharge(true);
+      onContent?.(liste.length > 0);
     })();
     return () => { vivant = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myId, city]);
+  }, [myId]);
 
   useFocusEffect(useCallback(() => { const stop = load(); return stop; }, [load]));
 
-  // Rien à raconter : le bloc ne s'affiche pas du tout. Un état calme posé
-  // en tête d'écran repoussait vers le bas ce qui sert vraiment (les dispos).
-  if (!charge || !clash) return null;
+  if (!charge || clashes.length === 0) return null;
 
-  const voter = async (team: Team) => {
-    if (!clash) return;
-    const avant = mine;
-    setMine(team); setErreur(null);
+  const voter = async (clash: Clash, team: Team) => {
+    const avant = mine[clash.gameId] ?? null;
+    setErreur(null);
+    setMine(m => ({ ...m, [clash.gameId]: team }));
     // Compte optimiste : on retire l'ancien avis avant d'ajouter le nouveau.
     setCounts(c => {
-      const next = { ...c };
+      const actuel = c[clash.gameId] ?? { A: 0, B: 0, total: 0 };
+      const next = { ...actuel };
       if (avant) next[avant] = Math.max(0, next[avant] - 1); else next.total += 1;
       next[team] += 1;
-      return next;
+      return { ...c, [clash.gameId]: next };
     });
     const souci = await castPrediction(clash.gameId, myId, team);
-    if (souci) { setMine(avant); setErreur(souci); load(); }
+    if (souci) {
+      setErreur(souci);
+      setMine(m => { const next = { ...m }; if (avant) next[clash.gameId] = avant; else delete next[clash.gameId]; return next; });
+      load();
+    }
   };
 
-  const joueJeMeme = clash.players.some(p => p.id === myId);
+  // Une carte par partie, presque pleine largeur : on en voit une, on devine
+  // la suivante, et on fait défiler.
+  const LARGEUR = Math.min(width - 56, 320);
+  const votes = clashes.filter(c => mine[c.gameId]).length;
 
   return (
-    <View style={CARD}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <Icon name="swords" size={15} color={Colors.textPrimary} stroke={2} />
-        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
-          Le choc à venir
+    <View style={{ backgroundColor: SOMBRE, borderRadius: 18, paddingVertical: 16, marginTop: 14 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16 }}>
+        <Icon name="swords" size={15} color={Colors.brand} stroke={2} />
+        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: '#FFFFFF', paddingRight: 6 }}>
+          Qui va gagner ?
         </Text>
-        {counts.total > 0 ? (
-          <View style={{ backgroundColor: Colors.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: Colors.textSecondary }}>
-              {`${counts.total} PRONO${counts.total > 1 ? 'S' : ''}`}
-            </Text>
-          </View>
-        ) : null}
+        <View style={{ backgroundColor: TUILE, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: BLANC_60 }}>
+            {`${votes}/${clashes.length} PRONOSTIQUÉ${votes > 1 ? 'S' : ''}`}
+          </Text>
+        </View>
       </View>
 
-      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 6 }}>
-            {`${clashWhenLabel(clash)} · ${clashReasonLabel(clash).charAt(0).toLowerCase()}${clashReasonLabel(clash).slice(1)}`}
-          </Text>
+      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: BLANC_60, marginTop: 6, paddingHorizontal: 16 }}>
+        Tape la paire que tu vois gagner. Ça n'engage rien.
+      </Text>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
-            <Cote players={clash.teamA} choisi={mine === 'A'} onPress={() => !joueJeMeme && voter('A')} />
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textMuted }}>VS</Text>
-            <Cote players={clash.teamB} choisi={mine === 'B'} onPress={() => !joueJeMeme && voter('B')} />
-          </View>
-
-          {mine ? (
-            <View style={{ marginTop: 12 }}>
-              <View style={{ flexDirection: 'row', height: 6, borderRadius: 999, overflow: 'hidden', backgroundColor: Colors.border }}>
-                <View style={{ flex: Math.max(predictionShare(counts, 'A'), 0.001), backgroundColor: Colors.brand }} />
-                <View style={{ flex: Math.max(predictionShare(counts, 'B'), 0.001), backgroundColor: Colors.border }} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={LARGEUR + 10}
+        decelerationRate="fast"
+        style={{ marginTop: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+      >
+        {clashes.map(clash => {
+          const c = counts[clash.gameId] ?? { A: 0, B: 0, total: 0 };
+          const mien = mine[clash.gameId] ?? null;
+          const jeJoue = clash.players.some(p => p.id === myId);
+          const estLeChoc = clash.gameId === choc;
+          return (
+            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)', padding: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                {estLeChoc ? (
+                  <View style={{ backgroundColor: Colors.brand, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 8.5, letterSpacing: 0.6, color: Colors.primary }}>LE CHOC</Text>
+                  </View>
+                ) : null}
+                <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 11, color: BLANC_60 }}>
+                  {clashWhenLabel(clash)}
+                </Text>
               </View>
-              <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textMuted, marginTop: 7, textAlign: 'center' }}>
-                {`Ton prono : ${(mine === 'A' ? clash.teamA : clash.teamB).map(p => p.name.trim().split(/\s+/)[0]).join(', ')}`}
-                {agreementLabel(counts, mine) ? ` · ${agreementLabel(counts, mine)}` : ''}
-              </Text>
-            </View>
-          ) : (
-            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textMuted, marginTop: 10, textAlign: 'center' }}>
-              {joueJeMeme ? 'Tu joues ce match — à toi de leur donner tort.' : 'Tape une paire : qui gagne ?'}
-            </Text>
-          )}
 
-          {erreur ? (
-            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textSecondary, marginTop: 8, textAlign: 'center' }}>
-              {erreur}
-            </Text>
-          ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Cote players={clash.teamA} choisi={mien === 'A'} onPress={() => !jeJoue && voter(clash, 'A')} />
+                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: BLANC_45 }}>VS</Text>
+                <Cote players={clash.teamB} choisi={mien === 'B'} onPress={() => !jeJoue && voter(clash, 'B')} />
+              </View>
+
+              {mien ? (
+                <View style={{ marginTop: 10 }}>
+                  <View style={{ flexDirection: 'row', height: 6, borderRadius: 999, overflow: 'hidden', backgroundColor: TUILE }}>
+                    <View style={{ flex: Math.max(predictionShare(c, 'A'), 0.001), backgroundColor: Colors.brand }} />
+                    <View style={{ flex: Math.max(predictionShare(c, 'B'), 0.001), backgroundColor: TUILE }} />
+                  </View>
+                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 6, textAlign: 'center' }}>
+                    {agreementLabel(c, mien) ?? 'Ton prono est enregistré'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 10, textAlign: 'center' }}>
+                  {jeJoue ? 'Tu joues ce match — à toi de leur donner tort.' : `${c.total} avis pour l'instant`}
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {erreur ? (
+        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: BLANC_60, marginTop: 10, paddingHorizontal: 16, textAlign: 'center' }}>
+          {erreur}
+        </Text>
+      ) : null}
+
+      <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}
+        style={{ alignSelf: 'center', marginTop: 12 }}>
+        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.brand, textDecorationLine: 'underline' }}>
+          Voir toutes les parties →
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
