@@ -105,25 +105,64 @@ export interface ClashParticipant {
   player?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null } | null;
 }
 
+/** Le créateur de la partie, qui n'est PAS dans `game_participants`. */
+export interface ClashCreator {
+  creator_id?: string | null;
+  creator_side?: string | null;
+  creator?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null } | null;
+}
+
 /**
- * Les joueurs d'une partie, au sens du reste de l'app : `occupiesSpot`.
+ * Les quatre joueurs d'une partie, au sens du reste de l'app.
  *
- * Un joueur invité et non expiré occupe sa place — le Lobby l'affiche déjà
- * sur la carte et compte la partie « COMPLET ». Filtrer sur
- * `status === 'accepted'` écartait ces parties, qui n'apparaissaient donc
- * jamais comme choc alors qu'elles étaient pleines à l'écran.
+ * Deux pièges, tous deux payés en cherchant pourquoi une partie affichée
+ * « COMPLET » n'apparaissait jamais comme choc :
+ *
+ *  1. Le CRÉATEUR n'est pas une ligne de `game_participants` : il vit sur la
+ *     partie (`creator_id` + `creator_side`). Ne lire que les participants
+ *     donnait trois joueurs sur quatre, donc jamais 2 contre 2.
+ *  2. Une place est occupée par un joueur accepté OU invité non expiré
+ *     (`occupiesSpot`) — c'est cette règle qui fait écrire « COMPLET » sur la
+ *     carte du Lobby. Un filtre brut `status === 'accepted'` écartait le reste.
+ *
+ * Le créateur passe en premier et l'identifiant dédoublonne : s'il figure
+ * aussi dans les participants, il n'est compté qu'une fois.
  */
-export function clashPlayersFrom(participants: ClashParticipant[]): ClashPlayer[] {
-  return participants
-    .filter(p => occupiesSpot(p) && teamOf(p.team_side))
-    .map(p => ({
+export function clashPlayersFrom(participants: ClashParticipant[], game?: ClashCreator): ClashPlayer[] {
+  const out: ClashPlayer[] = [];
+  const vus = new Set<string>();
+
+  const ajouter = (p: ClashPlayer | null) => {
+    if (!p || vus.has(p.id)) return;
+    vus.add(p.id);
+    out.push(p);
+  };
+
+  const campCreateur = teamOf(game?.creator_side ?? 'A_GAU');
+  if (game?.creator_id && campCreateur) {
+    ajouter({
+      id: game.creator_id,
+      name: game.creator?.name ?? 'Joueur',
+      avatarPath: game.creator?.avatar_path ?? null,
+      memberNumber: game.creator?.member_number ?? null,
+      elo: game.creator?.elo_score ?? null,
+      team: campCreateur,
+    });
+  }
+
+  for (const p of participants) {
+    const camp = teamOf(p.team_side);
+    if (!occupiesSpot(p) || !camp) continue;
+    ajouter({
       id: p.player_id,
       name: p.player?.name ?? 'Joueur',
       avatarPath: p.player?.avatar_path ?? null,
       memberNumber: p.player?.member_number ?? null,
       elo: p.player?.elo_score ?? null,
-      team: teamOf(p.team_side) as Team,
-    }));
+      team: camp,
+    });
+  }
+  return out;
 }
 
 export interface PredictionCounts { A: number; B: number; total: number }
@@ -187,7 +226,7 @@ const MANQUE = (e: { code?: string; message?: string } | null) =>
 export async function fetchClashCandidates(start: Date, end: Date, limit = 40): Promise<ClashGame[]> {
   const { data, error } = await supabase
     .from('open_games')
-    .select('id, match_date, location, status, participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, member_number))')
+    .select('id, match_date, location, status, creator_id, creator_side, creator:creator_id(id, name, elo_score, avatar_path, member_number), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, member_number))')
     .neq('status', 'cancelled')
     .gte('match_date', start.toISOString())
     .lte('match_date', end.toISOString())
@@ -200,7 +239,7 @@ export async function fetchClashCandidates(start: Date, end: Date, limit = 40): 
     matchDate: g.match_date,
     location: g.location ?? null,
     city: null,
-    players: clashPlayersFrom((g.participants ?? []) as ClashParticipant[]),
+    players: clashPlayersFrom((g.participants ?? []) as ClashParticipant[], g as ClashCreator),
   }));
 }
 

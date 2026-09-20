@@ -208,3 +208,56 @@ describe('clashPlayersFrom — qui compte comme joueur de la partie', () => {
     expect(out.filter(p => p.team === 'B')).toHaveLength(2);
   });
 });
+
+describe('clashPlayersFrom — le créateur compte aussi', () => {
+  const part = (id: string, status: string, side: string | null, over: Record<string, any> = {}) => ({
+    player_id: id, status, team_side: side,
+    player: { name: id, elo_score: 1500, avatar_path: null, member_number: null },
+    ...over,
+  });
+  const partie = { creator_id: 'chef', creator_side: 'A_GAU', creator: { name: 'Chef', elo_score: 1500 } };
+
+  it('le créateur est un joueur, même absent de game_participants', () => {
+    const out = clashPlayersFrom([], partie);
+    expect(out.map(p => p.id)).toEqual(['chef']);
+    expect(out[0].team).toBe('A');
+  });
+
+  it('une partie pleine fait bien 2 contre 2 avec lui', () => {
+    const out = clashPlayersFrom([
+      part('a2', 'accepted', 'A_DRO'),
+      part('b1', 'accepted', 'B_GAU'),
+      part('b2', 'accepted', 'B_DRO'),
+    ], partie);
+    expect(out).toHaveLength(4);
+    expect(out.filter(p => p.team === 'A').map(p => p.id)).toEqual(['chef', 'a2']);
+    expect(out.filter(p => p.team === 'B').map(p => p.id)).toEqual(['b1', 'b2']);
+  });
+
+  it('sans creator_side, le créateur est mis côté A', () => {
+    const out = clashPlayersFrom([], { creator_id: 'chef', creator: { name: 'Chef' } });
+    expect(out[0].team).toBe('A');
+  });
+
+  it('créateur aussi présent dans les participants : compté une seule fois', () => {
+    const out = clashPlayersFrom([part('chef', 'accepted', 'A_GAU')], partie);
+    expect(out.map(p => p.id)).toEqual(['chef']);
+  });
+
+  it('sans partie fournie, on ne lit que les participants', () => {
+    expect(clashPlayersFrom([part('a', 'accepted', 'A_GAU')]).map(p => p.id)).toEqual(['a']);
+  });
+
+  it('une partie complète devient bien un choc', () => {
+    const jeux = [{
+      gameId: 'g', matchDate: new Date(now.getTime() + 2 * 86_400_000).toISOString(),
+      location: 'ACSA', city: null,
+      players: clashPlayersFrom([
+        part('galan', 'accepted', 'A_DRO'),
+        part('alamine', 'accepted', 'B_GAU'),
+        part('rita', 'accepted', 'B_DRO'),
+      ], partie),
+    }];
+    expect(pickClash(jeux, now)?.gameId).toBe('g');
+  });
+});
