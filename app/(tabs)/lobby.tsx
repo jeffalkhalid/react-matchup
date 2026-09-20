@@ -45,6 +45,7 @@ import {
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking } from '../../lib/games';
+import { OVERLAP_MS } from '../../lib/slotConflict';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
@@ -3170,7 +3171,6 @@ export default function LobbyScreen() {
     // Chevauchement strict des intervalles [début, début+durée+marge) :
     // conflit si |début1 − début2| < (1h30 jeu + 30 min marge) = 2h.
     // Un écart pile de 2h (19h vs 21h) ne se chevauche pas → pas de conflit.
-    const OVERLAP_MS = 2 * 60 * 60 * 1000;
     const fromIso = new Date(matchDate.getTime() - OVERLAP_MS).toISOString();
     const toIso   = new Date(matchDate.getTime() + OVERLAP_MS).toISOString();
 
