@@ -91,11 +91,15 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
   );
 
   return (
-    <View style={{ backgroundColor: SOMBRE, borderRadius: 18, padding: 16, marginTop: 14 }}>
-      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 10, letterSpacing: 0.8, color: Colors.brand }}>
-        FACE-À-FACE
+    <View style={{ marginTop: 18 }}>
+      {/* Titre de section, hors de la carte — comme « Les bilans de ton
+          cercle » et « Qui va gagner ? ». Le kicker jaune à l'intérieur
+          enfermait le titre dans le pavé noir. */}
+      <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6, marginBottom: 8 }}>
+        Face-à-face
       </Text>
 
+      <View style={{ backgroundColor: SOMBRE, borderRadius: 18, padding: 16 }}>
       {sousLeSeuil ? (
         <>
           <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 22, lineHeight: 28, color: '#FFFFFF', marginTop: 12, paddingRight: 6 }}>
@@ -200,6 +204,7 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
           ) : null}
         </>
       )}
+      </View>
     </View>
   );
 }
