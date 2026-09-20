@@ -15,7 +15,8 @@
 import { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Colors, Fonts } from '../../lib/theme';
+import { Colors, Fonts, formatPadelLevel } from '../../lib/theme';
+import { AMB } from '../../lib/ambassador';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import {
@@ -28,38 +29,44 @@ import {
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 8 } as const;
 const JAUNE_DOUX = 'rgba(255,193,26,0.14)';
 
-/** Les deux visages d'une paire, superposés, puis leurs prénoms. */
+/**
+ * Une paire, présentée comme sur la carte de match du Lobby : chaque joueur a
+ * sa photo, son prénom et son niveau. Les visages superposés avec un
+ * « Yassir & Kenza » sous les deux ne disaient pas qui était qui.
+ */
 function Cote({ players, choisi, onPress }: {
   players: ClashPlayer[];
   choisi: boolean;
   onPress: () => void;
 }) {
-  const prenoms = players.map(p => p.name.trim().split(/\s+/)[0]).join(' & ');
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
       style={{
-        flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center', gap: 8,
+        flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8,
+        flexDirection: 'row', justifyContent: 'center', gap: 6,
         backgroundColor: choisi ? JAUNE_DOUX : Colors.bgCard,
         borderWidth: choisi ? 1.5 : 1, borderColor: choisi ? Colors.brand : Colors.border,
       }}
     >
-      <View style={{ flexDirection: 'row' }}>
-        {players.map((p, i) => (
-          <View key={p.id} style={{ marginLeft: i > 0 ? -7 : 0, borderRadius: 999, borderWidth: 2, borderColor: '#FFFFFF' }}>
-            <PlayerAvatar
-              name={p.name} path={p.avatarPath} size={30}
-              backgroundColor={i === 0 ? Colors.primary : Colors.brand}
-              textColor={i === 0 ? '#FFFFFF' : Colors.primary}
-              fontFamily={Fonts.uiBlack} fontSize={11} initialsMax={2}
-            />
-          </View>
-        ))}
-      </View>
-      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12.5, color: Colors.textPrimary }}>
-        {prenoms}
-      </Text>
+      {players.map(p => (
+        <View key={p.id} style={{ alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+          <PlayerAvatar
+            name={p.name} path={p.avatarPath} size={54}
+            backgroundColor={Colors.brand} textColor={Colors.primary}
+            fontFamily={Fonts.uiBlack} fontSize={19} initialsMax={2}
+          />
+          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textPrimary }}>
+            {p.name.trim().split(/\s+/)[0]}
+          </Text>
+          {p.elo != null ? (
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: AMB.chipText }}>
+              Niv {formatPadelLevel(p.elo)}
+            </Text>
+          ) : null}
+        </View>
+      ))}
     </TouchableOpacity>
   );
 }
@@ -150,7 +157,7 @@ export function FeaturedClash({ myId, city, onContent }: {
                 <View style={{ flex: Math.max(predictionShare(counts, 'B'), 0.001), backgroundColor: Colors.border }} />
               </View>
               <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textMuted, marginTop: 7, textAlign: 'center' }}>
-                {`Ton prono : ${(mine === 'A' ? clash.teamA : clash.teamB).map(p => p.name.trim().split(/\s+/)[0]).join(' & ')}`}
+                {`Ton prono : ${(mine === 'A' ? clash.teamA : clash.teamB).map(p => p.name.trim().split(/\s+/)[0]).join(', ')}`}
                 {agreementLabel(counts, mine) ? ` · ${agreementLabel(counts, mine)}` : ''}
               </Text>
             </View>
