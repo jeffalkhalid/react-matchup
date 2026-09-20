@@ -357,6 +357,24 @@ export default function ActiviteTab() {
                 </TouchableOpacity>
               </View>
               <FriendsBar friends={friends} sel={sel} onSelect={selectFriend} />
+
+              {/* Point d'entrée de « Partager un moment ». Le rail des Moments
+                  a été retiré (doublon du fil), mais l'action, elle, n'avait
+                  plus aucun bouton pour l'appeler. */}
+              {totalMatches > 0 ? (
+                <TouchableOpacity
+                  onPress={() => { track('activity_moment_opened', { source: 'share' }); setPickerOpen(true); }}
+                  activeOpacity={0.85}
+                  style={{
+                    backgroundColor: Colors.bgCard, borderRadius: 999, borderWidth: 1, borderColor: Colors.border,
+                    paddingVertical: 11, alignItems: 'center', marginTop: 12,
+                  }}
+                >
+                  <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textPrimary }}>
+                    Partager un moment
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
               {sel && selName ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
                   <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 14, color: Colors.textPrimary }}>Activité de {selName.split(' ')[0]}</Text>
