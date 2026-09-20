@@ -1,22 +1,30 @@
 // lib/availability.ts — « Tu es dispo quand ? » du hub Activité.
 //
-// Trois créneaux proposés dans le header : ce soir, demain, samedi matin.
+// Une ligne de sept jours dans le header : on tape les jours où on peut
+// jouer. Trois pastilles figées (ce soir / demain / samedi matin) laissaient
+// un trou — impossible de se déclarer un dimanche, ni au-delà de 48 h, alors
+// que le mercato, lui, regarde tout le week-end.
+//
 // La partie CALCUL est pure et testée (lib/__tests__/availability.test.ts) ;
 // seules les fonctions du bas parlent à la base (table `availability`,
 // migration supabase/migrations/availability.sql).
 //
 // Une dispo n'est qu'une intention : elle ne réserve rien, elle dit au cercle
-// « je peux jouer à ce moment-là ». Elle expire toute seule.
+// « je peux jouer ce jour-là ». Elle expire toute seule.
 import { supabase } from './supabase';
 
 /** Au-delà, une dispo est effacée par le ménage automatique. */
 export const AVAILABILITY_TTL_DAYS = 8;
 
-export type SlotKey = 'tonight' | 'tomorrow' | 'saturday';
+/** Nombre de jours proposés dans la ligne de dispo. */
+export const AVAILABILITY_DAYS = 7;
+
+/** La clé d'un créneau : le jour visé, au format `AAAA-MM-JJ`. */
+export type SlotKey = string;
 
 export interface Slot {
   key: SlotKey;
-  /** Ce qui s'affiche sur la pastille du header. */
+  /** Ce qui s'affiche sur la pastille : « Ce soir », « Demain », « Sam. 26 ». */
   label: string;
   start: Date;
   end: Date;
@@ -24,7 +32,6 @@ export interface Slot {
 
 const SOIR_DEBUT = 18;      // « ce soir » commence à 18 h
 const JOURNEE_DEBUT = 8;    // une journée de padel commence à 8 h
-const MATIN_FIN = 13;       // « samedi matin » s'arrête à 13 h
 
 const a = (d: Date, jours: number, h: number, min = 0) => {
   const x = new Date(d);
@@ -33,66 +40,68 @@ const a = (d: Date, jours: number, h: number, min = 0) => {
   return x;
 };
 
+const deux = (n: number) => String(n).padStart(2, '0');
+const cle = (d: Date) => `${d.getFullYear()}-${deux(d.getMonth() + 1)}-${deux(d.getDate())}`;
+
+const JOURS_COURTS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const JOURS_MINUSCULE = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
 /**
- * Les créneaux proposés à cet instant. « Ce soir » disparaît une fois la nuit
- * passée ; « Sam. matin » vise le samedi du jour même tant que la matinée n'est
- * pas finie, sinon le samedi suivant.
+ * Les sept prochains jours. Le jour même n'est proposé que s'il reste une
+ * soirée à jouer : il part de 18 h, ou de maintenant s'il est plus tard, et
+ * s'appelle « Ce soir ». Les jours suivants couvrent la journée entière.
  */
-export function availabilitySlots(now: Date = new Date()): Slot[] {
+export function availabilitySlots(now: Date = new Date(), jours: number = AVAILABILITY_DAYS): Slot[] {
   const out: Slot[] = [];
 
-  // Ce soir : de 18 h (ou de maintenant s'il est plus tard) jusqu'à minuit.
-  if (now.getHours() < 24 && now.getHours() >= 0) {
-    const finSoir = a(now, 1, 0);
-    const debutSoir = now.getHours() >= SOIR_DEBUT ? new Date(now) : a(now, 0, SOIR_DEBUT);
-    if (debutSoir.getTime() < finSoir.getTime() && now.getHours() >= JOURNEE_DEBUT - 2) {
-      out.push({ key: 'tonight', label: 'Ce soir', start: debutSoir, end: finSoir });
+  for (let i = 0; out.length < jours && i <= jours; i++) {
+    if (i === 0) {
+      // Entre minuit et 6 h, « ce soir » n'a plus de sens : la soirée est passée.
+      if (now.getHours() < JOURNEE_DEBUT - 2) continue;
+      const debut = now.getHours() >= SOIR_DEBUT ? new Date(now) : a(now, 0, SOIR_DEBUT);
+      const fin = a(now, 1, 0);
+      if (debut.getTime() >= fin.getTime()) continue;
+      out.push({ key: cle(now), label: 'Ce soir', start: debut, end: fin });
+      continue;
     }
+    const debut = a(now, i, JOURNEE_DEBUT);
+    out.push({
+      key: cle(debut),
+      label: i === 1 ? 'Demain' : `${JOURS_COURTS[debut.getDay()]} ${debut.getDate()}`,
+      start: debut,
+      end: a(now, i + 1, 0),
+    });
   }
-
-  out.push({ key: 'tomorrow', label: 'Demain', start: a(now, 1, JOURNEE_DEBUT), end: a(now, 2, 0) });
-
-  // Samedi matin : aujourd'hui si on est samedi avant 13 h, sinon le prochain.
-  const jour = now.getDay();                 // 0 = dimanche, 6 = samedi
-  const estSamedi = jour === 6;
-  const matinPasse = estSamedi && now.getHours() >= MATIN_FIN;
-  const versSamedi = estSamedi && !matinPasse ? 0 : ((6 - jour + 7) % 7) || 7;
-  out.push({
-    key: 'saturday', label: 'Sam. matin',
-    start: a(now, versSamedi, JOURNEE_DEBUT),
-    end: a(now, versSamedi, MATIN_FIN),
-  });
 
   return out;
 }
 
-/** Le créneau d'une clé, ou `null` s'il n'est plus proposé à cette heure-ci. */
+/** Le créneau d'une clé, ou `null` s'il n'est plus proposé. */
 export function slotFromKey(key: SlotKey, now: Date = new Date()): Slot | null {
   return availabilitySlots(now).find(s => s.key === key) ?? null;
 }
 
-const SLOT_SHORT: Record<SlotKey, string> = { tonight: 'ce soir', tomorrow: 'demain', saturday: 'samedi matin' };
+const memeJour = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 
-/** « ce soir » / « demain » / « samedi matin » — pour une phrase (« 3 joueurs dispos demain »). */
-export function slotShortLabel(key: SlotKey): string {
-  return SLOT_SHORT[key];
+/** « ce soir » / « demain » / « samedi » — pour une phrase (« 3 joueurs dispos samedi »). */
+export function slotShortLabel(slot: Slot, now: Date = new Date()): string {
+  if (memeJour(slot.start, now)) return 'ce soir';
+  if (memeJour(slot.start, new Date(now.getTime() + 86_400_000))) return 'demain';
+  return JOURS_MINUSCULE[slot.start.getDay()];
 }
 
 /** « Dispos ce soir » — titre de la carte du même nom, selon le créneau affiché. */
-export function slotTitle(key: SlotKey): string {
-  return `Dispos ${slotShortLabel(key)}`;
+export function slotTitle(slot: Slot, now: Date = new Date()): string {
+  return `Dispos ${slotShortLabel(slot, now)}`;
 }
 
 const heure = (d: Date) => (d.getHours() === 0 ? 'minuit' : `${d.getHours()}h${d.getMinutes() ? String(d.getMinutes()).padStart(2, '0') : ''}`);
-const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
-/** « Ce soir · 18h – minuit », « Samedi · 8h – 13h ». */
+/** « Ce soir · 18h – minuit », « Samedi · 8h – minuit ». */
 export function slotLabel(slot: Slot, now: Date = new Date()): string {
-  const memeJour = slot.start.toDateString() === now.toDateString();
-  const demain = slot.start.toDateString() === new Date(now.getTime() + 86_400_000).toDateString();
-  const jour = slot.key === 'tonight' || (memeJour && slot.start.getHours() >= SOIR_DEBUT)
-    ? 'Ce soir'
-    : demain ? 'Demain' : JOURS[slot.start.getDay()];
+  const demain = memeJour(slot.start, new Date(now.getTime() + 86_400_000));
+  const jour = memeJour(slot.start, now) ? 'Ce soir' : demain ? 'Demain' : JOURS[slot.start.getDay()];
   return `${jour} · ${heure(slot.start)} – ${heure(slot.end)}`;
 }
 
@@ -105,16 +114,18 @@ export interface AvailabilityRow {
   player?: { id: string; name: string; elo_score: number; avatar_path?: string | null; member_number?: number | null } | null;
 }
 
-/** Tolérance : l'heure a pu avancer entre la déclaration et l'affichage. */
-const PROCHE_MS = 90 * 60_000;
-
-/** Ce créneau est-il déjà déclaré parmi mes dispos ? */
+/**
+ * Ce créneau est-il déjà déclaré parmi mes dispos ?
+ *
+ * La comparaison se fait au JOUR, pas à l'heure près : « ce soir » commence à
+ * 18 h ou à l'heure qu'il est, donc une dispo déclarée à 18 h ne se
+ * reconnaissait plus à 20 h quand on comparait les horaires.
+ */
 export function isSlotActive(slot: Slot, mine: Pick<AvailabilityRow, 'slot_start' | 'slot_end'>[]): boolean {
+  const jour = slot.start.toDateString();
   return mine.some(r => {
-    const s = Date.parse(r.slot_start);
-    const e = Date.parse(r.slot_end);
-    if (Number.isNaN(s) || Number.isNaN(e)) return false;
-    return Math.abs(s - slot.start.getTime()) < PROCHE_MS && Math.abs(e - slot.end.getTime()) < PROCHE_MS;
+    const s = new Date(r.slot_start);
+    return !Number.isNaN(s.getTime()) && s.toDateString() === jour;
   });
 }
 
@@ -159,14 +170,16 @@ export async function declareAvailability(playerId: string, slot: Slot): Promise
   if (error && !MANQUE(error)) throw error;
 }
 
-/** Retirer un créneau déclaré. */
+/** Retirer un jour déclaré — tout ce qui a été posé sur ce jour-là. */
 export async function clearAvailability(playerId: string, slot: Slot): Promise<void> {
+  const debutJour = new Date(slot.start.getFullYear(), slot.start.getMonth(), slot.start.getDate());
+  const finJour = new Date(debutJour.getTime() + 86_400_000);
   const { error } = await supabase
     .from('availability')
     .delete()
     .eq('player_id', playerId)
-    .gte('slot_start', new Date(slot.start.getTime() - PROCHE_MS).toISOString())
-    .lte('slot_start', new Date(slot.start.getTime() + PROCHE_MS).toISOString());
+    .gte('slot_start', debutJour.toISOString())
+    .lt('slot_start', finJour.toISOString());
   if (error && !MANQUE(error)) throw error;
 }
 

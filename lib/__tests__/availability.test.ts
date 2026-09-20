@@ -1,18 +1,30 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
-  availabilitySlots, slotLabel, isSlotActive, slotFromKey, AVAILABILITY_TTL_DAYS,
+  availabilitySlots, slotLabel, isSlotActive, slotFromKey, AVAILABILITY_TTL_DAYS, AVAILABILITY_DAYS,
   slotShortLabel, slotTitle, missingPlayers, circleVisibilityLabel,
 } from '../availability';
 
 // Jeudi 17 septembre 2026, 9 h (heure locale du téléphone).
 const jeudi9h = new Date(2026, 8, 17, 9, 0, 0);
 
-describe('availabilitySlots — les trois créneaux proposés dans le header', () => {
-  it('propose Ce soir, Demain et le prochain samedi matin', () => {
+describe('availabilitySlots — la ligne des sept prochains jours', () => {
+  it('propose sept jours, à partir de ce soir', () => {
     const s = availabilitySlots(jeudi9h);
-    expect(s.map(x => x.key)).toEqual(['tonight', 'tomorrow', 'saturday']);
-    expect(s.map(x => x.label)).toEqual(['Ce soir', 'Demain', 'Sam. matin']);
+    expect(s).toHaveLength(AVAILABILITY_DAYS);
+    expect(s.map(x => x.label)).toEqual(['Ce soir', 'Demain', 'Sam. 19', 'Dim. 20', 'Lun. 21', 'Mar. 22', 'Mer. 23']);
+  });
+
+  it('la clé d\'un créneau est son jour, pas un mot-clé', () => {
+    const s = availabilitySlots(jeudi9h);
+    expect(s[0].key).toBe('2026-09-17');
+    expect(s[2].key).toBe('2026-09-19');
+  });
+
+  it('le dimanche est proposé — c\'était le trou des trois pastilles', () => {
+    const dim = availabilitySlots(jeudi9h).find(x => x.start.getDay() === 0);
+    expect(dim).toBeTruthy();
+    expect(dim!.start.getDate()).toBe(20);
   });
 
   it('« Ce soir » va de 18 h à minuit, aujourd\'hui', () => {
@@ -26,16 +38,19 @@ describe('availabilitySlots — les trois créneaux proposés dans le header', (
   it('après 18 h, « Ce soir » part de maintenant — pas d\'un créneau déjà entamé', () => {
     const jeudi20h30 = new Date(2026, 8, 17, 20, 30, 0);
     const [ce] = availabilitySlots(jeudi20h30);
+    expect(ce.label).toBe('Ce soir');
     expect(ce.start.getHours()).toBe(20);
     expect(ce.start.getMinutes()).toBe(30);
   });
 
-  it('passé minuit, « Ce soir » disparaît : on propose Demain et samedi', () => {
+  it('au milieu de la nuit, « Ce soir » disparaît et la liste reste pleine', () => {
     const vendredi1h = new Date(2026, 8, 18, 1, 0, 0);
-    expect(availabilitySlots(vendredi1h).map(x => x.key)).toEqual(['tomorrow', 'saturday']);
+    const s = availabilitySlots(vendredi1h);
+    expect(s[0].label).toBe('Demain');
+    expect(s).toHaveLength(AVAILABILITY_DAYS);
   });
 
-  it('« Demain » couvre toute la journée de demain', () => {
+  it('un jour entier va de 8 h à minuit', () => {
     const demain = availabilitySlots(jeudi9h)[1];
     expect(demain.start.getDate()).toBe(18);
     expect(demain.start.getHours()).toBe(8);
@@ -43,88 +58,102 @@ describe('availabilitySlots — les trois créneaux proposés dans le header', (
     expect(demain.end.getHours()).toBe(0);
   });
 
-  it('un samedi, « Sam. matin » est aujourd\'hui ; un dimanche, c\'est samedi prochain', () => {
-    const samedi7h = new Date(2026, 8, 19, 7, 0, 0);
-    const sam = availabilitySlots(samedi7h).find(x => x.key === 'saturday')!;
-    expect(sam.start.getDate()).toBe(19);
-    expect(sam.start.getHours()).toBe(8);
-    expect(sam.end.getHours()).toBe(13);
-
-    const dimanche = new Date(2026, 8, 20, 10, 0, 0);
-    const sam2 = availabilitySlots(dimanche).find(x => x.key === 'saturday')!;
-    expect(sam2.start.getDate()).toBe(26);
+  it('les jours se suivent sans trou ni doublon', () => {
+    const cles = availabilitySlots(jeudi9h).map(x => x.key);
+    expect(new Set(cles).size).toBe(cles.length);
+    expect(cles).toEqual([
+      '2026-09-17', '2026-09-18', '2026-09-19', '2026-09-20',
+      '2026-09-21', '2026-09-22', '2026-09-23',
+    ]);
   });
 
-  it('un samedi après-midi, le créneau du matin est passé : on vise samedi prochain', () => {
-    const samedi15h = new Date(2026, 8, 19, 15, 0, 0);
-    const sam = availabilitySlots(samedi15h).find(x => x.key === 'saturday')!;
-    expect(sam.start.getDate()).toBe(26);
+  it('on peut demander moins de jours', () => {
+    expect(availabilitySlots(jeudi9h, 3)).toHaveLength(3);
   });
 });
 
 describe('slotLabel — la phrase sous un joueur dispo', () => {
-  it('dit le jour et l\'heure, sans jargon', () => {
+  it('nomme le jour et les heures', () => {
     const s = availabilitySlots(jeudi9h);
     expect(slotLabel(s[0], jeudi9h)).toBe('Ce soir · 18h – minuit');
     expect(slotLabel(s[1], jeudi9h)).toBe('Demain · 8h – minuit');
-    expect(slotLabel(s[2], jeudi9h)).toBe('Samedi · 8h – 13h');
+    expect(slotLabel(s[2], jeudi9h)).toBe('Samedi · 8h – minuit');
+    expect(slotLabel(s[3], jeudi9h)).toBe('Dimanche · 8h – minuit');
   });
 });
 
-describe('isSlotActive — une dispo déjà déclarée retrouve sa pastille', () => {
+describe('isSlotActive — retrouver mes jours déjà déclarés', () => {
   const s = availabilitySlots(jeudi9h);
-  it('reconnaît une dispo enregistrée pour le même créneau', () => {
-    expect(isSlotActive(s[0], [{ slot_start: s[0].start.toISOString(), slot_end: s[0].end.toISOString() }])).toBe(true);
-    expect(isSlotActive(s[1], [{ slot_start: s[0].start.toISOString(), slot_end: s[0].end.toISOString() }])).toBe(false);
+
+  it('reconnaît un créneau déclaré', () => {
+    const mine = [{ slot_start: s[0].start.toISOString(), slot_end: s[0].end.toISOString() }];
+    expect(isSlotActive(s[0], mine)).toBe(true);
+    expect(isSlotActive(s[1], mine)).toBe(false);
   });
-  it('tolère quelques minutes d\'écart (l\'heure a avancé depuis la déclaration)', () => {
-    const presque = new Date(s[0].start.getTime() + 20 * 60_000).toISOString();
-    expect(isSlotActive(s[0], [{ slot_start: presque, slot_end: s[0].end.toISOString() }])).toBe(true);
+
+  it('reste vrai quand l\'heure a avancé dans la soirée', () => {
+    // Déclaré à 18 h ; on regarde l'écran à 21 h, « Ce soir » part de 21 h.
+    const declare = [{ slot_start: new Date(2026, 8, 17, 18, 0, 0).toISOString(), slot_end: new Date(2026, 8, 18, 0, 0, 0).toISOString() }];
+    const plusTard = availabilitySlots(new Date(2026, 8, 17, 21, 0, 0))[0];
+    expect(isSlotActive(plusTard, declare)).toBe(true);
+  });
+
+  it('ignore une date illisible', () => {
+    expect(isSlotActive(s[0], [{ slot_start: 'nawak', slot_end: 'nawak' }])).toBe(false);
+  });
+
+  it('aucune dispo → aucun créneau actif', () => {
+    expect(isSlotActive(s[0], [])).toBe(false);
   });
 });
 
-describe('slotFromKey — retrouver un créneau par sa clé', () => {
-  it('rend le créneau du jour, ou null s\'il n\'est plus proposé', () => {
-    expect(slotFromKey('tonight', jeudi9h)?.label).toBe('Ce soir');
-    expect(slotFromKey('tonight', new Date(2026, 8, 18, 1, 0, 0))).toBe(null);
+describe('slotFromKey — retrouver un créneau par son jour', () => {
+  it('rend le créneau si le jour est encore proposé', () => {
+    expect(slotFromKey('2026-09-17', jeudi9h)?.label).toBe('Ce soir');
+    expect(slotFromKey('2026-09-20', jeudi9h)?.label).toBe('Dim. 20');
   });
-});
-
-describe('durée de vie', () => {
-  it('une dispo ne traîne pas : elle expire au bout de quelques jours', () => {
-    expect(AVAILABILITY_TTL_DAYS).toBeLessThanOrEqual(8);
+  it('rend null pour un jour hors de la ligne', () => {
+    expect(slotFromKey('2026-09-17', new Date(2026, 8, 18, 1, 0, 0))).toBe(null);
+    expect(slotFromKey('2026-10-30', jeudi9h)).toBe(null);
   });
 });
 
 describe('slotShortLabel / slotTitle — libellés de la carte Dispos', () => {
-  it('donne une forme courte par créneau', () => {
-    expect(slotShortLabel('tonight')).toBe('ce soir');
-    expect(slotShortLabel('tomorrow')).toBe('demain');
-    expect(slotShortLabel('saturday')).toBe('samedi matin');
+  const s = availabilitySlots(jeudi9h);
+
+  it('dit ce soir, demain, puis nomme le jour', () => {
+    expect(slotShortLabel(s[0], jeudi9h)).toBe('ce soir');
+    expect(slotShortLabel(s[1], jeudi9h)).toBe('demain');
+    expect(slotShortLabel(s[2], jeudi9h)).toBe('samedi');
+    expect(slotShortLabel(s[3], jeudi9h)).toBe('dimanche');
   });
-  it('« Dispos {créneau} » pour le titre de carte', () => {
-    expect(slotTitle('tonight')).toBe('Dispos ce soir');
-    expect(slotTitle('saturday')).toBe('Dispos samedi matin');
+
+  it('le titre de la carte suit le créneau affiché', () => {
+    expect(slotTitle(s[0], jeudi9h)).toBe('Dispos ce soir');
+    expect(slotTitle(s[3], jeudi9h)).toBe('Dispos dimanche');
   });
 });
 
-describe('missingPlayers — combien il manque pour former une partie à 4', () => {
-  it('me compte comme un des 4', () => {
+describe('missingPlayers — combien il en manque pour jouer', () => {
+  it('quatre joueurs font une partie, moi compris', () => {
     expect(missingPlayers(0)).toBe(3);
-    expect(missingPlayers(2)).toBe(1);
     expect(missingPlayers(3)).toBe(0);
-  });
-  it('ne descend jamais sous 0 (plus de 4 dispos)', () => {
-    expect(missingPlayers(6)).toBe(0);
+    expect(missingPlayers(5)).toBe(0);
   });
 });
 
 describe('circleVisibilityLabel — qui voit ma dispo', () => {
-  it('invite à suivre des joueurs quand je n\'ai encore personne', () => {
+  it('sans ami, invite à en suivre', () => {
     expect(circleVisibilityLabel(0)).toMatch(/Suis des joueurs/);
   });
-  it('accorde singulier/pluriel', () => {
+  it('au singulier comme au pluriel', () => {
     expect(circleVisibilityLabel(1)).toBe('Ton ami le voit tout de suite.');
     expect(circleVisibilityLabel(6)).toBe('Tes 6 amis le voient tout de suite.');
+  });
+});
+
+describe('durée de vie d\'une dispo', () => {
+  it('couvre la ligne des sept jours', () => {
+    expect(AVAILABILITY_TTL_DAYS).toBeGreaterThan(AVAILABILITY_DAYS);
   });
 });

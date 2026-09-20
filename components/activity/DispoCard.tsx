@@ -2,7 +2,7 @@
 // cercle (mes amis — le mercato « joueurs de mon niveau » viendra à l'étape
 // suivante), s'est déclaré libre sur le créneau le plus proche.
 import { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts, formatPadelLevel } from '../../lib/theme';
 import { Icon } from '../community/icons';
@@ -67,7 +67,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
     notifyPlayers({
       playerIds: friendIds,
       title: `${playerName} cherche à jouer`,
-      body: `Dispo ${slotShortLabel(slot.key)} — tape pour te déclarer aussi.`,
+      body: `Dispo ${slotShortLabel(slot)} — tape pour te déclarer aussi.`,
       data: { type: 'availability' },
     });
   };
@@ -79,7 +79,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: calm ? 12 : 10 }}>
         <Icon name="clock" size={15} color={Colors.textPrimary} stroke={2} />
         <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6, flexShrink: 1 }}>
-          {slotTitle(slot.key)}
+          {slotTitle(slot)}
         </Text>
       </View>
 
@@ -101,11 +101,16 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginTop: 4, lineHeight: 17 }}>
             Dis quand tu es libre : tes amis le voient tout de suite. C'est comme ça que les parties se montent.
           </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginHorizontal: -14, marginTop: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 14, gap: 8 }}
+          >
             {availabilitySlots().map(s => (
               <Chip key={s.key} label={s.label} on={isSlotActive(s, mine)} onPress={() => onToggleSlot(s)} pill />
             ))}
-          </View>
+          </ScrollView>
           <TouchableOpacity onPress={prevenirCercle} activeOpacity={0.85} disabled={friendIds.length === 0}
             style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 10, opacity: friendIds.length === 0 ? 0.5 : 1 }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>Prévenir mon cercle</Text>
@@ -143,7 +148,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: 12, color: Colors.textSecondary }}>
-              {othersCount} joueur{othersCount > 1 ? 's' : ''} dispo{othersCount > 1 ? 's' : ''} {slotShortLabel(slot.key)}
+              {othersCount} joueur{othersCount > 1 ? 's' : ''} dispo{othersCount > 1 ? 's' : ''} {slotShortLabel(slot)}
             </Text>
             {othersCount > PREVIEW_ROWS ? (
               <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}>
@@ -164,7 +169,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
             <TouchableOpacity onPress={() => router.push('/(tabs)/lobby?create=1' as any)} activeOpacity={0.85}
               style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>
-                Créer la partie · {slotShortLabel(slot.key)}
+                Créer la partie · {slotShortLabel(slot)}
               </Text>
             </TouchableOpacity>
           )}

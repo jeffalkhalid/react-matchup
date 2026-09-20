@@ -240,12 +240,19 @@ export default function ActiviteTab() {
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, letterSpacing: 0.8, textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>
               TU ES DISPO QUAND ?
             </Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              {availabilitySlots().map(s => {
+            {/* Sept jours qui défilent : « Ce soir » et « Demain » sont plus
+                larges que les autres, ils portent un mot au lieu d'une date. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginHorizontal: -16, marginTop: 8 }}
+              contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+            >
+              {availabilitySlots(today).map(s => {
                 const on = isSlotActive(s, myAvailability);
                 return (
                   <TouchableOpacity key={s.key} onPress={() => toggleSlot(s)} activeOpacity={0.85} style={{
-                    flex: 1, borderRadius: 999, paddingVertical: 11, alignItems: 'center',
+                    borderRadius: 999, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center',
                     backgroundColor: on ? Colors.brand : 'transparent',
                     borderWidth: 1.5, borderColor: on ? Colors.brand : 'rgba(255,255,255,0.28)',
                   }}>
@@ -253,7 +260,7 @@ export default function ActiviteTab() {
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
             <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginTop: 10, textAlign: 'center' }}>
               {circleVisibilityLabel(friends.length)}
             </Text>
@@ -306,7 +313,7 @@ export default function ActiviteTab() {
                   friendIds={friends.map(f => f.id)}
                   iAmInWeekend={iAmInWeekend}
                   onDeclare={() => {
-                    const samedi = availabilitySlots(today).find(s => s.key === 'saturday');
+                    const samedi = availabilitySlots(today).find(s => s.start.getDay() === 6);
                     if (samedi) toggleSlot(samedi);
                   }}
                 />
