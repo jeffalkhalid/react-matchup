@@ -11,8 +11,12 @@
 //    sans personne pour en parler. Elles défilent maintenant toutes, la plus
 //    proche d'abord, et la plus serrée porte la pastille « LE CHOC ».
 //
-// Fond sombre : entre les cartes blanches du dessus et du dessous, le bloc se
-// noyait.
+// Les cartes sont sombres et posées à même l'écran, sous un titre de section
+// comme les autres rails : enfermées dans un conteneur sombre, elles
+// formaient un pavé noir au milieu de l'onglet.
+//
+// On ne pronostique pas son propre match : l'issue dépend de nous, et
+// « 58 % pensent que tu vas perdre » n'est pas une conversation.
 //
 // Données : table `predictions` (supabase/migrations/predictions.sql). Tant
 // qu'elle n'existe pas, les cartes s'affichent mais le vote répond qu'il
@@ -25,7 +29,7 @@ import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import {
   predictionWindow, fetchClashCandidates, fetchPredictionsForGames, castPrediction,
-  clashesToPredict, tightestClashId, countPredictions, predictionShare, agreementLabel,
+  clashesToPredict, tightestClashId, withoutMyGames, countPredictions, predictionShare, agreementLabel,
   clashWhenLabel, type Clash, type ClashPlayer, type PredictionCounts, type Team,
 } from '../../lib/weekendClash';
 
@@ -93,7 +97,8 @@ export function FeaturedClash({ myId, onContent }: {
     (async () => {
       const { start, end } = predictionWindow();
       const parties = await fetchClashCandidates(start, end);
-      const liste = clashesToPredict(parties);
+      // On ne pronostique pas son propre match : l'issue dépend de nous.
+      const liste = withoutMyGames(clashesToPredict(parties), myId);
       const avis = await fetchPredictionsForGames(liste.map(c => c.gameId));
       if (!vivant) return;
       const c: Record<string, PredictionCounts> = {};
@@ -142,20 +147,19 @@ export function FeaturedClash({ myId, onContent }: {
   const votes = clashes.filter(c => mine[c.gameId]).length;
 
   return (
-    <View style={{ backgroundColor: SOMBRE, borderRadius: 18, paddingVertical: 16, marginTop: 14 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16 }}>
-        <Icon name="swords" size={15} color={Colors.brand} stroke={2} />
-        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: '#FFFFFF', paddingRight: 6 }}>
+    <View style={{ marginTop: 18 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+        <Icon name="swords" size={15} color={Colors.textPrimary} stroke={2} />
+        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
           Qui va gagner ?
         </Text>
-        <View style={{ backgroundColor: TUILE, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: BLANC_60 }}>
-            {`${votes}/${clashes.length} PRONOSTIQUÉ${votes > 1 ? 'S' : ''}`}
+        <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.textSecondary }}>
+            {`${votes}/${clashes.length} pronostiqué${votes > 1 ? 's' : ''}`}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
-
-      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: BLANC_60, marginTop: 6, paddingHorizontal: 16 }}>
+      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 2, marginBottom: 10 }}>
         Tape la paire que tu vois gagner. Ça n'engage rien.
       </Text>
 
@@ -164,16 +168,15 @@ export function FeaturedClash({ myId, onContent }: {
         showsHorizontalScrollIndicator={false}
         snapToInterval={LARGEUR + 10}
         decelerationRate="fast"
-        style={{ marginTop: 12 }}
+        style={{ marginHorizontal: -16 }}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
       >
         {clashes.map(clash => {
           const c = counts[clash.gameId] ?? { A: 0, B: 0, total: 0 };
           const mien = mine[clash.gameId] ?? null;
-          const jeJoue = clash.players.some(p => p.id === myId);
           const estLeChoc = clash.gameId === choc;
           return (
-            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)', padding: 12 }}>
+            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, padding: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                 {estLeChoc ? (
                   <View style={{ backgroundColor: Colors.brand, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
@@ -186,9 +189,9 @@ export function FeaturedClash({ myId, onContent }: {
               </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Cote players={clash.teamA} choisi={mien === 'A'} onPress={() => !jeJoue && voter(clash, 'A')} />
+                <Cote players={clash.teamA} choisi={mien === 'A'} onPress={() => voter(clash, 'A')} />
                 <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: BLANC_45 }}>VS</Text>
-                <Cote players={clash.teamB} choisi={mien === 'B'} onPress={() => !jeJoue && voter(clash, 'B')} />
+                <Cote players={clash.teamB} choisi={mien === 'B'} onPress={() => voter(clash, 'B')} />
               </View>
 
               {mien ? (
@@ -203,7 +206,7 @@ export function FeaturedClash({ myId, onContent }: {
                 </View>
               ) : (
                 <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 10, textAlign: 'center' }}>
-                  {jeJoue ? 'Tu joues ce match — à toi de leur donner tort.' : `${c.total} avis pour l'instant`}
+                  {c.total > 0 ? `${c.total} avis pour l'instant` : "Personne ne s'est encore prononcé"}
                 </Text>
               )}
             </View>
@@ -212,17 +215,10 @@ export function FeaturedClash({ myId, onContent }: {
       </ScrollView>
 
       {erreur ? (
-        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: BLANC_60, marginTop: 10, paddingHorizontal: 16, textAlign: 'center' }}>
+        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textSecondary, marginTop: 10, textAlign: 'center' }}>
           {erreur}
         </Text>
       ) : null}
-
-      <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}
-        style={{ alignSelf: 'center', marginTop: 12 }}>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.brand, textDecorationLine: 'underline' }}>
-          Voir toutes les parties →
-        </Text>
-      </TouchableOpacity>
     </View>
   );
 }

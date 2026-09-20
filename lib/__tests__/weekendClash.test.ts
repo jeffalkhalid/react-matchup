@@ -3,7 +3,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   teamOf, teamLevel, pickClash, countPredictions, predictionShare, agreementLabel,
   clashWhenLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
-  clashesToPredict, tightestClashId,
+  clashesToPredict, tightestClashId, withoutMyGames,
   type ClashGame, type ClashPlayer, type Team,
 } from '../weekendClash';
 
@@ -300,5 +300,29 @@ describe('clashesToPredict — plusieurs matchs, pas un seul', () => {
   it('aucune partie → liste vide et aucun choc', () => {
     expect(clashesToPredict([], now)).toEqual([]);
     expect(tightestClashId([])).toBeNull();
+  });
+});
+
+describe('withoutMyGames — on ne pronostique pas son propre match', () => {
+  const futur = (jours: number) => new Date(now.getTime() + jours * 86_400_000).toISOString();
+
+  it('retire la partie où je joue', () => {
+    const liste = clashesToPredict([
+      partie('sansMoi', futur(1), [1500, 1500, 1500, 1500]),
+      partie('avecMoi', futur(2), [1500, 1500, 1500, 1500]),
+    ], now);
+    liste.find(c => c.gameId === 'avecMoi')!.players[0].id = 'moi';
+    expect(withoutMyGames(liste, 'moi').map(c => c.gameId)).toEqual(['sansMoi']);
+  });
+
+  it('peu importe le camp où je suis', () => {
+    const liste = clashesToPredict([partie('g', futur(1), [1500, 1500, 1500, 1500])], now);
+    liste[0].players[3].id = 'moi';
+    expect(withoutMyGames(liste, 'moi')).toEqual([]);
+  });
+
+  it('ne retire rien si je ne joue nulle part', () => {
+    const liste = clashesToPredict([partie('g', futur(1), [1500, 1500, 1500, 1500])], now);
+    expect(withoutMyGames(liste, 'inconnu')).toHaveLength(1);
   });
 });

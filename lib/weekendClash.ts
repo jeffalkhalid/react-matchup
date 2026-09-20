@@ -97,6 +97,15 @@ export function clashesToPredict(games: ClashGame[], now: Date = new Date(), lim
     .slice(0, limit);
 }
 
+/**
+ * Retire les parties où JE joue : on ne pronostique pas son propre match.
+ * L'issue dépend de moi, et « 58 % pensent que tu vas perdre » n'est pas une
+ * conversation, c'est un jugement.
+ */
+export function withoutMyGames(clashes: Clash[], myId: string): Clash[] {
+  return clashes.filter(c => !c.players.some(p => p.id === myId));
+}
+
 /** L'identifiant de la partie la plus serrée — elle porte la pastille « LE CHOC ». */
 export function tightestClashId(clashes: Clash[]): string | null {
   let best: Clash | null = null;
