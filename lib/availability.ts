@@ -129,6 +129,30 @@ export function isSlotActive(slot: Slot, mine: Pick<AvailabilityRow, 'slot_start
   });
 }
 
+/**
+ * L'heure à proposer quand on monte une partie sur ce créneau : le début du
+ * créneau, ou la prochaine demi-heure s'il a déjà commencé. On ne propose
+ * jamais une heure passée — ni « dans cinq minutes », le temps d'y aller.
+ */
+export function suggestedStart(slot: Slot, now: Date = new Date()): Date {
+  const plancher = new Date(now.getTime() + 60 * 60_000);
+  const base = slot.start.getTime() >= plancher.getTime() ? new Date(slot.start) : plancher;
+  // Arrondi à la demi-heure supérieure : l'assistant ne propose que celles-là.
+  const min = base.getMinutes();
+  base.setMinutes(min === 0 || min === 30 ? min : min < 30 ? 30 : 60, 0, 0);
+  return base;
+}
+
+/** « 2026-09-20 » et « 19:30 » — les deux champs de l'assistant de création. */
+export function slotFormFields(slot: Slot, now: Date = new Date()): { day: string; time: string } {
+  const d = suggestedStart(slot, now);
+  const deuxCh = (n: number) => String(n).padStart(2, '0');
+  return {
+    day: `${d.getFullYear()}-${deuxCh(d.getMonth() + 1)}-${deuxCh(d.getDate())}`,
+    time: `${deuxCh(d.getHours())}:${deuxCh(d.getMinutes())}`,
+  };
+}
+
 /** Combien de joueurs manquent pour former une partie (4), moi inclus. */
 export function missingPlayers(othersDispoCount: number): number {
   return Math.max(0, 4 - (othersDispoCount + 1));

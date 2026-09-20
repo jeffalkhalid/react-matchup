@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   availabilitySlots, slotLabel, isSlotActive, slotFromKey, AVAILABILITY_TTL_DAYS, AVAILABILITY_DAYS,
-  slotShortLabel, slotTitle, missingPlayers, circleVisibilityLabel,
+  slotShortLabel, slotTitle, missingPlayers, circleVisibilityLabel, suggestedStart, slotFormFields,
 } from '../availability';
 
 // Jeudi 17 septembre 2026, 9 h (heure locale du téléphone).
@@ -155,5 +155,35 @@ describe('circleVisibilityLabel — qui voit ma dispo', () => {
 describe('durée de vie d\'une dispo', () => {
   it('couvre la ligne des sept jours', () => {
     expect(AVAILABILITY_TTL_DAYS).toBeGreaterThan(AVAILABILITY_DAYS);
+  });
+});
+
+describe('suggestedStart / slotFormFields — l\'heure proposée à la création', () => {
+  it('avant le créneau, propose son début', () => {
+    const [ce] = availabilitySlots(jeudi9h);           // ce soir, 18 h
+    expect(suggestedStart(ce, jeudi9h).getHours()).toBe(18);
+  });
+
+  it('créneau déjà commencé : au moins une heure devant soi', () => {
+    const maintenant = new Date(2026, 8, 17, 20, 10, 0);
+    const [ce] = availabilitySlots(maintenant);
+    const propose = suggestedStart(ce, maintenant);
+    expect(propose.getTime()).toBeGreaterThanOrEqual(maintenant.getTime() + 60 * 60_000);
+  });
+
+  it('toujours sur une demi-heure ronde', () => {
+    const maintenant = new Date(2026, 8, 17, 20, 10, 0);
+    const [ce] = availabilitySlots(maintenant);
+    expect([0, 30]).toContain(suggestedStart(ce, maintenant).getMinutes());
+  });
+
+  it('rend les deux champs de l\'assistant', () => {
+    const [ce] = availabilitySlots(jeudi9h);
+    expect(slotFormFields(ce, jeudi9h)).toEqual({ day: '2026-09-17', time: '18:00' });
+  });
+
+  it('un jour entier commence à 8 h', () => {
+    const demain = availabilitySlots(jeudi9h)[1];
+    expect(slotFormFields(demain, jeudi9h)).toEqual({ day: '2026-09-18', time: '08:00' });
   });
 });

@@ -13,11 +13,12 @@ import { AmbassadorRing } from '../ambassador/primitives';
 import { notifyPlayers } from '../../lib/notify';
 import {
   availabilitySlots, isSlotActive, slotTitle, slotShortLabel, slotLabel, missingPlayers,
-  fetchCircleAvailability, type AvailabilityRow, type Slot,
+  fetchCircleAvailability, slotFormFields, type AvailabilityRow, type Slot,
 } from '../../lib/availability';
 
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 14 } as const;
-const PREVIEW_ROWS = 2;
+/** Trois places à pourvoir à côté de la mienne. */
+const MAX_SELECTION = 3;
 
 export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmbassador, friendIds, mine, onToggleSlot }: {
   playerId: string;
@@ -33,6 +34,8 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [circle, setCircle] = useState<AvailabilityRow[]>([]);
+  /** Les joueurs cochés : c'est avec eux que la partie se monte. */
+  const [choisis, setChoisis] = useState<string[]>([]);
 
   // Le créneau affiché : le plus proche dans le temps, quel que soit celui
   // que le joueur a coché (voir captures 11/12 — la carte reste « Dispos ce
@@ -50,6 +53,18 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
   const iAmIn = isSlotActive(slot, mine);
   const othersCount = circle.length;
   const missing = missingPlayers(othersCount);
+  const basculer = (id: string) => setChoisis(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id)
+      : prev.length >= MAX_SELECTION ? prev : [...prev, id]);
+
+  // « Monter la partie avec eux » : le créneau et les joueurs cochés partent
+  // dans l'assistant de création, qui s'ouvre déjà rempli.
+  const monterLaPartie = () => {
+    const { day, time } = slotFormFields(slot);
+    const ids = choisis.join(',');
+    router.push(`/(tabs)/lobby?create=1&inv=${ids}&invd=${day}&invt=${time}` as any);
+  };
+
   const rows = [
     ...(iAmIn ? [{
       id: playerId, name: playerName, elo: null as number | null,
@@ -60,7 +75,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
       elo: r.player?.elo_score ?? null, avatarPath: r.player?.avatar_path ?? null,
       ambassador: isAmbassador(r.player), isMe: false,
     })),
-  ].slice(0, PREVIEW_ROWS);
+  ];
 
   const prevenirCercle = () => {
     if (friendIds.length === 0) return;
@@ -124,8 +139,20 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
                 <PlayerAvatar name={r.name} path={r.avatarPath} size={40} backgroundColor={Colors.brand} textColor={Colors.primary}
                   fontFamily={Fonts.uiBlack} fontSize={14} initialsMax={2} />
               );
+              const coche = choisis.includes(r.id);
+              const plein = !coche && choisis.length >= MAX_SELECTION;
               return (
-              <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TouchableOpacity
+                key={r.id}
+                activeOpacity={r.isMe || plein ? 1 : 0.7}
+                disabled={r.isMe || plein}
+                onPress={() => basculer(r.id)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                  borderRadius: 12, padding: 6, marginHorizontal: -6,
+                  backgroundColor: coche ? 'rgba(255,193,26,0.14)' : 'transparent',
+                  opacity: plein ? 0.5 : 1,
+                }}>
                 {r.ambassador ? <AmbassadorRing size={40} radius={20}>{avatar}</AmbassadorRing> : avatar}
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -140,8 +167,18 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
                   </View>
                   <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted, marginTop: 1 }}>{slotLabel(slot)}</Text>
                 </View>
-                <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: Colors.textMuted }}>à confirmer</Text>
-              </View>
+                {r.isMe ? (
+                  <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: Colors.textMuted }}>c'est toi</Text>
+                ) : (
+                  <View style={{
+                    width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: coche ? Colors.brand : 'transparent',
+                    borderWidth: coche ? 0 : 1.5, borderColor: Colors.border,
+                  }}>
+                    {coche ? <Icon name="check" size={13} color={Colors.primary} stroke={3} /> : null}
+                  </View>
+                )}
+              </TouchableOpacity>
               );
             })}
           </View>
@@ -150,29 +187,31 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: 12, color: Colors.textSecondary }}>
               {othersCount} joueur{othersCount > 1 ? 's' : ''} dispo{othersCount > 1 ? 's' : ''} {slotShortLabel(slot)}
             </Text>
-            {othersCount > PREVIEW_ROWS ? (
-              <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}>
-                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.brandDeep, textDecorationLine: 'underline' }}>
-                  Voir les {othersCount} →
-                </Text>
+            {choisis.length > 0 ? (
+              <TouchableOpacity onPress={() => setChoisis([])} hitSlop={8}>
+                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.textSecondary }}>Tout décocher</Text>
               </TouchableOpacity>
             ) : null}
           </View>
 
-          {missing > 0 ? (
-            <View style={{ backgroundColor: '#F5F5F4', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
-              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textMuted }}>
-                {`Encore ${missing} joueur${missing > 1 ? 's' : ''} et la partie se monte (il en faut 4)`}
-              </Text>
-            </View>
-          ) : (
-            <TouchableOpacity onPress={() => router.push('/(tabs)/lobby?create=1' as any)} activeOpacity={0.85}
-              style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
-              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>
-                Créer la partie · {slotShortLabel(slot)}
-              </Text>
-            </TouchableOpacity>
-          )}
+          {/* Cocher des joueurs monte la partie AVEC eux : ils arrivent
+              pré-invités dans l'assistant, sur ce créneau. Rien coché, on
+              peut quand même ouvrir la création. */}
+          <TouchableOpacity onPress={monterLaPartie} activeOpacity={0.85}
+            style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>
+              {choisis.length > 0
+                ? `Monter la partie avec ${choisis.length === 1 ? 'lui' : 'eux'} · ${slotShortLabel(slot)}`
+                : `Monter la partie · ${slotShortLabel(slot)}`}
+            </Text>
+          </TouchableOpacity>
+          {choisis.length === 0 ? (
+            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 8 }}>
+              {missing > 0
+                ? `Coche les joueurs à inviter — il en faut 3 en plus de toi.`
+                : `Coche jusqu'à 3 joueurs : ils arriveront déjà invités.`}
+            </Text>
+          ) : null}
         </>
       )}
     </View>

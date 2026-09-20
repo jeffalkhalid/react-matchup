@@ -2569,7 +2569,7 @@ export default function LobbyScreen() {
   const { player } = usePlayer();
   const { reload: reloadNotifs } = useNotificationCount();
   const insets = useSafeAreaInsets();
-  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, backToDefi, rematch: rematchParam, targeted, b0, b0n, b0e, b0a, b1, b1n, b1e, b1a } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; backToDefi?: string; rematch?: string; targeted?: string; b0?: string; b0n?: string; b0e?: string; b0a?: string; b1?: string; b1n?: string; b1e?: string; b1a?: string }>();
+  const { create, tab: tabParam, challenge, 'with': withId, pname, pelo, pside, openValidation, gameId: gameIdParam, backToDefi, rematch: rematchParam, targeted, b0, b0n, b0e, b0a, b1, b1n, b1e, b1a, inv, invd, invt } = useLocalSearchParams<{ create?: string; tab?: string; challenge?: string; with?: string; pname?: string; pelo?: string; pside?: string; openValidation?: string; gameId?: string; backToDefi?: string; rematch?: string; targeted?: string; b0?: string; b0n?: string; b0e?: string; b0a?: string; b1?: string; b1n?: string; b1e?: string; b1a?: string; inv?: string; invd?: string; invt?: string }>();
   const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>('explorer');
@@ -2667,6 +2667,8 @@ export default function LobbyScreen() {
   const [openDefiMode, setOpenDefiMode] = useState(false);
   const [rematchInvites, setRematchInvites] = useState<Partial<Record<'A1' | 'B0' | 'B1', { id: string; name: string; elo_score: number }>> | null>(null);
   const [rematchGameType, setRematchGameType] = useState<'Compétitif' | 'Amical' | 'Défi' | undefined>(undefined);
+  // Créneau pré-rempli venu de « Monter la partie » (onglet Activité).
+  const [preFilledSlot, setPreFilledSlot] = useState<{ day?: string; time?: string }>({});
   const [targetedInvites, setTargetedInvites] = useState<Partial<Record<'B0' | 'B1', { id: string; name: string; elo_score: number; avatar_path?: string | null }>> | null>(null);
   const [targetedMode, setTargetedMode] = useState(false);
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
@@ -2999,6 +3001,28 @@ export default function LobbyScreen() {
         setTargetedMode(true);
         setOpenDefiMode(true);
         router.setParams({ create: undefined, challenge: undefined, targeted: undefined, b0: undefined, b0n: undefined, b0e: undefined, b0a: undefined, b1: undefined, b1n: undefined, b1e: undefined, b1a: undefined });
+      } else if (inv) {
+        // « Monter la partie » depuis les dispos : jusqu'à trois joueurs
+        // pré-invités. On ne passe que les identifiants — les noms et niveaux
+        // viennent de la base, ils sont à jour et rien à encoder dans l'URL.
+        const ids = inv.split(',').filter(Boolean).slice(0, 3);
+        const jour = invd, heure = invt;
+        router.setParams({ create: undefined, inv: undefined, invd: undefined, invt: undefined });
+        (async () => {
+          const { data } = await supabase
+            .from('players').select('id, name, elo_score, avatar_path').in('id', ids);
+          const parId = new Map(((data ?? []) as any[]).map(p => [p.id as string, p]));
+          const slots = ['A1', 'B0', 'B1'] as const;
+          const invites: Record<string, any> = {};
+          ids.forEach((id, i) => {
+            const p = parId.get(id);
+            if (p && slots[i]) invites[slots[i]] = { id: p.id, name: p.name, elo_score: p.elo_score, avatar_path: p.avatar_path ?? null };
+          });
+          setRematchInvites(Object.keys(invites).length > 0 ? invites : null);
+          setPreFilledSlot({ day: jour, time: heure });
+          setShowCreate(true);
+        })();
+        return;
       } else if (challenge === '1' && withId) {
         setChallengeWith({
           id: withId,
@@ -4045,13 +4069,15 @@ export default function LobbyScreen() {
 
       <CreateWizard
         visible={showCreate}
-        onClose={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTargetedInvites(null); setTargetedMode(false); }}
-        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTargetedInvites(null); setTargetedMode(false); setTab('upcoming'); }}
+        onClose={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTargetedInvites(null); setTargetedMode(false); setPreFilledSlot({}); }}
+        onPublishedDone={() => { setShowCreate(false); setChallengeWith(null); setOpenDefiMode(false); setRematchInvites(null); setRematchGameType(undefined); setTargetedInvites(null); setTargetedMode(false); setPreFilledSlot({}); setTab('upcoming'); }}
         onPublish={handlePublish}
         player={player}
         initialGameType={rematchGameType ?? (challengeWith || openDefiMode ? 'Défi' : undefined)}
         initialInvite={challengeWith ?? undefined}
         initialInvites={targetedInvites ?? rematchInvites ?? undefined}
+        initialDay={preFilledSlot.day}
+        initialTime={preFilledSlot.time}
         targeted={targetedMode}
       />
 
