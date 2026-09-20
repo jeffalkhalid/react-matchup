@@ -9,6 +9,7 @@
 // Le haut du fichier est PUR et testé (lib/__tests__/mercato.test.ts) ;
 // le bas parle à la base.
 import { supabase } from './supabase';
+import { isMissingRelation } from './pgErrors';
 import { eloToLevel } from './theme';
 
 /** Samedi 8 h → dimanche minuit du week-end à venir (ou en cours). */
@@ -107,8 +108,7 @@ export function mercatoBandLabel(myElo?: number | null): string | null {
 
 // ─── Base de données ──────────────────────────────────────────────────────
 
-const MANQUE = (e: { code?: string; message?: string } | null) =>
-  !!e && (e.code === '42P01' || /does not exist/i.test(e.message ?? ''));
+const MANQUE = isMissingRelation;
 
 /** La ville d'un club, telle qu'enregistrée dans `clubs` (sous-titre du header). */
 export async function fetchClubCity(club: string): Promise<string | null> {

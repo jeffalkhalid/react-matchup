@@ -116,7 +116,7 @@ export function FeaturedMercato({ myId, myElo, myClubs, friendIds, iAmInWeekend,
                 }}>
                   <TouchableOpacity activeOpacity={0.85} onPress={() => router.push(`/player/${r.playerId}` as any)}>
                     {r.memberNumber != null
-                      ? <AmbassadorRing size={62} radius={31} showStar={false} surface={Colors.bgCard}>{photo}</AmbassadorRing>
+                      ? <AmbassadorRing size={62} radius={31} showStar={false} surface={Colors.bgCard} align="center">{photo}</AmbassadorRing>
                       : photo}
                   </TouchableOpacity>
                   <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textPrimary }}>

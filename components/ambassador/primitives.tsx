@@ -64,13 +64,20 @@ export function LaurelMedallion({
  * pour détourer le badge (même principe que CreatorCrownBadge.ringColor).
  */
 export function AmbassadorRing({
-  size, radius, surface = '#FFFFFF', showStar = true, children,
+  size, radius, surface = '#FFFFFF', showStar = true, align = 'flex-start', children,
 }: {
   size: number; radius: number; surface?: string; showStar?: boolean;
+  /**
+   * Alignement transversal de l'anneau. `flex-start` par défaut — la valeur
+   * historique, qui convient aux lignes de liste. Dans une colonne centrée,
+   * elle l'emporte sur le `alignItems: 'center'` du parent et décale la photo
+   * vers la gauche : passer `center`.
+   */
+  align?: 'flex-start' | 'center';
   children: React.ReactNode;
 }) {
   return (
-    <View style={{ position: 'relative', alignSelf: 'flex-start' }}>
+    <View style={{ position: 'relative', alignSelf: align }}>
       <View style={{
         borderWidth: 1.5, borderColor: 'rgba(232,169,6,0.9)',
         borderRadius: Math.min(radius + 3.5, (size + 7) / 2), padding: 2,

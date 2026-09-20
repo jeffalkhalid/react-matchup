@@ -63,7 +63,7 @@ export function CircleBilansRail({ bilans, myId, onOpen }: {
                     le mois dit quoi. Le reste se lit en ouvrant. */}
                 <View style={{ flex: 1, padding: 12, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                   {b.memberNumber != null
-                    ? <AmbassadorRing size={68} radius={34} showStar={false} surface="transparent">{photo}</AmbassadorRing>
+                    ? <AmbassadorRing size={68} radius={34} showStar={false} surface="transparent" align="center">{photo}</AmbassadorRing>
                     : photo}
                   <Text
                     numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}

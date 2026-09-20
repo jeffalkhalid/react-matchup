@@ -167,7 +167,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
                     opacity: plein ? 0.5 : 1,
                   }}>
                   <View>
-                    {r.ambassador ? <AmbassadorRing size={52} radius={26} surface={Colors.bgCard}>{avatar}</AmbassadorRing> : avatar}
+                    {r.ambassador ? <AmbassadorRing size={52} radius={26} surface={Colors.bgCard} align="center">{avatar}</AmbassadorRing> : avatar}
                     {coche ? (
                       <View style={{
                         position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10,

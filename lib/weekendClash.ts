@@ -14,6 +14,7 @@
 // Le bas parle à la base : table `predictions`
 // (supabase/migrations/predictions.sql), qui peut ne pas exister encore.
 import { supabase } from './supabase';
+import { isMissingRelation } from './pgErrors';
 import { eloToLevel } from './theme';
 import { occupiesSpot } from './games';
 
@@ -234,8 +235,7 @@ export function clashWhenLabel(c: Pick<ClashGame, 'matchDate' | 'location'>, now
 
 // ─── Base de données ──────────────────────────────────────────────────────
 
-const MANQUE = (e: { code?: string; message?: string } | null) =>
-  !!e && (e.code === '42P01' || /does not exist/i.test(e.message ?? ''));
+const MANQUE = isMissingRelation;
 
 /**
  * Les parties complètes d'un intervalle, avec leurs quatre joueurs.
@@ -300,8 +300,9 @@ export async function castPrediction(gameId: string, playerId: string, team: Tea
     .from('predictions')
     .upsert({ game_id: gameId, player_id: playerId, team }, { onConflict: 'game_id,player_id' });
   if (!error) return null;
-  if (MANQUE(error)) return 'Les pronostics ne sont pas encore ouverts.';
+  if (MANQUE(error)) return "Les pronostics ne sont pas encore activés côté serveur.";
   if (/commencé/i.test(error.message ?? '')) return 'Le match a commencé, les pronostics sont fermés.';
+  if (/row-level security|policy/i.test(error.message ?? '')) return "Ce pronostic a été refusé : tu n'as pas le droit de l'écrire.";
   console.warn('[weekendClash] cast', error);
   return "Ton pronostic n'a pas pu être enregistré.";
 }

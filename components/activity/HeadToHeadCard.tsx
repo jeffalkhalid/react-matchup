@@ -118,7 +118,7 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 14 }}>
             <View style={{ alignItems: 'center', width: 72 }}>
               {myIsAmbassador
-                ? <AmbassadorRing size={54} radius={27} showStar={false} surface={SOMBRE}>{photo(myName, myAvatarPath, false)}</AmbassadorRing>
+                ? <AmbassadorRing size={54} radius={27} showStar={false} surface={SOMBRE} align="center">{photo(myName, myAvatarPath, false)}</AmbassadorRing>
                 : photo(myName, myAvatarPath, false)}
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: '#FFFFFF', marginTop: 7 }}>Toi</Text>
             </View>
@@ -140,7 +140,7 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
               style={{ alignItems: 'center', width: 72 }}
             >
               {rivalVu?.memberNumber != null
-                ? <AmbassadorRing size={54} radius={27} showStar={false} surface={SOMBRE}>{photo(rivalVu.name, rivalVu.avatarPath, true)}</AmbassadorRing>
+                ? <AmbassadorRing size={54} radius={27} showStar={false} surface={SOMBRE} align="center">{photo(rivalVu.name, rivalVu.avatarPath, true)}</AmbassadorRing>
                 : photo(rivalVu?.name ?? prenom, rivalVu?.avatarPath, true)}
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: '#FFFFFF', marginTop: 7 }}>{prenom}</Text>
             </TouchableOpacity>

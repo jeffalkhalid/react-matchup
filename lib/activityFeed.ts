@@ -1,6 +1,7 @@
 // Couche données du feed Activité enrichi (sections au-dessus du fil amis).
 // Toutes les fonctions dégradent proprement si une RPC/colonne manque.
 import { supabase } from './supabase';
+import { isMissingRelation } from './pgErrors';
 import { freeSpots } from './games';
 import type { ActivityEvent } from '../types';
 
@@ -171,8 +172,8 @@ export function removalPrompt(kind: Exclude<ActivityRemoval, null>): { title: st
 export async function removeMyActivity(eventId: string): Promise<string | null> {
   const { error } = await supabase.rpc('delete_my_activity', { p_event_id: eventId });
   if (!error) return null;
+  if (isMissingRelation(error)) return "Le retrait n'est pas encore activé côté serveur.";
   const m = (error.message ?? '').toLowerCase();
-  if (m.includes('could not find') || m.includes('does not exist')) return "Le retrait n'est pas encore activé.";
   if (m.includes('introuvable')) return "Cette publication n'est plus là.";
   if (m.includes('ne peut pas')) return 'Cette publication ne peut pas être retirée.';
   console.warn('[activityFeed] removeMyActivity', error);

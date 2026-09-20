@@ -12,6 +12,7 @@
 // Une dispo n'est qu'une intention : elle ne réserve rien, elle dit au cercle
 // « je peux jouer ce jour-là ». Elle expire toute seule.
 import { supabase } from './supabase';
+import { isMissingRelation } from './pgErrors';
 
 /** Au-delà, une dispo est effacée par le ménage automatique. */
 export const AVAILABILITY_TTL_DAYS = 8;
@@ -169,8 +170,7 @@ export function circleVisibilityLabel(friendsCount: number): string {
 // La table n'existe peut-être pas encore (migration non appliquée) : toutes
 // ces fonctions se taisent alors, et le hub affiche l'état « pas de dispo ».
 
-const MANQUE = (e: { code?: string; message?: string } | null) =>
-  !!e && (e.code === '42P01' || /relation .*availability.* does not exist/i.test(e.message ?? ''));
+const MANQUE = isMissingRelation;
 
 /** Mes dispos à venir. */
 export async function fetchMyAvailability(playerId: string): Promise<AvailabilityRow[]> {
