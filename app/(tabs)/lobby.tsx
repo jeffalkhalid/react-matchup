@@ -44,7 +44,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking } from '../../lib/games';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { openInMaps } from '../../lib/maps';
@@ -821,6 +821,18 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
           {(game as any).gender_pref === 'men'   && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Hommes</CardTag>}
           {(game as any).gender_pref === 'women' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Femmes</CardTag>}
           {(game as any).gender_pref === 'mixed' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Mixte</CardTag>}
+          {/* Terrain réservé ou non : réglé à la création, jamais montré
+              ensuite — on arrivait au club sans savoir s'il fallait réserver.
+              Libellé court pour ne pas faire passer la ligne à la suivante. */}
+          {(() => {
+            const b = variant !== 'history' ? courtBooking(game as any) : null;
+            if (!b) return null;
+            return b.booked
+              ? <CardTag bg="rgba(255,193,26,0.16)" fg={Colors.brandDeep} s={ps}
+                  icon={<Icon name="check" size={10 * ps} color={Colors.brandDeep} stroke={3} />}>{b.short}</CardTag>
+              : <CardTag bg={Colors.bgCard} fg={Colors.textSecondary} border={Colors.border} s={ps}
+                  icon={<Icon name="clock" size={10 * ps} color={Colors.textSecondary} stroke={2.4} />}>{b.short}</CardTag>;
+          })()}
           <View style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             {myStatusPill}
             {placesPill}

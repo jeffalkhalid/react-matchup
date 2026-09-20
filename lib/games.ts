@@ -231,6 +231,25 @@ export function gameEloRange(game: {
 }
 
 /**
+ * Le terrain est-il déjà réservé ? Réglé à la création (« J'ai une
+ * réservation ») et jusqu'ici jamais affiché ensuite : les joueurs
+ * découvraient sur place qu'il fallait encore réserver.
+ *
+ * `null` quand la partie ne le dit pas (créée avant le réglage) : mieux vaut
+ * ne rien afficher que d'affirmer « à réserver » à tort.
+ *
+ * Source UNIQUE : la carte du lobby et la fiche du match lisent la même
+ * règle, et le libellé reste court pour tenir sur la ligne de pastilles.
+ */
+export function courtBooking(game: { has_reservation?: boolean | null }): { booked: boolean; short: string; long: string } | null {
+  const v = game?.has_reservation;
+  if (v == null) return null;
+  return v
+    ? { booked: true,  short: 'Réservé',    long: 'Terrain réservé' }
+    : { booked: false, short: 'À réserver', long: 'Terrain à réserver' };
+}
+
+/**
  * Le libellé de niveau d'une partie : « 3.1 – 4.1 », une seule valeur quand
  * les bornes se confondent, `null` sans fourchette connue.
  *
