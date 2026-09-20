@@ -238,12 +238,18 @@ export default function ActiviteTab() {
           <Image source={require('../../assets/auth/splash-wordmark.png')} style={{ width: 100, height: 22, marginLeft: -7 }} resizeMode="contain" />
         </View>
         <View style={{ alignItems: 'center' }}>
+          {/* « Qui joue ? » était un titre de calendrier pour un onglet qui
+              parle de la communauté — et il annonçait la logistique, qui vit
+              dans le Lobby. On revient au nom d'avant. */}
           <Text numberOfLines={2}
             style={{ fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, color: Colors.textOnDark, letterSpacing: 0.2, textAlign: 'center', paddingRight: 5 }}>
-            Qui <Text style={{ color: Colors.brand }}>joue</Text> ?
+            L'<Text style={{ color: Colors.brand }}>Activité</Text>
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>
+            Partage tes matchs, anime ta communauté
           </Text>
           {headerSubtitle ? (
-            <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, fontWeight: '600', color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>{headerSubtitle}</Text>
+            <Text style={{ fontSize: 11, fontFamily: Fonts.uiSemi, fontWeight: '600', color: 'rgba(255,255,255,0.45)', marginTop: 2, textAlign: 'center' }}>{headerSubtitle}</Text>
           ) : null}
         </View>
 
