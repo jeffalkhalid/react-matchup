@@ -19,6 +19,7 @@ import {
 } from '../../lib/activityFeed';
 import { getRecapMonths, getMonthlyRecap, type MonthlyRecap } from '../../lib/bilan';
 import { fetchCircleBilans, type CircleBilan } from '../../lib/bilanCircle';
+import { featuredBlock, featuredDayLabel, fetchClubCity, weekendWindow } from '../../lib/hubFeatured';
 import { WeekStatsCard } from '../../components/activity/WeekStatsCard';
 import { WeekendRail } from '../../components/activity/WeekendRail';
 import { MomentOverlay } from '../../components/activity/MomentOverlay';
@@ -28,6 +29,9 @@ import { DiscoveryRail } from '../../components/activity/DiscoveryRail';
 import { FriendsRanking } from '../../components/activity/FriendsRanking';
 import { BilanBanner } from '../../components/activity/BilanBanner';
 import { CircleBilansRail } from '../../components/activity/CircleBilansRail';
+import { FeaturedTaulier } from '../../components/activity/FeaturedTaulier';
+import { FeaturedMercato } from '../../components/activity/FeaturedMercato';
+import { FeaturedPantheon } from '../../components/activity/FeaturedPantheon';
 import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
 import { InvitationCard } from '../../components/activity/InvitationCard';
@@ -42,6 +46,18 @@ import type { SocialPlayer, ActivityEvent } from '../../types';
 // fenêtre.
 function isBilanWindow(now = new Date()): boolean {
   return now.getDate() <= 7;
+}
+
+// En-tête commun des trois blocs « À la une » (handoff §4).
+function FeaturedHeader({ day }: { day: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16 }}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.brand }} />
+      <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 9.5, letterSpacing: 1.4, color: Colors.textMuted }}>
+        {`À LA UNE · ${day}`}
+      </Text>
+    </View>
+  );
 }
 
 export default function ActiviteTab() {
@@ -67,6 +83,8 @@ export default function ActiviteTab() {
   // Les bilans des joueurs suivis, hors fil (le fil s'arrête à 14 jours).
   const [circleBilans, setCircleBilans] = useState<CircleBilan[]>([]);
   const [openBilanId, setOpenBilanId] = useState<string | null>(null);
+  // Ville du club favori — sous-titre du header et Panthéon du dimanche.
+  const [city, setCity] = useState<string | null>(null);
   // Partage in-app d'un match (compositeur Moment).
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<StoryMatchData | null>(null);
@@ -78,17 +96,20 @@ export default function ActiviteTab() {
     if (!myId) return;
     setLoading(true);
     (async () => {
-      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months, cb] = await Promise.all([
+      const monClub = player?.clubs?.[0] ?? '';
+      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months, cb, ct] = await Promise.all([
         getFriends(myId), getActivityFeed(myId, 50, true), getHiddenPlayerIds(myId),
         getWeekStats(myId), fetchMyAvailability(myId),
         getMyMatchCount(myId), getMyGameCount(myId),
         player ? getSuggestions(player, 8) : Promise.resolve([] as SocialPlayer[]),
         getOpenGames(myId, 8), getRecapMonths(myId), fetchCircleBilans(myId, 12),
+        monClub ? fetchClubCity(monClub) : Promise.resolve(null),
       ]);
       setFriends(fr); setFeed(fd); setHiddenIds(hidden);
       setWeek(w); setMyAvailability(av);
       setTotalMatches(mc); setTotalGames(gc);
-      setSuggestions(sugg); setOpenGames(og); setCircleBilans(cb); setLoading(false); setReady(true);
+      setSuggestions(sugg); setOpenGames(og); setCircleBilans(cb); setCity(ct);
+      setLoading(false); setReady(true);
       const latest = months[0];
       setBilanRecap(latest ? await getMonthlyRecap(myId, latest.key) : null);
     })();
@@ -181,10 +202,18 @@ export default function ActiviteTab() {
     e => e.player_id !== myId && Date.now() - new Date(e.created_at).getTime() <= 7 * 24 * 60 * 60 * 1000,
   ).length;
   const state: ActivityState = deriveActivityState({ totalMatches, totalGames, friendsCount: friends.length, recentFriendActivity });
-  // Ville (club faute de mieux — voir rapport) + date du jour, en toutes lettres.
+  // Ville du club favori (le club lui-même tant qu'on ne la connaît pas) +
+  // date du jour, en toutes lettres.
   const today = new Date();
+  const monClub = player?.clubs?.[0] ?? '';
   const dateEnLettres = today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-  const headerSubtitle = [player?.clubs?.[0], dateEnLettres].filter(Boolean).join(' · ');
+  const headerSubtitle = [city ?? monClub, dateEnLettres].filter(Boolean).join(' · ');
+  // « À la une » : un bloc par jour. Le mercato a besoin de savoir si je me
+  // suis déjà déclaré sur le week-end visé.
+  const featured = featuredBlock(today);
+  const weekend = weekendWindow(today);
+  const iAmInWeekend = myAvailability.some(r =>
+    Date.parse(r.slot_start) < weekend.end.getTime() && Date.parse(r.slot_end) > weekend.start.getTime());
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -262,6 +291,28 @@ export default function ActiviteTab() {
             </>
           ) : (
             <>
+              {/* À la une : un seul sujet par jour — le club en début de
+                  semaine, le week-end au milieu, le bilan de la semaine le
+                  dimanche (handoff §4). */}
+              <FeaturedHeader day={featuredDayLabel(today)} />
+              {featured === 'taulier' ? (
+                <FeaturedTaulier club={monClub} myId={myId} onOpenPlayer={(id) => router.push(`/player/${id}` as any)} />
+              ) : featured === 'mercato' ? (
+                <FeaturedMercato
+                  myId={myId}
+                  myElo={player?.elo_score}
+                  myClubs={player?.clubs}
+                  friendIds={friends.map(f => f.id)}
+                  iAmInWeekend={iAmInWeekend}
+                  onDeclare={() => {
+                    const samedi = availabilitySlots(today).find(s => s.key === 'saturday');
+                    if (samedi) toggleSlot(samedi);
+                  }}
+                />
+              ) : (
+                <FeaturedPantheon city={city ?? ''} myId={myId} />
+              )}
+
               {/* Bilan : seulement en tout début de mois, sinon il n'a plus
                   grand-chose à dire (README « Ce qui est retiré »). */}
               {isBilanWindow() ? <BilanBanner recap={bilanRecap} onPress={() => router.push("/bilan/last" as any)} /> : null}
