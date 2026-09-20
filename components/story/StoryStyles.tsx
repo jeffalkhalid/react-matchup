@@ -10,7 +10,7 @@ import {
   setsWon, setsLost, initialsOf, StoryPlayer, StoryMatchData, InviteData,
   StoryMatchOpts, StoryToggles, DEFAULT_TOGGLES,
 } from './storyTheme';
-import { Wordmark, Avatars, BigSets, Invite } from './StoryPrimitives';
+import { Wordmark, Avatars, BigSets, Invite, Qr } from './StoryPrimitives';
 import { MemberCard } from '../ambassador/MemberCard';
 import { DarkGoldBackdrop } from '../ambassador/backdrops';
 import { AMB, AMBASSADOR_LIMIT } from '../../lib/ambassador';
@@ -480,11 +480,93 @@ const CardMember = forwardRef<View, StoryCardProps>(({ player, width }, ref) => 
   );
 });
 
+/* ── CARTE MEMBRE, version CLAIRE (maquette 2026-09-20) ───────────── */
+// Même contenu que la version sombre, posé sur un fond crème bordé d'un filet
+// or : la carte noire ressort au milieu au lieu de se fondre dans le fond.
+// Les libellés sont encadrés de deux filets or, comme sur la maquette.
+const CREME = '#FCFAF5';
+const ENCRE = '#0A0A0A';
+
+/** Un libellé or entre deux filets — « CERCLE DES 100 », « Télécharge… ». */
+function FiletTitre({ s, children, size, letterSpacing, color = AMB.goldDeep, bold = true }: {
+  s: (n: number) => number; children: React.ReactNode;
+  size: number; letterSpacing?: number; color?: string; bold?: boolean;
+}) {
+  const filet = <View style={{ flex: 1, height: s(2), backgroundColor: 'rgba(232,169,6,0.45)' }} />;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(28), alignSelf: 'stretch' }}>
+      {filet}
+      <Text style={{
+        fontFamily: bold ? Fonts.uiBlack : Fonts.uiExtraBold, fontSize: s(size),
+        letterSpacing: letterSpacing != null ? s(letterSpacing) : undefined, color, textAlign: 'center',
+      }}>
+        {children}
+      </Text>
+      {filet}
+    </View>
+  );
+}
+
+const CardMemberLight = forwardRef<View, StoryCardProps>(({ player, invite, width }, ref) => {
+  const s = makeScale(width);
+  const H = (width * 16) / 9;
+  const n = player.memberNumber ?? 0;
+  const remaining = player.ambassadorsCount != null
+    ? Math.max(0, AMBASSADOR_LIMIT - player.ambassadorsCount)
+    : null;
+  return (
+    <View ref={ref} collapsable={false}
+      style={{ width, height: H, backgroundColor: CREME, overflow: 'hidden' }}>
+      {/* Filet or, en retrait des bords */}
+      <View style={{
+        position: 'absolute', top: s(26), left: s(26), right: s(26), bottom: s(26),
+        borderRadius: s(28), borderWidth: s(2), borderColor: 'rgba(232,169,6,0.4)',
+      }} />
+
+      <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: s(90), paddingVertical: s(92), justifyContent: 'space-between' }}>
+        <Wordmark s={s} light={false} h={72} />
+
+        <FiletTitre s={s} size={30} letterSpacing={7}>CERCLE DES 100</FiletTitre>
+
+        <Text
+          numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}
+          style={{ fontFamily: Fonts.uiBlack, fontSize: s(104), lineHeight: s(112), color: ENCRE, textAlign: 'center' }}>
+          J'y étais en premier.
+        </Text>
+
+        <MemberCard width={width * 0.78} name={player.name} number={n} issued={player.memberIssued ?? ''} compact />
+
+        {remaining != null && remaining > 0 ? (
+          <Text style={{
+            fontFamily: Fonts.ui, fontSize: s(38), lineHeight: s(56),
+            color: 'rgba(10,10,10,0.72)', textAlign: 'center', maxWidth: width * 0.72,
+          }}>
+            Il reste {remaining} place{remaining > 1 ? 's' : ''} au Cercle des 100 — rejoins-moi sur PagMatch.
+          </Text>
+        ) : <View />}
+
+        {/* La maquette montre les badges des stores ; l'app n'y est pas encore
+            publiée et on n'a pas le droit de dessiner ces badges nous-mêmes.
+            On met donc ce qui marche aujourd'hui : le QR et le lien. */}
+        <View style={{ alignItems: 'center', alignSelf: 'stretch', gap: s(26) }}>
+          <FiletTitre s={s} size={34} color={ENCRE}>Télécharge l'application</FiletTitre>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(28) }}>
+            {invite?.showQR !== false && invite?.qrValue ? <Qr value={invite.qrValue} size={s(150)} /> : null}
+            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: s(34), color: ENCRE }}>{invite?.link}</Text>
+          </View>
+        </View>
+
+        <FiletTitre s={s} size={26} letterSpacing={6} bold={false}>LE PADEL NOUS RAPPROCHE</FiletTitre>
+      </View>
+    </View>
+  );
+});
+
 export const STORY_REGISTRY: Record<StoryMode, Array<{ id: string; name: string }>> = {
   profil: [{ id: 'dark', name: 'Carte Noire' }, { id: 'trading', name: 'Trading Card' }, { id: 'editorial', name: 'Éditorial' }],
   match: [{ id: 'mhero', name: 'Score Hero' }, { id: 'mticket', name: 'Ticket' }, { id: 'mmin', name: 'Minimal' }],
   photo: [{ id: 'pmatch', name: 'Photo Match' }],
-  member: [{ id: 'member', name: 'Carte Membre' }],
+  member: [{ id: 'memberLight', name: 'Clair' }, { id: 'memberDark', name: 'Sombre' }],
 };
 
 const StoryCardV2 = forwardRef<View, StoryCardProps>(function StoryCardV2(props, ref) {
@@ -500,10 +582,12 @@ const StoryCardV2 = forwardRef<View, StoryCardProps>(function StoryCardV2(props,
     : styleId === 'mmin'
       ? <MinimalMatch width={width} match={match} invite={invite} opts={matchOpts} />
       : <ScoreHero width={width} match={match} invite={invite} opts={matchOpts} />;
-  else if (mode === 'member') content = <CardMember width={width} mode={mode} styleId={styleId} player={player} match={match} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />;
+  else if (mode === 'member') content = styleId === 'memberDark'
+    ? <CardMember width={width} mode={mode} styleId={styleId} player={player} match={match} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
+    : <CardMemberLight width={width} mode={mode} styleId={styleId} player={player} match={match} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />;
   else content = <PhotoMatch width={width} match={match} invite={invite} photoUri={photoUri} />;
   return <View ref={ref} collapsable={false}>{content}</View>;
 });
 
 export default StoryCardV2;
-export { CardDark, TradingCard, EditorialLight, ScoreHero, Ticket, MinimalMatch, PhotoMatch, CardMember };
+export { CardDark, TradingCard, EditorialLight, ScoreHero, Ticket, MinimalMatch, PhotoMatch, CardMember, CardMemberLight };
