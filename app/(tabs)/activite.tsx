@@ -36,6 +36,7 @@ import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
 import { InvitationCard } from '../../components/activity/InvitationCard';
 import { PostMatchVoteCard } from '../../components/activity/PostMatchVoteCard';
+import { HeadToHeadCard } from '../../components/activity/HeadToHeadCard';
 import StoryMatchPicker from '../../components/StoryMatchPicker';
 import type { StoryMatchData } from '../../components/story/storyTheme';
 import { track } from '../../lib/analytics';
@@ -329,8 +330,16 @@ export default function ActiviteTab() {
               />
               <InvitationCard playerId={myId} />
 
-              {/* Qu'est-ce qui s'est passé : le vote d'après-match remonté. */}
+              {/* Qu'est-ce qui s'est passé : le vote d'après-match remonté,
+                  puis le rival de la saison (il ne s'affiche qu'à partir de
+                  trois duels contre la même personne). */}
               <PostMatchVoteCard playerId={myId} />
+              <HeadToHeadCard
+                myId={myId}
+                myName={player.name}
+                myAvatarPath={player.avatar_path}
+                myIsAmbassador={isAmbassador(player)}
+              />
 
               <WeekStatsCard stats={week} />
               {player ? <FriendsRanking me={player} friends={friends} /> : null}
