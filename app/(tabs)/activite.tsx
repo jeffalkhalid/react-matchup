@@ -15,7 +15,8 @@ import {
 } from '../../lib/availability';
 import {
   getWeekStats, getOpenGames, getMyMatchCount, getMyGameCount, deriveActivityState,
-  pickMoments, shareMatchMoment, type WeekStats, type WeekendGame, type ActivityState,
+  pickMoments, shareMatchMoment, activityRemovalFor, removalPrompt, removeMyActivity,
+  type WeekStats, type WeekendGame, type ActivityState,
 } from '../../lib/activityFeed';
 import { getRecapMonths, getMonthlyRecap, type MonthlyRecap } from '../../lib/bilan';
 import { fetchCircleBilans, type CircleBilan } from '../../lib/bilanCircle';
@@ -155,6 +156,22 @@ export default function ActiviteTab() {
         catch { Alert.alert('Erreur', "Le signalement n'a pas pu être envoyé."); }
       } },
       { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  // Retirer une de MES publications. Ce qui se passe dépend de ce que c'est :
+  // un bilan s'efface, un moment perd sa mise en avant et sa légende — le
+  // match, lui, reste (lib/activityFeed.activityRemovalFor).
+  const removeActivity = (e: ActivityEvent) => {
+    const kind = activityRemovalFor(e as any, myId);
+    if (!kind) return;
+    const { title, message, action } = removalPrompt(kind);
+    Alert.alert(title, message, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: action, style: 'destructive', onPress: async () => {
+        const souci = await removeMyActivity(e.id);
+        if (souci) Alert.alert('Impossible', souci); else load();
+      } },
     ]);
   };
 
@@ -369,7 +386,7 @@ export default function ActiviteTab() {
                   </TouchableOpacity>
                 </View>
               ) : null}
-              <FeedList shown={shown} myId={myId} loading={loading} selName={selName} onReact={react} onReport={reportActivity} router={router} onOpen={(e) => setOpenMomentId(e.id)} />
+              <FeedList shown={shown} myId={myId} loading={loading} selName={selName} onReact={react} onReport={reportActivity} onRemove={removeActivity} router={router} onOpen={(e) => setOpenMomentId(e.id)} />
             </>
           )}
         </ScrollView>

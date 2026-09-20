@@ -13,12 +13,13 @@ import { headlineFor } from '../../lib/activityHeadline';
 import { AMB } from '../../lib/ambassador';
 import type { ActivityEvent, League } from '../../types';
 
-export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPressComments, onPressPlayer, onOpen, onDefi }: {
+export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemove, onPressComments, onPressPlayer, onOpen, onDefi }: {
   e: ActivityEvent;
   myId: string;
   onReact?: () => void;        // absent = réaction désactivée (ex: ses propres posts)
   onPressActor?: () => void;   // ouvre le profil de l'acteur
   onReport?: () => void;       // signaler l'activité (absent si c'est la mienne)
+  onRemove?: () => void;       // retirer MA publication (bilan ou moment partagé)
   onPressComments?: () => void; // ouvre la feuille de commentaires
   onPressPlayer?: (id: string) => void; // ouvre le profil d'un joueur de la carte de match
   onOpen?: () => void;          // tap sur le contenu → vue plein écran
@@ -72,8 +73,9 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
             </Text>
           </View>
         </TouchableOpacity>
-        {onReport ? (
-          <TouchableOpacity onPress={onReport} hitSlop={8} activeOpacity={0.7}
+        {onReport || onRemove ? (
+          <TouchableOpacity onPress={onReport ?? onRemove} hitSlop={8} activeOpacity={0.7}
+            accessibilityLabel={onReport ? 'Signaler' : 'Retirer ma publication'}
             style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 18, lineHeight: 18, color: Colors.textSecondary, marginTop: -4 }}>⋯</Text>
           </TouchableOpacity>
