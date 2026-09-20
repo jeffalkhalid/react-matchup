@@ -322,6 +322,7 @@ export default function ActiviteTab() {
               <DispoCard
                 playerId={myId}
                 playerName={player.name}
+                playerElo={player.elo_score}
                 playerAvatarPath={player.avatar_path}
                 playerIsAmbassador={isAmbassador(player)}
                 friendIds={friends.map(f => f.id)}

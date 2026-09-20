@@ -12,7 +12,7 @@ import { AMB, isAmbassador } from '../../lib/ambassador';
 import { AmbassadorRing } from '../ambassador/primitives';
 import { notifyPlayers } from '../../lib/notify';
 import {
-  availabilitySlots, isSlotActive, slotTitle, slotShortLabel, slotLabel, missingPlayers,
+  availabilitySlots, isSlotActive, slotTitle, slotShortLabel, missingPlayers,
   fetchCircleAvailability, slotFormFields, type AvailabilityRow, type Slot,
 } from '../../lib/availability';
 
@@ -20,9 +20,11 @@ const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1,
 /** Trois places à pourvoir à côté de la mienne. */
 const MAX_SELECTION = 3;
 
-export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmbassador, friendIds, mine, onToggleSlot }: {
+export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, playerIsAmbassador, friendIds, mine, onToggleSlot }: {
   playerId: string;
   playerName: string;
+  /** Mon niveau — ma carte porte la même pastille que les autres. */
+  playerElo?: number | null;
   playerAvatarPath?: string | null;
   playerIsAmbassador?: boolean;
   friendIds: string[];
@@ -67,7 +69,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
 
   const rows = [
     ...(iAmIn ? [{
-      id: playerId, name: playerName, elo: null as number | null,
+      id: playerId, name: playerName, elo: playerElo ?? null,
       avatarPath: playerAvatarPath ?? null, ambassador: !!playerIsAmbassador, isMe: true,
     }] : []),
     ...circle.map(r => ({
@@ -133,55 +135,63 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
         </>
       ) : (
         <>
-          <View style={{ gap: 12 }}>
+          {/* Des cartes qui défilent : on voit tout le monde d'un coup d'œil,
+              avec son niveau, et on coche d'un tap. La liste verticale ne
+              tenait que deux joueurs à l'écran. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginHorizontal: -14 }}
+            contentContainerStyle={{ paddingHorizontal: 14, gap: 10, paddingVertical: 2 }}
+          >
             {rows.map(r => {
-              const avatar = (
-                <PlayerAvatar name={r.name} path={r.avatarPath} size={40} backgroundColor={Colors.brand} textColor={Colors.primary}
-                  fontFamily={Fonts.uiBlack} fontSize={14} initialsMax={2} />
-              );
               const coche = choisis.includes(r.id);
               const plein = !coche && choisis.length >= MAX_SELECTION;
+              const avatar = (
+                <PlayerAvatar name={r.name} path={r.avatarPath} size={52} backgroundColor={Colors.brand} textColor={Colors.primary}
+                  fontFamily={Fonts.uiBlack} fontSize={18} initialsMax={2} />
+              );
               return (
-              <TouchableOpacity
-                key={r.id}
-                activeOpacity={r.isMe || plein ? 1 : 0.7}
-                disabled={r.isMe || plein}
-                onPress={() => basculer(r.id)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 10,
-                  borderRadius: 12, padding: 6, marginHorizontal: -6,
-                  backgroundColor: coche ? 'rgba(255,193,26,0.14)' : 'transparent',
-                  opacity: plein ? 0.5 : 1,
-                }}>
-                {r.ambassador ? <AmbassadorRing size={40} radius={20}>{avatar}</AmbassadorRing> : avatar}
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12.5, color: Colors.textPrimary, flexShrink: 1 }}>
-                      {r.isMe ? 'Toi' : r.name.split(' ')[0]}
-                    </Text>
-                    {r.elo != null ? (
-                      <View style={{ borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1 }}>
-                        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10.5, color: AMB.chipText }}>{formatPadelLevel(r.elo)}</Text>
+                <TouchableOpacity
+                  key={r.id}
+                  activeOpacity={r.isMe || plein ? 1 : 0.85}
+                  disabled={r.isMe || plein}
+                  onPress={() => basculer(r.id)}
+                  accessibilityLabel={r.isMe ? 'Toi' : `Inviter ${r.name.split(' ')[0]}`}
+                  style={{
+                    width: 104, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 8,
+                    alignItems: 'center', gap: 6,
+                    backgroundColor: coche ? 'rgba(255,193,26,0.14)' : Colors.bgCard,
+                    borderWidth: coche ? 1.5 : 1,
+                    borderColor: coche ? Colors.brand : Colors.border,
+                    opacity: plein ? 0.5 : 1,
+                  }}>
+                  <View>
+                    {r.ambassador ? <AmbassadorRing size={52} radius={26} surface={Colors.bgCard}>{avatar}</AmbassadorRing> : avatar}
+                    {coche ? (
+                      <View style={{
+                        position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10,
+                        backgroundColor: Colors.brand, borderWidth: 2, borderColor: Colors.bgCard,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Icon name="check" size={11} color={Colors.primary} stroke={3} />
                       </View>
                     ) : null}
                   </View>
-                  <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted, marginTop: 1 }}>{slotLabel(slot)}</Text>
-                </View>
-                {r.isMe ? (
-                  <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: Colors.textMuted }}>c'est toi</Text>
-                ) : (
-                  <View style={{
-                    width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: coche ? Colors.brand : 'transparent',
-                    borderWidth: coche ? 0 : 1.5, borderColor: Colors.border,
-                  }}>
-                    {coche ? <Icon name="check" size={13} color={Colors.primary} stroke={3} /> : null}
-                  </View>
-                )}
-              </TouchableOpacity>
+                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12.5, color: Colors.textPrimary }}>
+                    {r.isMe ? 'Toi' : r.name.split(' ')[0]}
+                  </Text>
+                  {r.elo != null ? (
+                    <View style={{ borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1 }}>
+                      <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10.5, color: AMB.chipText }}>{formatPadelLevel(r.elo)}</Text>
+                    </View>
+                  ) : (
+                    <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 10.5, color: Colors.textMuted }}>c'est toi</Text>
+                  )}
+                </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: 12, color: Colors.textSecondary }}>
