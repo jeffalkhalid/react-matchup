@@ -185,7 +185,11 @@ export default function ActiviteTab() {
   const liveMoment = openMomentId ? visibleFeed.find(e => e.id === openMomentId) ?? null : null;
   // Un mois, pas une semaine : avec peu de joueurs, une fenêtre de 7 jours
   // vide le rail et il n'y a plus rien à quoi réagir.
-  const moments = pickMoments(visibleFeed, myId, 8, 30);
+  //
+  // Les BILANS sont retirés d'ici : ils ont leur propre rail juste en dessous,
+  // et on voyait le même bilan deux fois de suite, dans deux habillages
+  // différents. « Ce qu'on a vécu » raconte des matchs, pas des mois.
+  const moments = pickMoments(visibleFeed, myId, 8, 30).filter(e => e.type !== 'bilan');
   const circleBilansShown = circleBilans.filter(b => !hiddenIds.has(b.playerId));
   const openBilan = openBilanId ? circleBilans.find(b => b.eventId === openBilanId) ?? null : null;
 
