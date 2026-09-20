@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   teamOf, teamLevel, pickClash, countPredictions, predictionShare, agreementLabel,
-  clashWhenLabel, clashReasonLabel, type ClashGame, type ClashPlayer, type Team,
+  clashWhenLabel, clashReasonLabel, predictionWindow, PREDICTION_DAYS,
+  type ClashGame, type ClashPlayer, type Team,
 } from '../weekendClash';
 
 const now = new Date(2026, 8, 20, 10, 0, 0); // dimanche 20 septembre 2026, 10 h
@@ -125,6 +126,21 @@ describe('pronostics — le décompte et les parts', () => {
   });
 });
 
+describe('predictionWindow — on ne se limite plus au week-end', () => {
+  it('part de maintenant et couvre deux semaines', () => {
+    const { start, end } = predictionWindow(now);
+    expect(start.getTime()).toBe(now.getTime());
+    expect(Math.round((end.getTime() - start.getTime()) / 86_400_000)).toBe(PREDICTION_DAYS);
+    expect(PREDICTION_DAYS).toBeGreaterThan(7);
+  });
+  it('une partie de la semaine prochaine entre dans la fenêtre', () => {
+    const { start, end } = predictionWindow(now);
+    const dans10Jours = new Date(now.getTime() + 10 * 86_400_000).getTime();
+    expect(dans10Jours).toBeGreaterThan(start.getTime());
+    expect(dans10Jours).toBeLessThan(end.getTime());
+  });
+});
+
 describe('libellés du choc', () => {
   it('donne le jour, l\'heure et le club', () => {
     expect(clashWhenLabel({ matchDate: '2026-09-20T18:00:00', location: 'Padel Art' })).toBe('Dim. 18h · Padel Art');
@@ -132,14 +148,19 @@ describe('libellés du choc', () => {
   it('garde les minutes quand il y en a', () => {
     expect(clashWhenLabel({ matchDate: '2026-09-20T18:30:00', location: null })).toBe('Dim. 18h30');
   });
+  it('au-delà d\'une semaine, la date complète est donnée', () => {
+    const loin = new Date(now.getTime() + 9 * 86_400_000);
+    const libelle = clashWhenLabel({ matchDate: loin.toISOString(), location: null }, now);
+    expect(libelle).toMatch(/\d+ [a-zéû.]+ \d+h/);
+  });
   it('date illisible → on retombe sur le club', () => {
     expect(clashWhenLabel({ matchDate: 'nawak', location: 'Padel Art' })).toBe('Padel Art');
   });
   it('le motif nomme la ville et l\'écart', () => {
     expect(clashReasonLabel({ gap: 0.08, city: 'Casablanca' }))
-      .toBe("L'écart de niveau le plus serré de Casablanca ce week-end (0.08).");
+      .toBe("L'écart de niveau le plus serré de Casablanca en ce moment (0.08).");
   });
   it('sans ville, la phrase reste correcte', () => {
-    expect(clashReasonLabel({ gap: 0.5, city: null })).toBe("L'écart de niveau le plus serré ce week-end (0.50).");
+    expect(clashReasonLabel({ gap: 0.5, city: null })).toBe("L'écart de niveau le plus serré en ce moment (0.50).");
   });
 });

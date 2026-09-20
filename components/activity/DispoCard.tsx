@@ -162,7 +162,7 @@ export function DispoCard({ playerId, playerName, playerAvatarPath, playerIsAmba
           {missing > 0 ? (
             <View style={{ backgroundColor: '#F5F5F4', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textMuted }}>
-                Il manque {missing} joueur{missing > 1 ? 's' : ''}
+                {`Encore ${missing} joueur${missing > 1 ? 's' : ''} et la partie se monte (il en faut 4)`}
               </Text>
             </View>
           ) : (

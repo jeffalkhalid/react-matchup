@@ -1,8 +1,13 @@
-// components/activity/FeaturedClash.tsx — « Le choc du week-end » (dimanche).
+// components/activity/FeaturedClash.tsx — « Le choc à venir ».
 //
-// La partie la plus serrée du week-end, et l'avis du reste du club (handoff
-// « Hub Activite » §4c, capture 10). Un pronostic n'engage rien : ni place,
-// ni ELO, ni notification. C'est une conversation, pas un pari.
+// La partie la plus serrée parmi celles à venir, et l'avis du reste du club
+// (handoff « Hub Activite » §4c, capture 10). Un pronostic n'engage rien : ni
+// place, ni ELO, ni notification. C'est une conversation, pas un pari.
+//
+// Écart assumé avec le handoff : il réservait ce bloc au week-end et au
+// dimanche. Essayé sur téléphone, on ne voyait jamais rien — la mécanique la
+// moins chère du lot était étouffée par sa fenêtre. Elle vaut pour toutes les
+// parties à venir, tous les jours.
 //
 // Données : table `predictions` (supabase/migrations/predictions.sql). Tant
 // qu'elle n'existe pas, la carte s'affiche mais le vote répond qu'il n'est
@@ -13,8 +18,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
-import { weekendWindow } from '../../lib/hubFeatured';
 import {
+  predictionWindow,
   fetchClashCandidates, fetchPredictions, castPrediction, pickClash,
   countPredictions, predictionShare, agreementLabel, clashWhenLabel, clashReasonLabel,
   type Clash, type ClashPlayer, type PredictionCounts, type Team,
@@ -74,7 +79,7 @@ export function FeaturedClash({ myId, city, onContent }: {
   const load = useCallback(() => {
     let vivant = true;
     (async () => {
-      const { start, end } = weekendWindow();
+      const { start, end } = predictionWindow();
       const parties = await fetchClashCandidates(start, end);
       const choc = pickClash(parties);
       const avis = choc ? await fetchPredictions(choc.gameId) : [];
@@ -117,7 +122,7 @@ export function FeaturedClash({ myId, city, onContent }: {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
         <Icon name="swords" size={15} color={Colors.textPrimary} stroke={2} />
         <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
-          Le choc du week-end
+          Le choc à venir
         </Text>
         {counts.total > 0 ? (
           <View style={{ backgroundColor: Colors.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>

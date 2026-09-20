@@ -94,6 +94,18 @@ export function closestOpponent(matches: DuelMatch[], myId: string): HeadToHead 
   return meilleurAdversaire(headToHeadFrom(matches, myId), 1);
 }
 
+/**
+ * Tous mes rivaux, du plus affronté au moins affronté. Un seul face-à-face
+ * affiché ne racontait qu'une histoire : dans un club, on en a plusieurs, et
+ * c'est la comparaison entre eux qui donne envie de rejouer.
+ */
+export function rivals(matches: DuelMatch[], myId: string, limit = 5): HeadToHead[] {
+  return [...headToHeadFrom(matches, myId).values()]
+    .filter(h => h.total >= RIVAL_MIN_DUELS)
+    .sort((a, b) => b.total - a.total || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0))
+    .slice(0, limit);
+}
+
 function meilleurAdversaire(m: Map<string, HeadToHead>, seuil: number): HeadToHead | null {
   let best: HeadToHead | null = null;
   for (const h of m.values()) {

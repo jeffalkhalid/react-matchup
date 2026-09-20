@@ -3,7 +3,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   opponentsOf, headToHeadFrom, pickRival, closestOpponent,
   relativeDayLabel, duelSinceLabel, duelSentence,
-  RIVAL_MIN_DUELS, HISTORY_LENGTH, type DuelMatch,
+  RIVAL_MIN_DUELS, HISTORY_LENGTH, rivals, type DuelMatch,
 } from '../headToHead';
 
 const MOI = 'moi';
@@ -177,5 +177,35 @@ describe('duelSentence — la phrase de contexte', () => {
   it('sans score enregistré, pas de « : » vide', () => {
     const h = headToHeadFrom([1, 2, 3].map(i => m(String(i), `2026-09-0${i}`, true, ['omar', 'x'], null as any)), MOI).get('omar')!;
     expect(duelSentence(h, 'Omar', now)).not.toContain('Ton dernier duel :');
+  });
+});
+
+describe('rivals — plusieurs face-à-face, pas un seul', () => {
+  const matchs = [
+    ...[1, 2, 3, 4].map(i => m(`o${i}`, `2026-09-0${i}`, i % 2 === 0, ['omar', 'x'])),
+    ...[1, 2, 3].map(i => m(`k${i}`, `2026-08-0${i}`, true, ['kenza', 'y'])),
+    ...[1, 2].map(i => m(`s${i}`, `2026-07-0${i}`, true, ['salma', 'z'])),
+  ];
+
+  it('rend tous ceux qui passent le seuil, du plus affronté au moins', () => {
+    // 'x' et 'y' sont les coéquipiers des adversaires : eux aussi sont des
+    // joueurs qu'on a affrontés, ils comptent donc dans les face-à-face.
+    expect(rivals(matchs, MOI).map(h => h.opponentId)).toEqual(['omar', 'x', 'kenza', 'y']);
+  });
+
+  it('écarte celui qu\'on n\'a affronté que deux fois', () => {
+    expect(rivals(matchs, MOI).some(h => h.opponentId === 'salma')).toBe(false);
+  });
+
+  it('respecte la limite demandée', () => {
+    expect(rivals(matchs, MOI, 1).map(h => h.opponentId)).toEqual(['omar']);
+  });
+
+  it('le premier de la liste est le même que pickRival', () => {
+    expect(rivals(matchs, MOI)[0].opponentId).toBe(pickRival(matchs, MOI)?.opponentId);
+  });
+
+  it('sans aucun match, liste vide', () => {
+    expect(rivals([], MOI)).toEqual([]);
   });
 });

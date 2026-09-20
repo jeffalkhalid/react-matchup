@@ -30,37 +30,9 @@ export function InvitationCard({ playerId }: { playerId: string }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  if (loading) {
-    return (
-      <View style={[CARD, { alignItems: 'center' }]}>
-        <ActivityIndicator color={Colors.primary} />
-      </View>
-    );
-  }
-
-  // ── État calme : personne ne me cherche ──────────────────────
-  if (!invitation) {
-    return (
-      <View style={CARD}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: '#F5F5F4', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="calendar" size={16} color={Colors.textMuted} />
-          </View>
-          <Text style={{ fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }} numberOfLines={1}>
-            Aucune invitation
-          </Text>
-        </View>
-        <Text style={{ fontFamily: Fonts.uiBold, fontSize: 14, color: Colors.textPrimary }}>Personne ne te cherche cette semaine</Text>
-        <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12.5, color: Colors.textSecondary, marginTop: 4, lineHeight: 17 }}>
-          Ouvre-toi aux défis : ton profil apparaît aux joueurs de ton niveau qui montent une partie.
-        </Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/matchmaking' as any)} activeOpacity={0.85}
-          style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 12 }}>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>M'ouvrir aux défis</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  // Pas d'invitation : le bloc ne s'affiche pas. Un encart « personne ne te
+  // cherche » en pleine page ne dit rien d'utile et pèse sur l'écran.
+  if (loading || !invitation) return null;
 
   const { game, participantId } = invitation;
   const duo = invitingDuo(game as any, playerId);

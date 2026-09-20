@@ -1,8 +1,14 @@
-// lib/weekendClash.ts — « Le choc du week-end » du hub Activité.
+// lib/weekendClash.ts — « Le choc à venir » du hub Activité.
 //
-// Une partie complète du week-end, pas encore jouée, celle dont les deux
-// paires sont les plus proches en niveau (handoff « Hub Activite » §4c). Les
-// autres joueurs donnent leur avis ; personne ne mise rien.
+// Une partie complète pas encore jouée, celle dont les deux paires sont les
+// plus proches en niveau. Les autres joueurs donnent leur avis ; personne ne
+// mise rien.
+//
+// Le handoff (§4c) le réservait au week-end et au dimanche. Essayé sur
+// téléphone : on ne voyait jamais rien. Un pronostic ne coûte rien au joueur
+// et marche même à dix personnes — c'est le levier collectif le moins cher
+// qu'on ait, l'étrangler par une fenêtre de deux jours le rendait inutile.
+// On regarde donc TOUTES les parties à venir, sur PREDICTION_DAYS jours.
 //
 // Le haut du fichier est pur et testé (lib/__tests__/weekendClash.test.ts).
 // Le bas parle à la base : table `predictions`
@@ -11,6 +17,16 @@ import { supabase } from './supabase';
 import { eloToLevel } from './theme';
 
 export type Team = 'A' | 'B';
+
+/** Jusqu'où on va chercher une partie à pronostiquer. */
+export const PREDICTION_DAYS = 14;
+
+/** De maintenant à PREDICTION_DAYS jours : les parties pronostiquables. */
+export function predictionWindow(now: Date = new Date(), days = PREDICTION_DAYS): { start: Date; end: Date } {
+  const end = new Date(now);
+  end.setDate(end.getDate() + days);
+  return { start: new Date(now), end };
+}
 
 export interface ClashPlayer {
   id: string;
@@ -101,20 +117,26 @@ export function agreementLabel(counts: PredictionCounts, mine: Team | null): str
 }
 
 const JOURS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
-/** « Dim. 18h · Padel Art » — la ligne de contexte sous le titre. */
-export function clashWhenLabel(c: Pick<ClashGame, 'matchDate' | 'location'>): string {
+/**
+ * « Dim. 18h · Padel Art ». Au-delà d'une semaine, le nom du jour ne suffit
+ * plus à situer la partie : on ajoute la date.
+ */
+export function clashWhenLabel(c: Pick<ClashGame, 'matchDate' | 'location'>, now: Date = new Date()): string {
   const d = new Date(c.matchDate);
   if (Number.isNaN(d.getTime())) return c.location ?? '';
   const min = d.getMinutes() ? `h${String(d.getMinutes()).padStart(2, '0')}` : 'h';
-  const quand = `${JOURS[d.getDay()]} ${d.getHours()}${min}`;
+  const loin = d.getTime() - now.getTime() >= 6 * 86_400_000;
+  const jour = loin ? `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]}` : JOURS[d.getDay()];
+  const quand = `${jour} ${d.getHours()}${min}`;
   return c.location ? `${quand} · ${c.location}` : quand;
 }
 
 /** Le motif de la sélection, en une phrase. */
 export function clashReasonLabel(c: Pick<Clash, 'gap' | 'city'>): string {
   const ou = c.city ? ` de ${c.city}` : '';
-  return `L'écart de niveau le plus serré${ou} ce week-end (${c.gap.toFixed(2)}).`;
+  return `L'écart de niveau le plus serré${ou} en ce moment (${c.gap.toFixed(2)}).`;
 }
 
 // ─── Base de données ──────────────────────────────────────────────────────

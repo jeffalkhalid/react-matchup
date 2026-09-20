@@ -11,17 +11,19 @@
 // pas en un tap : le bouton ouvre la création de défi, comme « Défier » depuis
 // un profil.
 import { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts } from '../../lib/theme';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { AmbassadorRing } from '../ambassador/primitives';
 import {
-  fetchDuels, fetchRivalPlayer, pickRival, closestOpponent, duelSentence, duelSinceLabel,
+  fetchDuels, fetchRivalPlayer, pickRival, closestOpponent, rivals as listeRivaux,
+  duelSentence, duelSinceLabel,
   RIVAL_MIN_DUELS, type HeadToHead, type RivalPlayer,
 } from '../../lib/headToHead';
 
 const SOMBRE = '#0A0A0A';
+const TUILE = '#1A1A1C';
 const BLANC_60 = 'rgba(255,255,255,0.6)';
 const BLANC_45 = 'rgba(255,255,255,0.45)';
 
@@ -34,6 +36,10 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
   const router = useRouter();
   const [duel, setDuel] = useState<HeadToHead | null>(null);
   const [rival, setRival] = useState<RivalPlayer | null>(null);
+  /** Les autres rivaux, en ligne sous le face-à-face mis en avant. */
+  const [autres, setAutres] = useState<{ duel: HeadToHead; joueur: RivalPlayer }[]>([]);
+  /** Celui qu'on regarde : par défaut le premier, changé au tap. */
+  const [choisi, setChoisi] = useState<string | null>(null);
   /** Vrai quand on n'a pas atteint les trois duels : on propose, on n'affiche pas. */
   const [sousLeSeuil, setSousLeSeuil] = useState(false);
 
@@ -44,8 +50,13 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
       const vrai = pickRival(matchs, myId);
       const approchant = vrai ?? closestOpponent(matchs, myId);
       const fiche = approchant ? await fetchRivalPlayer(approchant.opponentId) : null;
+      // Les autres rivaux : un club, ce n'est pas un seul adversaire.
+      const tous = vrai ? listeRivaux(matchs, myId, 5) : [];
+      const fiches = await Promise.all(tous.map(h => fetchRivalPlayer(h.opponentId)));
       if (!vivant) return;
       setDuel(approchant); setRival(fiche); setSousLeSeuil(!vrai);
+      setAutres(tous.map((d, i) => ({ duel: d, joueur: fiches[i]! })).filter(x => !!x.joueur));
+      setChoisi(null);
     })();
     return () => { vivant = false; };
   }, [myId]);
@@ -57,13 +68,17 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
   // puisqu'il garde le duel précédent le temps de la requête).
   if (!duel) return null;
 
-  const prenom = rival?.name?.trim().split(/\s+/)[0] ?? 'ton adversaire';
+  // Le face-à-face affiché : celui qu'on a tapé, sinon le premier.
+  const vu = (choisi ? autres.find(a => a.duel.opponentId === choisi) : null) ?? null;
+  const duelVu = vu?.duel ?? duel;
+  const rivalVu = vu?.joueur ?? rival;
+  const prenom = rivalVu?.name?.trim().split(/\s+/)[0] ?? 'ton adversaire';
 
   const defier = () => {
-    if (!rival) { router.push('/(tabs)/lobby' as any); return; }
-    const side = rival.courtSide ? `&pside=${encodeURIComponent(rival.courtSide)}` : '';
-    const elo = rival.eloScore != null ? `&pelo=${rival.eloScore}` : '';
-    router.push(`/(tabs)/lobby?create=1&challenge=1&with=${rival.id}&pname=${encodeURIComponent(rival.name)}${elo}${side}` as any);
+    if (!rivalVu) { router.push('/(tabs)/lobby' as any); return; }
+    const side = rivalVu.courtSide ? `&pside=${encodeURIComponent(rivalVu.courtSide)}` : '';
+    const elo = rivalVu.eloScore != null ? `&pelo=${rivalVu.eloScore}` : '';
+    router.push(`/(tabs)/lobby?create=1&challenge=1&with=${rivalVu.id}&pname=${encodeURIComponent(rivalVu.name)}${elo}${side}` as any);
   };
 
   const photo = (nom: string, chemin: string | null | undefined, fondJaune: boolean) => (
@@ -106,30 +121,30 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
 
             <View style={{ flex: 1, alignItems: 'center', paddingTop: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-                <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: '#FFFFFF' }}>{duel.wins}</Text>
+                <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: '#FFFFFF' }}>{duelVu.wins}</Text>
                 <Text style={{ fontFamily: Fonts.display, fontSize: 28, color: BLANC_45 }}>–</Text>
-                <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: Colors.brand }}>{duel.losses}</Text>
+                <Text style={{ fontFamily: Fonts.display, fontSize: 40, color: Colors.brand }}>{duelVu.losses}</Text>
               </View>
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 2 }}>
-                {duelSinceLabel(duel)}
+                {duelSinceLabel(duelVu)}
               </Text>
             </View>
 
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => rival && router.push(`/player/${rival.id}` as any)}
+              onPress={() => rivalVu && router.push(`/player/${rivalVu.id}` as any)}
               style={{ alignItems: 'center', width: 72 }}
             >
-              {rival?.memberNumber != null
-                ? <AmbassadorRing size={54} radius={27} showStar={false} surface={SOMBRE}>{photo(rival.name, rival.avatarPath, true)}</AmbassadorRing>
-                : photo(rival?.name ?? prenom, rival?.avatarPath, true)}
+              {rivalVu?.memberNumber != null
+                ? <AmbassadorRing size={54} radius={27} showStar={false} surface={SOMBRE}>{photo(rivalVu.name, rivalVu.avatarPath, true)}</AmbassadorRing>
+                : photo(rivalVu?.name ?? prenom, rivalVu?.avatarPath, true)}
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: '#FFFFFF', marginTop: 7 }}>{prenom}</Text>
             </TouchableOpacity>
           </View>
 
           {/* Historique : vert/rouge, seul endroit où la charte l'autorise. */}
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 14 }}>
-            {duel.history.map((gagne, i) => (
+            {duelVu.history.map((gagne, i) => (
               <View key={i} style={{
                 width: 26, height: 8, borderRadius: 999,
                 backgroundColor: gagne ? Colors.success : Colors.danger,
@@ -138,13 +153,50 @@ export function HeadToHeadCard({ myId, myName, myAvatarPath, myIsAmbassador }: {
           </View>
 
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 17, color: BLANC_60, marginTop: 12, textAlign: 'center' }}>
-            {duelSentence(duel, prenom)}
+            {duelSentence(duelVu, prenom)}
           </Text>
 
           <TouchableOpacity onPress={defier} activeOpacity={0.85}
             style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 14 }}>
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>Demander la revanche</Text>
+            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13.5, color: Colors.primary }}>
+              {`Demander la revanche à ${prenom}`}
+            </Text>
           </TouchableOpacity>
+
+          {/* Les autres rivaux : un club, ce n'est pas un seul adversaire.
+              Un tap change le face-à-face montré au-dessus. */}
+          {autres.length > 1 ? (
+            <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
+              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 9.5, letterSpacing: 1.2, color: BLANC_45, marginBottom: 10 }}>
+                TES AUTRES FACE-À-FACE
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+                {autres.map(({ duel: d, joueur }) => {
+                  const actif = d.opponentId === (duelVu?.opponentId ?? '');
+                  const p = joueur.name.trim().split(/\s+/)[0];
+                  return (
+                    <TouchableOpacity key={d.opponentId} activeOpacity={0.85}
+                      onPress={() => setChoisi(d.opponentId)}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999,
+                        paddingVertical: 7, paddingHorizontal: 10,
+                        backgroundColor: actif ? 'rgba(255,193,26,0.16)' : TUILE,
+                        borderWidth: 1, borderColor: actif ? Colors.brand : 'rgba(255,255,255,0.08)',
+                      }}>
+                      <PlayerAvatar
+                        name={joueur.name} path={joueur.avatarPath} size={24}
+                        backgroundColor={Colors.brand} textColor={Colors.primary}
+                        fontFamily={Fonts.uiBlack} fontSize={9} initialsMax={2}
+                      />
+                      <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: actif ? Colors.brand : '#FFFFFF' }}>{p}</Text>
+                      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: BLANC_45 }}>{`${d.wins}–${d.losses}`}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
         </>
       )}
     </View>

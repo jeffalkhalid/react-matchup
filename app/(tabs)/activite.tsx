@@ -329,13 +329,13 @@ export default function ActiviteTab() {
                   onContent={(has) => marquerUne('mercato', has)}
                 />
               ) : (
-                /* Dimanche : le choc encore à jouer, puis la semaine qu'on
-                   referme (handoff §4c). */
-                <>
-                  <FeaturedClash myId={myId} city={city} onContent={(has) => marquerUne('choc', has)} />
-                  <FeaturedPantheon city={city ?? ''} myId={myId} onContent={(has) => marquerUne('pantheon', has)} />
-                </>
+                <FeaturedPantheon city={city ?? ''} myId={myId} onContent={(has) => marquerUne('pantheon', has)} />
               )}
+
+              {/* Le choc n'est plus réservé au dimanche : un pronostic ne
+                  coûte rien et c'est ce qui fait regarder le match des
+                  autres. Il s'affiche dès qu'il y a une partie à pronostiquer. */}
+              <FeaturedClash myId={myId} city={city} onContent={(has) => marquerUne('choc', has)} />
 
               {/* Bilan : seulement en tout début de mois, sinon il n'a plus
                   grand-chose à dire (README « Ce qui est retiré »). */}
