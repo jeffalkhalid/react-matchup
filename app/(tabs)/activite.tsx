@@ -32,6 +32,7 @@ import { CircleBilansRail } from '../../components/activity/CircleBilansRail';
 import { FeaturedTaulier } from '../../components/activity/FeaturedTaulier';
 import { FeaturedMercato } from '../../components/activity/FeaturedMercato';
 import { FeaturedPantheon } from '../../components/activity/FeaturedPantheon';
+import { FeaturedClash } from '../../components/activity/FeaturedClash';
 import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
 import { InvitationCard } from '../../components/activity/InvitationCard';
@@ -318,7 +319,12 @@ export default function ActiviteTab() {
                   }}
                 />
               ) : (
-                <FeaturedPantheon city={city ?? ''} myId={myId} />
+                /* Dimanche : le choc encore à jouer, puis la semaine qu'on
+                   referme (handoff §4c). */
+                <>
+                  <FeaturedClash myId={myId} city={city} />
+                  <FeaturedPantheon city={city ?? ''} myId={myId} />
+                </>
               )}
 
               {/* Bilan : seulement en tout début de mois, sinon il n'a plus
