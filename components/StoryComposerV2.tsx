@@ -9,7 +9,9 @@ import { View, Text, Modal, TouchableOpacity, ScrollView, Alert, ActivityIndicat
 import { captureRef } from 'react-native-view-shot';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
+// SDK 57 : l'API historique (saveToLibraryAsync) lève une erreur depuis le
+// point d'entrée principal ; elle reste servie par le sous-module « /legacy ».
+import * as MediaLibrary from 'expo-media-library/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../lib/theme';
 import { Icon } from './community/icons';
