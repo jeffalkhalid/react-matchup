@@ -77,11 +77,16 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onPress
             style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 18, lineHeight: 18, color: Colors.textSecondary, marginTop: -4 }}>⋯</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
+        ) : onOpen ? (
+          /* Sur mes propres cartes il n'y a rien à signaler : la flèche prend
+             la place du « ⋯ ». Elle ouvre la vue plein écran — avant, c'était
+             une simple image qui ne réagissait pas au doigt. */
+          <TouchableOpacity onPress={onOpen} hitSlop={8} activeOpacity={0.7}
+            accessibilityLabel="Ouvrir en plein écran"
+            style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: Chips, alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="arrowRight" size={16} color={Colors.textSecondary} stroke={2.4} rotate={-45} />
-          </View>
-        )}
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Contenu tappable → vue plein écran */}
