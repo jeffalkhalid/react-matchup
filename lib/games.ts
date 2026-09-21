@@ -412,6 +412,50 @@ export function urgentDelayLabel(iso: string | null | undefined, now: Date = new
  * marqueur : elle devient un refus manuel, que le lobby cache. Sa place avait
  * déjà été rendue et l'organisateur déjà prévenu au retrait automatique.
  */
+/**
+ * Ce qu'on annonce avant de quitter une partie.
+ *
+ * « Ta place sera libérée » était vrai d'une partie ordinaire, faux d'un
+ * défi. Un défi se joue par PAIRES : le serveur
+ * (supabase/migrations/defi_leave_atomic.sql) retire les deux coéquipiers
+ * d'un coup, et si c'est le partenaire du créateur qui s'en va, il supprime
+ * le défi — le créateur ne peut pas jouer seul. Quatre personnes perdaient
+ * leur match derrière une phrase qui parlait d'une seule place.
+ *
+ * `side` est le côté du terrain ('A…' ou 'B…') de celui qui part :
+ *   • B = le binôme qui a relevé le défi → les deux partent, le défi rouvre ;
+ *   • A = le partenaire du créateur      → le défi est supprimé.
+ * Côté inconnu (anomalie de données), on annonce la conséquence la plus
+ * lourde : mieux vaut faire hésiter à tort que détruire un match en silence.
+ */
+export function leaveGamePrompt(opts: {
+  isChallenge?: boolean | null;
+  /** Le statut de MA participation : 'accepted', 'waitlist', autre. */
+  status?: string | null;
+  side?: string | null;
+  /** Le coéquipier nommé : l'autre du côté B, ou le créateur si je suis en A. */
+  partnerName?: string | null;
+}): { title: string; message: string } {
+  if (opts.status === 'waitlist') {
+    return { title: "Quitter la liste d'attente ?", message: 'Tu seras retiré de la liste.' };
+  }
+  if (opts.status !== 'accepted') {
+    return { title: 'Retirer ta candidature ?', message: 'Ta demande sera annulée.' };
+  }
+  if (opts.isChallenge) {
+    const cote = String(opts.side ?? '').trim().toUpperCase().charAt(0);
+    if (cote === 'B') {
+      const qui = opts.partnerName?.trim().split(/\s+/)[0] || 'ton binôme';
+      return {
+        title: 'Quitter ce défi ?',
+        message: `Vous partez à deux : ${qui} perd sa place en même temps que toi.`,
+      };
+    }
+    return { title: 'Quitter ce défi ?', message: 'Le défi sera supprimé pour tout le monde.' };
+  }
+  return { title: 'Quitter cette partie ?', message: 'Ta place sera libérée.' };
+}
+
 export function declineInvitationPlan(row: { status: string; auto_declined?: boolean | null }): {
   update: { status?: 'declined'; auto_declined: false };
   freeSpot: boolean;

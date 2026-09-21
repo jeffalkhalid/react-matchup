@@ -44,7 +44,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, leaveGamePrompt } from '../../lib/games';
 import { OVERLAP_MS } from '../../lib/slotConflict';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
@@ -3475,9 +3475,19 @@ export default function LobbyScreen() {
 
   const handleLeaveGame = async (gameId: string, participantId: string, wasAccepted: boolean) => {
     const game = upcomingGames.find(g => g.id === gameId) ?? games.find(g => g.id === gameId);
-    const isWaitlist = game?.participants?.find((p: any) => p.id === participantId)?.status === 'waitlist';
-    const label = isWaitlist ? "Quitter la liste d'attente ?" : wasAccepted ? 'Quitter cette partie ?' : 'Retirer ta candidature ?';
-    const msg   = isWaitlist ? 'Tu seras retiré de la liste.' : wasAccepted ? 'Ta place sera libérée.' : 'Ta demande sera annulée.';
+    // Un défi se quitte à DEUX : le message doit le dire (lib/games).
+    const moi = game?.participants?.find((p: any) => p.id === participantId);
+    const cote = String((moi as any)?.team_side ?? '');
+    const coequipier = cote.toUpperCase().startsWith('B')
+      ? (game?.participants ?? []).find((p: any) =>
+          p.id !== participantId && p.status === 'accepted' && String(p.team_side ?? '').toUpperCase().startsWith('B'))?.player?.name ?? null
+      : (game as any)?.creator?.name ?? null;
+    const { title: label, message: msg } = leaveGamePrompt({
+      isChallenge: game?.is_challenge,
+      status: (moi as any)?.status ?? (wasAccepted ? 'accepted' : 'pending'),
+      side: cote,
+      partnerName: coequipier,
+    });
 
     Alert.alert(label, msg, [
       { text: 'Annuler', style: 'cancel' },
