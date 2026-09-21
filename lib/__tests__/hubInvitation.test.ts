@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
-import { invitingDuo, invitationTitle, invitationDatePill } from '../hubInvitation';
+import { invitingDuo, invitationTitle, invitationDatePill, confirmedCount } from '../hubInvitation';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -38,14 +38,14 @@ describe('invitingDuo — qui invite, pour le titre de la carte', () => {
 
 describe('invitationTitle — le titre « X & Y cherchent un 4e »', () => {
   it('deux joueurs → forme plurielle avec prénoms', () => {
-    expect(invitationTitle([p('a', 'Yassir Benali'), p('b', 'Kenza El Amrani')]))
+    expect(invitationTitle([p('a', 'Yassir Benali'), p('b', 'Kenza El Amrani')], 4))
       .toBe('Yassir & Kenza cherchent un 4ᵉ');
   });
   it('un seul joueur → forme singulière', () => {
-    expect(invitationTitle([p('a', 'Yassir Benali')])).toBe('Yassir cherche un 4ᵉ');
+    expect(invitationTitle([p('a', 'Yassir Benali')], 4)).toBe('Yassir cherche un 4ᵉ');
   });
   it('aucun joueur → repli neutre', () => {
-    expect(invitationTitle([])).toBe('On cherche un 4ᵉ');
+    expect(invitationTitle([], 4)).toBe('On cherche un 4ᵉ');
   });
 });
 
@@ -89,4 +89,42 @@ describe("la requete ramene ce que la carte utilise", () => {
     "demande %s",
     (colonne) => { expect(requete).toContain(colonne); },
   );
+});
+
+describe("le rang annonce est le VRAI rang", () => {
+  const partie = (acceptes: string[]) => ({
+    creator_id: "yassir",
+    participants: acceptes.map(id => ({ player_id: id, status: "accepted" })),
+  });
+
+  it("createur seul : je serais le 2e, on ne dit pas « un 4e »", () => {
+    // Le bug : « Galan cherche un 4e » sur une partie ou il manque 3 joueurs.
+    expect(confirmedCount(partie([]), "me")).toBe(1);
+    expect(invitationTitle([p("a", "Galan P.")], 2)).toBe("Galan cherche des joueurs");
+  });
+
+  it("deux confirmes : je serais le 3e", () => {
+    expect(confirmedCount(partie(["kenza"]), "me")).toBe(2);
+    expect(invitationTitle([p("a", "Galan P."), p("b", "Kenza E.")], 3)).toBe("Galan & Kenza cherchent un 3ᵉ");
+  });
+
+  it("trois confirmes : je complete, c est bien un 4e", () => {
+    expect(confirmedCount(partie(["kenza", "omar"]), "me")).toBe(3);
+    expect(invitationTitle([p("a", "Galan P."), p("b", "Kenza E.")], 4)).toBe("Galan & Kenza cherchent un 4ᵉ");
+  });
+
+  it("les invitations en attente ne comptent pas comme des confirmes", () => {
+    const g = { creator_id: "yassir", participants: [{ player_id: "rita", status: "invited" }] };
+    expect(confirmedCount(g, "me")).toBe(1);
+  });
+
+  it("je ne me compte pas moi-meme", () => {
+    const g = { creator_id: "yassir", participants: [{ player_id: "me", status: "accepted" }] };
+    expect(confirmedCount(g, "me")).toBe(1);
+  });
+
+  it("le createur n est pas compte deux fois s il figure aussi en participant", () => {
+    const g = { creator_id: "yassir", participants: [{ player_id: "yassir", status: "accepted" }] };
+    expect(confirmedCount(g, "me")).toBe(1);
+  });
 });

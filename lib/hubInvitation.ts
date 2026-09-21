@@ -27,31 +27,34 @@ const SELECT = [
     'player:player_id(id, name, avatar_path, elo_score)))',
 ].join(', ');
 
-/** Mon invitation active la plus proche dans le temps, ou `null`. */
-export async function fetchMyInvitation(playerId: string): Promise<HubInvitation | null> {
+/**
+ * TOUTES mes invitations actives, la plus proche d'abord.
+ *
+ * La carte n'en montrait qu'une : on pouvait avoir trois parties qui
+ * attendent une reponse sans jamais le savoir depuis le hub.
+ */
+export async function fetchMyInvitations(playerId: string, limit = 6): Promise<HubInvitation[]> {
   try {
     const { data, error } = await supabase
       .from('game_participants')
       .select(SELECT)
       .eq('player_id', playerId)
       .eq('status', 'invited');
-    if (error || !data) return null;
+    if (error || !data) return [];
     const visible = (data as any[]).filter(inv => isInvitationVisible(inv, new Set()));
-    if (visible.length === 0) return null;
     visible.sort((a, b) => {
       const ta = a.game?.match_date ? new Date(a.game.match_date).getTime() : Infinity;
       const tb = b.game?.match_date ? new Date(b.game.match_date).getTime() : Infinity;
       return ta - tb;
     });
-    const first = visible[0];
-    return {
-      participantId: first.id,
-      inviteExpiresAt: first.invite_expires_at ?? null,
-      game: first.game as OpenGame & { creator: Player },
-    };
+    return visible.slice(0, limit).map(inv => ({
+      participantId: inv.id,
+      inviteExpiresAt: inv.invite_expires_at ?? null,
+      game: inv.game as OpenGame & { creator: Player },
+    }));
   } catch (e) {
-    console.log('[hubInvitation] fetchMyInvitation threw', String(e));
-    return null;
+    console.log('[hubInvitation] fetchMyInvitations threw', String(e));
+    return [];
   }
 }
 
@@ -75,12 +78,41 @@ export function invitingDuo(
   return out;
 }
 
-/** « Yassir & Kenza cherchent un 4ᵉ » — ou la forme au singulier s'il n'y en a qu'un. */
-export function invitationTitle(duo: Player[]): string {
-  const firstNames = duo.map(p => p.name.split(' ')[0]);
-  if (firstNames.length >= 2) return `${firstNames[0]} & ${firstNames[1]} cherchent un 4ᵉ`;
-  if (firstNames.length === 1) return `${firstNames[0]} cherche un 4ᵉ`;
-  return 'On cherche un 4ᵉ';
+/**
+ * Combien de joueurs sont DEJA confirmes sur la partie, moi exclu :
+ * le createur plus les participants acceptes.
+ *
+ * C'est ce compte qui dit si je complete l'equipe ou s'il manquera encore
+ * du monde apres moi.
+ */
+export function confirmedCount(
+  game: { creator_id?: string | null; participants?: { player_id: string; status: string }[] | null },
+  viewerId: string,
+): number {
+  const autres = (game.participants ?? []).filter(
+    p => p.status === 'accepted' && p.player_id !== game.creator_id && p.player_id !== viewerId,
+  ).length;
+  return Math.min(4, 1 + autres);
+}
+
+/**
+ * « Yassir & Kenza cherchent un 4ᵉ » — mais SEULEMENT si je serais vraiment
+ * le quatrieme.
+ *
+ * Le « 4ᵉ » etait ecrit en dur et ne comptait que les photos affichees : sur
+ * une partie ou il manquait trois joueurs, on faisait croire qu'on completait
+ * l'equipe — l'argument meme qui pousse a accepter.
+ *
+ * `rang` = ma place si j'accepte (confirmes + moi). En dessous de trois on ne
+ * dit pas « un 2ᵉ », qui ne se dit pas au padel.
+ */
+export function invitationTitle(duo: Player[], rang: number): string {
+  const noms = duo.map(p => p.name.split(' ')[0]);
+  const qui = noms.length >= 2 ? `${noms[0]} & ${noms[1]}` : noms[0] ?? 'On';
+  const verbe = noms.length >= 2 ? 'cherchent' : 'cherche';
+  if (rang >= 4) return `${qui} ${verbe} un 4ᵉ`;
+  if (rang === 3) return `${qui} ${verbe} un 3ᵉ`;
+  return `${qui} ${verbe} des joueurs`;
 }
 
 const JOURS_ABBR = ['DIM.', 'LUN.', 'MAR.', 'MER.', 'JEU.', 'VEN.', 'SAM.'];

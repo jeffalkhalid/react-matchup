@@ -1,56 +1,59 @@
-// Carte d'invitation reçue — hub Activité, étape 1. Brancher sur l'existant :
+// Les invitations reçues — hub Activité. Brancher sur l'existant :
 // accepter = même mise à jour que app/(tabs)/lobby.tsx (handleAcceptInvitation),
 // refuser = lib/games.declineInvitationPlan (déjà écrite/testée). Aucun nouveau
 // circuit de données.
+//
+// On n'en montrait qu'UNE, la plus proche : on pouvait avoir trois parties qui
+// attendent une réponse sans jamais le savoir depuis le hub. Elles défilent
+// maintenant toutes, la plus proche d'abord — même forme que les autres rails.
+// « ON T'ATTEND » est devenu le titre de section : il encombrait l'en-tête de
+// chaque carte, qui porte déjà la date complète et la nature du match.
 import { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, useWindowDimensions } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { NaturePill } from '../profile/components';
 import { matchNature } from '../../lib/matchView';
-import { AMB } from '../../lib/ambassador';
 import { levelRangeLabel, isCreatorConflict, declineInvitationPlan } from '../../lib/games';
-import { fetchMyInvitation, invitingDuo, invitationTitle, invitationDatePill, type HubInvitation } from '../../lib/hubInvitation';
+import {
+  fetchMyInvitations, invitingDuo, invitationTitle, invitationDatePill, confirmedCount,
+  type HubInvitation,
+} from '../../lib/hubInvitation';
 import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
 
-const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 14 } as const;
+type Resolution = 'accepted' | 'declined';
 
 export function InvitationCard({ playerId }: { playerId: string }) {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const [loading, setLoading] = useState(true);
-  const [invitation, setInvitation] = useState<HubInvitation | null>(null);
-  const [resolution, setResolution] = useState<'accepted' | 'declined' | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [invitations, setInvitations] = useState<HubInvitation[]>([]);
+  /** Répondu depuis la carte — par invitation, plusieurs vivant côte à côte. */
+  const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
+  const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
-    setLoading(true); setResolution(null);
-    fetchMyInvitation(playerId).then(inv => { setInvitation(inv); setLoading(false); });
+    setLoading(true); setResolutions({});
+    fetchMyInvitations(playerId).then(list => { setInvitations(list); setLoading(false); });
   }, [playerId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Pas d'invitation : le bloc ne s'affiche pas. Un encart « personne ne te
   // cherche » en pleine page ne dit rien d'utile et pèse sur l'écran.
-  if (loading || !invitation) return null;
+  if (loading || invitations.length === 0) return null;
 
-  const { game, participantId } = invitation;
-  const duo = invitingDuo(game as any, playerId);
-  const title = invitationTitle(duo);
-  const datePill = game.match_date ? invitationDatePill(game.match_date) : null;
-  const level = levelRangeLabel(game as any);
-  const jour = game.match_date ? new Date(game.match_date).toLocaleDateString('fr-FR', { weekday: 'long' }) : '';
-  const nature = matchNature(game as any);
+  const occupe = (id: string, on: boolean) =>
+    setBusy(s => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; });
 
-  /** La fiche complete de la partie, celle du lobby — pas une deuxieme vue. */
-  const voirLeMatch = () => router.push(`/(tabs)/lobby?gameId=${game.id}` as any);
-
-  const accept = async () => {
-    setBusy(true);
+  const accept = async (inv: HubInvitation) => {
+    const { game, participantId } = inv;
+    occupe(participantId, true);
     const { error } = await supabase.from('game_participants').update({ status: 'accepted' }).eq('id', participantId);
-    setBusy(false);
+    occupe(participantId, false);
     if (error) {
       if (isCreatorConflict(error)) {
         Alert.alert('Conflit de créneau', 'Tu es déjà sur une autre partie au même créneau (±2h). Annule-la ou quitte-la avant de rejoindre celle-ci.');
@@ -68,11 +71,12 @@ export function InvitationCard({ playerId }: { playerId: string }) {
         notifyPlayers({ playerIds: others, title: 'Nouveau joueur confirmé', body: `Vous êtes prêts pour ${game.location ?? 'la partie'}.`, data: { type: 'lobby', gameId: game.id } });
       }
     }
-    setResolution('accepted');
+    setResolutions(r => ({ ...r, [participantId]: 'accepted' }));
   };
 
-  const decline = async () => {
-    setBusy(true);
+  const decline = async (inv: HubInvitation) => {
+    const { game, participantId } = inv;
+    occupe(participantId, true);
     const { data: row } = await supabase.from('game_participants').select('status, auto_declined').eq('id', participantId).maybeSingle();
     const plan = declineInvitationPlan(row ?? { status: 'invited' });
     const { error } = await supabase.from('game_participants').update(plan.update).eq('id', participantId);
@@ -82,18 +86,84 @@ export function InvitationCard({ playerId }: { playerId: string }) {
         notifyPlayers({ playerIds: [game.creator_id], title: 'Invitation refusée', body: 'Un joueur invité ne pourra pas venir.', data: { type: 'lobby', gameId: game.id } });
       }
     }
-    setBusy(false);
+    occupe(participantId, false);
     if (error) { Alert.alert('Erreur', error.message); return; }
-    setResolution('declined');
+    setResolutions(r => ({ ...r, [participantId]: 'declined' }));
   };
 
-  // Occupation après mon acceptation (créateur + acceptés + moi), sans refetch.
-  const occupiedAfterMe = 1 + (game.participants ?? []).filter(p => p.status === 'accepted' && p.player_id !== game.creator_id).length + 1;
+  // Presque pleine largeur : on en voit une, on devine la suivante, on fait
+  // défiler. Seule, l'invitation garde la pleine largeur d'avant.
+  const LARGEUR = invitations.length > 1 ? Math.min(width - 56, 340) : width - 32;
 
   return (
-    <View style={CARD}>
-      {/* La date complete prend de la place : sur un petit ecran la ligne
-          passe a deux plutot que de rogner le jour ou l'heure. */}
+    <View style={{ marginTop: 18 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+        <Icon name="bellRing" size={15} color={Colors.textPrimary} stroke={2} />
+        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
+          On t'attend
+        </Text>
+        {invitations.length > 1 ? (
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.textSecondary }}>
+            {`${invitations.length} parties`}
+          </Text>
+        ) : null}
+      </View>
+
+      <ScrollView
+        horizontal
+        scrollEnabled={invitations.length > 1}
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={LARGEUR + 10}
+        decelerationRate="fast"
+        style={{ marginHorizontal: -16 }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+      >
+        {invitations.map(inv => (
+          <Invitation
+            key={inv.participantId}
+            inv={inv}
+            playerId={playerId}
+            largeur={LARGEUR}
+            resolution={resolutions[inv.participantId] ?? null}
+            busy={busy.has(inv.participantId)}
+            onAccept={() => accept(inv)}
+            onDecline={() => decline(inv)}
+            onOpen={() => router.push(`/(tabs)/lobby?gameId=${inv.game.id}` as any)}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+/** Une invitation : qui attend, sur quelle partie, et les deux réponses. */
+function Invitation({ inv, playerId, largeur, resolution, busy, onAccept, onDecline, onOpen }: {
+  inv: HubInvitation;
+  playerId: string;
+  largeur: number;
+  resolution: Resolution | null;
+  busy: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+  onOpen: () => void;
+}) {
+  const { game } = inv;
+  const duo = invitingDuo(game as any, playerId);
+  // Combien sont déjà là, et quelle place je prendrais. Le « 4ᵉ » était écrit
+  // en dur : sur une partie où il manquait trois joueurs, on faisait croire
+  // qu'on complétait l'équipe.
+  const confirmes = confirmedCount(game as any, playerId);
+  const title = invitationTitle(duo, confirmes + 1);
+  const datePill = game.match_date ? invitationDatePill(game.match_date) : null;
+  const level = levelRangeLabel(game as any);
+  const jour = game.match_date ? new Date(game.match_date).toLocaleDateString('fr-FR', { weekday: 'long' }) : '';
+  const nature = matchNature(game as any);
+
+  return (
+    <View style={{
+      width: largeur, backgroundColor: Colors.bgCard, borderRadius: 18,
+      borderWidth: 1, borderColor: Colors.border, padding: 14,
+    }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {datePill ? (
           <View style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
@@ -103,41 +173,44 @@ export function InvitationCard({ playerId }: { playerId: string }) {
         {/* Sur quoi on m'attend : un amical et un défi ×4 ne s'acceptent pas
             de la même façon. Même pastille que les cartes de match. */}
         <NaturePill kind={nature.kind} stake={nature.stake} />
-        <Text style={{ marginLeft: 'auto', fontFamily: Fonts.uiExtraBold, fontSize: 10, color: AMB.chipText, letterSpacing: 0.8 }}>ON T'ATTEND</Text>
       </View>
 
       {/* Tout le bloc mène à la fiche de la partie : on décidait sans pouvoir
           regarder qui joue, ni où exactement. */}
-      <TouchableOpacity onPress={voirLeMatch} activeOpacity={0.8} accessibilityLabel="Voir le match">
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-        <View style={{ flexDirection: 'row' }}>
-          {duo.map((p, i) => (
-            <PlayerAvatar key={p.id ?? i} name={p.name} path={p.avatar_path}
-              size={40} ring={2} ringColor="#FFFFFF"
-              backgroundColor={i === 0 ? Colors.brand : Colors.primary}
-              textColor={i === 0 ? Colors.primary : Colors.brand}
-              fontFamily={Fonts.uiBlack} fontSize={14} initialsMax={2}
-              style={i > 0 ? { marginLeft: -10 } : undefined} />
-          ))}
+      <TouchableOpacity onPress={onOpen} activeOpacity={0.8} accessibilityLabel="Voir le match">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+          <View style={{ flexDirection: 'row' }}>
+            {duo.map((p, i) => (
+              <PlayerAvatar key={p.id ?? i} name={p.name} path={p.avatar_path}
+                size={40} ring={2} ringColor="#FFFFFF"
+                backgroundColor={i === 0 ? Colors.brand : Colors.primary}
+                textColor={i === 0 ? Colors.primary : Colors.brand}
+                fontFamily={Fonts.uiBlack} fontSize={14} initialsMax={2}
+                style={i > 0 ? { marginLeft: -10 } : undefined} />
+            ))}
+          </View>
+          <Text numberOfLines={2} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 24, color: Colors.textPrimary, paddingRight: 6 }}>
+            {title}
+          </Text>
         </View>
-        <Text numberOfLines={2} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 20, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
-          {title}
-        </Text>
-      </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary }}>
+        <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginBottom: 2 }}>
           {[game.location, level].filter(Boolean).join(' · niv. ')}
         </Text>
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.textSecondary }}>Voir le match</Text>
-        <Icon name="chevronRight" size={13} color={Colors.textMuted} stroke={2.4} />
-      </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+          {/* L'état réel : est-ce que je complète, ou faudra-t-il encore du monde. */}
+          <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 11.5, color: Colors.textMuted }}>
+            {`${confirmes} confirmé${confirmes > 1 ? 's' : ''} sur 4`}
+          </Text>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.textSecondary }}>Voir le match</Text>
+          <Icon name="chevronRight" size={13} color={Colors.textMuted} stroke={2.4} />
+        </View>
       </TouchableOpacity>
 
       {resolution === 'accepted' ? (
         <View style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
           <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: Colors.brand }}>
-            Tu joues {jour} · {occupiedAfterMe}/4
+            Tu joues {jour} · {Math.min(4, confirmes + 1)}/4
           </Text>
         </View>
       ) : resolution === 'declined' ? (
@@ -148,12 +221,12 @@ export function InvitationCard({ playerId }: { playerId: string }) {
         </View>
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TouchableOpacity onPress={accept} disabled={busy} activeOpacity={0.85} style={{
+          <TouchableOpacity onPress={onAccept} disabled={busy} activeOpacity={0.85} style={{
             flex: 1.4, backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center', opacity: busy ? 0.6 : 1,
           }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>Accepter</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={decline} disabled={busy} activeOpacity={0.85} style={{
+          <TouchableOpacity onPress={onDecline} disabled={busy} activeOpacity={0.85} style={{
             flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: Colors.border, borderRadius: 999, paddingVertical: 12, alignItems: 'center', opacity: busy ? 0.6 : 1,
           }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: '#0A0A0A' }}>Pas dispo</Text>
