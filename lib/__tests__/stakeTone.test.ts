@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
-import { stakeTone } from '../defis';
+import { stakeTone, formatStake } from '../defis';
 
 describe('stakeTone — une couleur par niveau de mise', () => {
   it('Soft (×2 et moins) = vert, Standard (jusqu\'à ×3) = jaune, High Stakes (au-delà) = rouge', () => {
@@ -19,5 +19,25 @@ describe('stakeTone — une couleur par niveau de mise', () => {
       expect(t.fg).toMatch(/^#/);
       expect(t.fg).not.toBe(t.bg);
     }
+  });
+});
+
+describe("formatStake — la mise ecrite", () => {
+  it("un entier ne traine pas de decimale", () => {
+    expect(formatStake(3)).toBe("×3");
+  });
+
+  it("une demie la garde", () => {
+    expect(formatStake(2.5)).toBe("×2.5");
+  });
+
+  it("sans mise, il n y a rien a ecrire", () => {
+    expect(formatStake(1)).toBeNull();
+    expect(formatStake(null)).toBeNull();
+    expect(formatStake(undefined)).toBeNull();
+  });
+
+  it("une valeur abimee ne fabrique pas un ×NaN", () => {
+    expect(formatStake(NaN)).toBeNull();
   });
 });

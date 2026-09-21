@@ -4,6 +4,7 @@ import {
   teamOf, teamLevel, pickClash, countPredictions, predictionShare,
   clashWhenLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
   clashesToPredict, tightestClashId, withoutMyGames, myClashes, isMyClash, myTeamIn, oddsLine,
+  isPredictable, clashStake,
   type ClashGame, type ClashPlayer, type Team,
 } from '../weekendClash';
 
@@ -359,5 +360,52 @@ describe("oddsLine — l'enjeu, vu de mon camp", () => {
 
   it('sans camp connu non plus', () => {
     expect(oddsLine(avis(5, 3), null)).toBeNull();
+  });
+});
+
+describe("on ne pronostique que ce qui se joue vraiment", () => {
+  const futur = (jours: number) => new Date(now.getTime() + jours * 86_400_000).toISOString();
+
+  it("un amical n est pas pronostiquable", () => {
+    expect(isPredictable({ gameFormat: "friendly", isChallenge: false, stake: 1 })).toBe(false);
+  });
+
+  it("un competitif l est", () => {
+    expect(isPredictable({ gameFormat: "competitive", isChallenge: false, stake: 1 })).toBe(true);
+  });
+
+  it("un defi l est", () => {
+    expect(isPredictable({ gameFormat: "competitive", isChallenge: true, stake: 3 })).toBe(true);
+  });
+
+  it("une partie sans nature connue passe pour competitive, pas pour amicale", () => {
+    expect(isPredictable({})).toBe(true);
+  });
+
+  it("l amical sort du rail, les autres restent", () => {
+    const jeux = [
+      partie("amical", futur(1), [1500, 1500, 1500, 1500], { gameFormat: "friendly" }),
+      partie("competitif", futur(2), [1500, 1500, 1500, 1500], { gameFormat: "competitive" }),
+      partie("defi", futur(3), [1500, 1500, 1500, 1500], { gameFormat: "competitive", isChallenge: true, stake: 3 }),
+    ];
+    expect(clashesToPredict(jeux, now).map(c => c.gameId)).toEqual(["competitif", "defi"]);
+  });
+});
+
+describe("la mise d un defi", () => {
+  it("se lit sur un defi", () => {
+    expect(clashStake({ gameFormat: "competitive", isChallenge: true, stake: 3 })).toBe(3);
+  });
+
+  it("n existe pas sur un competitif", () => {
+    expect(clashStake({ gameFormat: "competitive", isChallenge: false, stake: 1 })).toBeNull();
+  });
+
+  it("n existe pas sur un amical, meme avec une mise trainante", () => {
+    expect(clashStake({ gameFormat: "friendly", isChallenge: false, stake: 3 })).toBeNull();
+  });
+
+  it("une vieille ligne sans drapeau mais avec une mise reste un defi", () => {
+    expect(clashStake({ stake: 2 })).toBe(2);
   });
 });

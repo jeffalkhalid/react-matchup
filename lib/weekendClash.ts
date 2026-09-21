@@ -17,6 +17,7 @@ import { supabase } from './supabase';
 import { isMissingRelation } from './pgErrors';
 import { eloToLevel } from './theme';
 import { occupiesSpot } from './games';
+import { matchNature } from './matchView';
 
 export type Team = 'A' | 'B';
 
@@ -45,6 +46,31 @@ export interface ClashGame {
   location: string | null;
   city: string | null;
   players: ClashPlayer[];
+  /** De quoi lire la nature de la partie — mêmes colonnes que `matchNature`. */
+  gameFormat?: string | null;
+  isChallenge?: boolean | null;
+  stake?: number | null;
+}
+
+/**
+ * On ne pronostique que ce qui se joue vraiment : un compétitif ou un défi.
+ *
+ * Un amical ne compte ni au classement ni à l'ELO — parier sur son issue
+ * n'engage rien et n'intéresse personne. Il encombrait le rail pendant que
+ * de vrais chocs attendaient plus bas.
+ */
+export function isPredictable(g: Pick<ClashGame, 'gameFormat' | 'isChallenge' | 'stake'>): boolean {
+  return matchNature({
+    game_format: g.gameFormat, is_challenge: g.isChallenge, stake_multiplier: g.stake,
+  }).kind !== 'amical';
+}
+
+/** La mise d'un défi, ou `null` si la partie n'en est pas un. */
+export function clashStake(g: Pick<ClashGame, 'gameFormat' | 'isChallenge' | 'stake'>): number | null {
+  const n = matchNature({
+    game_format: g.gameFormat, is_challenge: g.isChallenge, stake_multiplier: g.stake,
+  });
+  return n.kind === 'defi' ? n.stake : null;
 }
 
 export interface Clash extends ClashGame {
@@ -82,6 +108,8 @@ export function clashesToPredict(games: ClashGame[], now: Date = new Date(), lim
   for (const g of games) {
     const debut = Date.parse(g.matchDate);
     if (Number.isNaN(debut) || debut <= now.getTime()) continue;
+    // Un amical ne compte nulle part : rien a pronostiquer.
+    if (!isPredictable(g)) continue;
 
     const teamA = g.players.filter(p => p.team === 'A');
     const teamB = g.players.filter(p => p.team === 'B');
@@ -274,7 +302,7 @@ const MANQUE = isMissingRelation;
 export async function fetchClashCandidates(start: Date, end: Date, limit = 40): Promise<ClashGame[]> {
   const { data, error } = await supabase
     .from('open_games')
-    .select('id, match_date, location, status, creator_id, creator_side, creator:creator_id(id, name, elo_score, avatar_path, member_number), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, member_number))')
+    .select('id, match_date, location, status, game_format, is_challenge, stake_multiplier, creator_id, creator_side, creator:creator_id(id, name, elo_score, avatar_path, member_number), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, member_number))')
     .neq('status', 'cancelled')
     .gte('match_date', start.toISOString())
     .lte('match_date', end.toISOString())
@@ -287,6 +315,9 @@ export async function fetchClashCandidates(start: Date, end: Date, limit = 40): 
     matchDate: g.match_date,
     location: g.location ?? null,
     city: null,
+    gameFormat: g.game_format ?? null,
+    isChallenge: g.is_challenge ?? null,
+    stake: g.stake_multiplier ?? null,
     players: clashPlayersFrom((g.participants ?? []) as ClashParticipant[], g as ClashCreator),
   }));
 }

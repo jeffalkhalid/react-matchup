@@ -395,3 +395,16 @@ export function stakeTone(stake: number): StakeTone {
   if (stake <= 3) return { level: 'standard', bg: '#FFC11A', fg: '#0A0A0A', soft: '#B45309' };
   return { level: 'high', bg: '#EF4444', fg: '#FFFFFF', soft: '#B91C1C' };
 }
+
+/**
+ * La mise, écrite : « ×3 », « ×2.5 ». `null` quand il n'y a pas de mise —
+ * « ×1 » n'apprend rien à personne.
+ *
+ * L'arrondi était recopié à la main (carte de match, fil d'activité) : deux
+ * copies d'une même écriture finissent par diverger.
+ */
+export function formatStake(stake: number | null | undefined): string | null {
+  const n = Number(stake ?? 1) || 1;
+  if (n <= 1) return null;
+  return `×${n % 1 === 0 ? n : n.toFixed(1)}`;
+}

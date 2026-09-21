@@ -9,6 +9,7 @@ import { PM, accentOf, ACCENT, initials, PFonts } from './theme';
 import { Glyph } from './glyphs';
 import { Icon, type IconName } from '../community/icons';
 import { CreatorCrownBadge } from '../CreatorCrownBadge';
+import { formatStake } from '../../lib/defis';
 import { AmbassadorPill } from '../ambassador/primitives';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { AMB } from '../../lib/ambassador';
@@ -128,7 +129,8 @@ const NATURE_STYLE = {
 
 export function NaturePill({ kind, stake }: { kind: 'defi' | 'competitif' | 'amical'; stake?: number }) {
   const s = NATURE_STYLE[kind];
-  const stakeStr = stake && stake > 1 ? ` ×${stake % 1 === 0 ? stake : stake.toFixed(1)}` : '';
+  const mise = formatStake(stake);
+  const stakeStr = mise ? ` ${mise}` : '';
   const label = kind === 'defi' ? `⚡ DÉFI${stakeStr}` : kind === 'amical' ? 'AMICAL' : 'COMPÉTITIF';
   return (
     <View style={{ borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, backgroundColor: s.bg }}>

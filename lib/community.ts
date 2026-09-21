@@ -6,6 +6,7 @@ import { supabase } from './supabase';
 import { notifyPlayers } from './notify';
 import { isBadgeVisible } from './badges';
 import { getLeague, eloToLevel, formatPadelLevel } from './theme';
+import { formatStake } from './defis';
 import type {
   Player, SocialPlayer, ActivityEvent, GameAlert, ReferralStats, League, ActivityComment,
 } from '../types';
@@ -496,7 +497,8 @@ export function buildGameShareMessage(g: {
 }): string {
   const dateStr = g.matchDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const timeStr = g.matchDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
-  const stake = g.stake && g.stake > 1 ? ` ×${g.stake % 1 === 0 ? g.stake : g.stake.toFixed(1)}` : '';
+  const mise = formatStake(g.stake);
+  const stake = mise ? ` ${mise}` : '';
   const typeLine = g.kind === 'friendly' ? '🤝 Match amical'
     : g.kind === 'challenge' ? `⚡ Défi${stake}`
     : '🏆 Match compétitif';

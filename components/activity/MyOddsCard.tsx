@@ -19,8 +19,9 @@ import { PlayerAvatar } from '../PlayerAvatar';
 import {
   predictionWindow, fetchClashCandidates, fetchPredictionsForGames,
   clashesToPredict, myClashes, myTeamIn, countPredictions, predictionShare, oddsLine,
-  clashWhenLabel, type Clash, type ClashPlayer, type PredictionCounts, type Team,
+  clashWhenLabel, clashStake, type Clash, type ClashPlayer, type PredictionCounts, type Team,
 } from '../../lib/weekendClash';
+import { StakeGriffe, StakePill } from './StakeMark';
 
 const SOMBRE = '#0A0A0A';
 const TUILE = '#1A1A1C';
@@ -117,11 +118,18 @@ export function MyOddsCard({ myId }: { myId: string }) {
           const c = counts[clash.gameId] ?? { A: 0, B: 0, total: 0 };
           const monCamp = myTeamIn(clash, myId);
           const phrase = oddsLine(c, monCamp);
+          const mise = clashStake(clash);
           return (
-            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, padding: 14 }}>
-              <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontSize: 11, color: BLANC_45, marginBottom: 10 }}>
-                {clashWhenLabel(clash)}
-              </Text>
+            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, overflow: 'hidden' }}>
+              {/* Sur MON match, la mise est l'enjeu : elle se voit d'abord. */}
+              <StakeGriffe stake={mise} />
+              <View style={{ padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <StakePill stake={mise} />
+                <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 11, color: BLANC_45 }}>
+                  {clashWhenLabel(clash)}
+                </Text>
+              </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Camp players={clash.teamA} moi={monCamp === 'A'} part={predictionShare(c, 'A')} />
@@ -137,6 +145,7 @@ export function MyOddsCard({ myId }: { myId: string }) {
               <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 4, textAlign: 'center' }}>
                 {`${c.total} avis`}
               </Text>
+              </View>
             </View>
           );
         })}

@@ -30,8 +30,9 @@ import { PlayerAvatar } from '../PlayerAvatar';
 import {
   predictionWindow, fetchClashCandidates, fetchPredictionsForGames, castPrediction,
   clashesToPredict, tightestClashId, withoutMyGames, countPredictions, predictionShare,
-  clashWhenLabel, type Clash, type ClashPlayer, type PredictionCounts, type Team,
+  clashWhenLabel, clashStake, type Clash, type ClashPlayer, type PredictionCounts, type Team,
 } from '../../lib/weekendClash';
+import { StakeGriffe, StakePill } from './StakeMark';
 
 const SOMBRE = '#0A0A0A';
 const TUILE = '#1A1A1C';
@@ -191,9 +192,14 @@ export function FeaturedClash({ myId, onContent }: {
           const c = counts[clash.gameId] ?? { A: 0, B: 0, total: 0 };
           const mien = mine[clash.gameId] ?? null;
           const estLeChoc = clash.gameId === choc;
+          const mise = clashStake(clash);
           return (
-            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, padding: 14 }}>
+            <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, overflow: 'hidden' }}>
+              {/* La griffe d'un défi : sa couleur dit le niveau de mise. */}
+              <StakeGriffe stake={mise} />
+              <View style={{ padding: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <StakePill stake={mise} />
                 {estLeChoc ? (
                   <View style={{ backgroundColor: Colors.brand, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
                     <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 8.5, letterSpacing: 0.6, color: Colors.primary }}>LE CHOC</Text>
@@ -215,6 +221,7 @@ export function FeaturedClash({ myId, onContent }: {
                   ? `${c.total} avis${mien ? '' : " pour l'instant"}`
                   : "Personne ne s'est encore prononcé"}
               </Text>
+              </View>
             </View>
           );
         })}
