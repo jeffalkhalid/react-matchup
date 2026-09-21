@@ -30,6 +30,13 @@ export interface BusyParticipation {
   game?: { match_date?: string | null; status?: string | null } | null;
 }
 
+/** Une partie vue par son CRÉATEUR — qui n'a pas de ligne de participation. */
+export interface BusyCreatedGame {
+  creator_id: string;
+  match_date?: string | null;
+  status?: string | null;
+}
+
 /** Une partie annulée ou déjà scorée n'occupe plus le créneau de personne. */
 const compte = (statut: string | null | undefined) => statut !== 'cancelled' && statut !== 'closed';
 
@@ -52,7 +59,26 @@ export function busyPlayerIds(rows: BusyParticipation[], slotTs: number): Set<st
 }
 
 /**
- * Parmi ces joueurs, lesquels ont déjà une partie confirmée sur le créneau.
+ * Qui, parmi ces parties, est pris sur ce créneau en tant que CRÉATEUR.
+ *
+ * Le créateur n'est pas une ligne de `game_participants` : il vit sur la
+ * partie (`creator_id`). Ne lire que les participations laissait donc
+ * l'organisateur d'une partie apparaître comme libre à la même heure — vu à
+ * l'écran, et déjà payé une fois côté pronostics.
+ */
+export function busyCreatorIds(games: BusyCreatedGame[], slotTs: number): Set<string> {
+  const out = new Set<string>();
+  if (!Number.isFinite(slotTs)) return out;
+  for (const g of games) {
+    if (!g?.creator_id || !g.match_date || !compte(g.status)) continue;
+    if (overlapsSlot(Date.parse(g.match_date), slotTs)) out.add(g.creator_id);
+  }
+  return out;
+}
+
+/**
+ * Parmi ces joueurs, lesquels ont déjà une partie confirmée sur le créneau —
+ * qu'ils y participent ou qu'ils l'aient créée.
  * En cas d'échec réseau : personne n'est marqué indisponible — mieux vaut
  * laisser inviter (le serveur refusera) que d'interdire à tort.
  */
@@ -64,12 +90,22 @@ export async function fetchBusyPlayerIds(playerIds: string[], slotTs: number): P
   // table jointe demande un `!inner` dont le comportement se prête aux
   // mauvaises surprises, et la liste de candidats tient en une poignée de
   // joueurs — leurs parties confirmées se comptent sur les doigts.
-  const { data, error } = await supabase
-    .from('game_participants')
-    .select('player_id, game:game_id(match_date, status)')
-    .in('player_id', ids)
-    .eq('status', 'accepted');
+  const [{ data: parts, error }, { data: creees }] = await Promise.all([
+    supabase
+      .from('game_participants')
+      .select('player_id, game:game_id(match_date, status)')
+      .in('player_id', ids)
+      .eq('status', 'accepted'),
+    // Les parties que ces joueurs ORGANISENT : le créateur n'a pas de ligne
+    // de participation, il serait sinon annoncé libre à sa propre heure.
+    supabase
+      .from('open_games')
+      .select('creator_id, match_date, status')
+      .in('creator_id', ids),
+  ]);
   if (error) { console.warn('[slotConflict] fetchBusy', error); return new Set(); }
 
-  return busyPlayerIds((data ?? []) as unknown as BusyParticipation[], slotTs);
+  const pris = busyPlayerIds((parts ?? []) as unknown as BusyParticipation[], slotTs);
+  for (const id of busyCreatorIds((creees ?? []) as unknown as BusyCreatedGame[], slotTs)) pris.add(id);
+  return pris;
 }

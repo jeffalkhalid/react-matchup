@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
-  overlapsSlot, busyPlayerIds, OVERLAP_MS, MATCH_DURATION_MS, BUFFER_MS,
+  overlapsSlot, busyPlayerIds, busyCreatorIds, OVERLAP_MS, MATCH_DURATION_MS, BUFFER_MS,
   type BusyParticipation,
 } from '../slotConflict';
 
@@ -88,5 +88,34 @@ describe('busyPlayerIds — qui est déjà pris sur le créneau', () => {
 
   it('liste vide → personne', () => {
     expect(busyPlayerIds([], CRENEAU).size).toBe(0);
+  });
+});
+
+describe('busyCreatorIds — le créateur n\'est PAS un participant', () => {
+  const partie = (creator: string, dec: number, status = 'open') => ({
+    creator_id: creator, match_date: new Date(CRENEAU + dec).toISOString(), status,
+  });
+
+  it('l\'organisateur est pris à l\'heure de sa partie', () => {
+    expect([...busyCreatorIds([partie('alamine', 0)], CRENEAU)]).toEqual(['alamine']);
+  });
+
+  it('même règle de chevauchement que pour les participants', () => {
+    expect(busyCreatorIds([partie('alamine', h(1))], CRENEAU).size).toBe(1);
+    expect(busyCreatorIds([partie('alamine', h(2))], CRENEAU).size).toBe(0);
+  });
+
+  it('une partie annulée ou scorée ne l\'occupe plus', () => {
+    expect(busyCreatorIds([partie('alamine', 0, 'cancelled')], CRENEAU).size).toBe(0);
+    expect(busyCreatorIds([partie('alamine', 0, 'closed')], CRENEAU).size).toBe(0);
+  });
+
+  it('sans date ni créateur, rien', () => {
+    expect(busyCreatorIds([{ creator_id: 'a', match_date: null }], CRENEAU).size).toBe(0);
+    expect(busyCreatorIds([{ creator_id: '', match_date: new Date(CRENEAU).toISOString() }], CRENEAU).size).toBe(0);
+  });
+
+  it('sans créneau lisible, personne', () => {
+    expect(busyCreatorIds([partie('alamine', 0)], NaN).size).toBe(0);
   });
 });
