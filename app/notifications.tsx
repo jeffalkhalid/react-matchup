@@ -283,7 +283,11 @@ export default function NotificationsScreen() {
                   <Text style={{ fontSize: 14, fontWeight: '900', color: text.title, fontFamily: Fonts.uiBlack }} numberOfLines={1}>
                     {item.title}
                   </Text>
-                  <Text style={{ fontSize: 12, color: text.sub, marginTop: 2 }} numberOfLines={1}>
+                  {/* Trois lignes, pas une : « Chingoto veut rejoindre la
+                      partie à Al Akhawayn Univ… » coupait le club, donc la
+                      seule information qui aide à décider. La hauteur reste
+                      celle du texte — une notif courte ne grandit pas. */}
+                  <Text style={{ fontSize: 12, lineHeight: 16, color: text.sub, marginTop: 2 }} numberOfLines={3}>
                     {item.subtitle}
                   </Text>
                 </View>
