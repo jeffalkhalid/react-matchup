@@ -98,13 +98,44 @@ export function clashesToPredict(games: ClashGame[], now: Date = new Date(), lim
     .slice(0, limit);
 }
 
-/**
- * Retire les parties où JE joue : on ne pronostique pas son propre match.
- * L'issue dépend de moi, et « 58 % pensent que tu vas perdre » n'est pas une
- * conversation, c'est un jugement.
- */
+/** Est-ce que JE joue cette partie ? */
+export function isMyClash(clash: Pick<Clash, 'players'>, myId: string): boolean {
+  return clash.players.some(p => p.id === myId);
+}
+
+/** Les parties que je ne joue pas : celles que je peux pronostiquer. */
 export function withoutMyGames(clashes: Clash[], myId: string): Clash[] {
-  return clashes.filter(c => !c.players.some(p => p.id === myId));
+  return clashes.filter(c => !isMyClash(c, myId));
+}
+
+/**
+ * Mes propres matchs. On ne les PRONOSTIQUE pas — l'issue dépend de nous —
+ * mais on les REGARDE : savoir que le club nous voit perdre est justement ce
+ * qui donne envie d'aller leur donner tort. Les deux ne se confondent pas,
+ * d'où deux blocs séparés.
+ */
+export function myClashes(clashes: Clash[], myId: string): Clash[] {
+  return clashes.filter(c => isMyClash(c, myId));
+}
+
+/** De quel côté du filet je suis, dans cette partie. */
+export function myTeamIn(clash: Pick<Clash, 'teamA' | 'teamB'>, myId: string): Team | null {
+  if (clash.teamA.some(p => p.id === myId)) return 'A';
+  if (clash.teamB.some(p => p.id === myId)) return 'B';
+  return null;
+}
+
+/**
+ * La phrase qui donne l'enjeu, selon ce que le club pense de MON camp.
+ * `null` tant que personne ne s'est prononcé : il n'y a alors rien à
+ * confirmer ni à démentir.
+ */
+export function oddsLine(counts: PredictionCounts, myTeam: Team | null): string | null {
+  if (!myTeam || counts.total === 0) return null;
+  const part = predictionShare(counts, myTeam);
+  if (part > 50) return `${part} % vous voient gagner. Confirmez.`;
+  if (part < 50) return `${100 - part} % vous voient perdre. Donnez-leur tort.`;
+  return "Le club n'arrive pas à trancher. À vous de le faire.";
 }
 
 /** L'identifiant de la partie la plus serrée — elle porte la pastille « LE CHOC ». */

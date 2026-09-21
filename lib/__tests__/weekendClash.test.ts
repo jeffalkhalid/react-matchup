@@ -3,7 +3,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   teamOf, teamLevel, pickClash, countPredictions, predictionShare,
   clashWhenLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
-  clashesToPredict, tightestClashId, withoutMyGames,
+  clashesToPredict, tightestClashId, withoutMyGames, myClashes, isMyClash, myTeamIn, oddsLine,
   type ClashGame, type ClashPlayer, type Team,
 } from '../weekendClash';
 
@@ -302,26 +302,62 @@ describe('clashesToPredict — plusieurs matchs, pas un seul', () => {
   });
 });
 
-describe('withoutMyGames — on ne pronostique pas son propre match', () => {
+describe('mes matchs : on les regarde, on ne les pronostique pas', () => {
   const futur = (jours: number) => new Date(now.getTime() + jours * 86_400_000).toISOString();
-
-  it('retire la partie où je joue', () => {
+  const deux = () => {
     const liste = clashesToPredict([
       partie('sansMoi', futur(1), [1500, 1500, 1500, 1500]),
       partie('avecMoi', futur(2), [1500, 1500, 1500, 1500]),
     ], now);
     liste.find(c => c.gameId === 'avecMoi')!.players[0].id = 'moi';
+    liste.find(c => c.gameId === 'avecMoi')!.teamA[0].id = 'moi';
+    return liste;
+  };
+
+  it('les deux listes se partagent tout, sans recouvrement', () => {
+    const liste = deux();
     expect(withoutMyGames(liste, 'moi').map(c => c.gameId)).toEqual(['sansMoi']);
+    expect(myClashes(liste, 'moi').map(c => c.gameId)).toEqual(['avecMoi']);
   });
 
-  it('peu importe le camp où je suis', () => {
+  it('isMyClash me reconnaît de chaque côté du filet', () => {
     const liste = clashesToPredict([partie('g', futur(1), [1500, 1500, 1500, 1500])], now);
+    expect(isMyClash(liste[0], 'moi')).toBe(false);
     liste[0].players[3].id = 'moi';
-    expect(withoutMyGames(liste, 'moi')).toEqual([]);
+    expect(isMyClash(liste[0], 'moi')).toBe(true);
   });
 
-  it('ne retire rien si je ne joue nulle part', () => {
+  it('myTeamIn dit de quel côté je suis', () => {
     const liste = clashesToPredict([partie('g', futur(1), [1500, 1500, 1500, 1500])], now);
-    expect(withoutMyGames(liste, 'inconnu')).toHaveLength(1);
+    expect(myTeamIn(liste[0], 'inconnu')).toBeNull();
+    expect(myTeamIn(liste[0], 'a2')).toBe('A');
+    expect(myTeamIn(liste[0], 'b1')).toBe('B');
+  });
+});
+
+describe("oddsLine — l'enjeu, vu de mon camp", () => {
+  const avis = (a: number, b: number) => countPredictions([
+    ...Array.from({ length: a }, () => ({ team: 'A' as Team })),
+    ...Array.from({ length: b }, () => ({ team: 'B' as Team })),
+  ]);
+
+  it('quand le club nous voit perdre, il faut lui donner tort', () => {
+    expect(oddsLine(avis(2, 8), 'A')).toBe('80 % vous voient perdre. Donnez-leur tort.');
+  });
+
+  it('quand il nous voit gagner, il faut confirmer', () => {
+    expect(oddsLine(avis(8, 2), 'A')).toBe('80 % vous voient gagner. Confirmez.');
+  });
+
+  it("à cinquante-cinquante, personne n'a tranché", () => {
+    expect(oddsLine(avis(5, 5), 'A')).toMatch(/n'arrive pas à trancher/);
+  });
+
+  it("sans aucun avis, il n'y a rien à dire", () => {
+    expect(oddsLine(avis(0, 0), 'A')).toBeNull();
+  });
+
+  it('sans camp connu non plus', () => {
+    expect(oddsLine(avis(5, 3), null)).toBeNull();
   });
 });

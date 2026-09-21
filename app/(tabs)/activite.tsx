@@ -33,6 +33,7 @@ import { CircleBilansRail } from '../../components/activity/CircleBilansRail';
 import { MomentsRail } from '../../components/activity/MomentsRail';
 import { FeaturedMercato } from '../../components/activity/FeaturedMercato';
 import { FeaturedClash } from '../../components/activity/FeaturedClash';
+import { MyOddsCard } from '../../components/activity/MyOddsCard';
 import { MomentComposer } from '../../components/activity/MomentComposer';
 import { DispoCard } from '../../components/activity/DispoCard';
 import { InvitationCard } from '../../components/activity/InvitationCard';
@@ -328,6 +329,7 @@ export default function ActiviteTab() {
                 }}
               />
               <FeaturedClash myId={myId} />
+              <MyOddsCard myId={myId} />
 
 
               {/* Qui joue quand : dispo ce soir, puis l'invitation reçue. */}
