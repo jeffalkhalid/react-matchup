@@ -3,6 +3,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   availabilitySlots, slotLabel, isSlotActive, slotFromKey, AVAILABILITY_TTL_DAYS, AVAILABILITY_DAYS,
   slotShortLabel, slotTitle, missingPlayers, circleVisibilityLabel, suggestedStart, slotFormFields,
+  displayedSlot,
 } from '../availability';
 
 // Jeudi 17 septembre 2026, 9 h (heure locale du téléphone).
@@ -213,5 +214,47 @@ describe('« Ce soir » disparaît quand il est trop tard pour jouer', () => {
 
   it('l\'après-midi, rien ne change', () => {
     expect(ce(14).label).toBe('Ce soir');
+  });
+});
+
+describe("displayedSlot — la carte montre MON premier jour declare", () => {
+  const LUNDI = new Date(2026, 8, 21, 9, 30, 0);
+  const jours = () => availabilitySlots(LUNDI);
+  const declare = (s: { start: Date; end: Date }) => ({
+    slot_start: s.start.toISOString(), slot_end: s.end.toISOString(),
+  });
+
+  it("saute le soir meme quand je ne suis pas dispo ce soir", () => {
+    // Le bug : coche demain + mercredi, la carte affichait « Dispos ce soir »
+    // et les joueurs d'un soir ou l'on ne joue pas.
+    const j = jours();
+    const vu = displayedSlot(j, [declare(j[1]), declare(j[2])]);
+    expect(vu?.key).toBe(j[1].key);
+    expect(slotTitle(vu!, LUNDI)).toBe("Dispos demain");
+  });
+
+  it("prend le PREMIER declare, pas le dernier", () => {
+    const j = jours();
+    const vu = displayedSlot(j, [declare(j[4]), declare(j[2])]);
+    expect(vu?.key).toBe(j[2].key);
+  });
+
+  it("garde le soir meme quand je m y suis declare", () => {
+    const j = jours();
+    expect(displayedSlot(j, [declare(j[0])])?.key).toBe(j[0].key);
+  });
+
+  it("sans aucune declaration, retombe sur le plus proche", () => {
+    const j = jours();
+    expect(displayedSlot(j, [])?.key).toBe(j[0].key);
+  });
+
+  it("une dispo abimee ne fait pas derailler le choix", () => {
+    const j = jours();
+    expect(displayedSlot(j, [{ slot_start: "nawak", slot_end: "nawak" }])?.key).toBe(j[0].key);
+  });
+
+  it("sans creneau du tout, rien a montrer", () => {
+    expect(displayedSlot([], [])).toBeNull();
   });
 });

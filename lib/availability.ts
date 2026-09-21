@@ -143,6 +143,23 @@ export function isSlotActive(slot: Slot, mine: Pick<AvailabilityRow, 'slot_start
 }
 
 /**
+ * Le créneau que la carte « Dispos » doit montrer : MON premier jour déclaré.
+ *
+ * Elle montrait toujours le plus proche — « Dispos ce soir » — même à
+ * quelqu'un qui s'était déclaré pour demain et mercredi. Il voyait donc les
+ * joueurs d'un soir où il ne joue pas, et pas ceux du sien.
+ *
+ * Sans aucune déclaration, on retombe sur le plus proche : il faut bien
+ * montrer quelque chose, et c'est l'invitation à se déclarer.
+ */
+export function displayedSlot(
+  slots: Slot[],
+  mine: Pick<AvailabilityRow, 'slot_start' | 'slot_end'>[],
+): Slot | null {
+  return slots.find(s => isSlotActive(s, mine)) ?? slots[0] ?? null;
+}
+
+/**
  * L'heure à proposer quand on monte une partie sur ce créneau : le début du
  * créneau, ou la prochaine demi-heure s'il a déjà commencé. On ne propose
  * jamais une heure passée — ni « dans cinq minutes », le temps d'y aller.

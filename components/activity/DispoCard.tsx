@@ -12,7 +12,7 @@ import { AMB, isAmbassador } from '../../lib/ambassador';
 import { AmbassadorRing } from '../ambassador/primitives';
 import { notifyPlayers } from '../../lib/notify';
 import {
-  availabilitySlots, isSlotActive, slotTitle, slotShortLabel, missingPlayers,
+  availabilitySlots, displayedSlot, isSlotActive, slotTitle, slotShortLabel, missingPlayers,
   fetchCircleAvailability, slotFormFields, type AvailabilityRow, type Slot,
 } from '../../lib/availability';
 import {
@@ -42,10 +42,11 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
   /** Les joueurs cochés : c'est avec eux que la partie se monte. */
   const [choisis, setChoisis] = useState<string[]>([]);
 
-  // Le créneau affiché : le plus proche dans le temps, quel que soit celui
-  // que le joueur a coché (voir captures 11/12 — la carte reste « Dispos ce
-  // soir » même quand aucun chip n'est actif).
-  const slot = availabilitySlots()[0];
+  // Le créneau affiché : MON premier jour déclaré, sinon le plus proche. La
+  // carte restait figée sur « ce soir » et montrait les joueurs d'un soir où
+  // l'on ne joue pas. Le titre suit (slotTitle), donc « Dispos demain ».
+  const creneaux = availabilitySlots();
+  const slot = displayedSlot(creneaux, mine) ?? creneaux[0];
 
   const load = useCallback(() => {
     setLoading(true);
@@ -243,7 +244,11 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: 12, color: Colors.textSecondary }}>
-              {othersCount} joueur{othersCount > 1 ? 's' : ''} dispo{othersCount > 1 ? 's' : ''} {slotShortLabel(slot)}
+              {/* « 0 joueur dispo demain » sous sa propre photo n'avait pas de
+                  sens : quand je suis le seul déclaré, on le dit. */}
+              {othersCount === 0 && iAmIn
+                ? `Tu es le seul déclaré ${slotShortLabel(slot)}`
+                : `${othersCount} joueur${othersCount > 1 ? 's' : ''} dispo${othersCount > 1 ? 's' : ''} ${slotShortLabel(slot)}`}
             </Text>
             {choisis.length > 0 ? (
               <TouchableOpacity onPress={() => setChoisis([])} hitSlop={8}>
