@@ -60,12 +60,15 @@ export function FeedList({ shown, myId, loading, selName, onReact, onReport, onR
   // « Revanche ? » (MA défaite) : l'assistant de création, avec le match
   // rejoué à l'identique — pas l'onglet Défi, où il n'y avait rien à faire.
   const onDefi = (e: ActivityEvent) => router.push(rematchRoute(e.match_id) as any);
+  // On ne se félicite pas soi-même : sur MES publications le bouton de
+  // réaction s'éteint et ne garde que le compte. Le profil le faisait déjà,
+  // le fil non.
   return (
     <View style={{ gap: 14, marginTop: 14 }}>
       {loading ? (
         <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
       ) : shown.length > 0 ? (
-        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onRemove={onRemove && e.player_id === myId ? () => onRemove(e) : undefined} onOpen={onOpen ? () => onOpen(e) : undefined} onDefi={() => onDefi(e)} />)
+        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={e.player_id === myId ? undefined : () => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onRemove={onRemove && e.player_id === myId ? () => onRemove(e) : undefined} onOpen={onOpen ? () => onOpen(e) : undefined} onDefi={() => onDefi(e)} />)
       ) : (
         <EmptyState name={selName?.split(' ')[0]} />
       )}

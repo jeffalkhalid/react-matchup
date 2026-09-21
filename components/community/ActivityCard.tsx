@@ -52,6 +52,9 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemov
   const reactionText = reactionActive
     ? (reaction.kind === 'action' ? Colors.brand : AMB.chipText)
     : Colors.textSecondary;
+  // Une réaction sans geste possible (ma propre publication) : le bouton
+  // s'estompe au lieu de faire croire qu'on peut se féliciter soi-même.
+  const reactionMuette = reaction.kind === 'reaction' && !onReact;
   // « Revanche ? » ouvre un écran — rien n'est « envoyé », donc le bouton ne
   // se verrouille plus après un tap : on peut revenir et recommencer.
   const onPressReaction = () => {
@@ -194,6 +197,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemov
             flexDirection: 'row', alignItems: 'center', gap: 6,
             borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, borderWidth: 1,
             backgroundColor: reactionBg, borderColor: reactionBorder,
+            opacity: reactionMuette ? 0.5 : 1,
           }}
         >
           <Icon name={reaction.icon} size={14} color={reactionText} stroke={2} />
