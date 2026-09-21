@@ -1,7 +1,7 @@
 // Carte « Dispos ce soir » — hub Activité, étape 1. Montre qui, dans mon
 // cercle (mes amis — le mercato « joueurs de mon niveau » viendra à l'étape
 // suivante), s'est déclaré libre sur le créneau le plus proche.
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts, formatPadelLevel } from '../../lib/theme';
@@ -15,6 +15,9 @@ import {
   availabilitySlots, isSlotActive, slotTitle, slotShortLabel, missingPlayers,
   fetchCircleAvailability, slotFormFields, type AvailabilityRow, type Slot,
 } from '../../lib/availability';
+import {
+  announcedSlots, alertBody, cooldownLeft, cooldownLabel, readLastAlert, markAlertSent,
+} from '../../lib/circleAlert';
 
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 14 } as const;
 /** Trois places à pourvoir à côté de la mienne. */
@@ -79,15 +82,55 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
     })),
   ];
 
-  const prevenirCercle = () => {
-    if (friendIds.length === 0) return;
-    notifyPlayers({
+  // ── Prévenir mon cercle ────────────────────────────────────────────
+  // On annonce les jours RÉELLEMENT cochés, pas le créneau affiché par la
+  // carte : le bouton disait « dispo ce soir » à quelqu'un qui avait coché
+  // demain et mercredi. Et un seul envoi passe par tranche de quelques
+  // heures — voir lib/circleAlert pour la règle et ses limites.
+  const [dernierEnvoi, setDernierEnvoi] = useState<number | null>(null);
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+
+  useFocusEffect(useCallback(() => {
+    let vivant = true;
+    setMaintenant(Date.now());
+    readLastAlert(playerId).then(t => { if (vivant) setDernierEnvoi(t); });
+    return () => { vivant = false; };
+  }, [playerId]));
+
+  const attente = cooldownLeft(dernierEnvoi, maintenant);
+
+  // Le compte à rebours avance tout seul : sans ça le bouton resterait éteint
+  // jusqu'à ce qu'on quitte l'onglet et qu'on y revienne.
+  useEffect(() => {
+    if (attente <= 0) return;
+    const t = setInterval(() => setMaintenant(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [attente <= 0]);
+
+  const aPrevenir = useMemo(() => announcedSlots(availabilitySlots(), mine), [mine]);
+
+  const sansCercle = friendIds.length === 0;
+  const peutPrevenir = !sansCercle && aPrevenir.length > 0 && attente <= 0 && !envoiEnCours;
+
+  const prevenirCercle = async () => {
+    if (!peutPrevenir) return;
+    setEnvoiEnCours(true);
+    const quand = Date.now();
+    await notifyPlayers({
       playerIds: friendIds,
       title: `${playerName} cherche à jouer`,
-      body: `Dispo ${slotShortLabel(slot)} — tape pour te déclarer aussi.`,
+      body: alertBody(aPrevenir),
       data: { type: 'availability' },
     });
+    await markAlertSent(playerId, quand);
+    setDernierEnvoi(quand); setMaintenant(Date.now()); setEnvoiEnCours(false);
   };
+
+  const texteBouton = sansCercle ? 'Personne à prévenir'
+    : attente > 0 ? 'Ton cercle est prévenu'
+    : aPrevenir.length === 0 ? "Choisis d'abord un jour"
+    : 'Prévenir mon cercle';
 
   const calm = othersCount === 0 && !iAmIn;
 
@@ -128,10 +171,15 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
               <Chip key={s.key} label={s.label} on={isSlotActive(s, mine)} onPress={() => onToggleSlot(s)} pill />
             ))}
           </ScrollView>
-          <TouchableOpacity onPress={prevenirCercle} activeOpacity={0.85} disabled={friendIds.length === 0}
-            style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 10, opacity: friendIds.length === 0 ? 0.5 : 1 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>Prévenir mon cercle</Text>
+          <TouchableOpacity onPress={prevenirCercle} activeOpacity={0.85} disabled={!peutPrevenir}
+            style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center', marginTop: 10, opacity: peutPrevenir ? 1 : 0.5 }}>
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>{texteBouton}</Text>
           </TouchableOpacity>
+          {attente > 0 ? (
+            <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 8 }}>
+              {`Tu pourras relancer dans ${cooldownLabel(attente)}.`}
+            </Text>
+          ) : null}
         </>
       ) : (
         <>
