@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import {
-  teamOf, teamLevel, pickClash, countPredictions, predictionShare, agreementLabel,
+  teamOf, teamLevel, pickClash, countPredictions, predictionShare,
   clashWhenLabel, predictionWindow, PREDICTION_DAYS, clashPlayersFrom,
   clashesToPredict, tightestClashId, withoutMyGames,
   type ClashGame, type ClashPlayer, type Team,
@@ -117,13 +117,12 @@ describe('pronostics — le décompte et les parts', () => {
     const c = countPredictions([]);
     expect(c.total).toBe(0);
     expect(predictionShare(c, 'A')).toBe(0);
-    expect(agreementLabel(c, 'A')).toBeNull();
+    expect(predictionShare(c, 'B')).toBe(0);
   });
 
-  it('« comme toi » ne s\'affiche qu\'une fois qu\'on a voté', () => {
+  it('les deux parts couvrent l\'ensemble des avis', () => {
     const c = countPredictions(rows(7, 5));
-    expect(agreementLabel(c, null)).toBeNull();
-    expect(agreementLabel(c, 'A')).toBe('58 % comme toi');
+    expect(predictionShare(c, 'A') + predictionShare(c, 'B')).toBe(100);
   });
 });
 

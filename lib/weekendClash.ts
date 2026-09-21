@@ -210,12 +210,6 @@ export function predictionShare(counts: PredictionCounts, team: Team): number {
   return Math.round((counts[team] / counts.total) * 100);
 }
 
-/** « 58 % comme toi » — la part de ceux qui ont dit la même chose. */
-export function agreementLabel(counts: PredictionCounts, mine: Team | null): string | null {
-  if (!mine || counts.total === 0) return null;
-  return `${predictionShare(counts, mine)} % comme toi`;
-}
-
 const JOURS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
 const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 

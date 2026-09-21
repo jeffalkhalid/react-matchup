@@ -29,7 +29,7 @@ import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import {
   predictionWindow, fetchClashCandidates, fetchPredictionsForGames, castPrediction,
-  clashesToPredict, tightestClashId, withoutMyGames, countPredictions, predictionShare, agreementLabel,
+  clashesToPredict, tightestClashId, withoutMyGames, countPredictions, predictionShare,
   clashWhenLabel, type Clash, type ClashPlayer, type PredictionCounts, type Team,
 } from '../../lib/weekendClash';
 
@@ -40,9 +40,11 @@ const BLANC_45 = 'rgba(255,255,255,0.45)';
 const JAUNE_DOUX = 'rgba(255,193,26,0.16)';
 
 /** Une paire, présentée comme sur la carte de match : photo, prénom, niveau. */
-function Cote({ players, choisi, onPress }: {
+function Cote({ players, choisi, part, onPress }: {
   players: ClashPlayer[];
   choisi: boolean;
+  /** Part des pronostics pour ce camp, une fois qu'on a voté. */
+  part: number | null;
   onPress: () => void;
 }) {
   return (
@@ -57,6 +59,8 @@ function Cote({ players, choisi, onPress }: {
         borderColor: choisi ? Colors.brand : 'rgba(255,255,255,0.08)',
       }}
     >
+      <View style={{ flex: 1, minWidth: 0 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
       {players.map(p => (
         <View key={p.id} style={{ alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
           <PlayerAvatar
@@ -74,6 +78,18 @@ function Cote({ players, choisi, onPress }: {
           ) : null}
         </View>
       ))}
+      </View>
+      {/* La part de chaque camp, sous sa paire — plus parlant qu'une jauge et
+          un « 58 % comme toi » qui ne disait pas de quel côté. */}
+      {part != null ? (
+        <Text style={{
+          fontFamily: Fonts.uiBlack, fontSize: 15, marginTop: 8, textAlign: 'center',
+          color: choisi ? Colors.brand : BLANC_60,
+        }}>
+          {`${part} %`}
+        </Text>
+      ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -189,26 +205,16 @@ export function FeaturedClash({ myId, onContent }: {
               </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Cote players={clash.teamA} choisi={mien === 'A'} onPress={() => voter(clash, 'A')} />
+                <Cote players={clash.teamA} choisi={mien === 'A'} part={mien ? predictionShare(c, 'A') : null} onPress={() => voter(clash, 'A')} />
                 <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: BLANC_45 }}>VS</Text>
-                <Cote players={clash.teamB} choisi={mien === 'B'} onPress={() => voter(clash, 'B')} />
+                <Cote players={clash.teamB} choisi={mien === 'B'} part={mien ? predictionShare(c, 'B') : null} onPress={() => voter(clash, 'B')} />
               </View>
 
-              {mien ? (
-                <View style={{ marginTop: 10 }}>
-                  <View style={{ flexDirection: 'row', height: 6, borderRadius: 999, overflow: 'hidden', backgroundColor: TUILE }}>
-                    <View style={{ flex: Math.max(predictionShare(c, 'A'), 0.001), backgroundColor: Colors.brand }} />
-                    <View style={{ flex: Math.max(predictionShare(c, 'B'), 0.001), backgroundColor: TUILE }} />
-                  </View>
-                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 6, textAlign: 'center' }}>
-                    {agreementLabel(c, mien) ?? 'Ton prono est enregistré'}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 10, textAlign: 'center' }}>
-                  {c.total > 0 ? `${c.total} avis pour l'instant` : "Personne ne s'est encore prononcé"}
-                </Text>
-              )}
+              <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 10, textAlign: 'center' }}>
+                {c.total > 0
+                  ? `${c.total} avis${mien ? '' : " pour l'instant"}`
+                  : "Personne ne s'est encore prononcé"}
+              </Text>
             </View>
           );
         })}
