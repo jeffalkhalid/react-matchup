@@ -23,7 +23,7 @@ import { PlayerAvatar as Photo } from '../../components/PlayerAvatar';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { isCreatorConflict } from '../../lib/games';
-import { OVERLAP_MS } from '../../lib/slotConflict';
+import { fetchBusyPlayerIds } from '../../lib/slotConflict';
 import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
 import { computeCompatDetail, getPlayerGameData, scoreElo, scoreClubs, scoreDays } from '../../lib/compat';
@@ -198,7 +198,7 @@ export default function MatchmakingScreen() {
   const [releverGame, setReleverGame] = useState<DefiGame | null>(null);
   const [partnerSearch, setPartnerSearch] = useState('');
   const [partnerResults, setPartnerResults] = useState<{ id: string; name: string; elo_score: number; court_side?: string }[]>([]);
-  const [partnerBusy, setPartnerBusy] = useState<Set<string>>(new Set()); // résultats occupés au créneau du défi
+  const [busyPartnerIds, setBusyPartnerIds] = useState<Set<string>>(new Set()); // déjà pris au créneau du défi
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());     // joueurs bloqués (modération, 2 sens)
   const [applying, setApplying] = useState(false);
   const [suggestedPartners, setSuggestedPartners] = useState<{ id: string; name: string; elo_score: number; court_side?: string; compatScore?: number }[]>([]);
@@ -283,38 +283,38 @@ export default function MatchmakingScreen() {
 
   // ── Debounced player search ──────────────────────────────────
   useEffect(() => {
-    if (partnerSearch.length < 2) { setPartnerResults([]); setPartnerBusy(new Set()); return; }
+    if (partnerSearch.length < 2) { setPartnerResults([]); return; }
     const t = setTimeout(() => {
       supabase.from('players').select('id,name,elo_score,avatar_path,court_side')
         .is('deleted_at', null)
         .ilike('name', `%${partnerSearch}%`)
         .neq('id', player?.id ?? '')
         .limit(12)
-        .then(async ({ data }) => {
-          const results = ((data as any[]) || []).filter(p => !excludedPartnerIds.has(p.id)).slice(0, 8);
-          setPartnerResults(results);
-          // Dispo au créneau du défi : marquer ceux déjà pris ±2h (pastille « Occupé »).
-          const slotTs = releverGame?.match_date ? new Date(releverGame.match_date).getTime() : null;
-          if (slotTs != null && results.length > 0) {
-            const { data: busyRows } = await supabase
-              .from('game_participants')
-              .select('player_id, game:game_id(match_date, status)')
-              .in('player_id', results.map(p => p.id))
-              .eq('status', 'accepted');
-            const busy = new Set<string>();
-            (busyRows ?? []).forEach((r: any) => {
-              const g = r.game;
-              if (!g || g.status === 'cancelled' || g.status === 'closed' || !g.match_date) return;
-              if (Math.abs(new Date(g.match_date).getTime() - slotTs) < 2 * 60 * 60 * 1000) busy.add(r.player_id);
-            });
-            setPartnerBusy(busy);
-          } else {
-            setPartnerBusy(new Set());
-          }
+        .then(({ data }) => {
+          setPartnerResults(((data as any[]) || []).filter(p => !excludedPartnerIds.has(p.id)).slice(0, 8));
         });
     }, 300);
     return () => clearTimeout(t);
-  }, [partnerSearch, player, excludedPartnerIds, releverGame]);
+  }, [partnerSearch, player, excludedPartnerIds]);
+
+  // ── Qui est déjà pris au créneau du défi ─────────────────────
+  // Même règle que l'assistant de création (lib/slotConflict) : elle lit les
+  // participations ET les parties ORGANISÉES, sans quoi l'organisateur d'une
+  // autre partie à la même heure passe pour libre. Le serveur refuse de toute
+  // façon le chevauchement à l'acceptation (block_accepted_overlaps) : autant
+  // ne pas laisser envoyer une candidature qui sera recalée.
+  const slotTs = releverGame?.match_date ? Date.parse(releverGame.match_date) : NaN;
+  const partnerCandidateIds = useMemo(
+    () => [...new Set([...partnerResults.map(p => p.id), ...suggestedPartners.map(p => p.id)])].sort().join(','),
+    [partnerResults, suggestedPartners],
+  );
+
+  useEffect(() => {
+    if (!Number.isFinite(slotTs) || !partnerCandidateIds) { setBusyPartnerIds(new Set()); return; }
+    let cancelled = false;
+    fetchBusyPlayerIds(partnerCandidateIds.split(','), slotTs).then(ids => { if (!cancelled) setBusyPartnerIds(ids); });
+    return () => { cancelled = true; };
+  }, [slotTs, partnerCandidateIds]);
 
   // ── Compute per-défi compat scores (drives "À relever" sort) ─
   useEffect(() => {
@@ -377,33 +377,19 @@ export default function MatchmakingScreen() {
         const { data: freqPlayers } = await supabase.from('players')
           .select('id,name,elo_score,avatar_path,court_side').in('id', topIds).is('deleted_at', null);
         if (!freqPlayers?.length) { setLoadingSuggestions(false); return; }
-        // 2) Filtrer les candidats : éligibilité (moyenne du binôme {moi, p} dans la
-        //    bande du défi) + disponibilité au créneau (pas de partie acceptée à ±2h).
+        // 2) Ne garder que les binômes éligibles : la moyenne {moi, p} doit
+        //    tomber dans la bande du défi. La disponibilité, elle, ne retire
+        //    personne : un habituel qui disparaît sans un mot ressemble à un
+        //    bug. Il reste affiché, grisé « Indisponible » (cf. busyPartnerIds).
         const myElo = player.elo_score;
         const minE = releverGame.min_elo ?? 0;
         const maxE = releverGame.max_elo ?? 999999;
-        const slotTs = releverGame.match_date ? new Date(releverGame.match_date).getTime() : null;
 
-        let cands = (freqPlayers as any[]).filter(p => {
+        const cands = (freqPlayers as any[]).filter(p => {
           if (excludedPartnerIds.has(p.id)) return false;
           const avg = (myElo + p.elo_score) / 2;
           return avg >= minE && avg <= maxE;
         });
-
-        if (slotTs != null && cands.length > 0) {
-          const { data: busyRows } = await supabase
-            .from('game_participants')
-            .select('player_id, game:game_id(match_date, status)')
-            .in('player_id', cands.map(p => p.id))
-            .eq('status', 'accepted');
-          const busy = new Set<string>();
-          (busyRows ?? []).forEach((r: any) => {
-            const g = r.game;
-            if (!g || g.status === 'cancelled' || g.status === 'closed' || !g.match_date) return;
-            if (Math.abs(new Date(g.match_date).getTime() - slotTs) < OVERLAP_MS) busy.add(r.player_id);
-          });
-          cands = cands.filter(p => !busy.has(p.id));
-        }
 
         if (!cands.length) { setSuggestedPartners([]); setLoadingSuggestions(false); return; }
 
@@ -701,8 +687,8 @@ export default function MatchmakingScreen() {
                   {partnerResults.map(p => {
                     const avg = ((player?.elo_score ?? 0) + p.elo_score) / 2;
                     const eligible = !releverGame || (avg >= (releverGame.min_elo ?? 0) && avg <= (releverGame.max_elo ?? 999999));
-                    const busy = partnerBusy.has(p.id);
-                    const selectable = eligible && !busy && !applying;
+                    const pris = busyPartnerIds.has(p.id);
+                    const selectable = eligible && !pris && !applying;
                     return (
                       <TouchableOpacity
                         key={p.id}
@@ -715,10 +701,12 @@ export default function MatchmakingScreen() {
                           <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={48} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
-                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>
+                              {pris ? 'Déjà une partie à cette heure-là' : `Niv. ${eloToLevel(p.elo_score).toFixed(1)} · ELO ${Math.round(p.elo_score)}`}
+                            </Text>
                           </View>
                           {!eligible ? <Pill variant="danger">Non éligible</Pill>
-                            : busy ? <Pill variant="warning">Occupé</Pill>
+                            : pris ? <Pill variant="neutral">Indisponible</Pill>
                             : <Icon name="chevronRight" size={16} color={Colors.textMuted} />}
                         </View>
                       </TouchableOpacity>
@@ -750,31 +738,41 @@ export default function MatchmakingScreen() {
                 )}
                 {!loadingSuggestions && suggestedPartners.length > 0 && (
                   <View style={{ gap: 8 }}>
-                    {suggestedPartners.map(p => (
+                    {suggestedPartners.map(p => {
+                      const pris = busyPartnerIds.has(p.id);
+                      const selectable = !pris && !applying;
+                      return (
                       <TouchableOpacity
                         key={p.id}
                         onPress={() => submitRelever(p)}
-                        disabled={applying}
-                        style={[sty.card, { opacity: applying ? 0.6 : 1 }]}
+                        disabled={!selectable}
+                        style={[sty.card, { opacity: selectable ? 1 : 0.55 }]}
                         activeOpacity={0.75}
                       >
                         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                           <PlayerAvatar name={p.name} path={(p as any).avatar_path} size={48} />
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, fontWeight: '700', color: Colors.textPrimary }}>{p.name}</Text>
-                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Niv. {eloToLevel(p.elo_score).toFixed(1)} · ELO {Math.round(p.elo_score)}</Text>
+                            <Text style={{ fontSize: 11, color: Colors.textMuted }}>
+                              {pris ? 'Déjà une partie à cette heure-là' : `Niv. ${eloToLevel(p.elo_score).toFixed(1)} · ELO ${Math.round(p.elo_score)}`}
+                            </Text>
                           </View>
-                          {p.compatScore !== undefined && (
-                            <View style={{ backgroundColor: Colors.brand + '22', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-                              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand }}>
-                                ★ {p.compatScore}
-                              </Text>
-                            </View>
+                          {pris ? <Pill variant="neutral">Indisponible</Pill> : (
+                            <>
+                              {p.compatScore !== undefined && (
+                                <View style={{ backgroundColor: Colors.brand + '22', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                                  <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.brand }}>
+                                    ★ {p.compatScore}
+                                  </Text>
+                                </View>
+                              )}
+                              <Icon name="chevronRight" size={16} color={Colors.textMuted} />
+                            </>
                           )}
-                          <Icon name="chevronRight" size={16} color={Colors.textMuted} />
                         </View>
                       </TouchableOpacity>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
               </View>
