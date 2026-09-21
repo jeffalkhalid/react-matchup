@@ -1,4 +1,4 @@
-// components/activity/MyOddsCard.tsx — « Ce que le club dit de toi ».
+// components/activity/MyOddsCard.tsx — « Prono des PAGUISTES ».
 //
 // Les pronostics posés sur MES matchs à venir. On ne vote pas ici : l'issue
 // dépend de nous. Mais savoir que 80 % nous voient perdre est justement ce qui
@@ -98,7 +98,7 @@ export function MyOddsCard({ myId }: { myId: string }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 2 }}>
         <Icon name="megaphone" size={15} color={Colors.textPrimary} stroke={2} />
         <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
-          Ce que le club dit de toi
+          Prono des PAGUISTES
         </Text>
       </View>
       <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginBottom: 10 }}>
