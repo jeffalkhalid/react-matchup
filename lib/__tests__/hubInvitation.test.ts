@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import { invitingDuo, invitationTitle, invitationDatePill } from '../hubInvitation';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const p = (id: string, name: string) => ({ id, name } as any);
 
@@ -55,4 +57,17 @@ describe('invitationDatePill — « JEU. · 20H »', () => {
   it('ajoute les minutes si l\'heure n\'est pas ronde', () => {
     expect(invitationDatePill(new Date(2026, 8, 17, 20, 30).toISOString())).toBe('JEU. · 20H30');
   });
+});
+
+describe("la requete ramene ce que la carte utilise", () => {
+  // La carte lisait game.spots_available sans jamais le demander : un refus
+  // repartait donc de 0 et ecrasait le vrai compte de places libres. Meme
+  // piege pour la nature et la mise, affichees depuis.
+  const source = readFileSync(join(__dirname, "..", "hubInvitation.ts"), "utf8");
+  const requete = source.slice(source.indexOf("const SELECT"), source.indexOf("].join("));
+
+  it.each(["spots_available", "game_format", "stake_multiplier", "is_challenge"])(
+    "demande %s",
+    (colonne) => { expect(requete).toContain(colonne); },
+  );
 });

@@ -17,7 +17,11 @@ export interface HubInvitation {
 
 const SELECT = [
   'id', 'invite_expires_at', 'team_side',
-  'game:game_id(id, location, match_date, status, is_challenge, min_elo, max_elo, ' +
+  // game_format + stake_multiplier : la carte annonce la nature et la mise.
+  // spots_available manquait alors qu'un refus l'incremente — il repartait
+  // donc de 0, ecrasant le vrai compte de places libres.
+  'game:game_id(id, location, match_date, status, is_challenge, game_format, ' +
+    'stake_multiplier, spots_available, min_elo, max_elo, ' +
     'creator_id, creator:creator_id(id, name, avatar_path, elo_score), ' +
     'participants:game_participants(player_id, status, invite_expires_at, ' +
     'player:player_id(id, name, avatar_path, elo_score)))',

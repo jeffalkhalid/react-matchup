@@ -8,6 +8,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
+import { NaturePill } from '../profile/components';
+import { matchNature } from '../../lib/matchView';
 import { AMB } from '../../lib/ambassador';
 import { levelRangeLabel, isCreatorConflict, declineInvitationPlan } from '../../lib/games';
 import { fetchMyInvitation, invitingDuo, invitationTitle, invitationDatePill, type HubInvitation } from '../../lib/hubInvitation';
@@ -40,6 +42,10 @@ export function InvitationCard({ playerId }: { playerId: string }) {
   const datePill = game.match_date ? invitationDatePill(game.match_date) : null;
   const level = levelRangeLabel(game as any);
   const jour = game.match_date ? new Date(game.match_date).toLocaleDateString('fr-FR', { weekday: 'long' }) : '';
+  const nature = matchNature(game as any);
+
+  /** La fiche complete de la partie, celle du lobby — pas une deuxieme vue. */
+  const voirLeMatch = () => router.push(`/(tabs)/lobby?gameId=${game.id}` as any);
 
   const accept = async () => {
     setBusy(true);
@@ -86,15 +92,22 @@ export function InvitationCard({ playerId }: { playerId: string }) {
 
   return (
     <View style={CARD}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         {datePill ? (
-          <View style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 0.4 }}>{datePill}</Text>
+          <View style={{ flexShrink: 1, backgroundColor: '#0A0A0A', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 0.4 }}>{datePill}</Text>
           </View>
-        ) : <View />}
+        ) : null}
+        {/* Sur quoi on m'attend : un amical et un défi ×4 ne s'acceptent pas
+            de la même façon. Même pastille que les cartes de match. */}
+        <NaturePill kind={nature.kind} stake={nature.stake} />
+        <View style={{ flex: 1 }} />
         <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: AMB.chipText, letterSpacing: 0.8 }}>ON T'ATTEND</Text>
       </View>
 
+      {/* Tout le bloc mène à la fiche de la partie : on décidait sans pouvoir
+          regarder qui joue, ni où exactement. */}
+      <TouchableOpacity onPress={voirLeMatch} activeOpacity={0.8} accessibilityLabel="Voir le match">
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 }}>
         <View style={{ flexDirection: 'row' }}>
           {duo.map((p, i) => (
@@ -111,9 +124,14 @@ export function InvitationCard({ playerId }: { playerId: string }) {
         </Text>
       </View>
 
-      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginBottom: 14 }}>
-        {[game.location, level].filter(Boolean).join(' · niv. ')}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary }}>
+          {[game.location, level].filter(Boolean).join(' · niv. ')}
+        </Text>
+        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.textSecondary }}>Voir le match</Text>
+        <Icon name="chevronRight" size={13} color={Colors.textMuted} stroke={2.4} />
+      </View>
+      </TouchableOpacity>
 
       {resolution === 'accepted' ? (
         <View style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
