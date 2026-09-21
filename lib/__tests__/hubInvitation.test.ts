@@ -52,10 +52,29 @@ describe('invitationTitle — le titre « X & Y cherchent un 4e »', () => {
 describe('invitationDatePill — « JEU. · 20H »', () => {
   it('jour abrégé + heure ronde', () => {
     // Jeudi 17 septembre 2026, 20h00.
-    expect(invitationDatePill(new Date(2026, 8, 17, 20, 0).toISOString())).toBe('JEU. · 20H');
+    expect(invitationDatePill(new Date(2026, 8, 17, 20, 0).toISOString())).toBe('JEU. 17 SEPT. · 20H');
   });
   it('ajoute les minutes si l\'heure n\'est pas ronde', () => {
-    expect(invitationDatePill(new Date(2026, 8, 17, 20, 30).toISOString())).toBe('JEU. · 20H30');
+    expect(invitationDatePill(new Date(2026, 8, 17, 20, 30).toISOString())).toBe('JEU. 17 SEPT. · 20H30');
+  });
+});
+
+describe("la date complete, pas seulement le jour de la semaine", () => {
+  it("porte le quantieme et le mois", () => {
+    // « MAR. · 10H30 » pouvait etre ce mardi ou celui d apres.
+    expect(invitationDatePill(new Date(2026, 8, 22, 10, 30).toISOString())).toBe("MAR. 22 SEPT. · 10H30");
+  });
+
+  it("un mois court s ecrit sans point", () => {
+    expect(invitationDatePill(new Date(2026, 2, 3, 9, 0).toISOString())).toBe("MAR. 3 MARS · 9H");
+  });
+
+  it("le quantieme ne se prefixe pas d un zero", () => {
+    expect(invitationDatePill(new Date(2026, 0, 5, 19, 0).toISOString())).toBe("LUN. 5 JANV. · 19H");
+  });
+
+  it("une partie a minuit reste lisible", () => {
+    expect(invitationDatePill(new Date(2026, 11, 31, 0, 0).toISOString())).toBe("JEU. 31 DÉC. · 0H");
   });
 });
 

@@ -92,17 +92,18 @@ export function InvitationCard({ playerId }: { playerId: string }) {
 
   return (
     <View style={CARD}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      {/* La date complete prend de la place : sur un petit ecran la ligne
+          passe a deux plutot que de rogner le jour ou l'heure. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {datePill ? (
-          <View style={{ flexShrink: 1, backgroundColor: '#0A0A0A', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+          <View style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
             <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand, letterSpacing: 0.4 }}>{datePill}</Text>
           </View>
         ) : null}
         {/* Sur quoi on m'attend : un amical et un défi ×4 ne s'acceptent pas
             de la même façon. Même pastille que les cartes de match. */}
         <NaturePill kind={nature.kind} stake={nature.stake} />
-        <View style={{ flex: 1 }} />
-        <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: AMB.chipText, letterSpacing: 0.8 }}>ON T'ATTEND</Text>
+        <Text style={{ marginLeft: 'auto', fontFamily: Fonts.uiExtraBold, fontSize: 10, color: AMB.chipText, letterSpacing: 0.8 }}>ON T'ATTEND</Text>
       </View>
 
       {/* Tout le bloc mène à la fiche de la partie : on décidait sans pouvoir

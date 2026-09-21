@@ -84,12 +84,19 @@ export function invitationTitle(duo: Player[]): string {
 }
 
 const JOURS_ABBR = ['DIM.', 'LUN.', 'MAR.', 'MER.', 'JEU.', 'VEN.', 'SAM.'];
+const MOIS_ABBR = ['JANV.', 'FÉVR.', 'MARS', 'AVR.', 'MAI', 'JUIN', 'JUIL.', 'AOÛT', 'SEPT.', 'OCT.', 'NOV.', 'DÉC.'];
 
-/** « JEU. · 20H » — la pastille de date noire de la carte. */
+/**
+ * « MAR. 22 SEPT. · 20H30 » — la pastille de date noire de la carte.
+ *
+ * Elle ne disait que le jour de la semaine : « MAR. · 10H30 » peut être ce
+ * mardi ou celui d'après, et on accepte une partie sans savoir laquelle.
+ */
 export function invitationDatePill(iso: string): string {
   const d = new Date(iso);
   const jour = JOURS_ABBR[d.getDay()];
+  const mois = MOIS_ABBR[d.getMonth()];
   const min = d.getMinutes();
   const heure = min ? `${d.getHours()}H${String(min).padStart(2, '0')}` : `${d.getHours()}H`;
-  return `${jour} · ${heure}`;
+  return `${jour} ${d.getDate()} ${mois} · ${heure}`;
 }
