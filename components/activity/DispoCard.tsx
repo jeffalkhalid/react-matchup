@@ -263,6 +263,22 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
                 : `Monter la partie · ${slotShortLabel(slot)}`}
             </Text>
           </TouchableOpacity>
+          {/* Le rappel au cercle vit ici AUSSI, en second rôle : il n'existait
+              que dans l'état vide, donc il s'en allait à l'instant précis où
+              il sert — un joueur s'est déclaré, il en manque deux, c'est le
+              moment de sonner chez les autres. Discret pour ne pas concurrencer
+              « Monter la partie », qui reste l'action du dessus. */}
+          {!sansCercle && (attente > 0 || aPrevenir.length > 0) ? (
+            <TouchableOpacity onPress={prevenirCercle} disabled={!peutPrevenir} hitSlop={8}
+              style={{ alignSelf: 'center', marginTop: 10 }}>
+              <Text style={{
+                fontFamily: Fonts.uiExtraBold, fontSize: 11.5,
+                color: attente > 0 ? Colors.textMuted : Colors.textPrimary,
+              }}>
+                {attente > 0 ? `Cercle prévenu · encore ${cooldownLabel(attente)}` : 'Prévenir mon cercle'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {choisis.length === 0 ? (
             <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 8 }}>
               {missing > 0
