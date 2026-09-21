@@ -8,6 +8,7 @@ import { Avatar } from './Avatar';
 import { Chips } from './ui';
 import { Icon } from './icons';
 import { ActivityCard } from './ActivityCard';
+import { rematchRoute } from '../../lib/activityReactions';
 import type { SocialPlayer, ActivityEvent } from '../../types';
 
 // ── Barre d'amis filtrante (export pour réutilisation dans l'onglet Activité) ──
@@ -56,15 +57,15 @@ export function FeedList({ shown, myId, loading, selName, onReact, onReport, onR
   router: ReturnType<typeof useRouter>;
   onOpen?: (e: ActivityEvent) => void;
 }) {
-  // « Revanche ? » (défaite) : ouvre l'onglet Défi — même destination que
-  // « M'ouvrir aux défis » de la carte d'invitation calme.
-  const onDefi = () => router.push('/(tabs)/matchmaking' as any);
+  // « Revanche ? » (MA défaite) : l'assistant de création, avec le match
+  // rejoué à l'identique — pas l'onglet Défi, où il n'y avait rien à faire.
+  const onDefi = (e: ActivityEvent) => router.push(rematchRoute(e.match_id) as any);
   return (
     <View style={{ gap: 14, marginTop: 14 }}>
       {loading ? (
         <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
       ) : shown.length > 0 ? (
-        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onRemove={onRemove && e.player_id === myId ? () => onRemove(e) : undefined} onOpen={onOpen ? () => onOpen(e) : undefined} onDefi={onDefi} />)
+        shown.map(e => <ActivityCard key={e.id} e={e} myId={myId} onReact={() => onReact(e.id)} onPressActor={() => router.push(`/player/${e.player_id}` as any)} onPressPlayer={(id) => router.push(`/player/${id}` as any)} onPressComments={() => router.push(`/community/comments/${e.id}` as any)} onReport={e.player_id === myId ? undefined : () => onReport(e)} onRemove={onRemove && e.player_id === myId ? () => onRemove(e) : undefined} onOpen={onOpen ? () => onOpen(e) : undefined} onDefi={() => onDefi(e)} />)
       ) : (
         <EmptyState name={selName?.split(' ')[0]} />
       )}

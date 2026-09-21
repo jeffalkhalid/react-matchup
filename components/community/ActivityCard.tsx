@@ -1,5 +1,5 @@
 // Carte d'activité : entête acteur + bloc (résultat / badge / promotion) + réactions.
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts, getLeague } from '../../lib/theme';
 import { Avatar } from './Avatar';
@@ -23,7 +23,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemov
   onPressComments?: () => void; // ouvre la feuille de commentaires
   onPressPlayer?: (id: string) => void; // ouvre le profil d'un joueur de la carte de match
   onOpen?: () => void;          // tap sur le contenu → vue plein écran
-  onDefi?: () => void;          // « Revanche ? » (défaite) → ouvre l'onglet Défi
+  onDefi?: () => void;          // « Revanche ? » (MA défaite) → assistant de création
 }) {
   const win = e.type === 'match_win';
   const isMatch = e.type === 'match_win' || e.type === 'match_loss';
@@ -39,9 +39,10 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemov
   // Réaction contextuelle : le bouton (libellé/icône/bascule) dépend du type
   // d'événement — « Revanche ? » (action) reste séparé des réactions 🔥
   // (« Machine ! », « Féliciter ») qui, elles, passent toujours par onReact.
-  const reaction = reactionFor(e.type);
-  const [defiSent, setDefiSent] = useState(false);
-  const reactionActive = reaction.kind === 'reaction' ? liked : defiSent;
+  // Une revanche ne se prend que sur SA propre défaite : sur celle d'un autre,
+  // le bouton proposait de venger un match où l'on ne jouait même pas.
+  const reaction = reactionFor(e.type, e.player_id === myId);
+  const reactionActive = reaction.kind === 'reaction' ? liked : false;
   const reactionBg = reactionActive
     ? (reaction.kind === 'action' ? '#0A0A0A' : 'rgba(255,193,26,0.14)')
     : '#FFFFFF';
@@ -51,8 +52,10 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemov
   const reactionText = reactionActive
     ? (reaction.kind === 'action' ? Colors.brand : AMB.chipText)
     : Colors.textSecondary;
+  // « Revanche ? » ouvre un écran — rien n'est « envoyé », donc le bouton ne
+  // se verrouille plus après un tap : on peut revenir et recommencer.
   const onPressReaction = () => {
-    if (reaction.kind === 'action') { setDefiSent(true); onDefi?.(); }
+    if (reaction.kind === 'action') onDefi?.();
     else onReact?.();
   };
 
@@ -185,7 +188,7 @@ export function ActivityCard({ e, myId, onReact, onPressActor, onReport, onRemov
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <TouchableOpacity
           onPress={onPressReaction}
-          disabled={reaction.kind === 'reaction' ? !onReact : defiSent}
+          disabled={reaction.kind === 'reaction' ? !onReact : !onDefi}
           activeOpacity={0.7}
           style={{
             flexDirection: 'row', alignItems: 'center', gap: 6,

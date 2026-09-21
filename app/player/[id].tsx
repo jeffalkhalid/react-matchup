@@ -18,6 +18,7 @@ import { getFiabilityDecayed } from '../../lib/elo';
 import { blockUser, unblockUser, isBlocked, reportContent } from '../../lib/moderation';
 import { playerStoryLink, SHARE_LABEL, getPlayerActivity, toggleReaction, setFollow } from '../../lib/community';
 import { ActivityCard } from '../../components/community/ActivityCard';
+import { rematchRoute } from '../../lib/activityReactions';
 import type { Player, EloHistory, ActivityEvent, Achievement } from '../../types';
 import { getPlayerAchievements } from '../../lib/achievements';
 import { PM } from '../../components/profile/theme';
@@ -1486,6 +1487,9 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                   onReact={isSelf ? undefined : () => reactToActivity(e.id)}
                   onPressComments={() => router.push(`/community/comments/${e.id}` as any)}
                   onReport={isSelf ? undefined : () => reportActivityEvent(e)}
+                  // « Revanche ? » sur mes propres défaites : ici aussi il
+                  // n'était câblé nulle part, donc il ne faisait rien.
+                  onDefi={() => router.push(rematchRoute(e.match_id) as any)}
                 />
               ))}
             </View>

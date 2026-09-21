@@ -23,15 +23,22 @@ export interface ActivityReaction {
 
 /**
  * Le bouton de réaction pour un type d'événement du fil.
- *   - `match_loss` → action « Revanche ? » (ouvre le Défi, ne touche pas aux réactions).
+ *   - `match_loss` MIEN → action « Revanche ? » (ouvre l'assistant de création).
+ *   - `match_loss` d'un AUTRE → réaction « Respect ».
  *   - `promotion`  → réaction « Machine ! ».
  *   - `match_win`, `badge`, et tout le reste (ex. `bilan`) → réaction « Féliciter »
  *     (l'ancien 🔥 du produit, sans l'emoji).
+ *
+ * `mienne` compte : « Revanche ? » s'affichait sur TOUTES les défaites, donc
+ * aussi sur celles de parties où l'on ne jouait pas. On proposait de venger
+ * quelqu'un d'autre. Et « Féliciter » sonne faux sous une défaite.
  */
-export function reactionFor(type: ActivityType): ActivityReaction {
+export function reactionFor(type: ActivityType, mienne: boolean = false): ActivityReaction {
   switch (type) {
     case 'match_loss':
-      return { label: 'Revanche ?', activeLabel: 'Défi envoyé', icon: 'swords', kind: 'action' };
+      return mienne
+        ? { label: 'Revanche ?', activeLabel: 'Revanche ?', icon: 'swords', kind: 'action' }
+        : { label: 'Respect', activeLabel: 'Respect', icon: 'flame', kind: 'reaction' };
     case 'promotion':
       return { label: 'Machine !', activeLabel: 'Machine !', icon: 'zap', kind: 'reaction' };
     case 'match_win':
@@ -39,4 +46,18 @@ export function reactionFor(type: ActivityType): ActivityReaction {
     default:
       return { label: 'Féliciter', activeLabel: 'Féliciter', icon: 'flame', kind: 'reaction' };
   }
+}
+
+/**
+ * Où mène « Revanche ? » : l'assistant de création, jamais l'onglet Défi.
+ *
+ * Avec l'identifiant du match, le lobby le rejoue à l'identique — mon binôme
+ * reste mon binôme, les deux adversaires repassent en face (`handleRematch`).
+ * Sans lui, on ouvre l'assistant vide plutôt que de ne rien faire.
+ *
+ * À ne pas confondre avec le bouton du Face-à-face, qui lui ne connaît qu'un
+ * adversaire et le place seul dans le camp d'en face.
+ */
+export function rematchRoute(matchId: string | null | undefined): string {
+  return matchId ? `/(tabs)/lobby?rematch=${matchId}` : '/(tabs)/lobby?create=1';
 }
