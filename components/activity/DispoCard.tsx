@@ -56,7 +56,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
    * la partie, les joueurs invités restaient affichés comme disponibles et
    * on repartait en monter une deuxième avec les mêmes.
    */
-  const [engages, setEngages] = useState<Set<string>>(new Set());
+  const [engages, setEngages] = useState<Map<string, string>>(new Map());
 
   const load = useCallback(() => {
     setLoading(true);
@@ -91,6 +91,14 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
     const ids = choisis.join(',');
     router.push(`/(tabs)/lobby?create=1&inv=${ids}&invd=${day}&invt=${time}` as any);
   };
+
+  /**
+   * Je joue deja ce jour-la : la carte a fait son travail. Proposer « Monter
+   * la partie » sous « Tout le monde est deja pris » se contredisait — elle
+   * renvoie desormais vers la partie en question.
+   */
+  const monMatch = engages.get(playerId) || null;
+  const voirMaPartie = () => router.push(`/(tabs)/lobby?gameId=${monMatch}` as any);
 
   const rows = [
     ...(iAmIn ? [{
@@ -294,12 +302,14 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
           {/* Cocher des joueurs monte la partie AVEC eux : ils arrivent
               pré-invités dans l'assistant, sur ce créneau. Rien coché, on
               peut quand même ouvrir la création. */}
-          <TouchableOpacity onPress={monterLaPartie} activeOpacity={0.85}
+          <TouchableOpacity onPress={monMatch ? voirMaPartie : monterLaPartie} activeOpacity={0.85}
             style={{ backgroundColor: '#0A0A0A', borderRadius: 999, paddingVertical: 12, alignItems: 'center' }}>
             <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13.5, color: '#FFFFFF' }}>
-              {choisis.length > 0
-                ? `Monter la partie avec ${choisis.length === 1 ? 'lui' : 'eux'} · ${slotShortLabel(slot)}`
-                : `Monter la partie · ${slotShortLabel(slot)}`}
+              {monMatch
+                ? `Voir ma partie · ${slotShortLabel(slot)}`
+                : choisis.length > 0
+                  ? `Monter la partie avec ${choisis.length === 1 ? 'lui' : 'eux'} · ${slotShortLabel(slot)}`
+                  : `Monter la partie · ${slotShortLabel(slot)}`}
             </Text>
           </TouchableOpacity>
           {/* Le rappel au cercle vit ici AUSSI, en second rôle : il n'existait
@@ -318,7 +328,9 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
               </Text>
             </TouchableOpacity>
           ) : null}
-          {choisis.length === 0 ? (
+          {/* Inviter à cocher n'a de sens que s'il reste quelqu'un à cocher :
+              la phrase s'affichait sous « Tout le monde est déjà pris ». */}
+          {choisis.length === 0 && autresLibres > 0 ? (
             <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 8 }}>
               {missing > 0
                 ? `Coche les joueurs à inviter — il en faut 3 en plus de toi.`

@@ -32,10 +32,10 @@ const JOUR_FIN = new Date(2026, 8, 23, 0, 0, 0);     // mercredi 23, minuit
 const iso = (h: number, jour = 22) => new Date(2026, 8, jour, h, 0, 0).toISOString();
 
 const participation = (id: string, date: string | null, statut = 'open') => ({
-  player_id: id, game: date == null ? null : { match_date: date, status: statut },
+  player_id: id, game_id: `g-${id}`, game: date == null ? null : { match_date: date, status: statut },
 });
 const partieCreee = (id: string, date: string | null, statut = 'open') => ({
-  creator_id: id, match_date: date, status: statut,
+  id: `g-${id}`, creator_id: id, match_date: date, status: statut,
 });
 
 beforeEach(() => {
@@ -49,7 +49,7 @@ describe('fetchEngagedInRange — qui est déjà pris ce jour-là', () => {
   it('une participation dans la journée rend le joueur indisponible', async () => {
     base.game_participants = [participation('lebron', iso(19))];
     const pris = await fetchEngagedInRange(['lebron'], JOUR_DEBUT, JOUR_FIN);
-    expect([...pris]).toEqual(['lebron']);
+    expect([...pris.keys()]).toEqual(['lebron']);
   });
 
   it("une partie la veille ou le lendemain ne compte pas", async () => {
@@ -61,7 +61,7 @@ describe('fetchEngagedInRange — qui est déjà pris ce jour-là', () => {
     // Le piège récurrent : ne lire que game_participants laisse
     // l'organisateur passer pour libre à sa propre heure.
     base.open_games = [partieCreee('alamine', iso(14))];
-    expect([...await fetchEngagedInRange(['alamine'], JOUR_DEBUT, JOUR_FIN)]).toEqual(['alamine']);
+    expect([...(await fetchEngagedInRange(['alamine'], JOUR_DEBUT, JOUR_FIN)).keys()]).toEqual(['alamine']);
   });
 
   it('une partie annulée ou scorée ne prend plus personne', async () => {
@@ -83,7 +83,7 @@ describe('fetchEngagedInRange — qui est déjà pris ce jour-là', () => {
 
   it("le début de la fenêtre compte, la fin non — minuit appartient au jour d'après", async () => {
     base.game_participants = [participation('debut', JOUR_DEBUT.toISOString()), participation('fin', JOUR_FIN.toISOString())];
-    expect([...await fetchEngagedInRange(['debut', 'fin'], JOUR_DEBUT, JOUR_FIN)]).toEqual(['debut']);
+    expect([...(await fetchEngagedInRange(['debut', 'fin'], JOUR_DEBUT, JOUR_FIN)).keys()]).toEqual(['debut']);
   });
 
   it('sans joueur à vérifier, aucune requête à faire', async () => {
@@ -102,5 +102,19 @@ describe('fetchEngagedInRange — qui est déjà pris ce jour-là', () => {
     panne = true;
     base.game_participants = [participation('lebron', iso(19))];
     expect((await fetchEngagedInRange(['lebron'], JOUR_DEBUT, JOUR_FIN)).size).toBe(0);
+  });
+});
+
+describe("on rend AUSSI la partie qui retient le joueur", () => {
+  it("pour y renvoyer depuis la carte (« Voir ma partie »)", async () => {
+    base.game_participants = [participation("lebron", iso(19))];
+    const pris = await fetchEngagedInRange(["lebron"], JOUR_DEBUT, JOUR_FIN);
+    expect(pris.get("lebron")).toBe("g-lebron");
+  });
+
+  it("y compris quand le joueur est l organisateur", async () => {
+    base.open_games = [partieCreee("alamine", iso(14))];
+    const pris = await fetchEngagedInRange(["alamine"], JOUR_DEBUT, JOUR_FIN);
+    expect(pris.get("alamine")).toBe("g-alamine");
   });
 });

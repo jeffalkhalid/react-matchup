@@ -27,11 +27,13 @@ export function overlapsSlot(gameTs: number, slotTs: number): boolean {
 /** Une participation confirmée, telle que la base la rend. */
 export interface BusyParticipation {
   player_id: string;
+  game_id?: string | null;
   game?: { match_date?: string | null; status?: string | null } | null;
 }
 
 /** Une partie vue par son CRÉATEUR — qui n'a pas de ligne de participation. */
 export interface BusyCreatedGame {
+  id?: string | null;
   creator_id: string;
   match_date?: string | null;
   status?: string | null;
@@ -117,12 +119,12 @@ async function fetchEngagements(playerIds: string[]): Promise<{
   const [{ data: parts, error }, { data: creees }] = await Promise.all([
     supabase
       .from('game_participants')
-      .select('player_id, game:game_id(match_date, status)')
+      .select('player_id, game_id, game:game_id(match_date, status)')
       .in('player_id', ids)
       .eq('status', 'accepted'),
     supabase
       .from('open_games')
-      .select('creator_id, match_date, status')
+      .select('id, creator_id, match_date, status')
       .in('creator_id', ids),
   ]);
   if (error) { console.warn('[slotConflict] fetchEngagements', error); return null; }
@@ -148,20 +150,22 @@ const dansLaFenetre = (iso: string | null | undefined, statut: string | null | u
  * invité à une partie de demain continuait d'y figurer comme libre, et on
  * repartait monter un deuxième match avec les mêmes personnes.
  */
-export async function fetchEngagedInRange(playerIds: string[], start: Date, end: Date): Promise<Set<string>> {
+export async function fetchEngagedInRange(playerIds: string[], start: Date, end: Date): Promise<Map<string, string>> {
   const debut = start.getTime();
   const fin = end.getTime();
-  if (!Number.isFinite(debut) || !Number.isFinite(fin) || fin <= debut) return new Set();
+  if (!Number.isFinite(debut) || !Number.isFinite(fin) || fin <= debut) return new Map();
 
   const engagements = await fetchEngagements(playerIds);
-  if (!engagements) return new Set();
+  if (!engagements) return new Map();
 
-  const pris = new Set<string>();
+  // On rend AUSSI la partie : la carte y renvoie (« Voir ma partie ») plutot
+  // que de proposer d'en monter une deuxieme au meme moment.
+  const pris = new Map<string, string>();
   for (const r of engagements.parts) {
-    if (dansLaFenetre(r?.game?.match_date, r?.game?.status, debut, fin)) pris.add(r.player_id);
+    if (dansLaFenetre(r?.game?.match_date, r?.game?.status, debut, fin)) pris.set(r.player_id, r.game_id ?? '');
   }
   for (const g of engagements.creees) {
-    if (g?.creator_id && dansLaFenetre(g.match_date, g.status, debut, fin)) pris.add(g.creator_id);
+    if (g?.creator_id && dansLaFenetre(g.match_date, g.status, debut, fin)) pris.set(g.creator_id, g.id ?? '');
   }
   return pris;
 }
