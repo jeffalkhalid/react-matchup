@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 
 import {
-  buildJoinedItems, eventToItem, lockedDefiItem, participationsCoveredByEvents,
+  buildJoinedItems, eventToItem, lockedDefiItem, participationsCoveredByEvents, eventIcon,
   type JoinedRow, type NotificationEventRow,
 } from '../notifEvents';
 
@@ -85,5 +85,57 @@ describe('événements serveur', () => {
       [row('X', { id: 'part-9', game_id: 'g2' }), row('Y', { id: 'part-10', game_id: 'g2' })],
       partie, couverts);
     expect(items.map(i => i.id)).toEqual(['joined-part-10']);
+  });
+});
+
+describe("l icone dit ce que la carte raconte", () => {
+  // Toutes ces cartes portent le type « joined » — leur COMPORTEMENT (info
+  // supprimable). L ecran en tirait une medaille, celle des trophees.
+  const evenement = (kind: string): NotificationEventRow => ({
+    id: "e1", kind, title: "T", body: "B", route: null,
+    game_id: "g1", ref: null, created_at: T,
+  });
+
+  it("une arrivee montre des joueurs, jamais une medaille", () => {
+    const items = buildJoinedItems(
+      [{ id: "p1", game_id: "g2", player_id: "u1", created_at: T, player: { name: "Rita" } }],
+      partie,
+    );
+    expect(items[0].icon).toBe("users");
+    expect(items[0].icon).not.toBe("medal");
+  });
+
+  it("un binome adverse montre les fers croises", () => {
+    const rows: JoinedRow[] = [
+      { id: "p1", game_id: "g1", player_id: "u1", created_at: T, team_side: "B0", player: { name: "Karim" } },
+      { id: "p2", game_id: "g1", player_id: "u2", created_at: T, team_side: "B1", player: { name: "Sofia" } },
+    ];
+    expect(buildJoinedItems(rows, defi)[0].icon).toBe("swords");
+  });
+
+  it("un defi confirme montre les fers croises, pas une medaille", () => {
+    const item = lockedDefiItem({ id: "a1", game_id: "g1", game: { location: "Padel 4 Maroc" } });
+    expect(item.icon).toBe("swords");
+    expect(item.icon).not.toBe("medal");
+  });
+
+  it("un depart et une annulation ne se ressemblent pas", () => {
+    expect(eventIcon("defi_binome_left")).toBe("logOut");
+    expect(eventIcon("defi_cancelled")).toBe("x");
+    expect(eventIcon("defi_binome_left")).not.toBe(eventIcon("defi_cancelled"));
+  });
+
+  it("une promotion reste une arrivee", () => {
+    expect(eventIcon("promoted")).toBe("users");
+    expect(eventIcon("joined_from_waitlist")).toBe("users");
+  });
+
+  it("un genre inconnu retombe sur la cloche plutot que sur un trophee", () => {
+    expect(eventIcon("quelque_chose_de_neuf")).toBe("bell");
+  });
+
+  it("l evenement serveur emporte son icone", () => {
+    expect(eventToItem(evenement("defi_cancelled")).icon).toBe("x");
+    expect(eventToItem(evenement("defi_reopened")).icon).toBe("repeat");
   });
 });

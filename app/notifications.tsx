@@ -10,7 +10,7 @@ import { getNotificationsEnabled, enableNotificationsFromApp } from '../hooks/us
 import { supabase } from '../lib/supabase';
 import { buildNotificationItems, isDismissibleNotif, type NotifItem } from '../lib/notifications';
 import { Colors, Fonts } from '../lib/theme';
-import { Icon } from '../components/community/icons';
+import { Icon, type IconName } from '../components/community/icons';
 
 // ─── Screen ───────────────────────────────────────────────────
 export default function NotificationsScreen() {
@@ -81,17 +81,33 @@ export default function NotificationsScreen() {
     setNotifsOn(await getNotificationsEnabled());
   }, [player]);
 
-  const iconFor = (type: NotifItem['type']) => {
-    if (type === 'dm_request') return <Icon name="message" size={18} color="#4f46e5" />;
-    if (type === 'challenge')  return <Icon name="swords" size={18} color={Colors.brandDeep} />;
-    if (type === 'invitation') return <Icon name="swords" size={18} color="#0891b2" />;
-    if (type === 'to_approve') return <Icon name="checkSquare" size={18} color="#7c3aed" />;
-    if (type === 'joined')     return <Icon name="medal" size={18} color={Colors.success} />;
-    if (type === 'badge')      return <Icon name="medal" size={18} color={Colors.success} />;
-    if (type === 'levelup')    return <Icon name="trendingUp" size={18} color="#b45309" />;
-    if (type === 'to_score')   return <Icon name="checkSquare" size={18} color="#0891b2" />;
-    if (type === 'cancelled')  return <Icon name="x" size={18} color="#dc2626" stroke={2.5} />;
-    return <Icon name="checkSquare" size={18} color="#d97706" />;
+  // La couleur vient du type (le comportement de la carte), le dessin de ce
+  // qu'elle raconte. La médaille est réservée aux trophées : elle s'affichait
+  // aussi sur « Nouveau joueur » et « Défi confirmé », parce que toutes les
+  // infos supprimables partagent le type « joined ».
+  const teinteParType: Record<NotifItem['type'], { icon: IconName; color: string }> = {
+    dm_request: { icon: 'message',     color: '#4f46e5' },
+    challenge:  { icon: 'swords',      color: Colors.brandDeep },
+    invitation: { icon: 'swords',      color: '#0891b2' },
+    to_approve: { icon: 'checkSquare', color: '#7c3aed' },
+    joined:     { icon: 'users',       color: Colors.success },
+    badge:      { icon: 'medal',       color: Colors.success },
+    levelup:    { icon: 'trendingUp',  color: '#b45309' },
+    to_score:   { icon: 'checkSquare', color: '#0891b2' },
+    cancelled:  { icon: 'x',           color: '#dc2626' },
+    match:      { icon: 'checkSquare', color: '#d97706' },
+  };
+
+  const iconFor = (item: NotifItem) => {
+    const base = teinteParType[item.type] ?? { icon: 'checkSquare' as IconName, color: '#d97706' };
+    return (
+      <Icon
+        name={item.icon ?? base.icon}
+        size={18}
+        color={base.color}
+        stroke={item.type === 'cancelled' ? 2.5 : 2}
+      />
+    );
   };
 
   const bgFor = (type: NotifItem['type']) => {
@@ -261,7 +277,7 @@ export default function NotificationsScreen() {
                   shadowOffset: { width: 0, height: 1 }, shadowRadius: 3,
                   elevation: 1,
                 }}>
-                  {iconFor(item.type)}
+                  {iconFor(item)}
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={{ fontSize: 14, fontWeight: '900', color: text.title, fontFamily: Fonts.uiBlack }} numberOfLines={1}>

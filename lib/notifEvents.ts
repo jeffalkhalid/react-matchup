@@ -12,6 +12,7 @@
 //    d'attente ne laissent plus de ligne à relire : le serveur écrit un
 //    événement (table notification_events), affiché tel quel.
 import type { NotifItem } from './notifications';
+import type { IconName } from '../components/community/icons';
 
 export interface NotificationEventRow {
   id: string;
@@ -28,6 +29,24 @@ export interface NotificationEventRow {
  *  « Nouveau joueur » calculée à partir des inscriptions ferait doublon. */
 const JOIN_EVENT_KINDS = new Set(['promoted', 'joined_from_waitlist']);
 
+/**
+ * L'icône d'un événement serveur, d'après ce qu'il raconte.
+ *
+ * Tous ces événements sont typés « joined » — c'est leur COMPORTEMENT (info
+ * supprimable), pas leur sens. Sans cette table, un départ de binôme et une
+ * partie annulée s'affichaient avec la médaille des trophées.
+ */
+export function eventIcon(kind: string): IconName {
+  switch (kind) {
+    case 'defi_cancelled':      return 'x';
+    case 'defi_binome_left':    return 'logOut';
+    case 'defi_reopened':       return 'repeat';
+    case 'promoted':
+    case 'joined_from_waitlist': return 'users';
+    default:                    return 'bell';
+  }
+}
+
 /** Un événement serveur → une carte. Annulation en rouge, le reste en info. */
 export function eventToItem(e: NotificationEventRow): NotifItem {
   return {
@@ -36,6 +55,7 @@ export function eventToItem(e: NotificationEventRow): NotifItem {
     title: e.title,
     subtitle: e.body,
     route: e.route || '/(tabs)/lobby',
+    icon: eventIcon(e.kind),
   };
 }
 
@@ -97,6 +117,8 @@ export function buildJoinedItems(
       title: wasApproved ? '✅ Candidature acceptée' : '👋 Nouveau joueur',
       subtitle: `${nom} a rejoint ${isChall ? 'le défi' : 'la partie'}${where}`,
       route: `/(tabs)/lobby?gameId=${r.game_id}`,
+      // Quelqu'un arrive : des joueurs, pas une médaille.
+      icon: wasApproved ? 'check' : 'users',
     });
   }
 
@@ -113,6 +135,7 @@ export function buildJoinedItems(
         ? `${b.names[0]} a rejoint le défi${where}`
         : `${b.names.join(' & ')} relèvent le défi${where}`,
       route: `/(tabs)/lobby?gameId=${b.gameId}`,
+      icon: seul ? 'users' : 'swords',
     };
   }
 
@@ -138,5 +161,6 @@ export function lockedDefiItem(l: LockedApplicationRow): NotifItem {
       ? `Une place s'est libérée. Votre binôme relève le défi${where} — rendez-vous sur le terrain !`
       : `Votre binôme relève le défi${where} — rendez-vous sur le terrain !`,
     route: `/(tabs)/lobby?gameId=${l.game_id}`,
+    icon: 'swords',
   };
 }

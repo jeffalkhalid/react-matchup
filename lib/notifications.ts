@@ -7,6 +7,7 @@ import {
   buildJoinedItems, eventToItem, lockedDefiItem, participationsCoveredByEvents,
   type JoinedRow, type NotificationEventRow,
 } from './notifEvents';
+import type { IconName } from '../components/community/icons';
 
 // ─── Source UNIQUE de la liste de notifications ──────────────────────────────
 // Construit l'ENSEMBLE des cartes de notification d'un joueur, dans l'ordre
@@ -19,10 +20,21 @@ import {
 // présents dans la liste mais pas dans le compteur, etc.).
 export interface NotifItem {
   id: string;
+  /**
+   * Ce que la carte FAIT : supprimable, comptée, où elle mène. Pas ce à quoi
+   * elle ressemble — toutes les infos supprimables sont typées « joined »,
+   * qu'elles racontent une arrivée, un défi confirmé ou un départ.
+   */
   type: 'challenge' | 'invitation' | 'match' | 'badge' | 'levelup' | 'to_score' | 'to_approve' | 'joined' | 'dm_request' | 'cancelled';
   title: string;
   subtitle: string;
   route: string;
+  /**
+   * Ce que la carte DIT. Sans elle, l'écran retombe sur l'icône du type, trop
+   * grossière : une médaille s'affichait sur « Nouveau joueur », « Défi
+   * confirmé » et « Ton binôme a quitté », qui n'ont rien d'une récompense.
+   */
+  icon?: IconName;
 }
 
 // Notifs "info" sans action requise : supprimables définitivement (persistées
