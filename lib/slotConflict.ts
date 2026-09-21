@@ -83,29 +83,85 @@ export function busyCreatorIds(games: BusyCreatedGame[], slotTs: number): Set<st
  * laisser inviter (le serveur refusera) que d'interdire à tort.
  */
 export async function fetchBusyPlayerIds(playerIds: string[], slotTs: number): Promise<Set<string>> {
-  const ids = [...new Set(playerIds.filter(Boolean))];
-  if (ids.length === 0 || !Number.isFinite(slotTs)) return new Set();
+  if (!Number.isFinite(slotTs)) return new Set();
+  const engagements = await fetchEngagements(playerIds);
+  if (!engagements) return new Set();
 
-  // Le tri par date se fait ici et non en SQL : filtrer sur une colonne d'une
-  // table jointe demande un `!inner` dont le comportement se prête aux
-  // mauvaises surprises, et la liste de candidats tient en une poignée de
-  // joueurs — leurs parties confirmées se comptent sur les doigts.
+  const pris = busyPlayerIds(engagements.parts, slotTs);
+  for (const id of busyCreatorIds(engagements.creees, slotTs)) pris.add(id);
+  return pris;
+}
+
+/**
+ * Les engagements confirmés de ces joueurs, des DEUX sources : leurs
+ * participations et les parties qu'ils organisent.
+ *
+ * Elles ne se lisent qu'ici. Le créateur n'ayant pas de ligne de
+ * participation, tout code qui n'interroge qu'une table annonce
+ * l'organisateur comme libre à sa propre heure — erreur déjà payée trois
+ * fois (pronostics, assistant de création, onglet Défi).
+ *
+ * `null` en cas d'échec réseau : l'appelant ne marque alors personne comme
+ * pris, plutôt que d'interdire à tort.
+ */
+async function fetchEngagements(playerIds: string[]): Promise<{
+  parts: BusyParticipation[]; creees: BusyCreatedGame[];
+} | null> {
+  const ids = [...new Set(playerIds.filter(Boolean))];
+  if (ids.length === 0) return { parts: [], creees: [] };
+
+  // Le tri par date se fait côté client et non en SQL : filtrer sur une
+  // colonne d'une table jointe demande un `!inner` dont le comportement se
+  // prête aux mauvaises surprises, et la liste de candidats tient en une
+  // poignée de joueurs — leurs parties confirmées se comptent sur les doigts.
   const [{ data: parts, error }, { data: creees }] = await Promise.all([
     supabase
       .from('game_participants')
       .select('player_id, game:game_id(match_date, status)')
       .in('player_id', ids)
       .eq('status', 'accepted'),
-    // Les parties que ces joueurs ORGANISENT : le créateur n'a pas de ligne
-    // de participation, il serait sinon annoncé libre à sa propre heure.
     supabase
       .from('open_games')
       .select('creator_id, match_date, status')
       .in('creator_id', ids),
   ]);
-  if (error) { console.warn('[slotConflict] fetchBusy', error); return new Set(); }
+  if (error) { console.warn('[slotConflict] fetchEngagements', error); return null; }
 
-  const pris = busyPlayerIds((parts ?? []) as unknown as BusyParticipation[], slotTs);
-  for (const id of busyCreatorIds((creees ?? []) as unknown as BusyCreatedGame[], slotTs)) pris.add(id);
+  return {
+    parts: (parts ?? []) as unknown as BusyParticipation[],
+    creees: (creees ?? []) as unknown as BusyCreatedGame[],
+  };
+}
+
+/** Ce joueur est-il engagé quelque part entre ces deux instants ? */
+const dansLaFenetre = (iso: string | null | undefined, statut: string | null | undefined, debut: number, fin: number) => {
+  if (!iso || !compte(statut)) return false;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && t >= debut && t < fin;
+};
+
+/**
+ * Parmi ces joueurs, lesquels ont déjà une partie dans cette fenêtre — une
+ * JOURNÉE, pas un créneau de deux heures.
+ *
+ * La carte « Dispos demain » raisonne par jour : quelqu'un qui vient d'être
+ * invité à une partie de demain continuait d'y figurer comme libre, et on
+ * repartait monter un deuxième match avec les mêmes personnes.
+ */
+export async function fetchEngagedInRange(playerIds: string[], start: Date, end: Date): Promise<Set<string>> {
+  const debut = start.getTime();
+  const fin = end.getTime();
+  if (!Number.isFinite(debut) || !Number.isFinite(fin) || fin <= debut) return new Set();
+
+  const engagements = await fetchEngagements(playerIds);
+  if (!engagements) return new Set();
+
+  const pris = new Set<string>();
+  for (const r of engagements.parts) {
+    if (dansLaFenetre(r?.game?.match_date, r?.game?.status, debut, fin)) pris.add(r.player_id);
+  }
+  for (const g of engagements.creees) {
+    if (g?.creator_id && dansLaFenetre(g.match_date, g.status, debut, fin)) pris.add(g.creator_id);
+  }
   return pris;
 }

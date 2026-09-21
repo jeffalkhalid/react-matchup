@@ -18,6 +18,7 @@ import {
 import {
   announcedSlots, alertBody, cooldownLeft, cooldownLabel, readLastAlert, markAlertSent,
 } from '../../lib/circleAlert';
+import { fetchEngagedInRange } from '../../lib/slotConflict';
 
 const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, padding: 14, marginTop: 14 } as const;
 /** Trois places à pourvoir à côté de la mienne. */
@@ -48,17 +49,37 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
   const creneaux = availabilitySlots();
   const slot = displayedSlot(creneaux, mine) ?? creneaux[0];
 
+  /**
+   * Qui, parmi les déclarés, est DÉJÀ dans une partie ce jour-là.
+   *
+   * Se déclarer libre et l'être encore sont deux choses : après avoir monté
+   * la partie, les joueurs invités restaient affichés comme disponibles et
+   * on repartait en monter une deuxième avec les mêmes.
+   */
+  const [engages, setEngages] = useState<Set<string>>(new Set());
+
   const load = useCallback(() => {
     setLoading(true);
-    fetchCircleAvailability(friendIds, slot).then(rows => { setCircle(rows); setLoading(false); });
+    fetchCircleAvailability(friendIds, slot).then(async rows => {
+      setCircle(rows); setLoading(false);
+      const ids = [playerId, ...rows.map(r => r.player_id ?? r.id ?? r.player?.id ?? '')].filter(Boolean);
+      const pris = await fetchEngagedInRange(ids as string[], slot.start, slot.end);
+      setEngages(pris);
+      // Un joueur devenu indisponible ne peut plus rester coché : le bouton
+      // proposerait de monter une partie avec quelqu'un qui n'est plus libre.
+      setChoisis(prev => prev.filter(id => !pris.has(id)));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [friendIds.join(','), slot.key]);
+  }, [friendIds.join(','), slot.key, playerId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const idDe = (r: AvailabilityRow) => r.player_id ?? r.id ?? r.player?.id ?? '';
   const iAmIn = isSlotActive(slot, mine);
   const othersCount = circle.length;
-  const missing = missingPlayers(othersCount);
+  /** Déclarés ET encore libres : ce sont eux qu'on peut inviter. */
+  const autresLibres = circle.filter(r => !engages.has(idDe(r))).length;
+  const missing = missingPlayers(autresLibres);
   const basculer = (id: string) => setChoisis(prev =>
     prev.includes(id) ? prev.filter(x => x !== id)
       : prev.length >= MAX_SELECTION ? prev : [...prev, id]);
@@ -77,7 +98,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
       avatarPath: playerAvatarPath ?? null, ambassador: !!playerIsAmbassador, isMe: true,
     }] : []),
     ...circle.map(r => ({
-      id: r.player_id ?? r.id ?? r.player?.id ?? '', name: r.player?.name ?? 'Joueur',
+      id: idDe(r), name: r.player?.name ?? 'Joueur',
       elo: r.player?.elo_score ?? null, avatarPath: r.player?.avatar_path ?? null,
       ambassador: isAmbassador(r.player), isMe: false,
     })),
@@ -195,7 +216,11 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
           >
             {rows.map(r => {
               const coche = choisis.includes(r.id);
-              const plein = !coche && choisis.length >= MAX_SELECTION;
+              // Déclaré libre mais déjà dans une partie ce jour-là : on ne
+              // peut plus l'inviter, et le montrer disponible ferait croire
+              // qu'on peut monter un second match avec les mêmes joueurs.
+              const pris = engages.has(r.id);
+              const plein = !coche && !pris && choisis.length >= MAX_SELECTION;
               const avatar = (
                 <PlayerAvatar name={r.name} path={r.avatarPath} size={52} backgroundColor={Colors.brand} textColor={Colors.primary}
                   fontFamily={Fonts.uiBlack} fontSize={18} initialsMax={2} />
@@ -203,17 +228,17 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
               return (
                 <TouchableOpacity
                   key={r.id}
-                  activeOpacity={r.isMe || plein ? 1 : 0.85}
-                  disabled={r.isMe || plein}
+                  activeOpacity={r.isMe || plein || pris ? 1 : 0.85}
+                  disabled={r.isMe || plein || pris}
                   onPress={() => basculer(r.id)}
-                  accessibilityLabel={r.isMe ? 'Toi' : `Inviter ${r.name.split(' ')[0]}`}
+                  accessibilityLabel={r.isMe ? 'Toi' : pris ? `${r.name.split(' ')[0]} joue déjà` : `Inviter ${r.name.split(' ')[0]}`}
                   style={{
                     width: 104, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 8,
                     alignItems: 'center', gap: 6,
                     backgroundColor: coche ? 'rgba(255,193,26,0.14)' : Colors.bgCard,
                     borderWidth: coche ? 1.5 : 1,
                     borderColor: coche ? Colors.brand : Colors.border,
-                    opacity: plein ? 0.5 : 1,
+                    opacity: pris ? 0.45 : plein ? 0.5 : 1,
                   }}>
                   <View>
                     {r.ambassador ? <AmbassadorRing size={52} radius={26} surface={Colors.bgCard} align="center">{avatar}</AmbassadorRing> : avatar}
@@ -230,7 +255,11 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
                   <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12.5, color: Colors.textPrimary }}>
                     {r.isMe ? 'Toi' : r.name.split(' ')[0]}
                   </Text>
-                  {r.elo != null ? (
+                  {pris ? (
+                    <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: Colors.textMuted }}>
+                      Déjà pris
+                    </Text>
+                  ) : r.elo != null ? (
                     <View style={{ borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1 }}>
                       <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10.5, color: AMB.chipText }}>{formatPadelLevel(r.elo)}</Text>
                     </View>
@@ -244,11 +273,16 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
             <Text style={{ fontFamily: Fonts.uiBold, fontSize: 12, color: Colors.textSecondary }}>
-              {/* « 0 joueur dispo demain » sous sa propre photo n'avait pas de
-                  sens : quand je suis le seul déclaré, on le dit. */}
-              {othersCount === 0 && iAmIn
-                ? `Tu es le seul déclaré ${slotShortLabel(slot)}`
-                : `${othersCount} joueur${othersCount > 1 ? 's' : ''} dispo${othersCount > 1 ? 's' : ''} ${slotShortLabel(slot)}`}
+              {/* On compte ceux qu'on peut ENCORE inviter. Annoncer « 2 joueurs
+                  dispos » alors qu'ils viennent de rejoindre ma partie
+                  laissait croire qu'il restait du monde à recruter. */}
+              {autresLibres > 0
+                ? `${autresLibres} joueur${autresLibres > 1 ? 's' : ''} dispo${autresLibres > 1 ? 's' : ''} ${slotShortLabel(slot)}`
+                : othersCount > 0
+                  ? `Tout le monde est déjà pris ${slotShortLabel(slot)}`
+                  : engages.has(playerId)
+                    ? `Tu joues déjà ${slotShortLabel(slot)}`
+                    : `Tu es le seul déclaré ${slotShortLabel(slot)}`}
             </Text>
             {choisis.length > 0 ? (
               <TouchableOpacity onPress={() => setChoisis([])} hitSlop={8}>
