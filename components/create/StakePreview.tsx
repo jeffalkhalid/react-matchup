@@ -40,11 +40,16 @@ function Cote({ titre, valeur, fond, couleur }: {
   );
 }
 
-export function StakePreview({ outcome, cible }: {
-  /** `null` tant qu'on ne connaît pas tous les joueurs : on n'annonce rien. */
+export function StakePreview({ outcome, cible, exact }: {
+  /** `null` seulement si on ne connaît même pas les niveaux. */
   outcome: StakeOutcome | null;
   /** Défi ciblé : les adversaires sont connus, la fourchette est plus serrée. */
   cible: boolean;
+  /**
+   * Toutes les fiches sont chargées (donc les fiabilités, qui pèsent plus que
+   * la mise). Sinon on calcule sur les seuls niveaux et on le dit.
+   */
+  exact: boolean;
 }) {
   if (!outcome) return null;
 
@@ -75,11 +80,15 @@ export function StakePreview({ outcome, cible }: {
           <Icon name="eye" size={12} color={Colors.textMuted} stroke={2} />
         </View>
         <Text style={{ flex: 1, fontFamily: Fonts.ui, fontSize: 11, lineHeight: 15, color: Colors.textMuted }}>
-          {cible
-            // Les niveaux et les fiabilités sont déjà dans le calcul : la seule
-            // inconnue restante est la manière de gagner.
-            ? 'Calculé sur les niveaux et la fiabilité des quatre joueurs. Un score large rapporte davantage.'
-            : 'Fourchette calculée sur la bande de niveau choisie. Elle se resserrera quand le binôme adverse sera connu.'}
+          {!exact
+            // On n'a que les niveaux : on le dit plutôt que de laisser croire
+            // à un calcul complet. La fiabilité pèse plus que la mise.
+            ? 'Estimation sur les niveaux. Le chiffre s’affinera avec la fiabilité de chaque joueur.'
+            : cible
+              // Niveaux et fiabilités sont dans le calcul : la seule inconnue
+              // restante est la manière de gagner.
+              ? 'Calculé sur les niveaux et la fiabilité des quatre joueurs. Un score large rapporte davantage.'
+              : 'Fourchette calculée sur la bande de niveau choisie. Elle se resserrera quand le binôme adverse sera connu.'}
         </Text>
       </View>
     </View>

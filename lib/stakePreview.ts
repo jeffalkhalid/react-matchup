@@ -44,16 +44,26 @@ export interface StakeOutcome {
   loseMax: number;
 }
 
+/**
+ * Ce qu'on suppose d'un joueur dont on n'a que le niveau.
+ *
+ * Des compteurs a zero feraient croire a une PHASE DE PLACEMENT (K=85, quatre
+ * premiers matchs) et tripleraient la projection ; une fiabilite a zero ferait
+ * bondir le K de la meme facon. On suppose donc un joueur etabli et moyen.
+ * `??` ne se declenche que sur une valeur absente : un vrai debutant, lui,
+ * arrive avec un 0 explicite et garde son traitement de placement.
+ */
+const MATCHS_SUPPOSES = 10;
+const FIABILITE_SUPPOSEE = 70;
+
 const joueur = (p: StakePlayer, isWinner: boolean): EloPlayerInput => ({
   id: p.id,
   name: p.id,
   elo_score: p.elo_score,
-  win_count: p.win_count ?? 0,
-  loss_count: p.loss_count ?? 0,
+  win_count: p.win_count ?? MATCHS_SUPPOSES,
+  loss_count: p.loss_count ?? MATCHS_SUPPOSES,
   last_match_at: p.last_match_at ?? null,
-  // Sans fiabilité connue, on prend la valeur de départ du barème plutôt que
-  // zéro, qui ferait bondir le K et gonflerait la projection.
-  fiability_pct: p.fiability_pct ?? 70,
+  fiability_pct: p.fiability_pct ?? FIABILITE_SUPPOSEE,
   isWinner,
 });
 

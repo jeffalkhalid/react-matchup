@@ -101,3 +101,28 @@ describe('l ecriture des variations', () => {
     expect(formatLevelRange(0.14, 0.21)).toBe('+0,14 à +0,21');
   });
 });
+
+describe("avec le seul niveau, on calcule quand meme", () => {
+  const nu = (id: string, niveau: number) => ({ id, elo_score: padelLevelToElo(niveau) });
+
+  it("un joueur sans historique connu n est PAS traite comme un debutant", () => {
+    // Des compteurs absents mis a zero declencheraient la phase de placement
+    // (K=85) et tripleraient la projection. Le repli suppose un joueur etabli.
+    const nuOut = stakeOutcome(nu('moi', 5.41), nu('bin', 3.89), [nu('a1', 4.94), nu('a2', 4.87)], 2)!;
+    const complet = stakeOutcome(MOI, BINOME, ADVERSAIRES, 2)!;
+    expect(nuOut.winMin).toBeCloseTo(complet.winMin, 2);
+  });
+
+  it("un VRAI debutant garde son traitement de placement", () => {
+    // Zero explicite, pas valeur absente : il doit bouger beaucoup plus.
+    const debutant = { id: 'moi', elo_score: padelLevelToElo(5.41), win_count: 0, loss_count: 0, fiability_pct: 70 };
+    const place = stakeOutcome(debutant, BINOME, ADVERSAIRES, 2)!;
+    const etabli = stakeOutcome(MOI, BINOME, ADVERSAIRES, 2)!;
+    expect(place.winMin).toBeGreaterThan(etabli.winMin);
+  });
+
+  it("le bloc a toujours de quoi s afficher des qu on a les niveaux", () => {
+    expect(stakeOutcome(nu('moi', 5.0), nu('bin', 4.0), [nu('a1', 4.5), nu('a2', 4.5)], 3)).not.toBeNull();
+    expect(stakeOutcomeForBand(nu('moi', 5.0), nu('bin', 4.0), 4, 6, 3)).not.toBeNull();
+  });
+});

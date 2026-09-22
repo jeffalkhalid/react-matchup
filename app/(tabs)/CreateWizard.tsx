@@ -554,17 +554,38 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     return () => { cancelled = true; };
   }, [visible, form.gameType, stakeIds]);
 
-  const stakeProjection = useMemo(() => {
-    const moi = statsById[player?.id ?? ''];
-    const binome = statsById[defiPartner?.id ?? ''];
+  /**
+   * La fiche complete si on l'a, sinon le seul niveau deja connu de
+   * l'assistant. Ne rien afficher tant que les fiches ne sont pas revenues
+   * laissait un trou a l'ecran — une estimation annoncee comme telle vaut
+   * mieux qu'un vide.
+   */
+  const ficheOu = (id?: string | null, elo?: number | null): StakePlayer | null => {
+    if (!id) return null;
+    return statsById[id] ?? (elo != null ? { id, elo_score: elo } : null);
+  };
+
+  const { outcome: stakeProjection, exact: stakeExact } = useMemo(() => {
+    const moi = ficheOu(player?.id, player?.elo_score);
+    const binome = ficheOu(defiPartner?.id, defiPartner?.elo_score);
     const adversaires = ['B0', 'B1']
-      .map(k => statsById[form.invites[k]?.id ?? ''])
+      .map(k => ficheOu(form.invites[k]?.id, form.invites[k]?.elo_score))
       .filter((v): v is StakePlayer => !!v);
-    // Defi cible : les quatre joueurs sont connus, le chiffre est exact.
-    if (adversaires.length === 2) return stakeOutcome(moi, binome, adversaires, form.stakeMultiplier);
+    // Exact seulement si TOUTES les fiches sont revenues : elles portent la
+    // fiabilite, qui pese plus que la mise elle-meme.
+    const toutes = [moi, binome, ...adversaires]
+      .every(p => !!p && statsById[p.id] !== undefined);
+    // Defi cible : les quatre joueurs sont connus, on calcule sur eux.
+    if (adversaires.length === 2) {
+      return { outcome: stakeOutcome(moi, binome, adversaires, form.stakeMultiplier), exact: toutes };
+    }
     // Defi ouvert : on ne connait que la bande, on simule ses deux extremes.
-    return stakeOutcomeForBand(moi, binome, form.minLevel, form.maxLevel, form.stakeMultiplier);
-  }, [statsById, player?.id, defiPartner?.id, form.invites.B0?.id, form.invites.B1?.id, form.stakeMultiplier, form.minLevel, form.maxLevel]);
+    return {
+      outcome: stakeOutcomeForBand(moi, binome, form.minLevel, form.maxLevel, form.stakeMultiplier),
+      exact: toutes,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statsById, player?.id, player?.elo_score, defiPartner?.id, form.invites.B0?.id, form.invites.B1?.id, form.stakeMultiplier, form.minLevel, form.maxLevel]);
 
   // Step 2 helpers
   const invitedPlayers = Object.values(form.invites);
@@ -1516,12 +1537,11 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
             })}
           </View>
           {/* Les vrais chiffres, pas un multiplicateur nu (lib/stakePreview). */}
-          <StakePreview outcome={stakeProjection} cible={!!stakeProjection && !!form.invites.B0 && !!form.invites.B1} />
-          {!stakeProjection && (
-            <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', marginTop: 12 }}>
-              Choisis l'intensité du défi.
-            </Text>
-          )}
+          <StakePreview
+            outcome={stakeProjection}
+            cible={!!form.invites.B0 && !!form.invites.B1}
+            exact={stakeExact}
+          />
         </View>
 
         {/* Mon binôme : son niveau moyen fixe le plancher */}
