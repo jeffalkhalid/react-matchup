@@ -725,6 +725,20 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   // fourchette dérivée des joueurs confirmés. Bornes égales → valeur seule.
   // Même libellé que le panneau de la carte (lib/games.levelRangeLabel).
   const levelRange = levelRangeLabel(game);
+  // Le public visé descend sur la LIGNE DU NIVEAU au lieu de la rangée du haut.
+  //
+  // Une raison de place : sur un défi misé et complet, la rangée du haut portait
+  // six pastilles et « Complet » basculait à la ligne suivante, alors que le
+  // match compétitif juste en dessous l'affichait sur la même ligne. La même
+  // carte se lisait de deux façons.
+  //
+  // Une raison de sens : niveau et genre disent tous les deux QUI peut jouer.
+  // Le haut de carte dit ce QU'EST le match (défi, mise, terrain) et où il en
+  // est (complet, en file). Chaque ligne une question.
+  const genderPref = (game as any).gender_pref as string | undefined;
+  const genderLabel = genderPref === 'men' ? 'Hommes'
+    : genderPref === 'women' ? 'Femmes'
+    : genderPref === 'mixed' ? 'Mixte' : null;
   const dt = game.match_date ? splitDate(game.match_date) : null;
 
   // Voyant « EN COURS » : la partie se joue VRAIMENT — heure passée (de moins
@@ -745,9 +759,12 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   // disait « Complet » et rien d'autre alors qu'un binôme attendait (vu sur
   // device, onglet À venir vs onglet Défi).
   const queuedBinomes = (game as any).queued_binomes ?? 0;
+  // Libellé court : « binôme » est déjà dit par la pastille DÉFI qui la précède
+  // sur la même ligne, et c'est le mot qui poussait « Complet » à la ligne
+  // suivante. Le détail du match, lui, l'écrit en toutes lettres.
   const queuePill = variant !== 'history' && game.is_challenge && queuedBinomes > 0 ? (
     <CardTag {...warnTag} s={ps}>
-      {queuedBinomes} binôme{queuedBinomes > 1 ? 's' : ''} en file
+      {queuedBinomes} en file
     </CardTag>
   ) : null;
 
@@ -820,9 +837,6 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
             </CardTag>
           )}
           {isUrgent && <CardTag bg={Colors.bgCard} fg={pillAccent('danger')} border="rgba(239,68,68,0.45)" s={ps}>🔥 {urgentDelay}</CardTag>}
-          {(game as any).gender_pref === 'men'   && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Hommes</CardTag>}
-          {(game as any).gender_pref === 'women' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Femmes</CardTag>}
-          {(game as any).gender_pref === 'mixed' && <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>Mixte</CardTag>}
           {/* Terrain réservé ou non : réglé à la création, jamais montré
               ensuite — on arrivait au club sans savoir s'il fallait réserver.
               Libellé court pour ne pas faire passer la ligne à la suivante. */}
@@ -872,19 +886,28 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               ) : null}
             </TouchableOpacity>
           ) : null}
-          {levelRange ? (
+          {(levelRange || genderLabel) ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="signal" size={10} color={Colors.textOnDark} stroke={2.4} />
-              </View>
-              <Text
-                style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3, flexShrink: 1 }}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
-              >
-                {levelRange}
-              </Text>
+              {levelRange ? (
+                <>
+                  <View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="signal" size={10} color={Colors.textOnDark} stroke={2.4} />
+                  </View>
+                  <Text
+                    style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, letterSpacing: 0.3, flexShrink: 1 }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    {levelRange}
+                  </Text>
+                </>
+              ) : null}
+              {/* Sans fourchette de niveau, pas de rond « signal » : il
+                  annoncerait un niveau qu'on n'affiche pas. */}
+              {genderLabel ? (
+                <CardTag bg={Colors.bgCard} fg={Colors.textPrimary} border={Colors.border} s={ps}>{genderLabel}</CardTag>
+              ) : null}
               {variant === 'explore' && (
                 <View style={{ marginLeft: 'auto' }}><EloFitPill fit={fit} s={ps} /></View>
               )}
