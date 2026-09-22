@@ -87,7 +87,10 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
                 redirectTo: 'pagmatch://reset-password',
               });
               if (error) { Alert.alert('Impossible', passwordResetSendError(error.message)); return; }
-              Alert.alert('Regarde tes mails', `Le lien part à ${email}. Il est valable une heure.`);
+              // Pas de duree annoncee : elle depend d'un reglage serveur
+              // (Email OTP expiration, 15 min aujourd'hui) qu'on ne lit pas
+              // d'ici. Annoncer « une heure » etait faux.
+              Alert.alert('Regarde tes mails', `Le lien part à ${email}. Ouvre-le vite, il expire rapidement.`);
             },
           },
         ],
