@@ -2684,6 +2684,35 @@ export default function LobbyScreen() {
   const [partnerInvite, setPartnerInvite] = useState<{ gameId: string; teamSide: string } | null>(null);
   const [partnerBusyId, setPartnerBusyId] = useState<string | null>(null);
 
+  /**
+   * Le createur declare que le terrain est reserve — ou ne l'est plus.
+   *
+   * Une reservation se decroche souvent APRES la publication. Rien ne
+   * permettait de le dire : la partie restait « a reserver » jusqu'au bout,
+   * meme le terrain en poche, et les autres joueurs n'en savaient rien.
+   */
+  const setReservation = async (gameId: string, booked: boolean) => {
+    const { error } = await supabase.from('open_games').update({ has_reservation: booked }).eq('id', gameId);
+    if (error) { Alert.alert('Impossible', "Le changement n'a pas pu être enregistré. Réessaie."); return; }
+    // Bonne nouvelle qui concerne tout le monde : on la dit. L'inverse ne se
+    // notifie pas — annoncer « plus de terrain » a chaque tap serait brutal.
+    if (booked) {
+      const g = [...games, ...upcomingGames].find(x => x.id === gameId);
+      const autres = [
+        ...(g?.participants ?? []).filter((x: any) => x.status === 'accepted').map((x: any) => x.player_id),
+      ].filter((id: string) => id && id !== player?.id);
+      if (autres.length > 0) {
+        notifyPlayers({
+          playerIds: autres,
+          title: 'Terrain réservé',
+          body: `C'est confirmé pour ${g?.location ?? 'la partie'}.`,
+          data: { type: 'lobby', gameId },
+        });
+      }
+    }
+    fetchData();
+  };
+
   const invitePartner = async (p: { id: string; name: string }) => {
     if (!partnerInvite || !player) return;
     setPartnerBusyId(p.id);
@@ -4096,6 +4125,7 @@ export default function LobbyScreen() {
             router.replace((`/(tabs)/matchmaking?tab=relever&relever=${id}`) as any);
           }}
           onInvitePartner={(gameId, teamSide) => setPartnerInvite({ gameId, teamSide })}
+          onSetReservation={setReservation}
           hasAppliedDefi={!!openGame && appliedDefiIds.has(openGame.id)}
         />
       )}

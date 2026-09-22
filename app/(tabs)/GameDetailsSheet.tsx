@@ -307,6 +307,8 @@ interface Props {
   onRelever?: (gameId: string) => void;   // défi : relève à deux (flux binôme)
   /** Défi nominatif : l'adversaire désigné amène son propre partenaire. */
   onInvitePartner?: (gameId: string, teamSide: string) => void;
+  /** Le créateur déclare que le terrain est réservé — ou ne l'est plus. */
+  onSetReservation?: (gameId: string, booked: boolean) => void;
   hasAppliedDefi?: boolean;                // défi : j'ai déjà une candidature en attente
 }
 
@@ -368,7 +370,7 @@ export default function GameDetailsSheet(props: Props) {
 }
 
 function GameDetailsSheetContenu({
-  visible = true, game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, onInvitePartner, hasAppliedDefi,
+  visible = true, game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, onInvitePartner, onSetReservation, hasAppliedDefi,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -887,20 +889,41 @@ function GameDetailsSheetContenu({
                   (lib/games.courtBooking), en version longue : ici la place
                   ne manque pas. */}
               {(() => {
+                // Le CREATEUR peut changer l'etat ici : une reservation se
+                // decroche souvent apres la publication, et il n'existait
+                // aucun moyen de le dire — la partie restait « a reserver »
+                // jusqu'au bout, meme le terrain en poche.
                 const b = courtBooking(game as any);
-                if (!b) return null;
+                const modifiable = isCreator && !!onSetReservation
+                  && (game as any).status !== 'closed' && (game as any).status !== 'cancelled';
+                if (!b && !modifiable) return null;
+                const booked = !!b?.booked;
+                const Wrap: any = modifiable ? TouchableOpacity : View;
                 return (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
-                    paddingHorizontal: 10, paddingVertical: 4,
-                    backgroundColor: b.booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
-                  }}>
-                    <Icon name={b.booked ? 'check' : 'clock'} size={12}
-                      color={b.booked ? Colors.brand : 'rgba(255,255,255,0.8)'} stroke={b.booked ? 3 : 2.4} />
-                    <Text style={{ color: b.booked ? Colors.brand : 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
-                      {b.long}
+                  <Wrap
+                    {...(modifiable ? {
+                      onPress: () => onSetReservation!(game.id, !booked),
+                      activeOpacity: 0.8,
+                      accessibilityLabel: booked ? 'Indiquer que le terrain n’est plus réservé' : 'Indiquer que le terrain est réservé',
+                    } : {})}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
+                      paddingHorizontal: 10, paddingVertical: 4,
+                      backgroundColor: booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
+                      borderWidth: modifiable ? 1 : 0,
+                      borderColor: booked ? 'rgba(255,193,26,0.55)' : 'rgba(255,255,255,0.35)',
+                    }}>
+                    <Icon name={booked ? 'check' : 'clock'} size={12}
+                      color={booked ? Colors.brand : 'rgba(255,255,255,0.8)'} stroke={booked ? 3 : 2.4} />
+                    <Text style={{ color: booked ? Colors.brand : 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
+                      {b?.long ?? 'Terrain à réserver'}
                     </Text>
-                  </View>
+                    {modifiable && (
+                      <Text style={{ color: 'rgba(255,255,255,0.55)', fontFamily: Fonts.uiBold, fontSize: 9.5 }}>
+                        {booked ? '· annuler' : '· c’est réservé'}
+                      </Text>
+                    )}
+                  </Wrap>
                 );
               })()}
             </View>
