@@ -47,10 +47,25 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
         minHeight: 132, overflow: 'hidden',
       }}
     >
-      {/* Rond décoratif : il déborde du cadre, d'où `overflow: hidden`. */}
+      {/* Fond travaillé : des ANNEAUX concentriques, pas un aplat. Un rond
+          plein posé dans le coin se lit comme une tache ; des cercles
+          emboîtés donnent de la profondeur sans attirer l'œil hors du texte.
+          Ils débordent du cadre, d'où `overflow: hidden`. */}
+      {[150, 112, 74].map((d, i) => (
+        <View key={d} pointerEvents="none" style={{
+          position: 'absolute', right: -d / 2.6, top: -d / 2.6,
+          width: d, height: d, borderRadius: 999,
+          borderWidth: 1.5,
+          borderColor: jaune
+            ? `rgba(255,255,255,${0.30 - i * 0.06})`
+            : `rgba(255,193,26,${0.14 - i * 0.03})`,
+        }} />
+      ))}
+      {/* Une lueur diffuse sous les anneaux, côté bas-gauche : elle décolle la
+          tuile du fond gris sans créer de second aplat. */}
       <View pointerEvents="none" style={{
-        position: 'absolute', right: -34, top: -34, width: 116, height: 116, borderRadius: 999,
-        backgroundColor: jaune ? 'rgba(255,255,255,0.18)' : 'rgba(255,193,26,0.07)',
+        position: 'absolute', left: -46, bottom: -46, width: 118, height: 118, borderRadius: 999,
+        backgroundColor: jaune ? 'rgba(255,255,255,0.16)' : 'rgba(255,193,26,0.05)',
       }} />
 
       <View style={{
@@ -94,10 +109,10 @@ export function HomePrimaryActions({ onMatchmaking, onChallenge }: {
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Tuile
         variant="brand"
-        icon="racket"
+        icon="search"
         titre="Trouver"
         accent="un match"
-        sous="Des joueurs à ton niveau, près de chez toi"
+        sous="Des matchs à ton niveau, près de chez toi"
         onPress={onMatchmaking}
       />
       <Tuile
@@ -105,7 +120,7 @@ export function HomePrimaryActions({ onMatchmaking, onChallenge }: {
         icon="swords"
         titre="Match"
         accent="défi"
-        sous="Provoque un joueur, mise ton niveau"
+        sous="Défie un joueur, mise ton niveau"
         onPress={onChallenge}
       />
     </View>

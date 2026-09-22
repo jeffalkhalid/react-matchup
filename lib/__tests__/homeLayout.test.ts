@@ -31,14 +31,20 @@ describe('le budget doit tenir dans l ecran', () => {
     expect(totalMinHeight(vide)).toBeLessThan(totalMinHeight(pleine));
   });
 
-  it('la section Tournois COUTE de la place, et on la compte', () => {
+  it('le bandeau Tournois COUTE de la place, et on la compte', () => {
     // Piege paye une premiere fois : la section avait ete ajoutee sans etre
     // retiree du budget, et l'accueil s'etait mis a defiler.
-    const avec = sizes({ hasTournaments: true });
-    const sans = sizes({ hasTournaments: false });
-    expect(totalMinHeight(avec)).toBeGreaterThan(totalMinHeight(sans));
-    expect(avec.tournaments).not.toBe(null);
-    expect(sans.tournaments).toBe(null);
+    //
+    // Depuis 2026-09-22 c'est un BANDEAU d'entree : present meme sans soiree
+    // ouverte, donc son cout ne depend plus de `hasTournaments`. Il disparait
+    // en revanche pendant une soiree, la banniere du haut prenant le relais.
+    const ordinaire = sizes({ hasTournaments: false });
+    const pendantSoiree = sizes({ hasTournaments: false, hasLiveTournament: true });
+    expect(ordinaire.tournaments).not.toBe(null);
+    expect(pendantSoiree.tournaments).toBe(null);
+    expect(totalMinHeight(ordinaire)).toBeGreaterThan(
+      totalMinHeight(pendantSoiree) - pendantSoiree.liveBanner!.minHeight - ordinaire.gap,
+    );
   });
 });
 
@@ -231,10 +237,12 @@ describe('l emplacement du milieu, selon ce qui est vrai', () => {
     // ce total-la ne doit pas bouger, sinon la place rendue est repartie
     // ailleurs que dans le vide et les cartes se deforment.
     //
-    // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8) : la
-    // part ajoutee est la leur, pas celle du vide, et c'est ce qu'on verifie.
+    // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8), puis
+    // 5,9 depuis que Tournois est un BANDEAU a hauteur fixe (1,5 -> 0) : il ne
+    // prend plus de part, il prend des pixels. La part ajoutee ou retiree est
+    // celle de la section concernee, jamais celle du vide.
     expect(parts(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false })))
-      .toBeCloseTo(7.4);
+      .toBeCloseTo(5.9);
   });
 
   it('« cree le tien » ne reclame pas la place de deux vignettes', () => {

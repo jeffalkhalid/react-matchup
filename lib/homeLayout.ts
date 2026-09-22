@@ -201,8 +201,11 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // de rétrécir le hero jusqu'à repasser sous la barre : ça tenait à un
     // pixel près, c'est-à-dire que ça ne tenait pas. Retirer ce qui ne sert
     // pas vaut mieux que rogner ce qui sert.
-    tournaments: i.hasTournaments && !i.hasLiveTournament
-      ? { flex: 1.5, minHeight: c ? 92 : 136 } : null,
+    // Devenu un BANDEAU d'entree (2026-09-22) : hauteur fixe, present meme
+    // sans soiree ouverte — c'est une porte vers les tournois, pas une
+    // actualite. Pendant une soiree il disparait quand meme : la banniere du
+    // haut dit deja ou aller, et deux appels au meme endroit se nuisent.
+    tournaments: i.hasLiveTournament ? null : { flex: 0, minHeight: c ? 76 : 84 },
     // La carte n'est plus rendue quand il n'y a rien à annoncer. Elle disait
     // « Aucun match programmé · explore les parties ouvertes », avec une
     // flèche vers le lobby — soit mot pour mot le bouton « Trouver un match »

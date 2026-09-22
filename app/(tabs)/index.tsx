@@ -24,7 +24,7 @@ import { isBadgeVisible } from '../../lib/badges';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeRankButton } from '../../components/home/HomeRankButton';
-import { HomeTournaments } from '../../components/home/HomeTournaments';
+import { HomeTournamentsBanner } from '../../components/home/HomeTournamentsBanner';
 import { HomePulse } from '../../components/home/HomePulse';
 import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
 import { homeSectionSizes, COMPACT_THRESHOLD_H, TOURNAMENTS_RESERVE } from '../../lib/homeLayout';
@@ -608,14 +608,16 @@ export default function HomeScreen() {
                   Le conteneur lui-même n'est PAS rendu quand la liste est vide :
                   sinon sa part de hauteur réserverait de la place pour rien, et l'accueil
                   ne retrouverait pas ses proportions d'origine. */}
-              {sizes.tournaments && tournois.length > 0 && (
-                <View style={{ flex: sizes.tournaments!.flex, minHeight: sizes.tournaments!.minHeight }}>
-                  <HomeTournaments
-                    entries={tournois}
-                    onOpen={(id) => router.push(`/tournaments/${id}` as any)}
-                    onSeeAll={() => router.push('/tournaments' as any)}
-                  />
-                </View>
+              {/* Bandeau d'ENTREE, plus la liste des soirees : tournois et
+                  evenements deviendront deux pages, et l'accueil n'a pas a en
+                  etre le sommaire. Il est toujours la — c'est une porte, pas
+                  une actualite — sauf pendant une soiree, ou la banniere du
+                  haut dit deja ou aller. */}
+              {sizes.tournaments && (
+                <HomeTournamentsBanner
+                  count={tournois.length}
+                  onPress={() => router.push('/tournaments' as any)}
+                />
               )}
 
               {/* D. Prochain match — rendu SEULEMENT s'il y en a un. La carte
