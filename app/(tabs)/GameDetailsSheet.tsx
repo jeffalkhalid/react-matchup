@@ -9,7 +9,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
-import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking } from '../../lib/games';
+import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, partnerSeatToFill } from '../../lib/games';
 import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
 import { fetchPlayersTotals, type PlayerTotals } from '../../lib/playerStats';
 import { FitTitle } from '../../components/DisplayTitle';
@@ -305,6 +305,8 @@ interface Props {
   onLeave: (gameId: string, participantId: string, wasAccepted: boolean) => void;
   onCancelGame: (gameId: string) => void;
   onRelever?: (gameId: string) => void;   // défi : relève à deux (flux binôme)
+  /** Défi nominatif : l'adversaire désigné amène son propre partenaire. */
+  onInvitePartner?: (gameId: string, teamSide: string) => void;
   hasAppliedDefi?: boolean;                // défi : j'ai déjà une candidature en attente
 }
 
@@ -366,7 +368,7 @@ export default function GameDetailsSheet(props: Props) {
 }
 
 function GameDetailsSheetContenu({
-  visible = true, game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, hasAppliedDefi,
+  visible = true, game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, onInvitePartner, hasAppliedDefi,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -461,6 +463,8 @@ function GameDetailsSheetContenu({
   // qu'à l'acceptation du binôme (fn_publish_defi_on_partner_accept).
   const targetedLine = targetedOpponentsLine(game, isCreator ? 'creator' : 'partner');
   const myParticipant = (game.participants ?? []).find((p: any) => p.player_id === playerId);
+  // Le siège à pourvoir dans MON camp, sur un défi nominatif (lib/games).
+  const partnerSeat = partnerSeatToFill(game as any, playerId);
   const myStatus     = (myParticipant as any)?.status;
   // Une invitation expirée (cron pas encore passée) ne « réserve » plus la place :
   // on la traite comme non-occupante pour rouvrir le chemin de candidature.
@@ -631,6 +635,24 @@ function GameDetailsSheetContenu({
       return null;
     }
     if (alreadyIn) {
+      // Defi NOMINATIF : on m'a defie MOI, je complete mon camp moi-meme.
+      // Sans ce bouton, aucun ecran ne permettait d'inviter quelqu'un dans
+      // une partie deja publiee — le defi restait a trois pour toujours.
+      if (partnerSeat && onInvitePartner) {
+        return (
+          <View style={{ flex: 1, gap: 8 }}>
+            <TouchableOpacity onPress={() => onInvitePartner(game.id, partnerSeat)}
+              style={[sty.ctaBtn, { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
+              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>
+                Amène ton partenaire
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 16 }}>
+              Le défi sera confirmé quand il aura accepté.
+            </Text>
+          </View>
+        );
+      }
       if (isInvited && myParticipant) {
         const isChallenge = !!game.is_challenge;
         // Invité côté A d'un défi = le créateur me demande d'être son BINÔME

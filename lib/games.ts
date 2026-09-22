@@ -432,6 +432,48 @@ export function gameWhenLabel(iso: string | null | undefined): string | null {
 }
 
 /**
+ * Sur un défi NOMINATIF, l'adversaire désigné complète son camp lui-même.
+ *
+ * On défie une personne, pas une paire : elle vient avec le partenaire de son
+ * choix. Rien ne le permettait — toutes les invitations partaient de
+ * l'assistant de création, donc un défi nominatif restait à trois pour
+ * toujours.
+ *
+ * Le serveur l'autorise déjà : la règle qui interdit d'inviter dans le camp
+ * adverse (`trg_defi_no_b_invite`) fait une exception explicite pour les
+ * défis ciblés.
+ *
+ * Rend le côté à pourvoir ('B_GAU' ou 'B_DRO'), ou `null` si ce n'est pas mon
+ * rôle — seul un adversaire CONFIRMÉ amène son partenaire, pas un invité qui
+ * n'a pas encore répondu.
+ */
+export function partnerSeatToFill(
+  game: {
+    is_challenge?: boolean | null;
+    is_targeted?: boolean | null;
+    status?: string | null;
+    participants?: { player_id: string; status: string; team_side?: string | null; invite_expires_at?: string | null }[] | null;
+  },
+  playerId: string,
+): string | null {
+  if (!game?.is_challenge || !game.is_targeted) return null;
+  if (game.status === 'cancelled' || game.status === 'closed') return null;
+
+  const parts = game.participants ?? [];
+  const moi = parts.find(p => p.player_id === playerId);
+  if (!moi || moi.status !== 'accepted') return null;
+  if (!String(moi.team_side ?? '').toUpperCase().startsWith('B')) return null;
+
+  const cotes = ['B_GAU', 'B_DRO'];
+  const pris = new Set(
+    parts
+      .filter(p => occupiesSpot(p))
+      .map(p => String(p.team_side ?? '').toUpperCase()),
+  );
+  return cotes.find(c => !pris.has(c)) ?? null;
+}
+
+/**
  * Ce qu'on annonce avant de quitter une partie.
  *
  * « Ta place sera libérée » était vrai d'une partie ordinaire, faux d'un

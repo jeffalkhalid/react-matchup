@@ -18,6 +18,7 @@ import { getHiddenPlayerIds } from '../../lib/moderation';
 import { displayName } from '../../lib/players';
 import { buildStoryMatch } from '../../components/story/storyTheme';
 import StoryComposerV2 from '../../components/StoryComposerV2';
+import InvitePartnerSheet from '../../components/InvitePartnerSheet';
 import type { StoryPlayer, StoryMatchData, InviteData } from '../../components/story/storyTheme';
 import type { OpenGame, Match } from '../../types';
 import { MatchCard as MatchScoreCard, MatchTeamsScore } from '../../components/profile/components';
@@ -2671,6 +2672,41 @@ export default function LobbyScreen() {
   const [preFilledSlot, setPreFilledSlot] = useState<{ day?: string; time?: string }>({});
   const [targetedInvites, setTargetedInvites] = useState<Partial<Record<'B0' | 'B1', { id: string; name: string; elo_score: number; avatar_path?: string | null }>> | null>(null);
   const [targetedMode, setTargetedMode] = useState(false);
+
+  /**
+   * Defi NOMINATIF : l'adversaire designe amene son propre partenaire.
+   *
+   * Aucun ecran ne permettait d'inviter quelqu'un dans une partie deja
+   * publiee — toutes les invitations partaient de l'assistant de creation.
+   * Le serveur, lui, l'autorise depuis toujours sur un defi cible
+   * (trg_defi_no_b_invite fait l'exception).
+   */
+  const [partnerInvite, setPartnerInvite] = useState<{ gameId: string; teamSide: string } | null>(null);
+  const [partnerBusyId, setPartnerBusyId] = useState<string | null>(null);
+
+  const invitePartner = async (p: { id: string; name: string }) => {
+    if (!partnerInvite || !player) return;
+    setPartnerBusyId(p.id);
+    const { error } = await supabase.from('game_participants').insert({
+      game_id: partnerInvite.gameId,
+      player_id: p.id,
+      status: 'invited',
+      team_side: partnerInvite.teamSide,
+    });
+    setPartnerBusyId(null);
+    if (error) {
+      Alert.alert('Impossible', "L'invitation n'a pas pu être envoyée. Réessaie dans un instant.");
+      return;
+    }
+    notifyPlayers({
+      playerIds: [p.id],
+      title: `${player.name} te prend comme partenaire`,
+      body: 'Un défi vous attend — accepte pour le confirmer.',
+      data: { type: 'lobby', gameId: partnerInvite.gameId },
+    });
+    setPartnerInvite(null);
+    fetchData();
+  };
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
   const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
@@ -4059,9 +4095,25 @@ export default function LobbyScreen() {
             setOpenGameId(null); setDetailGame(null);
             router.replace((`/(tabs)/matchmaking?tab=relever&relever=${id}`) as any);
           }}
+          onInvitePartner={(gameId, teamSide) => setPartnerInvite({ gameId, teamSide })}
           hasAppliedDefi={!!openGame && appliedDefiIds.has(openGame.id)}
         />
       )}
+
+      {/* Defi nominatif : l'adversaire designe choisit son propre partenaire. */}
+      <InvitePartnerSheet
+        visible={!!partnerInvite}
+        excludeIds={(() => {
+          const g = [...games, ...upcomingGames].find(x => x.id === partnerInvite?.gameId);
+          return [
+            g?.creator_id,
+            ...((g?.participants ?? []).map((x: any) => x.player_id)),
+          ].filter((v): v is string => !!v);
+        })()}
+        busyId={partnerBusyId}
+        onClose={() => setPartnerInvite(null)}
+        onPick={invitePartner}
+      />
 
       <ApplicationNoteSheet
         visible={noteSheet !== null}
