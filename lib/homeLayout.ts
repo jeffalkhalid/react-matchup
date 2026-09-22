@@ -188,7 +188,10 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // toute facon, defile maintenant. Elles gardent leurs proportions et la
     // page est simplement plus courte en haut.
     hero:  i.hasHero === false ? null : { flex: i.hasNextMatch || suggere ? 3 : 3.3, minHeight: c ? 158 : 228 },
-    ctas:  { flex: 0.8, minHeight: Math.round((c ? 50 : 62) * ctaScale), textScale: ctaScale },
+    // Deux TUILES depuis le 2026-09-22 : titre sur deux lignes, phrase et
+    // fleche. Elles reclament trois fois la hauteur des anciens boutons, et
+    // c'est la seule section dont le plancher a change.
+    ctas:  { flex: 1.8, minHeight: c ? 118 : 132, textScale: ctaScale },
     // PAS DE SECTION TOURNOIS PENDANT UNE SOIRÉE. On est déjà à un tournoi :
     // la liste des autres soirées ouvertes est du bruit à ce moment précis, et
     // elle coûte 92 à 136 dp — bien plus que la bannière n'en prend.

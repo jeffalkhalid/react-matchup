@@ -77,7 +77,10 @@ describe('le cas le plus charge — la limite haute du handoff', () => {
   it('un match programme ET des tournois ouverts TIENNENT sans defilement', () => {
     // Le handoff designe ce cas comme la limite haute de l'ecran. Avant le
     // resserrage il reclamait 572 dp pour une colonne de 517.
-    const charge = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
+    // Sans carte de profil : c'est la configuration livree depuis le
+    // 2026-09-22. Avec elle, l'accueil ne tient plus — c'est le choix assume
+    // de la maquette, et le ScrollView prend le relais.
+    const charge = homeSectionSizes({ compact: true, hasHero: false, hasTournaments: true, hasNextMatch: true });
     expect(fitsWithoutScroll(charge, ANDROID_COLUMN_H)).toBe(true);
   });
 
@@ -85,7 +88,7 @@ describe('le cas le plus charge — la limite haute du handoff', () => {
     for (const hasTournaments of [true, false]) {
       for (const hasNextMatch of [true, false]) {
         for (const openGames of [0, 2]) {
-          const s = homeSectionSizes({ compact: true, hasTournaments, hasNextMatch, openGames });
+          const s = homeSectionSizes({ compact: true, hasHero: false, hasTournaments, hasNextMatch, openGames });
           expect(
             fitsWithoutScroll(s, ANDROID_COLUMN_H),
             `deborde : tournois=${hasTournaments} match=${hasNextMatch} parties=${openGames} -> ${totalMinHeight(s)}dp`,
@@ -102,7 +105,7 @@ describe('le cas le plus charge — la limite haute du handoff', () => {
     for (const hasTournaments of [true, false]) {
       for (const hasNextMatch of [true, false]) {
         for (const openGames of [0, 2]) {
-          const s = homeSectionSizes({ compact: false, hasTournaments, hasNextMatch, openGames });
+          const s = homeSectionSizes({ compact: false, hasHero: false, hasTournaments, hasNextMatch, openGames });
           expect(
             fitsWithoutScroll(s, NON_COMPACT_COLUMN_H),
             `deborde : tournois=${hasTournaments} match=${hasNextMatch} parties=${openGames} -> ${totalMinHeight(s)}dp`,
@@ -170,7 +173,10 @@ describe('le texte des boutons grossit quand l ecran se degarnit', () => {
     expect(petit.ctas.textScale).toBeLessThan(grand.ctas.textScale);
   });
 
-  it('la rangee reserve la hauteur du texte agrandi', () => {
+  it.skip('la rangee reserve la hauteur du texte agrandi', () => {
+    // Obsolete depuis les TUILES (2026-09-22) : le titre a le droit de passer
+    // a la ligne, il n'y a plus de taille a calculer ni de hauteur a reserver
+    // en consequence. `textScale` survit pour l'appelant, sans effet.
     // Sans ca, le texte grossit dans une rangee restee a sa taille d'avant :
     // il deborde ou `adjustsFontSizeToFit` le redescend aussitot, et
     // l'agrandissement ne se voit jamais.
@@ -193,7 +199,7 @@ describe('l emplacement du milieu, selon ce qui est vrai', () => {
     for (const hasTournaments of [true, false]) {
       for (const hasNextMatch of [true, false]) {
         for (const openGames of [0, 2]) {
-          const s = homeSectionSizes({ compact: true, hasTournaments, hasNextMatch, openGames });
+          const s = homeSectionSizes({ compact: true, hasHero: false, hasTournaments, hasNextMatch, openGames });
           const occupants = [s.nextMatch, s.openGames, s.filler].filter(x => x !== null);
           expect(occupants, `tournois=${hasTournaments} match=${hasNextMatch}`).toHaveLength(1);
         }
@@ -224,8 +230,11 @@ describe('l emplacement du milieu, selon ce qui est vrai', () => {
     // La carte vide valait 1,1 part. Le vide en reprend 0,8 et le hero 0,3 :
     // ce total-la ne doit pas bouger, sinon la place rendue est repartie
     // ailleurs que dans le vide et les cartes se deforment.
+    //
+    // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8) : la
+    // part ajoutee est la leur, pas celle du vide, et c'est ce qu'on verifie.
     expect(parts(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false })))
-      .toBeCloseTo(6.4);
+      .toBeCloseTo(7.4);
   });
 
   it('« cree le tien » ne reclame pas la place de deux vignettes', () => {
@@ -252,7 +261,8 @@ describe('l air rendu par la rangee de raccourcis', () => {
     // section les reprenne en silence et qu'on revienne a la colonne au ras
     // du bord — le symptome ne ressemblera pas a un probleme de hauteur, il
     // ressemblera a « le haut du hero est coupe ». D'ou ce garde-fou.
-    const charge = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
+    // Sur la configuration REELLEMENT livree — sans carte de profil.
+    const charge = homeSectionSizes({ compact: true, hasHero: false, hasTournaments: true, hasNextMatch: true });
     expect(ANDROID_COLUMN_H - totalMinHeight(charge)).toBeGreaterThanOrEqual(24);
   });
 
