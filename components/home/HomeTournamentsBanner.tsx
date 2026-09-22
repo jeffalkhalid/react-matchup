@@ -17,16 +17,24 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 
-export function HomeTournamentsBanner({ count, onPress }: {
-  /** Combien de soirées ouvertes — 0 affiche le bandeau sans pastille. */
+export function HomeTournamentsBanner({ enabled, count, onPress }: {
+  /**
+   * Les tournois sont-ils ouverts (drapeau du panel arbitre) ?
+   *
+   * Fermés, le bandeau annonce « À venir » et ne mène nulle part : la
+   * fonctionnalité existe, elle n'est pas encore ouverte. Le rendre tapable
+   * déposerait sur un écran vide — pire qu'une promesse.
+   */
+  enabled: boolean;
+  /** Combien d'événements ouverts, quand ils le sont. */
   count: number;
   onPress: () => void;
 }) {
+  const ouvrable = enabled && count > 0;
+  const Wrap: any = ouvrable ? TouchableOpacity : View;
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      accessibilityRole="button"
+    <Wrap
+      {...(ouvrable ? { onPress, activeOpacity: 0.88, accessibilityRole: 'button' } : {})}
       accessibilityLabel="Tournois et événements"
       style={{
         backgroundColor: '#0A0A0A', borderRadius: 20,
@@ -58,26 +66,33 @@ export function HomeTournamentsBanner({ count, onPress }: {
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 15, color: 'rgba(255,255,255,0.6)' }}>
-            Ne manque rien dans ta région
+            {ouvrable
+              ? `${count} événement${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''} · touche pour voir`
+              : 'Ne manque rien dans ta région'}
           </Text>
-          {count > 0 && (
-            <View style={{ backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-              <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.primary }}>
-                {`${count} à venir`}
-              </Text>
+          {/* La pastille dit « bientôt », pas « combien » : elle disparaît dès
+              que les tournois sont ouverts, la phrase prend le relais. */}
+          {!ouvrable && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
+              <Icon name="calendar" size={10} color={Colors.primary} stroke={2.4} />
+              <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.primary }}>À venir</Text>
             </View>
           )}
         </View>
       </View>
 
-      <View pointerEvents="none" style={{
-        width: 30, height: 30, borderRadius: 999,
-        borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)',
-        alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Icon name="chevronRight" size={14} color={Colors.textOnDark} stroke={2.6} />
-      </View>
-    </TouchableOpacity>
+      {/* Pas de flèche quand rien ne s'ouvre : elle promettrait une
+          destination. */}
+      {ouvrable && (
+        <View pointerEvents="none" style={{
+          width: 30, height: 30, borderRadius: 999,
+          borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon name="chevronRight" size={14} color={Colors.textOnDark} stroke={2.6} />
+        </View>
+      )}
+    </Wrap>
   );
 }
 

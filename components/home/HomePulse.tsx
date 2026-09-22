@@ -14,7 +14,7 @@ import { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
-import { Icon } from '../community/icons';
+import { Icon, type IconName } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { availabilitySlots, fetchAvailableOnSlot, slotShortLabel, type AvailabilityRow } from '../../lib/availability';
 import { MERCATO_LEVEL_BAND } from '../../lib/mercato';
@@ -40,6 +40,28 @@ function Bouton({ label, onPress }: { label: string; onPress: () => void }) {
       <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 12.5, color: Colors.primary }}>{label}</Text>
       <Icon name="chevronRight" size={12} color={Colors.primary} stroke={2.6} />
     </TouchableOpacity>
+  );
+}
+
+/** L'en-tete d'une carte : l'icone dit d'un coup d'oeil de quoi il s'agit. */
+function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
+      <View style={{
+        width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,193,26,0.18)',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Icon name={icon} size={17} color={Colors.brandDeep} stroke={2.2} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}>
+          {titre}
+        </Text>
+        <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
+          {sous}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -129,14 +151,11 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {dispos.length > 0 && (
           <View style={CARTE}>
-            <View style={{ gap: 2 }}>
-              <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}>
-                {`Dispos ${quand}`}
-              </Text>
-              <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
-                {`${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`}
-              </Text>
-            </View>
+            <Entete
+              icon="users"
+              titre={`Dispos ${quand}`}
+              sous={`${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`}
+            />
             <Photos rows={dispos.map(r => ({
               id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
             }))} />
@@ -146,16 +165,13 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
 
         {chocsMontres.map((clash, i) => (
           <View key={clash.gameId} style={CARTE}>
-            <View style={{ gap: 2 }}>
-              {/* Deux cartes « Votes du moment » cote a cote se liraient comme
-                  un doublon : la seconde s'annonce pour ce qu'elle est. */}
-              <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}>
-                {i === 0 ? 'Votes du moment' : 'Un autre match'}
-              </Text>
-              <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
-                {`${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`}
-              </Text>
-            </View>
+            {/* Deux cartes « Votes du moment » cote a cote se liraient comme
+                un doublon : la seconde pose la question directement. */}
+            <Entete
+              icon="signal"
+              titre={i === 0 ? 'Votes du moment' : 'Qui va gagner ?'}
+              sous={`${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`}
+            />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Photos rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>

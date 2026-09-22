@@ -83,6 +83,15 @@ export default function HomeScreen() {
   // pleines, la colonne deborde, et l'accueil se met a defiler -- ce qu'il ne
   // faisait pas avant. C'est ce que le handoff demandait et que j'avais omis.
   const [tournois, setTournois] = useState<HomeTournamentEntry[]>([]);
+  /**
+   * Le drapeau des tournois, lu pour le BANDEAU d'entree.
+   *
+   * Eteint, le bandeau annonce « A venir » et ne mene nulle part : la
+   * fonctionnalite existe mais n'est pas ouverte. C'est un ecart assume avec
+   * la regle d'origine (« eteint, l'entree n'apparait NULLE PART ») — decision
+   * du 2026-09-22.
+   */
+  const [tournoisOuverts, setTournoisOuverts] = useState(false);
   // La soiree en cours ou j'ai une place — la banniere du haut.
   const [soiree, setSoiree] = useState<Tournament | null>(null);
   const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48
@@ -221,7 +230,9 @@ export default function HomeScreen() {
     (async () => {
       if (!player) return;
       try {
-        if (!(await getTournamentsEnabled())) {
+        const ouvert = await getTournamentsEnabled();
+        if (!annule) setTournoisOuverts(ouvert);
+        if (!ouvert) {
           if (!annule) { setTournois([]); setSoiree(null); }
           return;
         }
@@ -615,6 +626,7 @@ export default function HomeScreen() {
                   haut dit deja ou aller. */}
               {sizes.tournaments && (
                 <HomeTournamentsBanner
+                  enabled={tournoisOuverts}
                   count={tournois.length}
                   onPress={() => router.push('/tournaments' as any)}
                 />
