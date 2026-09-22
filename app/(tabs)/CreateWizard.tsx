@@ -12,6 +12,8 @@ import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
 import { OVERLAP_MS, fetchBusyPlayerIds } from '../../lib/slotConflict';
 import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone } from '../../lib/defis';
+import { stakeOutcome, stakeOutcomeForBand, type StakePlayer } from '../../lib/stakePreview';
+import { StakePreview } from '../../components/create/StakePreview';
 import { consumePickedVenue } from '../../lib/venuePicker';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import { Avatar as ClubAvatar } from '../../components/community/Avatar';
@@ -526,6 +528,43 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (!defiPartner) return meLv;
     return +(((meLv + eloToLevel(defiPartner.elo_score)) / 2)).toFixed(2);
   })();
+
+  // ── Ce que la mise change vraiment ────────────────────────────────────
+  // L'ecran annoncait « Points ELO gagnes/perdus : x2 » sans dire multiplie par
+  // quoi. Le mouvement depend surtout du niveau adverse et de la fiabilite de
+  // chacun — il faut donc les vraies fiches, pas seulement les niveaux deja
+  // charges dans l'assistant (qui ne portent que l'ELO).
+  const [statsById, setStatsById] = useState<Record<string, StakePlayer>>({});
+  const stakeIds = useMemo(() => [
+    player?.id, defiPartner?.id, form.invites.B0?.id, form.invites.B1?.id,
+  ].filter((v): v is string => !!v).sort().join(','), [player?.id, defiPartner?.id, form.invites.B0?.id, form.invites.B1?.id]);
+
+  useEffect(() => {
+    if (!visible || form.gameType !== 'Défi' || !stakeIds) return;
+    let cancelled = false;
+    supabase.from('players')
+      .select('id, elo_score, win_count, loss_count, last_match_at, fiability_pct')
+      .in('id', stakeIds.split(','))
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const par: Record<string, StakePlayer> = {};
+        for (const p of data as any[]) par[p.id] = p as StakePlayer;
+        setStatsById(par);
+      });
+    return () => { cancelled = true; };
+  }, [visible, form.gameType, stakeIds]);
+
+  const stakeProjection = useMemo(() => {
+    const moi = statsById[player?.id ?? ''];
+    const binome = statsById[defiPartner?.id ?? ''];
+    const adversaires = ['B0', 'B1']
+      .map(k => statsById[form.invites[k]?.id ?? ''])
+      .filter((v): v is StakePlayer => !!v);
+    // Defi cible : les quatre joueurs sont connus, le chiffre est exact.
+    if (adversaires.length === 2) return stakeOutcome(moi, binome, adversaires, form.stakeMultiplier);
+    // Defi ouvert : on ne connait que la bande, on simule ses deux extremes.
+    return stakeOutcomeForBand(moi, binome, form.minLevel, form.maxLevel, form.stakeMultiplier);
+  }, [statsById, player?.id, defiPartner?.id, form.invites.B0?.id, form.invites.B1?.id, form.stakeMultiplier, form.minLevel, form.maxLevel]);
 
   // Step 2 helpers
   const invitedPlayers = Object.values(form.invites);
@@ -1476,12 +1515,13 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               );
             })}
           </View>
-          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: stakeTone(form.stakeMultiplier).soft, textAlign: 'center', marginTop: 12 }}>
-            Points ELO gagnés/perdus : ×{form.stakeMultiplier}
-          </Text>
-          <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', marginTop: 2 }}>
-            Choisis l'intensité du défi.
-          </Text>
+          {/* Les vrais chiffres, pas un multiplicateur nu (lib/stakePreview). */}
+          <StakePreview outcome={stakeProjection} cible={!!stakeProjection && !!form.invites.B0 && !!form.invites.B1} />
+          {!stakeProjection && (
+            <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', marginTop: 12 }}>
+              Choisis l'intensité du défi.
+            </Text>
+          )}
         </View>
 
         {/* Mon binôme : son niveau moyen fixe le plancher */}
