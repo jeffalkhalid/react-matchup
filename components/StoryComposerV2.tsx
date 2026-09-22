@@ -119,10 +119,21 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
   const exportW = 1080;
   const list = STORY_REGISTRY[mode];
 
+  /**
+   * Les onglets « Match » et « Photo » habillent tous les deux un RESULTAT :
+   * vainqueurs, score, adversaires. Sans match, ils affichaient une carte
+   * creuse — « 0-0 SETS », « vs — », et un « VICTOIRE » qui n'avait jamais eu
+   * lieu. Depuis un profil, on n'en a pas forcement un sous la main.
+   *
+   * On ne bascule donc qu'une fois le match choisi : le selecteur s'ouvre, et
+   * si on l'annule on reste sur l'onglet d'avant plutot que devant un vide.
+   */
+  const needsMatch = (m: StoryMode) => m === 'match' || m === 'photo';
+
   const switchMode = (m: StoryMode) => {
+    if (needsMatch(m) && !match) { onRequestMatch?.(); return; }
     setMode(m);
     setStyleId(STORY_REGISTRY[m][0].id);
-    if (m === 'match' && !match) onRequestMatch?.();
     if (m === 'photo' && !photoUri) choosePhotoSource();
   };
 
@@ -190,9 +201,30 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
             setPreviewBox(p => (p.w === width && p.h === height ? p : { w: width, h: height }));
           }}
           style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgCard, paddingVertical: 8 }}>
-          <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
-            <StoryCardV2 ref={canvasRef} width={previewW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
-          </View>
+          {/* Filet : si on atterrit sur un onglet de resultat sans match (mode
+              impose a l'ouverture, chargement rate), on le dit au lieu
+              d'afficher une carte qui annonce une victoire inexistante. */}
+          {needsMatch(mode) && !match ? (
+            <View style={{ alignItems: 'center', paddingHorizontal: 32, gap: 12 }}>
+              <Icon name="swords" size={28} color={Colors.textMuted} stroke={1.8} />
+              <Text style={{ fontSize: 14, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary, textAlign: 'center' }}>
+                Choisis un match à partager
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 17 }}>
+                Cette carte montre le résultat : vainqueurs, score, adversaires.
+              </Text>
+              {onRequestMatch ? (
+                <TouchableOpacity onPress={onRequestMatch} activeOpacity={0.85}
+                  style={{ backgroundColor: Colors.primary, borderRadius: 999, paddingVertical: 11, paddingHorizontal: 22, marginTop: 2 }}>
+                  <Text style={{ fontSize: 13.5, fontFamily: Fonts.uiExtraBold, color: Colors.brand }}>Choisir un match</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : (
+            <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border }}>
+              <StoryCardV2 ref={canvasRef} width={previewW} mode={mode} styleId={styleId} player={player} match={matchData} invite={invite} photoUri={photoUri} matchOpts={matchOpts} />
+            </View>
+          )}
         </View>
 
         {/* Carte d'export à pleine résolution (1080px), rendue hors-écran et capturée
