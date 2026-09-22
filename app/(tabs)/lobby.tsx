@@ -2692,8 +2692,26 @@ export default function LobbyScreen() {
    * meme le terrain en poche, et les autres joueurs n'en savaient rien.
    */
   const setReservation = async (gameId: string, booked: boolean) => {
-    const { error } = await supabase.from('open_games').update({ has_reservation: booked }).eq('id', gameId);
+    // `.select()` n'est PAS decoratif : sans lui, un UPDATE que les regles
+    // d'acces refusent ne renvoie AUCUNE erreur — il met a jour zero ligne, en
+    // silence. On saurait seulement que « ca ne marche pas ».
+    const { data, error } = await supabase
+      .from('open_games')
+      .update({ has_reservation: booked })
+      .eq('id', gameId)
+      .select('id')
+      .maybeSingle();
     if (error) { Alert.alert('Impossible', "Le changement n'a pas pu être enregistré. Réessaie."); return; }
+    if (!data) {
+      Alert.alert('Refusé', "Le serveur n'a pas accepté ce changement. Seul le créateur de la partie peut modifier la réservation.");
+      return;
+    }
+    // Mise a jour locale immediate : la fiche peut afficher une partie qui ne
+    // vient pas des listes (defi ouvert depuis l'onglet Defi), que fetchData
+    // ne rafraichit pas — la pastille serait restee figee malgre l'ecriture.
+    setDetailGame(g => (g && g.id === gameId ? { ...g, has_reservation: booked } as any : g));
+    setGames(gs => gs.map(g => (g.id === gameId ? { ...g, has_reservation: booked } as any : g)));
+    setUpcomingGames(gs => gs.map(g => (g.id === gameId ? { ...g, has_reservation: booked } as any : g)));
     // Bonne nouvelle qui concerne tout le monde : on la dit. L'inverse ne se
     // notifie pas — annoncer « plus de terrain » a chaque tap serait brutal.
     if (booked) {
