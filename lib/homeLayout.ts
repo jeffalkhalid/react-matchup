@@ -205,7 +205,7 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // sans soiree ouverte — c'est une porte vers les tournois, pas une
     // actualite. Pendant une soiree il disparait quand meme : la banniere du
     // haut dit deja ou aller, et deux appels au meme endroit se nuisent.
-    tournaments: i.hasLiveTournament ? null : { flex: 0, minHeight: c ? 76 : 84 },
+    tournaments: i.hasLiveTournament ? null : { flex: 0, minHeight: c ? 92 : 104 },
     // La carte n'est plus rendue quand il n'y a rien à annoncer. Elle disait
     // « Aucun match programmé · explore les parties ouvertes », avec une
     // flèche vers le lobby — soit mot pour mot le bouton « Trouver un match »

@@ -38,7 +38,7 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
       accessibilityLabel="Tournois et événements"
       style={{
         backgroundColor: '#0A0A0A', borderRadius: 20,
-        paddingVertical: 16, paddingHorizontal: 16,
+        paddingVertical: 18, paddingHorizontal: 16,
         flexDirection: 'row', alignItems: 'center', gap: 14,
         overflow: 'hidden',
       }}
@@ -64,21 +64,20 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
         <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 25, color: Colors.textOnDark, paddingRight: 6 }}>
           Tournois <Text style={{ color: Colors.brand }}>&amp; événements</Text>
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 15, color: 'rgba(255,255,255,0.6)' }}>
-            {ouvrable
-              ? `${count} événement${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''} · touche pour voir`
-              : 'Ne manque rien dans ta région'}
-          </Text>
-          {/* La pastille dit « bientôt », pas « combien » : elle disparaît dès
-              que les tournois sont ouverts, la phrase prend le relais. */}
-          {!ouvrable && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-              <Icon name="calendar" size={10} color={Colors.primary} stroke={2.4} />
-              <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.primary }}>À venir</Text>
-            </View>
-          )}
-        </View>
+        <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.6)' }}>
+          {ouvrable
+            ? `${count} événement${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''} · touche pour voir`
+            : 'Ne manque rien dans ta région'}
+        </Text>
+        {/* La pastille dit « bientôt », pas « combien » : elle disparaît dès
+            que les tournois sont ouverts, la phrase prend le relais. Sur sa
+            PROPRE ligne — collée au texte, elle se lisait comme sa fin. */}
+        {!ouvrable && (
+          <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 3 }}>
+            <Icon name="calendar" size={11} color={Colors.primary} stroke={2.4} />
+            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 11, color: Colors.primary }}>À venir</Text>
+          </View>
+        )}
       </View>
 
       {/* Pas de flèche quand rien ne s'ouvre : elle promettrait une

@@ -42,6 +42,8 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
       accessibilityRole="button"
       accessibilityLabel={`${titre} ${accent}`}
       style={{
+        // `flex: 1` sur la tuile ET sur la rangee : la hauteur reservee par
+        // l'accueil leur revient au lieu de rester en blanc sous les cartes.
         flex: 1, backgroundColor: fond, borderRadius: 20,
         paddingVertical: 14, paddingHorizontal: 14, justifyContent: 'space-between',
         minHeight: 132, overflow: 'hidden',
@@ -106,7 +108,7 @@ export function HomePrimaryActions({ onMatchmaking, onChallenge }: {
   textScale?: number;
 }) {
   return (
-    <View style={{ flexDirection: 'row', gap: 10 }}>
+    <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
       <Tuile
         variant="brand"
         icon="search"
