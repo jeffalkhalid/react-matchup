@@ -44,14 +44,34 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
       }}
     >
       {/* Mêmes anneaux que les tuiles : une seule grammaire visuelle pour
-          toutes les entrées de l'accueil. */}
-      {[170, 126, 82].map((d, i) => (
+          toutes les entrées de l'accueil. Ils partent du bord DROIT, là où le
+          bandeau est large et vide. */}
+      {[260, 200, 144].map((d, i) => (
         <View key={d} pointerEvents="none" style={{
-          position: 'absolute', right: -d / 3, top: -d / 2.4,
+          position: 'absolute', right: -d * 0.28, top: -d * 0.36,
           width: d, height: d, borderRadius: 999,
-          borderWidth: 1.5, borderColor: `rgba(255,193,26,${0.13 - i * 0.03})`,
+          borderWidth: i === 0 ? 2.5 : 2,
+          borderColor: `rgba(255,193,26,${0.20 - i * 0.05})`,
         }} />
       ))}
+
+      {/* Le semis de points de la maquette, en haut à droite. Quarante petits
+          ronds posés en grille : c'est ce qui donne au bandeau sa texture, et
+          c'est précisément ce que j'avais omis. */}
+      <View pointerEvents="none" style={{
+        position: 'absolute', right: 14, top: 12, flexDirection: 'row', gap: 7,
+      }}>
+        {Array.from({ length: 6 }).map((_, col) => (
+          <View key={col} style={{ gap: 7 }}>
+            {Array.from({ length: 4 }).map((__, ligne) => (
+              <View key={ligne} style={{
+                width: 3, height: 3, borderRadius: 999,
+                backgroundColor: `rgba(255,193,26,${0.55 - (col + ligne) * 0.05})`,
+              }} />
+            ))}
+          </View>
+        ))}
+      </View>
 
       <View style={{
         width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,193,26,0.16)',

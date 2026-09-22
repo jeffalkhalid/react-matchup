@@ -49,25 +49,29 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
         minHeight: 132, overflow: 'hidden',
       }}
     >
-      {/* Fond travaillé : des ANNEAUX concentriques, pas un aplat. Un rond
-          plein posé dans le coin se lit comme une tache ; des cercles
-          emboîtés donnent de la profondeur sans attirer l'œil hors du texte.
-          Ils débordent du cadre, d'où `overflow: hidden`. */}
-      {[150, 112, 74].map((d, i) => (
+      {/* Fond travaillé : de GRANDS anneaux concentriques qui traversent la
+          tuile, pas un aplat dans le coin. Un rond plein se lit comme une
+          tache ; des arcs qui balaient la carte lui donnent du relief.
+          Ils débordent largement du cadre, d'où `overflow: hidden`.
+
+          Ils étaient trop timides au premier jet : petits, fins, et si peu
+          contrastés qu'on les devinait à peine. Un effet qu'on ne voit pas ne
+          sert à rien — autant l'enlever que le laisser à moitié. */}
+      {[248, 196, 144, 96].map((d, i) => (
         <View key={d} pointerEvents="none" style={{
-          position: 'absolute', right: -d / 2.6, top: -d / 2.6,
+          position: 'absolute', right: -d * 0.32, top: -d * 0.42,
           width: d, height: d, borderRadius: 999,
-          borderWidth: 1.5,
+          borderWidth: i === 0 ? 2.5 : 2,
           borderColor: jaune
-            ? `rgba(255,255,255,${0.30 - i * 0.06})`
-            : `rgba(255,193,26,${0.14 - i * 0.03})`,
+            ? `rgba(255,255,255,${0.42 - i * 0.07})`
+            : `rgba(255,193,26,${0.22 - i * 0.04})`,
         }} />
       ))}
-      {/* Une lueur diffuse sous les anneaux, côté bas-gauche : elle décolle la
-          tuile du fond gris sans créer de second aplat. */}
+      {/* Une lueur diffuse en bas à gauche : elle décolle la tuile du fond
+          gris sans créer de second aplat. */}
       <View pointerEvents="none" style={{
-        position: 'absolute', left: -46, bottom: -46, width: 118, height: 118, borderRadius: 999,
-        backgroundColor: jaune ? 'rgba(255,255,255,0.16)' : 'rgba(255,193,26,0.05)',
+        position: 'absolute', left: -58, bottom: -58, width: 150, height: 150, borderRadius: 999,
+        backgroundColor: jaune ? 'rgba(255,255,255,0.20)' : 'rgba(255,193,26,0.06)',
       }} />
 
       <View style={{
