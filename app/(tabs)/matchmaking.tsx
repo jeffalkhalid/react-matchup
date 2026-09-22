@@ -15,7 +15,7 @@ import {
   fetchOpenDefis, fetchMyDefis, fetchDefisInvolved, fetchCandidaturesOnMyDefis,
   fetchMyApplications, fetchBinomeInvitations, fetchMyDefiInvites, defiGameWithMyBinome, defiOtherBinomeCount,
   acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, applyToDefi, cancelDefi,
-  applicationPairAverage,
+  applicationPairAverage, targetedOpponentsLine,
   type DefiGame, type DefiApplication, type DefiInvite,
 } from '../../lib/defis';
 import { defiRefusalMessage } from '../../lib/defiMessages';
@@ -1004,6 +1004,18 @@ export default function MatchmakingScreen() {
                       ));
                       return (
                         <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                          {/* Defi nominatif encore en brouillon : l'adversaire
+                              n'est pas un participant, il est seulement NOTE.
+                              Sans cette ligne, on ne voyait nulle part qui on
+                              avait defie. */}
+                          {targetedOpponentsLine(g as any, isMine ? 'creator' : 'partner') && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
+                              <Icon name="lock" size={13} color={Colors.brandDeep} stroke={2.2} />
+                              <Text style={{ flex: 1, fontSize: 11.5, color: Colors.textSecondary }} numberOfLines={2}>
+                                {targetedOpponentsLine(g as any, isMine ? 'creator' : 'partner')}
+                              </Text>
+                            </View>
+                          )}
                           {racing.length > 0 && (
                             <View style={{ gap: 6 }}>
                               <Text style={{ fontSize: 10.5, fontWeight: '900', color: Colors.brandDeep, letterSpacing: 0.4, textTransform: 'uppercase' }}>

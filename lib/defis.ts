@@ -38,6 +38,7 @@ export interface DefiParticipant {
 export interface DefiGame {
   id: string; creator_id: string; creator_side?: string | null; status: string;
   is_challenge: boolean; is_targeted?: boolean; stake_multiplier: number | null;
+  target_players?: { player_id?: string; team_side?: string | null; name?: string | null }[] | null;
   game_format?: string | null; gender_pref?: string | null;
   spots_available?: number | null; has_reservation?: boolean | null;
   min_elo: number | null; max_elo: number | null;
@@ -53,7 +54,10 @@ export interface DefiApplication {
 }
 
 const GAME_COLS =
-  'id, creator_id, creator_side, status, is_challenge, is_targeted, game_format, gender_pref, ' +
+  // target_players : les adversaires DESIGNES d'un defi nominatif. Sans eux,
+  // on ne voyait nulle part qui on avait defie tant que le binome n'avait
+  // pas accepte — l'adversaire n'etant pas encore un participant.
+  'id, creator_id, creator_side, status, is_challenge, is_targeted, target_players, game_format, gender_pref, ' +
   'spots_available, has_reservation, stake_multiplier, min_elo, max_elo, match_date, location, ' +
   'creator:creator_id(id, name, elo_score, avatar_path, win_count, loss_count), ' +
   'participants:game_participants(id, player_id, status, team_side, approvals, created_at, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, win_count, loss_count))';
