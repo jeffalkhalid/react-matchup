@@ -53,7 +53,7 @@ describe('mode compact', () => {
     // Le compact resserre, il ne redessine pas la page.
     const c = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
     const p = homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: true });
-    expect(c.hero.flex).toBe(p.hero.flex);
+    expect(c.hero!.flex).toBe(p.hero!.flex);
     expect(c.nextMatch?.flex).toBe(p.nextMatch?.flex);
     expect(c.tournaments?.flex).toBe(p.tournaments?.flex);
   });
@@ -63,7 +63,7 @@ describe('somme des planchers', () => {
   it('compte les espaces ENTRE les sections, pas apres la derniere', () => {
     const s = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false });
     // hero + boutons + tournois + vide = 4 sections rendues -> 3 espaces
-    const planchers = s.hero.minHeight + s.ctas.minHeight
+    const planchers = s.hero!.minHeight + s.ctas.minHeight
       + s.tournaments!.minHeight + s.filler!.minHeight;
     expect(totalMinHeight(s)).toBe(planchers + 3 * s.gap);
   });
@@ -241,7 +241,7 @@ describe('l emplacement du milieu, selon ce qui est vrai', () => {
     // Le hero ne prend sa part supplementaire que si PERSONNE ne le relaie.
     const suggere = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: false, openGames: 2 });
     const vide    = homeSectionSizes({ compact: true, hasTournaments: true,  hasNextMatch: false });
-    expect(suggere.hero.flex).toBeLessThan(vide.hero.flex);
+    expect(suggere.hero!.flex).toBeLessThan(vide.hero!.flex);
   });
 });
 
@@ -261,5 +261,26 @@ describe('l air rendu par la rangee de raccourcis', () => {
     // c'est du vide entre celles qui restent.
     expect(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true }).gap)
       .toBeGreaterThan(6);
+  });
+});
+
+describe("sans carte de profil (accueil 2026-09-22)", () => {
+  const base = { compact: false, hasTournaments: false, hasNextMatch: true, openGames: 0 };
+
+  it("la section n est pas rendue", () => {
+    expect(homeSectionSizes({ ...base, hasHero: false }).hero).toBeNull();
+  });
+
+  it("les autres sections gardent EXACTEMENT leurs proportions", () => {
+    // Leur redistribuer la part du hero les ferait doubler de hauteur pour
+    // remplir un ecran qui defile desormais de toute facon.
+    const avec = homeSectionSizes({ ...base });
+    const sans = homeSectionSizes({ ...base, hasHero: false });
+    expect(sans.ctas.flex).toBe(avec.ctas.flex);
+    expect(sans.nextMatch!.flex).toBe(avec.nextMatch!.flex);
+  });
+
+  it("par defaut, la carte est toujours la — la retirer reste un choix explicite", () => {
+    expect(homeSectionSizes({ ...base }).hero).not.toBeNull();
   });
 });

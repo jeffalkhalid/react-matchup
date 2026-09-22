@@ -26,6 +26,14 @@
 export interface HomeLayoutInput {
   /** Écran ou police serrés : proportions réduites. */
   compact: boolean;
+  /**
+   * La carte de profil est-elle rendue ?
+   *
+   * Retirée de l'accueil le 2026-09-22 (décision produit) : sa part revient
+   * aux cartes du dessous. Gardée en OPTION plutôt que supprimée — tout le
+   * budget est calibré autour d'elle, et la remettre doit rester une ligne.
+   */
+  hasHero?: boolean;
   /** La section Tournois est-elle rendue ? */
   hasTournaments: boolean;
   /** Y a-t-il un match à venir ? Sinon la carte n'est pas rendue. */
@@ -74,7 +82,8 @@ export interface CtaSize extends SectionSize {
 export interface HomeSizes {
   /** La banniere « tournoi en cours » -- `null` hors soiree. */
   liveBanner: SectionSize | null;
-  hero: SectionSize;
+  /** `null` quand la carte de profil n'est pas rendue (cf. `hasHero`). */
+  hero: SectionSize | null;
   ctas: CtaSize;
   /** `null` quand aucun tournoi ouvert : la section n'est pas rendue. */
   tournaments: SectionSize | null;
@@ -174,7 +183,11 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // relaie — ni match, ni tournoi, ni suggestion. Le compte est fait pour
     // que le total des parts ne bouge pas (3,3 + 0,8 de vide = 3 + 1,1) : les
     // boutons et les tournois gardent exactement la même proportion.
-    hero:  { flex: i.hasNextMatch || suggere ? 3 : 3.3, minHeight: c ? 158 : 228 },
+    // Sans carte de profil, sa part (3 a 3,3) n'est pas redistribuee aux
+    // autres : elles doubleraient de hauteur pour remplir un ecran qui, de
+    // toute facon, defile maintenant. Elles gardent leurs proportions et la
+    // page est simplement plus courte en haut.
+    hero:  i.hasHero === false ? null : { flex: i.hasNextMatch || suggere ? 3 : 3.3, minHeight: c ? 158 : 228 },
     ctas:  { flex: 0.8, minHeight: Math.round((c ? 50 : 62) * ctaScale), textScale: ctaScale },
     // PAS DE SECTION TOURNOIS PENDANT UNE SOIRÉE. On est déjà à un tournoi :
     // la liste des autres soirées ouvertes est du bruit à ce moment précis, et

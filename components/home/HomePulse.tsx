@@ -71,7 +71,8 @@ function Photos({ rows, max = 4 }: { rows: { id: string; name: string; path?: st
 export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
   const router = useRouter();
   const [dispos, setDispos] = useState<AvailabilityRow[]>([]);
-  const [clash, setClash] = useState<Clash | null>(null);
+  /** Deux au plus : le second prend la place des dispos quand il n'y en a pas. */
+  const [clashes, setClashes] = useState<Clash[]>([]);
 
   const creneau = availabilitySlots()[0] ?? null;
 
@@ -96,13 +97,18 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
       // On ne propose pas de voter sur SON propre match : l'issue dépend de
       // nous, et « 58 % te voient perdre » n'est pas une conversation.
       const liste = withoutMyGames(clashesToPredict(parties), myId);
+      // Le plus serré d'abord — c'est celui sur lequel il y a vraiment à dire.
       const choc = tightestClashId(liste);
-      setClash(liste.find(c => c.gameId === choc) ?? liste[0] ?? null);
+      const ordonne = choc ? [...liste].sort((a, b) => (a.gameId === choc ? -1 : b.gameId === choc ? 1 : 0)) : liste;
+      setClashes(ordonne.slice(0, 2));
     })();
     return () => { vivant = false; };
   }, [myId, myElo, creneau?.key]));
 
-  if (dispos.length === 0 && !clash) return null;
+  // Personne de dispo : un DEUXIEME match a voter prend la place libre plutot
+  // que de laisser une carte seule au milieu de la ligne.
+  const chocsMontres = dispos.length > 0 ? clashes.slice(0, 1) : clashes.slice(0, 2);
+  if (dispos.length === 0 && chocsMontres.length === 0) return null;
 
   const quand = creneau ? slotShortLabel(creneau) : 'ce soir';
 
@@ -113,6 +119,11 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
         <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
           Ça bouge chez les <Text style={{ color: Colors.brandDeep }}>PAGUISTES</Text>
         </Text>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/activite' as any)} hitSlop={8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textSecondary }}>Voir tout</Text>
+          <Icon name="chevronRight" size={12} color={Colors.textSecondary} stroke={2.6} />
+        </TouchableOpacity>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -133,11 +144,13 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
           </View>
         )}
 
-        {clash && (
-          <View style={CARTE}>
+        {chocsMontres.map((clash, i) => (
+          <View key={clash.gameId} style={CARTE}>
             <View style={{ gap: 2 }}>
+              {/* Deux cartes « Votes du moment » cote a cote se liraient comme
+                  un doublon : la seconde s'annonce pour ce qu'elle est. */}
               <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}>
-                Votes du moment
+                {i === 0 ? 'Votes du moment' : 'Un autre match'}
               </Text>
               <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
                 {`${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`}
@@ -152,7 +165,7 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
                 carte en tête du rail (cf. app/(tabs)/activite.tsx). */}
             <Bouton label="Voter" onPress={() => router.push(`/(tabs)/activite?focus=${clash.gameId}` as any)} />
           </View>
-        )}
+        ))}
       </View>
     </View>
   );

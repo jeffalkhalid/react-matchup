@@ -51,9 +51,9 @@ type Step = {
 };
 
 const STEPS: Step[] = [
-  { screen: 'home', anchor: 'home-profile', pad: 8, radius: 26, place: 'below',
-    kicker: 'Ton profil', title: 'Ton niveau, c’est ta carte de visite',
-    body: 'Il bouge à chaque match validé. Les parties te sont proposées à ce niveau.' },
+  // L'etape « Ton profil » pointait la carte de l'accueil, retiree le
+  // 2026-09-22. Une visite guidee ne peut pas entourer ce qui n'existe plus :
+  // elle commence donc par les deux entrees, qui sont ce qu'on vient faire.
   { screen: 'home', anchor: 'home-ctas', pad: 8, radius: 22, place: 'above',
     kicker: 'Deux entrées', title: 'Deux façons de jouer',
     body: 'Trouver un match : tu rejoins une partie ouverte. Match Défi : tu provoques un joueur. Commence par le jaune.' },

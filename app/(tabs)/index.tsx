@@ -21,7 +21,6 @@ import { Icon } from '../../components/community/icons';
 import { BadgePill } from '../../components/profile/BadgePill';
 import { useActiveVoteBadges } from '../../components/profile/BadgeDefsProvider';
 import { isBadgeVisible } from '../../lib/badges';
-import { HomeProfileCard } from '../../components/home/HomeProfileCard';
 import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeRankButton } from '../../components/home/HomeRankButton';
@@ -340,6 +339,10 @@ export default function HomeScreen() {
 
   const sizes = homeSectionSizes({
     compact,
+    // La carte de profil ne fait plus partie de l'accueil (decision produit
+    // du 2026-09-22). Le budget la garde en option : repasser a `true` la
+    // remet, avec ses proportions d'origine.
+    hasHero: false,
     hasTournaments: tournois.length > 0,
     hasNextMatch: visibleUpcoming.length > 0,
     openGames: suggestions.length,
@@ -581,23 +584,12 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* B. Hero profil — ~3/7,6 de la hauteur — ancre visite guidée (étape 1) */}
-              <View
-                ref={(v) => registerTourAnchor('home-profile', v)}
-                collapsable={false}
-                style={{ flex: sizes.hero.flex, minHeight: sizes.hero.minHeight }}>
-                <HomeProfileCard
-                  name={player.name}
-                  elo={player.elo_score}
-                  wins={totals.wins}
-                  losses={totals.losses}
-                  badgeCount={badgeCount}
-                  frmt={formatFrmtRanking(player)}
-                  onPress={() => router.push(`/player/${player.id}` as any)}
-                  compact={compact}
-                  memberNumber={isAmbassador(player) ? player.member_number : null}
-                />
-              </View>
+              {/* B. La carte de profil vivait ici. Retiree le 2026-09-22 :
+                  l'accueil ouvre desormais sur les deux entrees et le prochain
+                  match. Le niveau et la progression se lisent sur le profil,
+                  qu'on atteint par la photo en haut a droite.
+                  Le budget la garde en option (lib/homeLayout `hasHero`) : la
+                  remettre est une ligne. */}
 
               {/* C. Actions principales — ~0,8/7,6 — ancre visite guidée (étape 2) */}
               <View
