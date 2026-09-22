@@ -35,6 +35,13 @@ export interface NotifItem {
    * confirmé » et « Ton binôme a quitté », qui n'ont rien d'une récompense.
    */
   icon?: IconName;
+  /**
+   * QUAND se joue la partie concernée (ISO). « Lebron veut rejoindre la partie
+   * à ACSA » ne disait pas pour quel jour : impossible de décider sans ouvrir.
+   * Absent sur ce qui ne vise pas une partie précise (badges à distribuer,
+   * parties à scorer).
+   */
+  when?: string | null;
 }
 
 // Notifs "info" sans action requise : supprimables définitivement (persistées
@@ -266,6 +273,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
           title: 'Demande à valider',
           subtitle: `${r.player?.name ?? 'Un joueur'} veut rejoindre la partie${where}`,
           route: `/(tabs)/lobby?gameId=${r.game_id}`,
+          when: g?.match_date ?? null,
         };
       });
 
@@ -305,15 +313,15 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     .map((c: any) => {
       const isChall = !!c.game?.is_challenge;
       const where = c.game?.location ? ` à ${c.game.location}` : '';
-      const when = c.game?.match_date
-        ? ` du ${new Date(c.game.match_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}`
-        : '';
       return {
         id: `cancelled-${c.id}`,
         type: 'cancelled' as const,
         title: isChall ? '❌ Défi annulé' : '❌ Partie annulée',
-        subtitle: `${isChall ? 'Le défi' : 'La partie'}${where}${when} a été annulé${isChall ? '' : 'e'}`,
+        // La date sortait du texte (« du jeu. 21 sept. ») ; elle est maintenant
+        // affichée à part, au même endroit que sur les autres cartes.
+        subtitle: `${isChall ? 'Le défi' : 'La partie'}${where} a été annulé${isChall ? '' : 'e'}`,
         route: '/(tabs)/lobby',
+        when: c.game?.match_date ?? null,
       };
     });
 
@@ -339,6 +347,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
           ? `${who} t'invite comme binôme pour un défi${where}`
           : isChall ? `${who} te défie en duel${where}` : `${who} t'invite à jouer${where}`,
         route: `/(tabs)/lobby?gameId=${inv.game.id}`,
+        when: inv.game?.match_date ?? null,
       };
     }),
     // Invitations binôme : requête déjà filtrée partner_id + status='pending',
@@ -369,6 +378,7 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
         title: 'En file d\'attente',
         subtitle: `Votre binôme est en file pour le défi${q.game?.location ? ` à ${q.game.location}` : ''} — promus si une place se libère`,
         route: '/(tabs)/matchmaking?tab=mes',
+        when: q.game?.match_date ?? null,
       })),
     // Défi — binôme retenu (verrouillage direct ou promotion) : info supprimable.
     ...(lockedApps ?? [])

@@ -6,7 +6,7 @@
 // (lib/games.isInvitationVisible) pour ne jamais montrer une invitation
 // expirée / sur une partie annulée ou déjà passée.
 import { supabase } from './supabase';
-import { isInvitationVisible } from './games';
+import { isInvitationVisible, gameWhenLabel } from './games';
 import type { OpenGame, Player } from '../types';
 
 export interface HubInvitation {
@@ -115,20 +115,12 @@ export function invitationTitle(duo: Player[], rang: number): string {
   return `${qui} ${verbe} des joueurs`;
 }
 
-const JOURS_ABBR = ['DIM.', 'LUN.', 'MAR.', 'MER.', 'JEU.', 'VEN.', 'SAM.'];
-const MOIS_ABBR = ['JANV.', 'FÉVR.', 'MARS', 'AVR.', 'MAI', 'JUIN', 'JUIL.', 'AOÛT', 'SEPT.', 'OCT.', 'NOV.', 'DÉC.'];
-
 /**
  * « MAR. 22 SEPT. · 20H30 » — la pastille de date noire de la carte.
  *
- * Elle ne disait que le jour de la semaine : « MAR. · 10H30 » peut être ce
- * mardi ou celui d'après, et on accepte une partie sans savoir laquelle.
+ * Même source que partout ailleurs (lib/games.gameWhenLabel), juste mise en
+ * capitales : deux écritures de la même date finissent par diverger.
  */
 export function invitationDatePill(iso: string): string {
-  const d = new Date(iso);
-  const jour = JOURS_ABBR[d.getDay()];
-  const mois = MOIS_ABBR[d.getMonth()];
-  const min = d.getMinutes();
-  const heure = min ? `${d.getHours()}H${String(min).padStart(2, '0')}` : `${d.getHours()}H`;
-  return `${jour} ${d.getDate()} ${mois} · ${heure}`;
+  return (gameWhenLabel(iso) ?? '').toUpperCase();
 }

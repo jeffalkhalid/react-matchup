@@ -6,7 +6,7 @@
 // match derrière une phrase qui parlait d'une seule place.
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
-import { leaveGamePrompt } from '../games';
+import { leaveGamePrompt, gameWhenLabel } from '../games';
 
 describe('partie ordinaire — inchangé', () => {
   it('une place confirmée se libère', () => {
@@ -65,5 +65,29 @@ describe('défi, partenaire du créateur (côté A) — tout s’arrête', () =>
     // Mieux vaut faire hésiter à tort que détruire un match en silence.
     expect(leaveGamePrompt({ isChallenge: true, status: 'accepted', side: null }).message)
       .toBe('Le défi sera supprimé pour tout le monde.');
+  });
+});
+
+describe("gameWhenLabel - quand se joue la partie", () => {
+  it("porte le jour, le quantieme, le mois et l heure", () => {
+    expect(gameWhenLabel(new Date(2026, 8, 22, 20, 30).toISOString())).toBe("mar. 22 sept. · 20h30");
+  });
+
+  it("une heure ronde ne traine pas de minutes", () => {
+    expect(gameWhenLabel(new Date(2026, 8, 22, 20, 0).toISOString())).toBe("mar. 22 sept. · 20h");
+  });
+
+  it("un mois court s ecrit sans point", () => {
+    expect(gameWhenLabel(new Date(2026, 2, 3, 9, 0).toISOString())).toBe("mar. 3 mars · 9h");
+  });
+
+  it("sans date, rien a afficher", () => {
+    expect(gameWhenLabel(null)).toBeNull();
+    expect(gameWhenLabel(undefined)).toBeNull();
+    expect(gameWhenLabel("")).toBeNull();
+  });
+
+  it("une date abimee ne fabrique pas un libelle absurde", () => {
+    expect(gameWhenLabel("nawak")).toBeNull();
   });
 });

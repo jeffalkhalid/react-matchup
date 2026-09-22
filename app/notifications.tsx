@@ -9,6 +9,7 @@ import { useNotificationCount } from '../hooks/useNotificationCount';
 import { getNotificationsEnabled, enableNotificationsFromApp } from '../hooks/usePushNotifications';
 import { supabase } from '../lib/supabase';
 import { buildNotificationItems, isDismissibleNotif, type NotifItem } from '../lib/notifications';
+import { gameWhenLabel } from '../lib/games';
 import { Colors, Fonts } from '../lib/theme';
 import { Icon, type IconName } from '../components/community/icons';
 
@@ -290,6 +291,18 @@ export default function NotificationsScreen() {
                   <Text style={{ fontSize: 12, lineHeight: 16, color: text.sub, marginTop: 2 }} numberOfLines={3}>
                     {item.subtitle}
                   </Text>
+                  {/* Quand se joue la partie. « Lebron veut rejoindre la partie
+                      a ACSA » ne disait pas pour quel jour : impossible de
+                      decider sans ouvrir la fiche. Absent de ce qui ne vise pas
+                      une partie precise (badges, parties a scorer). */}
+                  {gameWhenLabel(item.when) ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
+                      <Icon name="clock" size={11} color={text.sub} stroke={2.2} />
+                      <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: text.sub }}>
+                        {gameWhenLabel(item.when)}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
                 <Icon name="chevronRight" size={16} color={Colors.border} stroke={2.5} />
                 {isDismissibleNotif(item.type) && (

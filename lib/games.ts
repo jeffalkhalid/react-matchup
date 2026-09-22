@@ -412,6 +412,25 @@ export function urgentDelayLabel(iso: string | null | undefined, now: Date = new
  * marqueur : elle devient un refus manuel, que le lobby cache. Sa place avait
  * déjà été rendue et l'organisateur déjà prévenu au retrait automatique.
  */
+const JOURS_ABBR = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const MOIS_ABBR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+/**
+ * Quand se joue une partie : « mar. 22 sept. · 20h30 ».
+ *
+ * Source unique du « quand » d'une partie dans les listes. Sans le
+ * quantième, « mardi » peut être ce mardi ou celui d'après ; sans l'heure,
+ * on ne sait pas si ça tombe pendant le travail.
+ */
+export function gameWhenLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const min = d.getMinutes();
+  const heure = min ? `${d.getHours()}h${String(min).padStart(2, '0')}` : `${d.getHours()}h`;
+  return `${JOURS_ABBR[d.getDay()]} ${d.getDate()} ${MOIS_ABBR[d.getMonth()]} · ${heure}`;
+}
+
 /**
  * Ce qu'on annonce avant de quitter une partie.
  *

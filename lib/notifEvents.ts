@@ -77,6 +77,7 @@ export interface JoinedRow {
 export interface JoinedGame {
   location?: string | null;
   is_challenge?: boolean | null;
+  match_date?: string | null;
 }
 
 /**
@@ -119,6 +120,7 @@ export function buildJoinedItems(
       route: `/(tabs)/lobby?gameId=${r.game_id}`,
       // Quelqu'un arrive : des joueurs, pas une médaille.
       icon: wasApproved ? 'check' : 'users',
+      when: g?.match_date ?? null,
     });
   }
 
@@ -136,6 +138,7 @@ export function buildJoinedItems(
         : `${b.names.join(' & ')} relèvent le défi${where}`,
       route: `/(tabs)/lobby?gameId=${b.gameId}`,
       icon: seul ? 'users' : 'swords',
+      when: g?.match_date ?? null,
     };
   }
 
@@ -146,7 +149,7 @@ export interface LockedApplicationRow {
   id: string;
   game_id: string;
   queued_at?: string | null;
-  game?: { location?: string | null } | null;
+  game?: { location?: string | null; match_date?: string | null } | null;
 }
 
 /** Mon binôme retenu sur un défi. Passé par la file (`queued_at`) = promu. */
@@ -162,5 +165,6 @@ export function lockedDefiItem(l: LockedApplicationRow): NotifItem {
       : `Votre binôme relève le défi${where} — rendez-vous sur le terrain !`,
     route: `/(tabs)/lobby?gameId=${l.game_id}`,
     icon: 'swords',
+    when: l.game?.match_date ?? null,
   };
 }
