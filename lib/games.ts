@@ -250,6 +250,38 @@ export function courtBooking(game: { has_reservation?: boolean | null }): { book
 }
 
 /**
+ * À partir de quand l'absence de terrain devient un problème.
+ *
+ * Trois heures : c'est le dernier moment où un club décroche encore un
+ * créneau. La MÊME valeur pilote le rappel poussé au créateur
+ * (supabase/migrations/court_reservation_reminder.sql) — si l'une bouge,
+ * l'autre doit suivre, sinon l'app crie avant ou après la notification.
+ */
+export const COURT_ALERT_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Cette partie approche sans terrain réservé.
+ *
+ * Signalé à tout le monde, pas seulement au créateur : les trois autres
+ * joueurs ont le droit de savoir qu'ils risquent de se déplacer pour rien, et
+ * c'est souvent l'un d'eux qui relance.
+ *
+ * « Pas de terrain » = faux OU jamais renseigné, comme côté serveur : une
+ * colonne vide veut dire qu'aucun terrain n'a été confirmé.
+ */
+export function courtNeedsAttention(
+  game: { has_reservation?: boolean | null; match_date?: string | null; status?: string | null },
+  now: Date = new Date(),
+): boolean {
+  if (game?.has_reservation === true) return false;
+  if (game?.status === 'cancelled' || game?.status === 'closed') return false;
+  const t = game?.match_date ? Date.parse(game.match_date) : NaN;
+  if (!Number.isFinite(t)) return false;
+  const reste = t - now.getTime();
+  return reste > 0 && reste <= COURT_ALERT_MS;
+}
+
+/**
  * Le libellé de niveau d'une partie : « 3.1 – 4.1 », une seule valeur quand
  * les bornes se confondent, `null` sans fourchette connue.
  *

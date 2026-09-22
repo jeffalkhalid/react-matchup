@@ -45,7 +45,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, leaveGamePrompt } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt } from '../../lib/games';
 import { OVERLAP_MS } from '../../lib/slotConflict';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
@@ -828,6 +828,14 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               Libellé court pour ne pas faire passer la ligne à la suivante. */}
           {(() => {
             const b = variant !== 'history' ? courtBooking(game as any) : null;
+            // Sans terrain a moins de trois heures, la discretion ne sert plus :
+            // on passe au rouge et on dit combien de temps il reste. Une partie
+            // sans terrain, c'est une partie qui n'aura pas lieu.
+            const alerte = variant !== 'history' && courtNeedsAttention(game as any);
+            if (alerte) {
+              return <CardTag bg="rgba(239,68,68,0.12)" fg={Colors.danger} border="rgba(239,68,68,0.45)" s={ps}
+                icon={<Icon name="x" size={10 * ps} color={Colors.danger} stroke={2.8} />}>Sans terrain</CardTag>;
+            }
             if (!b) return null;
             return b.booked
               ? <CardTag bg="rgba(255,193,26,0.16)" fg={Colors.brandDeep} s={ps}

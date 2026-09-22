@@ -9,7 +9,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
-import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, partnerSeatToFill } from '../../lib/games';
+import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, courtNeedsAttention, partnerSeatToFill } from '../../lib/games';
 import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
 import { fetchPlayersTotals, type PlayerTotals } from '../../lib/playerStats';
 import { FitTitle } from '../../components/DisplayTitle';
@@ -898,6 +898,9 @@ function GameDetailsSheetContenu({
                   && (game as any).status !== 'closed' && (game as any).status !== 'cancelled';
                 if (!b && !modifiable) return null;
                 const booked = !!b?.booked;
+                // A moins de trois heures sans terrain, la pastille passe au
+                // rouge : la discretion ne sert plus a rien.
+                const alerte = courtNeedsAttention(game as any);
                 const Wrap: any = modifiable ? TouchableOpacity : View;
                 return (
                   <Wrap
@@ -909,14 +912,14 @@ function GameDetailsSheetContenu({
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
                       paddingHorizontal: 10, paddingVertical: 4,
-                      backgroundColor: booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
-                      borderWidth: modifiable ? 1 : 0,
-                      borderColor: booked ? 'rgba(255,193,26,0.55)' : 'rgba(255,255,255,0.35)',
+                      backgroundColor: alerte ? 'rgba(239,68,68,0.22)' : booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
+                      borderWidth: modifiable || alerte ? 1 : 0,
+                      borderColor: alerte ? 'rgba(239,68,68,0.7)' : booked ? 'rgba(255,193,26,0.55)' : 'rgba(255,255,255,0.35)',
                     }}>
-                    <Icon name={booked ? 'check' : 'clock'} size={12}
-                      color={booked ? Colors.brand : 'rgba(255,255,255,0.8)'} stroke={booked ? 3 : 2.4} />
-                    <Text style={{ color: booked ? Colors.brand : 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
-                      {b?.long ?? 'Terrain à réserver'}
+                    <Icon name={booked ? 'check' : alerte ? 'x' : 'clock'} size={12}
+                      color={alerte ? '#FCA5A5' : booked ? Colors.brand : 'rgba(255,255,255,0.8)'} stroke={booked ? 3 : 2.6} />
+                    <Text style={{ color: alerte ? '#FCA5A5' : booked ? Colors.brand : 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
+                      {alerte ? 'Toujours pas de terrain' : (b?.long ?? 'Terrain à réserver')}
                     </Text>
                     {modifiable && (
                       <Text style={{ color: 'rgba(255,255,255,0.55)', fontFamily: Fonts.uiBold, fontSize: 9.5 }}>
