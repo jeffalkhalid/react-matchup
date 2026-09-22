@@ -129,3 +129,44 @@ describe('targetedOpponentsLine', () => {
     expect(empty).toBeNull();
   });
 });
+
+describe("defier UNE personne — elle choisira son binome", () => {
+  const moiEtBinome = [
+    { id: 'binome', name: 'Kenza', team_side: 'A_DRO' },
+  ];
+
+  it("un seul adversaire designe est bien NOTE sur le defi", () => {
+    // Le bug : « Defier » depuis un profil et « Revanche » placaient un
+    // adversaire a l ecran, puis le jetaient a la publication.
+    const plan = defiCreationPlan({
+      gameType: 'Défi',
+      isTargeted: true,
+      players: [...moiEtBinome, { id: 'galan', name: 'Galan', team_side: 'B_GAU' }],
+    });
+    expect(plan.targetPlayers).toEqual([{ player_id: 'galan', team_side: 'B_GAU', name: 'Galan' }]);
+  });
+
+  it("il n est pas invite tout de suite — le serveur s en charge", () => {
+    const plan = defiCreationPlan({
+      gameType: 'Défi',
+      isTargeted: true,
+      players: [...moiEtBinome, { id: 'galan', name: 'Galan', team_side: 'B_GAU' }],
+    });
+    expect(plan.invites.map(i => i.player_id)).toEqual(['binome']);
+    expect(plan.status).toBe('draft');
+  });
+
+  it("le siege adverse libre reste libre : une seule cible, une seule ligne", () => {
+    const plan = defiCreationPlan({
+      gameType: 'Défi',
+      isTargeted: true,
+      players: [...moiEtBinome, { id: 'galan', name: 'Galan', team_side: 'B_GAU' }],
+    });
+    expect(plan.targetPlayers).toHaveLength(1);
+  });
+
+  it("sans adversaire designe, rien n est note et le defi part ouvert", () => {
+    const plan = defiCreationPlan({ gameType: 'Défi', isTargeted: false, players: moiEtBinome });
+    expect(plan.targetPlayers).toBeNull();
+  });
+});

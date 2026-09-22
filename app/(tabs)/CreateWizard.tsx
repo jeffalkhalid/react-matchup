@@ -487,6 +487,20 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     return () => clearTimeout(t);
   }, [searchQ, player]);
 
+  /**
+   * Les adversaires designes, et donc le caractere « cible » du defi.
+   *
+   * Il dependait d'un drapeau pose par la PORTE D'ENTREE : seule « Defier ce
+   * binome » depuis la vitrine le levait. Resultat, « Defier » depuis un
+   * profil et « Revanche » placaient bien un adversaire a l'ecran, puis le
+   * jetaient a la publication — sans un mot. Il se lit maintenant sur ce qui
+   * est reellement rempli.
+   */
+  const defiOpponents = ['B0', 'B1']
+    .map(k => form.invites[k])
+    .filter((v): v is InvitedPlayer => !!v);
+  const defiTargeted = form.gameType === 'Défi' && defiOpponents.length > 0;
+
   // Step validation
   // partenaire créateur choisi = exactement 1 invité sur Team A (slot A0/A1)
   const defiPartnerChosen = isDefi && Object.keys(form.invites).some(k => k.startsWith('A'));
@@ -494,9 +508,12 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (step === 0) return !!form.day && !!form.time && !!form.location && !isPastSlot(form.day, form.time);
     if (step === 1) return !!form.gameType && (isDefi || isDefiBandWideEnough(form.minLevel, form.maxLevel));
     if (isDefi && step === 2) return defiPartnerChosen;          // Mon binôme
-    if (isDefi && step === 3) return isDefiBandWideEnough(form.minLevel, form.maxLevel) && DEFI_STAKES.some(p => p.value === form.stakeMultiplier);
+    // Un defi avec adversaire designe n'a pas de bande : l'exiger bloquerait
+    // la publication sur un reglage qu'on ne montre meme plus.
+    if (isDefi && step === 3) return (defiTargeted || isDefiBandWideEnough(form.minLevel, form.maxLevel)) && DEFI_STAKES.some(p => p.value === form.stakeMultiplier);
     return true; // L'équipe (non-défi) : publication libre comme aujourd'hui
   })();
+
 
   // ── Dérivés conflit d'horaire (depuis busyGames) ──
   const daysWithGames = useMemo(
@@ -651,7 +668,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         stakeMultiplier: form.gameType === 'Défi' ? form.stakeMultiplier : 1.0,
         creatorSide:    form.mySlot ? SLOT_TO_SIDE[form.mySlot] : 'A_GAU',
         confirmedPlayers: Object.entries(form.invites).map(([slot, p]) => ({ ...p, team_side: SLOT_TO_SIDE[slot] })),
-        isTargeted: form.gameType === 'Défi' && !!targeted,
+        isTargeted: defiTargeted,
       });
       setPublishedGameId(newId ?? null);
       setPublished(true);
@@ -1263,7 +1280,9 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
         <View style={{ backgroundColor: Colors.bgCard, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <Text style={{ fontSize: 11, fontWeight: '900', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-              {form.gameType === 'Défi' ? 'Mon binôme' : `Inviter — Éq. ${inviteTarget[0]} · ${inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}`}
+              {form.gameType === 'Défi'
+                ? (inviteTarget.startsWith('B') ? 'Qui veux-tu défier ?' : 'Mon binôme')
+                : `Inviter — Éq. ${inviteTarget[0]} · ${inviteTarget[1] === '0' ? 'Gauche' : 'Droite'}`}
             </Text>
             <TouchableOpacity onPress={() => { setInviteTarget(null); setSearchQ(''); }}
               style={{ width: 24, height: 24, backgroundColor: Colors.bgCardAlt, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
@@ -1410,8 +1429,65 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               </View>
             </View>
 
-            {/* Plancher — sans objet pour un défi ciblé (adversaires déjà choisis) */}
-            {!targeted && (
+            {/* ── Defier quelqu'un en particulier ────────────────────────
+                Trois boutons de l'app promettaient deja « Defier <untel> » :
+                depuis un profil, depuis le face-a-face, depuis la revanche.
+                Aucun ne fonctionnait — la personne etait affichee puis jetee.
+                Elle se designe maintenant ici, quelle que soit la porte. */}
+            <View style={{ gap: 8 }}>
+              <Text style={[sty.sectionLabel, { marginBottom: 0 }]}>Adversaire — facultatif</Text>
+              {defiOpponents.length > 0 ? (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {defiOpponents.map(o => (
+                    <TouchableOpacity key={o.id} activeOpacity={0.8}
+                      accessibilityLabel={`Retirer ${o.name.split(' ')[0]}`}
+                      onPress={() => {
+                        const ni = { ...form.invites };
+                        for (const k of ['B0', 'B1']) if (ni[k]?.id === o.id) delete ni[k];
+                        set('invites', ni);
+                      }}
+                      style={[carteJoueur, { backgroundColor: Colors.bgCardAlt, borderColor: Colors.border }]}>
+                      <Avatar name={o.name} path={(o as any).avatar_path} size={64} />
+                      <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                        {o.name.split(' ')[0]}
+                      </Text>
+                      <Text style={{ fontSize: 12.5, color: Colors.textMuted }}>Niv. {formatPadelLevel(o.elo_score)}</Text>
+                      <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>Toucher pour retirer</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {defiOpponents.length === 1 && (
+                    <View style={[carteJoueur, { borderStyle: 'dashed', backgroundColor: t.libreBg, borderColor: t.libreBorder, justifyContent: 'center' }]}>
+                      <Icon name="users" size={26} color={t.libreColor} stroke={2} />
+                      <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: t.libreColor, textAlign: 'center' }}>
+                        {`${defiOpponents[0].name.split(' ')[0]} choisira son partenaire`}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <TouchableOpacity activeOpacity={0.8} onPress={() => openInvite('B0')}
+                  accessibilityLabel="Défier quelqu'un en particulier"
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: t.libreBorder, backgroundColor: t.libreBg, borderRadius: 18, padding: 16 }}>
+                  <View style={{ width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderStyle: 'dashed', borderColor: t.libreBorder, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="swords" size={20} color={t.libreColor} stroke={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Défier quelqu'un en particulier</Text>
+                    <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2, lineHeight: 17 }}>
+                      Sinon, n'importe quel binôme du bon niveau pourra relever ton défi.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              {defiOpponents.length === 1 && (
+                <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, lineHeight: 17 }}>
+                  Lui seul pourra accepter, et il viendra avec le partenaire de son choix. S'il décline, ton défi repart ouvert à tous.
+                </Text>
+              )}
+            </View>
+
+            {/* Plancher — sans objet des qu'un adversaire est designe */}
+            {!defiTargeted && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: 'rgba(255,193,26,0.10)', borderWidth: 1.5, borderColor: 'rgba(255,193,26,0.55)', borderRadius: 18, padding: 16 }}>
                 <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.brand, alignItems: 'center', justifyContent: 'center' }}>
                   <Icon name="trophy" size={24} color="#0A0A0A" stroke={2.2} />
@@ -1602,8 +1678,8 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Défi privé jusqu'à acceptation</Text>
             <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, marginTop: 2, lineHeight: 17 }}>
-              {targeted
-                ? `${adversaires.length > 0 ? adversaires.join(' & ') : 'Tes adversaires'} seront prévenus dès que ${partenaire} accepte.`
+              {defiTargeted
+                ? `${adversaires.join(' & ')} ${adversaires.length > 1 ? 'seront prévenus' : 'sera prévenu'} dès que ${partenaire} accepte.`
                 : `La partie sera visible après l'acceptation de ${partenaire}.`}
             </Text>
           </View>
