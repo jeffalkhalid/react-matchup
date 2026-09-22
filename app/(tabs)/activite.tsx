@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, Image, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts } from '../../lib/theme';
 import { HeaderActions } from '../../components/HeaderActions';
@@ -48,6 +49,29 @@ export default function ActiviteTab() {
   const router = useRouter();
   const { player } = usePlayer();
   const myId = player?.id;
+
+  /**
+   * Arrivee ciblee depuis l'accueil (« Voter », « Voir les joueurs »).
+   *
+   * Un raccourci qui depose sur l'onglet en general oblige a chercher ce
+   * qu'on venait voir, et on ne s'en sert plus. `focus` vaut soit l'identifiant
+   * d'une partie — sa carte de pronostic passe en tete du rail — soit
+   * « dispo », et l'ecran defile jusqu'au bloc des disponibilites.
+   */
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const pageRef = useRef<ScrollView>(null);
+  const disposYRef = useRef(0);
+  const focusClashId = focus && focus !== 'dispo' ? focus : null;
+
+  useEffect(() => {
+    if (focus !== 'dispo') return;
+    // Apres la premiere mise en page, sinon la position n'est pas encore connue.
+    const t = setTimeout(() => {
+      pageRef.current?.scrollTo({ y: Math.max(0, disposYRef.current - 12), animated: true });
+      router.setParams({ focus: undefined });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [focus]);
 
   const [friends, setFriends] = useState<SocialPlayer[]>([]);
   const [feed, setFeed] = useState<ActivityEvent[]>([]);
@@ -282,7 +306,9 @@ export default function ActiviteTab() {
           <ActivityIndicator color={Colors.primary} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 110 }}>
+        <ScrollView
+          ref={pageRef}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 110 }}>
           {state === 'onboarding' ? (
             <>
               {/* Accueil */}
@@ -328,11 +354,14 @@ export default function ActiviteTab() {
                   if (samedi) toggleSlot(samedi);
                 }}
               />
-              <FeaturedClash myId={myId} />
+              <FeaturedClash myId={myId} focusGameId={focusClashId} />
               <MyOddsCard myId={myId} />
 
 
               {/* Qui joue quand : dispo ce soir, puis l'invitation reçue. */}
+              <View
+                collapsable={false}
+                onLayout={e => { disposYRef.current = e.nativeEvent.layout.y; }}>
               <DispoCard
                 playerId={myId}
                 playerName={player.name}
@@ -343,6 +372,7 @@ export default function ActiviteTab() {
                 mine={myAvailability}
                 onToggleSlot={toggleSlot}
               />
+              </View>
               <InvitationCard playerId={myId} />
 
               {/* Qu'est-ce qui s'est passé : le rival de la saison. Il ne

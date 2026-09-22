@@ -240,6 +240,30 @@ export async function clearAvailability(playerId: string, slot: Slot): Promise<v
  * Qui est dispo sur ce créneau, parmi les joueurs que je suis. Les autres
  * joueurs du même niveau viendront avec le « mercato » (étape suivante).
  */
+/**
+ * Qui s'est declare libre sur ce creneau, TOUS joueurs confondus.
+ *
+ * `fetchCircleAvailability` ne regarde que mon cercle — c'est ce qu'il faut
+ * dans l'onglet Activite, ou l'on monte une partie avec ses amis. L'accueil,
+ * lui, annonce « des joueurs de ton niveau » : la question n'est plus qui je
+ * connais, mais qui joue a ma hauteur.
+ *
+ * Le filtrage par niveau se fait chez l'appelant, avec la bande partagee
+ * MERCATO_LEVEL_BAND — pas un troisieme seuil invente ici.
+ */
+export async function fetchAvailableOnSlot(slot: Slot, excludeId: string, limit = 30): Promise<AvailabilityRow[]> {
+  const { data, error } = await supabase
+    .from('availability')
+    .select('id, player_id, slot_start, slot_end, club_id, player:player_id(id, name, elo_score, avatar_path, member_number)')
+    .neq('player_id', excludeId)
+    .lt('slot_start', slot.end.toISOString())
+    .gt('slot_end', slot.start.toISOString())
+    .order('slot_start')
+    .limit(limit);
+  if (error) { if (!MANQUE(error)) console.warn('[availability] fetchAvailableOnSlot', error); return []; }
+  return (data ?? []) as unknown as AvailabilityRow[];
+}
+
 export async function fetchCircleAvailability(playerIds: string[], slot: Slot): Promise<AvailabilityRow[]> {
   if (playerIds.length === 0) return [];
   const { data, error } = await supabase

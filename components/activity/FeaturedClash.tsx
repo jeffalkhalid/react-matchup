@@ -95,10 +95,16 @@ function Cote({ players, choisi, part, onPress }: {
   );
 }
 
-export function FeaturedClash({ myId, onContent }: {
+export function FeaturedClash({ myId, onContent, focusGameId }: {
   myId: string;
   /** Prévient l'écran quand le bloc a — ou n'a plus — quelque chose à dire. */
   onContent?: (has: boolean) => void;
+  /**
+   * Arrivée depuis l'accueil sur UN match précis : sa carte passe en tête du
+   * rail. On pourrait faire défiler jusqu'à elle, mais la remonter est
+   * déterministe — pas de mesure, pas d'animation qui rate.
+   */
+  focusGameId?: string | null;
 }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -126,13 +132,17 @@ export function FeaturedClash({ myId, onContent }: {
         const mien = rows.find(r => r.playerId === myId)?.team;
         if (mien) m[clash.gameId] = mien;
       }
-      setClashes(liste); setChoc(tightestClashId(liste));
+      // Le match demandé d'abord, le reste dans l'ordre du calendrier.
+      const ordonne = focusGameId
+        ? [...liste].sort((a, b) => (a.gameId === focusGameId ? -1 : b.gameId === focusGameId ? 1 : 0))
+        : liste;
+      setClashes(ordonne); setChoc(tightestClashId(liste));
       setCounts(c); setMine(m); setCharge(true);
       onContent?.(liste.length > 0);
     })();
     return () => { vivant = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myId]);
+  }, [myId, focusGameId]);
 
   useFocusEffect(useCallback(() => { const stop = load(); return stop; }, [load]));
 

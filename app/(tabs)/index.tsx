@@ -26,6 +26,7 @@ import { HomePrimaryActions } from '../../components/home/HomePrimaryActions';
 import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeRankButton } from '../../components/home/HomeRankButton';
 import { HomeTournaments } from '../../components/home/HomeTournaments';
+import { HomePulse } from '../../components/home/HomePulse';
 import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
 import { homeSectionSizes, COMPACT_THRESHOLD_H, TOURNAMENTS_RESERVE } from '../../lib/homeLayout';
 import { suggestibleGames, homeSlot } from '../../lib/homeSlot';
@@ -663,9 +664,20 @@ export default function HomeScreen() {
                 </View>
               )}
 
+              {/* « Ça bouge chez les PAGUISTES » — qui est libre ce soir, et
+                  sur quel match le club se prononce. Deux raccourcis CIBLÉS
+                  vers l'onglet Activité : ils n'y refont pas le travail, ils y
+                  emmènent à l'endroit exact.
+
+                  Placé APRÈS le remplissage : il vient en plus de l'accueil
+                  sans hauteur réservée, donc sans toucher au budget qui garantit
+                  que le haut ne scrolle pas (lib/homeLayout). Le bloc se tait
+                  quand il n'a rien à dire. */}
               {sizes.filler && (
                 <View pointerEvents="none" style={{ flex: sizes.filler.flex }} />
               )}
+
+              <HomePulse myId={player.id} myElo={player.elo_score} />
 
               {/* La rangée « Classement · Score » vivait ici. Le rang est monté
                   dans l'en-tête ; « Score » s'atteint depuis le lobby (avec le
