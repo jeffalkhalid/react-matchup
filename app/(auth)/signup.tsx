@@ -9,6 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import TurnstileCaptcha from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
+import { isPasswordValid, passwordServerError } from '../../lib/password';
+import { PasswordRules } from '../../components/auth/PasswordRules';
 import { savePassword } from '../../lib/credentials';
 import { LEGAL } from '../../lib/legal';
 import { Fonts, formatPadelLevel } from '../../lib/theme';
@@ -504,7 +506,7 @@ export default function SignupScreen() {
   const handleCreateAccount = async () => {
     // Garde de sécurité (défense en profondeur, en plus du bouton désactivé) :
     // âge confirmé + captcha + champs requis avant toute création de compte.
-    if ((CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || !formData.password) return;
+    if ((CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || !isPasswordValid(formData.password)) return;
     setIsSubmitting(true);
     try {
       const { count: nameCount, error: nameErr } = await supabase
@@ -557,7 +559,9 @@ export default function SignupScreen() {
         : lower.includes('captcha')
           ? 'Vérification anti-robot échouée. Recommence la vérification.'
         : lower.includes('password')
-          ? 'Mot de passe refusé : choisis-en un plus long.'
+          // On redonne la regle entiere : « plus long » n'aidait pas quand
+          // c'est la majuscule ou le chiffre qui manque.
+          ? passwordServerError(raw)
         : lower.includes('invalid') && lower.includes('email')
           ? 'Adresse email invalide. Vérifie la saisie.'
         : lower.includes('database error')
@@ -680,7 +684,7 @@ export default function SignupScreen() {
       </View>
     );
     if (step === 5) {
-      const finalDisabled = isSubmitting || (CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || formData.password.length < 6;
+      const finalDisabled = isSubmitting || (CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || !isPasswordValid(formData.password);
       return (
         <View style={{ gap: 12 }}>
           {/* Confirmation d'âge (obligatoire) — exigence légale (loi 09-08 / stores). */}
@@ -1159,7 +1163,7 @@ export default function SignupScreen() {
                     label="Mot de passe"
                     value={formData.password}
                     onChangeText={v => set('password', v)}
-                    placeholder="8 caractères min."
+                    placeholder="Ton mot de passe"
                     icon={<IconLock size={18} color={pwFocused ? AUTH_BRAND : tokens.fieldIcon} />}
                     focused={pwFocused}
                     onFocus={() => setPwFocused(true)}
@@ -1177,6 +1181,11 @@ export default function SignupScreen() {
                     }
                     tokens={tokens}
                   />
+
+                  {/* La regle se coche pendant la saisie. Le champ annoncait
+                      « 8 caracteres min. » au-dessus d'un bouton qui s'activait
+                      a 6 : on promettait une regle et on en appliquait une autre. */}
+                  <PasswordRules password={formData.password} doneColor={AUTH_BRAND} todoColor={tokens.label} />
 
                   {/* Captcha — masqué tant que CAPTCHA_ENABLED est false (phase de test) */}
                   {CAPTCHA_ENABLED && !captchaToken && (

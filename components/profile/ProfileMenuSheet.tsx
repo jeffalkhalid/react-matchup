@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Pressable, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../../lib/theme';
@@ -7,6 +7,8 @@ import { Icon, type IconName } from '../community/icons';
 import { getWatchPairingEnabled } from '../../lib/watchLink';
 import { getTournamentsEnabled } from '../../lib/tournaments';
 import { useOrigin } from '../../hooks/useOrigin';
+import { supabase } from '../../lib/supabase';
+import { passwordResetSendError } from '../../lib/password';
 
 function Group({ title }: { title: string }) {
   return (
@@ -59,6 +61,40 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
   // Action ouvrant un modal du parent : fermer la feuille d'abord.
   const act = (fn: () => void) => { onClose(); fn(); };
 
+  /**
+   * Envoie le lien de changement a l'adresse DU COMPTE — on ne la redemande
+   * pas, on la connait. C'est le circuit de « mot de passe oublie », declenche
+   * depuis l'interieur.
+   */
+  const demanderChangementMdp = () => {
+    onClose();
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const email = user?.email;
+      if (!email) {
+        Alert.alert('Impossible', "Aucune adresse email n'est rattachée à ce compte.");
+        return;
+      }
+      Alert.alert(
+        'Changer mon mot de passe',
+        `On t'envoie un lien à ${email}. Tu choisiras ton nouveau mot de passe depuis ce lien.`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Envoyer',
+            onPress: async () => {
+              const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: 'pagmatch://reset-password',
+              });
+              if (error) { Alert.alert('Impossible', passwordResetSendError(error.message)); return; }
+              Alert.alert('Regarde tes mails', `Le lien part à ${email}. Il est valable une heure.`);
+            },
+          },
+        ],
+      );
+    })();
+  };
+
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={onClose} />
@@ -73,6 +109,10 @@ export function ProfileMenuSheet({ visible, onClose, isAdmin, onEdit, onComments
           <Row icon="pencil" label="Modifier le profil" onPress={() => act(onEdit)} />
           <Row icon="message" label="Qui peut commenter" onPress={() => act(onComments)} />
           <Row icon="mail" label="Confidentialité des messages" onPress={() => nav('/dm-settings')} />
+          {/* Le changement passe par un lien email, jamais par une saisie
+              directe : un téléphone déverrouillé laissé à un tiers suffirait
+              sinon à prendre le compte. Voir lib/password. */}
+          <Row icon="lock" label="Changer mon mot de passe" onPress={demanderChangementMdp} />
           {/* Masquée tant que la migration player_zones n'est pas appliquée. */}
           {zoneAvailable && <Row icon="mapPin" label="Ma zone" onPress={() => nav('/zone')} />}
           {watchOn && <Row icon="clock" label="Ma montre" onPress={() => nav('/watch-link')} />}

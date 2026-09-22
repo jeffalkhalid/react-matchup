@@ -8,6 +8,9 @@ import * as Linking from 'expo-linking';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
+import { usePlayer } from '../../hooks/usePlayer';
+import { passwordError, passwordServerError } from '../../lib/password';
+import { PasswordRules } from '../../components/auth/PasswordRules';
 import { Fonts } from '../../lib/theme';
 import { useAuthTheme, AUTH_BRAND, AUTH_ERROR_BORDER, AUTH_ERROR_TEXT, type AuthThemeTokens } from '../../lib/auth-theme';
 
@@ -78,13 +81,29 @@ function Lockup({ width, tokens }: { width: number; tokens: AuthThemeTokens }) {
   );
 }
 
-const MIN_PASSWORD = 6;
+// La regle vit dans lib/password : elle etait ecrite differemment ici et a
+// l'inscription, qui annoncait 8 et acceptait 6.
 
 type Phase = 'verifying' | 'form' | 'invalid' | 'done';
 
 export default function ResetPasswordScreen() {
   const { tokens, isDark } = useAuthTheme();
   const router = useRouter();
+  const { refresh } = usePlayer();
+
+  /**
+   * « Acceder a l'app » ne faisait RIEN.
+   *
+   * Les onglets vivent derriere <Stack.Protected guard={!!player}> : tant que
+   * la fiche joueur n'est pas chargee, la route /(tabs) n'existe pas dans
+   * l'arbre et router.replace n'a nulle part ou aller — sans la moindre erreur.
+   * On recharge donc la fiche, puis on passe par l'accueil, qui lui n'est
+   * jamais sous garde et redirige de lui-meme une fois la fiche la.
+   */
+  const accederALApp = async () => {
+    try { await refresh(); } catch { /* on navigue quand meme */ }
+    router.replace('/');
+  };
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ code?: string; error_description?: string }>();
 
@@ -136,10 +155,8 @@ export default function ResetPasswordScreen() {
   }, [phase]);
 
   const handleSubmit = async () => {
-    if (password.length < MIN_PASSWORD) {
-      setError(`Le mot de passe doit faire au moins ${MIN_PASSWORD} caractères.`);
-      return;
-    }
+    const manque = passwordError(password);
+    if (manque) { setError(manque); return; }
     if (password !== confirm) {
       setError('Les deux mots de passe ne correspondent pas.');
       return;
@@ -149,9 +166,8 @@ export default function ResetPasswordScreen() {
     try {
       const { error: upErr } = await supabase.auth.updateUser({ password });
       if (upErr) {
-        setError(upErr.message.includes('different from the old')
-          ? 'Choisis un mot de passe différent de l’ancien.'
-          : 'Impossible de mettre à jour le mot de passe. Réessaie.');
+        // Jamais l'anglais de Supabase tel quel : on redonne la regle.
+        setError(passwordServerError(upErr.message));
         setLoading(false);
         return;
       }
@@ -290,7 +306,7 @@ export default function ResetPasswordScreen() {
                   Ton mot de passe a été modifié. Tu es connecté.
                 </Text>
                 <TouchableOpacity
-                  onPress={() => router.replace('/(tabs)')}
+                  onPress={accederALApp}
                   activeOpacity={0.88}
                   style={{ backgroundColor: tokens.ctaBg, borderRadius: 999, height: 54, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}
                 >
@@ -306,13 +322,17 @@ export default function ResetPasswordScreen() {
             {phase === 'form' && (
               <>
                 <Text style={{ color: tokens.label, fontFamily: Fonts.ui, fontSize: 13, lineHeight: 20, marginBottom: 14 }}>
-                  Choisis ton nouveau mot de passe ({MIN_PASSWORD} caractères minimum).
+                  Choisis ton nouveau mot de passe.
                 </Text>
 
                 <View style={{ gap: 14 }}>
                   {renderPasswordField('Nouveau mot de passe', password, setPassword, 'Ton nouveau mot de passe', pwFocused, () => setPwFocused(true), () => setPwFocused(false), true)}
                   {renderPasswordField('Confirme le mot de passe', confirm, setConfirm, 'Retape-le', cfFocused, () => setCfFocused(true), () => setCfFocused(false), false)}
                 </View>
+
+                {/* La regle se coche pendant la saisie : on la decouvrait en se
+                    faisant refuser, une exigence a la fois. */}
+                <PasswordRules password={password} doneColor={AUTH_BRAND} todoColor={tokens.label} />
 
                 {error && (
                   <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: 'rgba(239,68,68,0.10)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', paddingVertical: 10, paddingHorizontal: 12 }}>
