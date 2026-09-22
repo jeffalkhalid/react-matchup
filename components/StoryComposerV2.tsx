@@ -60,13 +60,42 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
     { k: 'type', label: 'Type' }, { k: 'qr', label: 'QR' }, { k: 'logo', label: 'Logo' },
   ];
 
-  // Choisit une photo de fond (galerie) pour les templates de match.
-  const pickBackground = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission refusée', 'Active l’accès à la galerie.'); return; }
-    const r = await ImagePicker.launchImageLibraryAsync({ quality: 0.85, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (!r.canceled && r.assets?.[0]?.uri) setBgUri(r.assets[0].uri);
+  /**
+   * Caméra ou galerie — le même choix partout.
+   *
+   * Le mode « Photo » le proposait, le bouton « Fond » ouvrait directement la
+   * galerie : on ne pouvait pas mettre en fond la photo qu'on venait de
+   * prendre sur le court, qui est pourtant le cas le plus courant.
+   */
+  const demanderSource = (titre: string, prendre: (fromCamera: boolean) => void) => {
+    Alert.alert(titre, 'Prends une photo ou choisis-en une dans ta galerie.', [
+      { text: 'Prendre une photo', onPress: () => prendre(true) },
+      { text: 'Galerie', onPress: () => prendre(false) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   };
+
+  /** Ouvre la source demandée et rend l'image choisie, ou `null`. */
+  const saisirImage = async (fromCamera: boolean): Promise<string | null> => {
+    const perm = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission refusée', fromCamera ? 'Active l’accès à la caméra.' : 'Active l’accès à la galerie.');
+      return null;
+    }
+    const r = fromCamera
+      ? await ImagePicker.launchCameraAsync({ quality: 0.85 })
+      : await ImagePicker.launchImageLibraryAsync({ quality: 0.85, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    return !r.canceled && r.assets?.[0]?.uri ? r.assets[0].uri : null;
+  };
+
+  /** Le fond d'un template de match. */
+  const pickBackground = async (fromCamera: boolean) => {
+    const uri = await saisirImage(fromCamera);
+    if (uri) setBgUri(uri);
+  };
+  const chooseBackgroundSource = () => demanderSource('Photo de fond', pickBackground);
 
   // À chaque ouverture, (ré)initialise le mode demandé et la personnalisation.
   useEffect(() => {
@@ -97,25 +126,11 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
     if (m === 'photo' && !photoUri) choosePhotoSource();
   };
 
-  // Laisse le choix Caméra / Galerie (au lieu d'ouvrir directement la galerie).
-  const choosePhotoSource = () => {
-    Alert.alert('Ajouter une photo', 'Prends une photo ou choisis-en une dans ta galerie.', [
-      { text: 'Prendre une photo', onPress: () => pickPhoto(true) },
-      { text: 'Galerie', onPress: () => pickPhoto(false) },
-      { text: 'Annuler', style: 'cancel' },
-    ]);
-  };
-
   const pickPhoto = async (fromCamera: boolean) => {
-    const perm = fromCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission refusée', 'Active l’accès à la caméra/galerie.'); return; }
-    const r = fromCamera
-      ? await ImagePicker.launchCameraAsync({ quality: 0.85 })
-      : await ImagePicker.launchImageLibraryAsync({ quality: 0.85, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (!r.canceled && r.assets?.[0]?.uri) setPhotoUri(r.assets[0].uri);
+    const uri = await saisirImage(fromCamera);
+    if (uri) setPhotoUri(uri);
   };
+  const choosePhotoSource = () => demanderSource('Ajouter une photo', pickPhoto);
 
   // Capture la carte rendue à pleine résolution (1080×1920) hors-écran : pas
   // d'upscale depuis l'aperçu → image nette. Pas de width/height forcés.
@@ -252,7 +267,7 @@ export default function StoryComposerV2({ visible, player, match, invite, onClos
                 maxLength={80}
                 style={{ flex: 1, height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bg, color: Colors.textPrimary, fontSize: 13 }}
               />
-              <TouchableOpacity onPress={bgUri ? () => setBgUri(null) : pickBackground}
+              <TouchableOpacity onPress={bgUri ? () => setBgUri(null) : chooseBackgroundSource}
                 style={{ height: 40, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, borderColor: bgUri ? Colors.brand : Colors.border, backgroundColor: bgUri ? 'rgba(255,193,26,0.14)' : Colors.bg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                 <Icon name={bgUri ? 'x' : 'image'} size={13} color={bgUri ? Colors.brandDeep : Colors.textPrimary} stroke={2} />
                 <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: bgUri ? Colors.brandDeep : Colors.textPrimary }}>Fond</Text>
