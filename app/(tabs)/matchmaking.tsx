@@ -88,7 +88,7 @@ function DefiActionButton({ label, onPress, danger }: { label: string; onPress: 
   );
 }
 
-function DefiGameCard({ game, myId, myElo, onPress, children, joining }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode; joining?: boolean }) {
+function DefiGameCard({ game, myId, myElo, onPress, children }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode }) {
   // is_creator / my_status absents d'un DefiGame → sinon GameCard masque
   // calendrier + chat (gated sur `is_creator || my_status==='accepted'`).
   // On les dérive pour que le CRÉATEUR ET les participants ACCEPTÉS aient le pied complet.
@@ -100,7 +100,6 @@ function DefiGameCard({ game, myId, myElo, onPress, children, joining }: { game:
       variant="upcoming" myElo={myElo} playerId={myId}
       onPress={onPress ?? (() => {})}
       footerSlot={children}
-      stakeJoining={joining}
     />
   );
 }
@@ -912,7 +911,7 @@ export default function MatchmakingScreen() {
                     {sortedOpenDefis.map(g => {
                       const myApp = myApplications.find(a => a.game_id === g.id);
                       return (
-                        <DefiGameCard joining key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                        <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
                           {myApp ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
                               <Pill variant="warning">⏳ Postulé</Pill>

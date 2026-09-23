@@ -13,6 +13,7 @@
 import { simulateElo, type EloPlayerInput } from './elo';
 import { eloToLevel, padelLevelToElo } from './theme';
 import { clashPlayersFrom, type ClashCreator, type ClashParticipant, type ClashPlayer } from './weekendClash';
+import { occupiesSpot } from './games';
 
 /** Ce qu'il faut savoir d'un joueur pour simuler — tout vient de sa fiche. */
 export interface StakePlayer {
@@ -295,6 +296,76 @@ export function stakeOutcomeForJoining(
     stakeOutcome(me, suppose('_bin_haut', bande[1]), adversaires, mise),
   );
   return o ? { outcome: o, exact: false } : null;
+}
+
+/**
+ * Ce que cette partie me mettrait en jeu si j'y entrais — je ne fais que la
+ * REGARDER (Explorer).
+ *
+ * C'est le chiffre qui donne envie d'entrer. Le taire ici le réserverait à
+ * ceux qui sont déjà dedans, c'est-à-dire à ceux qui n'ont plus à être
+ * convaincus.
+ *
+ * Deux inconnues, et on ne triche sur aucune : je ne sais pas quelle place je
+ * prendrais, ni qui remplira les autres. On projette donc CHAQUE place libre,
+ * on bouche les trous avec les deux bouts de la bande de niveau de la partie,
+ * et on montre l'enveloppe. `exact` ne vaut `true` que si rien n'a été
+ * supposé — une seule place libre et les trois autres joueurs connus.
+ */
+export function stakeOutcomeForExploring(game: StakeGame, me: StakePlayer): StakeProjection | null {
+  if (game.game_format === 'friendly') return null;
+  const tous = clashPlayersFrom(game.participants ?? [], game);
+  // Déjà dedans : ce n'est plus une projection d'entrée, c'est mon match.
+  if (tous.some(p => p.id === me.id)) return null;
+
+  const cote = (v: string | null | undefined) => String(v ?? '').toUpperCase();
+  const prises = new Set<string>();
+  if (game.creator_id) prises.add(cote(game.creator_side || 'A_GAU'));
+  for (const p of game.participants ?? []) {
+    if (occupiesSpot(p) && p.team_side) prises.add(cote(p.team_side));
+  }
+  const libres = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'].filter(c => !prises.has(c));
+  if (libres.length === 0) return null;
+
+  const bande = game.min_elo != null && game.max_elo != null ? [game.min_elo, game.max_elo] : null;
+  // Le binôme manquant ne se borne PAS comme un adversaire : la contrainte du
+  // jeu porte sur la moyenne du duo, donc il peut sortir de la bande par le
+  // bas comme par le haut. Prendre la bande brute donnait un chiffre plus
+  // étroit ici que sur la même partie vue depuis « À relever » — deux écrans,
+  // deux vérités, exactement ce qu'un test attrape.
+  const bandeBinome = partnerEloRange(me.elo_score, game.min_elo, game.max_elo);
+  const mise = game.stake_multiplier ?? 1;
+
+  let envelope: StakeOutcome | null = null;
+  let toutConnu = true;
+
+  for (const place of libres) {
+    const monCamp = place.startsWith('B') ? 'B' : 'A';
+    const coequipiers = tous.filter(p => p.team === monCamp).map(toStake).filter((p): p is StakePlayer => !!p);
+    const enFace = tous.filter(p => p.team !== monCamp).map(toStake).filter((p): p is StakePlayer => !!p);
+    const manqueBinome = coequipiers.length === 0;
+    const manqueAdversaires = Math.max(0, 2 - enFace.length);
+    if (manqueBinome || manqueAdversaires > 0) toutConnu = false;
+    // Sans bande, on ne peut rien supposer d'honnête : on se tait.
+    if (manqueBinome && !bandeBinome) return null;
+    if (manqueAdversaires > 0 && !bande) return null;
+
+    // Les deux bouts de chaque inconnue : le scénario le plus faible et le
+    // plus fort qu'on puisse encore rencontrer dans cette partie.
+    const binomes = manqueBinome
+      ? bandeBinome!.map((elo, i) => suppose(`_co${i}`, elo))
+      : [coequipiers[0]];
+    const elosAdverses = manqueAdversaires > 0 ? bande! : [0];
+
+    for (const binome of binomes) {
+      for (const elo of elosAdverses) {
+        const adversaires = [...enFace];
+        while (adversaires.length < 2) adversaires.push(suppose(`_adv${adversaires.length}`, elo));
+        envelope = enveloppe(envelope, stakeOutcome(me, binome, adversaires, mise));
+      }
+    }
+  }
+  return envelope ? { outcome: envelope, exact: toutConnu } : null;
 }
 
 /** Le meilleur gain possible — celui qu'on affiche. */
