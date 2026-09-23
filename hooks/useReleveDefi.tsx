@@ -132,11 +132,17 @@ export function useReleveDefi({ me, onDone }: {
     const releve = !!pending.participantId;
     setPending(null);
     if (error) {
+      // Le serveur porte la meme regle que l'ecran (defi_band_server_guard) :
+      // quand c'est lui qui refuse, on le dit dans les mots du joueur plutot
+      // que de montrer une erreur technique.
+      const horsBande = String((error as any)?.message ?? '').includes('DEFI_BAND');
       Alert.alert(
-        'Binôme non invité',
-        releve
-          ? "Tu as bien relevé le défi, mais l'invitation de ton binôme n'est pas partie. Rouvre la partie et réessaie."
-          : "L'invitation n'a pas pu être envoyée. Réessaie dans un instant.",
+        horsBande ? 'Binôme hors fourchette' : 'Binôme non invité',
+        horsBande
+          ? "Votre niveau moyen à tous les deux sort de la fourchette du défi. Choisis un binôme qui vous y ramène."
+          : releve
+            ? "Tu as bien relevé le défi, mais l'invitation de ton binôme n'est pas partie. Rouvre la partie et réessaie."
+            : "L'invitation n'a pas pu être envoyée. Réessaie dans un instant.",
       );
       onDone();
       return;
