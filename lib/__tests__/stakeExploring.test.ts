@@ -62,8 +62,29 @@ describe('ce que je risque si j entre', () => {
     expect(stakeOutcomeForExploring(partie({ game_format: 'friendly', participants: [part('b', 'A_DRO')] }), moi)).toBeNull();
   });
 
-  it('partie complète : plus de place, rien à projeter', () => {
-    expect(stakeOutcomeForExploring(partie(), moi)).toBeNull();
+  it('partie complète : on projette quand même, et le chiffre est exact', () => {
+    // « Tu ne peux pas entrer » n'est pas une raison de se taire : on rejoint
+    // une liste d'attente précisément parce qu'on veut ce match, et le chiffre
+    // est ce qui aide à décider si ça vaut l'attente. Chaque place est vue
+    // comme si elle se libérait — les trois autres joueurs sont connus.
+    const r = stakeOutcomeForExploring(partie(), moi);
+    expect(r?.exact).toBe(true);
+    expect(bestGain(r!.outcome)).toBeGreaterThan(0);
+    expect(worstLoss(r!.outcome)).toBeLessThan(0);
+  });
+
+  it('partie complète : je remplace quelqu un, je ne m ajoute pas', () => {
+    // Mon camp compterait trois joueurs si l'occupant restait dans le calcul —
+    // la moyenne serait fausse, et le chiffre avec elle. Face à deux joueurs
+    // bien plus forts, le gain doit rester plus élevé que face à deux faibles.
+    const forts = partie({
+      participants: [part('b', 'A_DRO'), part('c', 'B_GAU', 7), part('d', 'B_DRO', 7)],
+    });
+    const faibles = partie({
+      participants: [part('b', 'A_DRO'), part('c', 'B_GAU', 3), part('d', 'B_DRO', 3)],
+    });
+    expect(bestGain(stakeOutcomeForExploring(forts, moi)!.outcome))
+      .toBeGreaterThan(bestGain(stakeOutcomeForExploring(faibles, moi)!.outcome));
   });
 
   it("j'y suis déjà : ce n'est plus une projection d'entrée", () => {

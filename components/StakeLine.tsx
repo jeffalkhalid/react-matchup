@@ -38,12 +38,14 @@ export function StakeLine({ outcome, exact, s = 1 }: {
       <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontSize: 11 * s, color: Colors.textSecondary }}>
         {exact ? 'En jeu' : 'Environ'}
       </Text>
-      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 12 * s, color: VERT_TEXTE }}>
-        {gain}
-      </Text>
-      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11 * s, color: Colors.textMuted }}>/</Text>
+      {/* La perte D'ABORD : c'est elle qu'on pese avant de s'engager. Le gain
+          ensuite, comme la raison d'y aller quand meme. */}
       <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 12 * s, color: ROUGE_TEXTE }}>
         {perte}
+      </Text>
+      <Text style={{ fontFamily: Fonts.uiBold, fontSize: 11 * s, color: Colors.textMuted }}>/</Text>
+      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 12 * s, color: VERT_TEXTE }}>
+        {gain}
       </Text>
       <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.ui, fontSize: 10 * s, color: Colors.textMuted }}>
         de niveau

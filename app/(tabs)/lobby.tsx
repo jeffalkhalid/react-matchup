@@ -930,12 +930,13 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               c'est ce chiffre qui donne envie d'entrer. Le reserver a ceux
               qui sont deja dedans, c'etait le montrer a ceux qui n'ont plus
               a etre convaincus.
-              Ailleurs, sur les defis seulement : la mise y multiplie le
-              mouvement, c'est la qu'il surprend — et une ligne de plus sur
-              chaque carte a venir chargerait un ecran deja dense.
+              Sur TOUT match classe, defi comme competitif : un competitif
+              complet fait bouger le niveau autant qu'un defi, et ne rien
+              afficher donnait l'impression qu'il ne comptait pas. Seuls les
+              amicaux se taisent, et c'est la fonction qui le decide.
               La fonction se choisit toute seule selon que j'y suis ou non :
               les deux s'excluent, aucune condition a tenir a jour. */}
-          {variant !== 'history' && (variant === 'explore' || game.is_challenge) && maFiche ? (() => {
+          {variant !== 'history' && maFiche ? (() => {
             const moi = {
               id: maFiche.id, elo_score: maFiche.elo_score,
               win_count: maFiche.win_count, loss_count: maFiche.loss_count,

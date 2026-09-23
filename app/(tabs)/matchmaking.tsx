@@ -668,9 +668,9 @@ export default function MatchmakingScreen() {
     if (!e) return null;
     return (
       <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, marginTop: 2 }}>
-        <Text style={{ color: VERT_TEXTE, fontFamily: Fonts.uiBlack }}>{formatLevelDelta(bestGain(e.outcome))}</Text>
-        <Text style={{ color: Colors.textMuted }}>{'  /  '}</Text>
         <Text style={{ color: ROUGE_TEXTE, fontFamily: Fonts.uiBlack }}>{formatLevelDelta(worstLoss(e.outcome))}</Text>
+        <Text style={{ color: Colors.textMuted }}>{'  /  '}</Text>
+        <Text style={{ color: VERT_TEXTE, fontFamily: Fonts.uiBlack }}>{formatLevelDelta(bestGain(e.outcome))}</Text>
         <Text style={{ color: Colors.textMuted }}> de niveau</Text>
       </Text>
     );

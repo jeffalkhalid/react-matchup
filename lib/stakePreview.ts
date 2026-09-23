@@ -324,8 +324,15 @@ export function stakeOutcomeForExploring(game: StakeGame, me: StakePlayer): Stak
   for (const p of game.participants ?? []) {
     if (occupiesSpot(p) && p.team_side) prises.add(cote(p.team_side));
   }
-  const libres = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'].filter(c => !prises.has(c));
-  if (libres.length === 0) return null;
+  const toutes = ['A_GAU', 'A_DRO', 'B_GAU', 'B_DRO'];
+  const vraimentLibres = toutes.filter(c => !prises.has(c));
+  // Partie COMPLETE : on projette quand meme. « Tu ne peux pas entrer » n'est
+  // pas une raison de se taire — on rejoint la liste d'attente precisement
+  // parce qu'on veut ce match, et le chiffre est ce qui aide a decider si ca
+  // vaut l'attente. On regarde alors chaque place comme si elle se liberait :
+  // les trois autres joueurs sont connus, donc le chiffre est exact.
+  const libres = vraimentLibres.length > 0 ? vraimentLibres : toutes;
+  const remplace = vraimentLibres.length === 0;
 
   const bande = game.min_elo != null && game.max_elo != null ? [game.min_elo, game.max_elo] : null;
   // Le binôme manquant ne se borne PAS comme un adversaire : la contrainte du
@@ -341,7 +348,11 @@ export function stakeOutcomeForExploring(game: StakeGame, me: StakePlayer): Stak
 
   for (const place of libres) {
     const monCamp = place.startsWith('B') ? 'B' : 'A';
-    const coequipiers = tous.filter(p => p.team === monCamp).map(toStake).filter((p): p is StakePlayer => !!p);
+    const miens = tous.filter(p => p.team === monCamp);
+    // Sur une partie complete, je prends la place de quelqu'un : il sort du
+    // calcul, sinon mon camp compterait trois joueurs.
+    const coequipiers = (remplace ? miens.slice(1) : miens)
+      .map(toStake).filter((p): p is StakePlayer => !!p);
     const enFace = tous.filter(p => p.team !== monCamp).map(toStake).filter((p): p is StakePlayer => !!p);
     const manqueBinome = coequipiers.length === 0;
     const manqueAdversaires = Math.max(0, 2 - enFace.length);

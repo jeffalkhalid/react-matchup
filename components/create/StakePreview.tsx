@@ -62,6 +62,13 @@ export function StakePreview({ outcome, cible, exact, note }: {
   return (
     <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 14, padding: 12, marginTop: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
+        <Cote
+          titre="Si tu perds"
+          valeur={`jusqu'à ${formatLevelDelta(worstLoss(outcome))}`}
+          fond={ROUGE_FOND}
+          couleur={ROUGE_TEXTE}
+        />
+        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13, color: Colors.textMuted, paddingBottom: 12 }}>·</Text>
         {/* Une seule valeur par cote : le meilleur gain et la pire perte.
             La fourchette complete disait la meme chose en deux fois plus de
             caracteres — « jusqu'a » suffit a dire que c'est une borne. */}
@@ -70,13 +77,6 @@ export function StakePreview({ outcome, cible, exact, note }: {
           valeur={`jusqu'à ${formatLevelDelta(bestGain(outcome))}`}
           fond={VERT_FOND}
           couleur={VERT_TEXTE}
-        />
-        <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13, color: Colors.textMuted, paddingBottom: 12 }}>·</Text>
-        <Cote
-          titre="Si tu perds"
-          valeur={`jusqu'à ${formatLevelDelta(worstLoss(outcome))}`}
-          fond={ROUGE_FOND}
-          couleur={ROUGE_TEXTE}
         />
       </View>
 
