@@ -87,15 +87,18 @@ function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous?: s
         <Icon name={icon} size={17} color={Colors.brandDeep} stroke={2.2} />
       </View>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        {/* Deux cartes cote a cote, ca fait un titre par demi-ecran : sur
-            Android, « Votes du moment » s'affichait « Votes du mom... ». Il
-            retrecit au lieu de se couper — regle habituelle des titres
-            Fonts.welcome (numberOfLines + adjustsFontSizeToFit + paddingRight),
-            oubliee ici parce que le titre TIENT sur iPhone. */}
+        {/* DEUX LIGNES autorisees, et pas de retrecissement automatique.
+            Deux cartes cote a cote, ca fait un titre par demi-ecran : sur
+            Android, « Votes du moment » s'affichait « Votes du ». J'avais
+            d'abord demande au texte de retrecir — c'est la regle habituelle
+            des titres Fonts.welcome — mais `adjustsFontSizeToFit` ne tient pas
+            ses promesses avec cette police sur Android : il s'arrete a son
+            plancher, puis coupe au mot. C'est un piege deja paye dans ce
+            projet, et je l'ai quand meme repris.
+            Un titre qui a le droit de passer a la ligne n'a plus rien a
+            mesurer : il ne peut pas etre coupe. */}
         <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
+          numberOfLines={2}
           style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}
         >
           {titre}
