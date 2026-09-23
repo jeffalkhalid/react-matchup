@@ -84,14 +84,18 @@ function PlayerSlot({ p, team, size = 52, avecPrenom = true }: { p: SlotPlayer |
           <View style={{
             backgroundColor: p.invited ? Colors.bgCard : dark ? Colors.brand : Colors.primary,
             borderWidth: p.invited ? 1 : 0, borderColor: Colors.border,
-            borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -8,
+            // Remontee de 10 et non de 8 : la pastille chevauche un peu plus
+            // l'avatar, ce qui rend 2 points au prenom sans rien masquer.
+            borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1.5, marginTop: -10,
           }}>
             <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 9, color: p.invited ? Colors.textSecondary : dark ? Colors.primary : Colors.brand }}>
               {p.invited ? '⏳' : eloToLevel(p.elo).toFixed(1)}
             </Text>
           </View>
           {avecPrenom ? (
-            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, lineHeight: 13, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 3, maxWidth: size + 16 }}>
+            // Taille de police INCHANGEE (10) : seuls la marge et l'interligne
+            // se resserrent, et l'interligne reste au-dessus de la taille.
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, lineHeight: 12, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 2, maxWidth: size + 16 }}>
               {p.name.split(/\s+/)[0]}
             </Text>
           ) : null}
@@ -104,7 +108,9 @@ function PlayerSlot({ p, team, size = 52, avecPrenom = true }: { p: SlotPlayer |
           }}>
             <Icon name="plus" size={16} color={Colors.textMuted} stroke={2} />
           </View>
-          <Text style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: Colors.textMuted, marginTop: 13 }}>
+          {/* Aligne sur le prenom d'un joueur : pastille remontee (-10) puis
+              hauteur de pastille (14) puis marge (2) = 6 sous l'avatar. */}
+          <Text style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, lineHeight: 12, color: Colors.textMuted, marginTop: 6 }}>
             Libre
           </Text>
         </>
@@ -171,12 +177,22 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
   //
   // Le prénom s'efface donc quand il n'y a pas de quoi le loger, plutôt que
   // d'être coupé. Le visage et le niveau suffisent à reconnaître qui joue.
-  const SOUS_PHOTO = 22;
+  // Ce qui vit SOUS l'avatar : la pastille de niveau (14 de haut, remontee de
+  // 10, donc 4 nets) et le prenom (marge 2 + interligne 12, donc 14). Elle
+  // valait 22 ; les 4 points rendus vont a l'avatar.
+  const SOUS_PHOTO = 4 + 14;
+  /** En dessous, un avatar ne se lit plus. */
+  const AVATAR_MIN = 24;
   const zoneH = zone.h > 0 ? zone.h : 0;
-  const avecPrenom = zoneH === 0 || zoneH >= 30 + SOUS_PHOTO;
-  const reserve = avecPrenom ? SOUS_PHOTO : 6;
+  // LE PRENOM PASSE AVANT LA TAILLE DE L'AVATAR. On le garde tant qu'il reste
+  // de quoi loger un avatar lisible en dessous ; c'est l'avatar qui retrecit
+  // le premier, pas le nom qui disparait. Il ne s'efface que sous 42 points,
+  // ou meme un avatar de 24 ne laisserait pas la place a un prenom — et ou le
+  // couper serait pire que l'omettre.
+  const avecPrenom = zoneH === 0 || zoneH >= AVATAR_MIN + SOUS_PHOTO;
+  const reserve = avecPrenom ? SOUS_PHOTO : 4;
   const taillePhoto = zone.w > 0 && zoneH > 0
-    ? Math.max(24, Math.min(76, Math.floor(Math.min((zone.w - 118) / 4, zoneH - reserve))))
+    ? Math.max(AVATAR_MIN, Math.min(76, Math.floor(Math.min((zone.w - 118) / 4, zoneH - reserve))))
     : (compact ? 44 : 52);
   const slots = (team: SlotPlayer[], size: number): (SlotPlayer | null)[] =>
     [...team, ...Array(Math.max(0, size - team.length)).fill(null)];
@@ -187,7 +203,11 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
       activeOpacity={0.9}
       style={{
         backgroundColor: Colors.bgCard, borderRadius: 22,
-        paddingVertical: compact ? 10 : 12, paddingHorizontal: 14,
+        // Les rembourrages et marges de cette carte ont ete resserres de 15
+        // points au total (2 ici, 2+2 aux marges, 3 sous le filet, 4 au bloc
+        // jour/heure). Ils sont alles entierement a la zone des joueurs, qui
+        // n'en avait que 36 — pas de quoi loger un prenom sous l'avatar.
+        paddingVertical: compact ? 9 : 10, paddingHorizontal: 14,
         borderWidth: 1, borderColor: Colors.border,
         // Remplit le wrapper proportionnel de l'écran (voir index) ; l'air se
         // répartit entre en-tête / infos / joueurs.
@@ -218,11 +238,13 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
 
       {game ? (
         <>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: compact ? 8 : 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: compact ? 6 : 8 }}>
             {/* Bloc jour / heure */}
             <View style={{
               backgroundColor: Colors.heroBg, borderRadius: 15,
-              paddingVertical: compact ? 6 : 8, paddingHorizontal: 10,
+              // C'est LUI qui fixe la hauteur de la ligne infos (51 contre 44
+              // pour la colonne du club) : les points se prennent ici.
+              paddingVertical: compact ? 5 : 6, paddingHorizontal: 10,
               alignItems: 'center', minWidth: compact ? 66 : 72,
             }}>
               <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: compact ? 8.5 : 9, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -267,10 +289,10 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
           {/* Joueurs — camp A vs camp B, niveaux réels */}
           {teams && (
             <View
-              style={{ flex: 1, justifyContent: 'center', marginTop: compact ? 8 : 10, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: compact ? 7 : 9 }}
+              style={{ flex: 1, justifyContent: 'center', marginTop: compact ? 6 : 8, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: compact ? 5 : 6 }}
               onLayout={e => {
                 const { width: w, height: h } = e.nativeEvent.layout;
-                const hUtile = h - (compact ? 7 : 9) - 1;   // moins le filet et sa marge
+                const hUtile = h - (compact ? 5 : 6) - 1;   // moins le filet et son rembourrage
                 setZone(prev => (Math.abs(prev.w - w) < 1 && Math.abs(prev.h - hUtile) < 1 ? prev : { w, h: hUtile }));
               }}
             >
