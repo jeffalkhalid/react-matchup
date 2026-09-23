@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, courtNeedsAttention, partnerSeatToFill, defiInviteRole } from '../../lib/games';
-import { stakeForViewer } from '../../lib/stakePreview';
+import { stakeForViewer, stakeSides } from '../../lib/stakePreview';
 import { partnerSeatAfterAccepting } from '../../lib/games';
 import { StakePreview } from '../../components/create/StakePreview';
 import { usePlayer } from '../../hooks/usePlayer';
@@ -1037,7 +1037,18 @@ function GameDetailsSheetContenu({
                 cible={(game as any).is_targeted === true}
                 note={enjeu.exact
                   ? 'Calculé sur les quatre joueurs. Un score large rapporte davantage — et ton chiffre n’est pas celui de tes partenaires.'
-                  : 'Il manque un joueur : fourchette calculée sur la bande de niveau de la partie.'}
+                  // « Il manque UN joueur » etait faux des que le camp adverse
+                  // etait vide — c'est-a-dire le cas le plus courant sur un
+                  // defi, ou l'on attend un binome entier. On compte.
+                  : (() => {
+                      const camps = stakeSides(game as any, playerId);
+                      const quoi = game.is_challenge ? 'du défi' : 'de la partie';
+                      if (!camps) return `La partie n’est pas complète : l’estimation part de sa fourchette de niveau.`;
+                      if (camps.opponents.length === 0) {
+                        return `Tes adversaires ne sont pas encore connus : l’estimation part de la fourchette de niveau ${quoi}.`;
+                      }
+                      return `Il manque un joueur en face : l’estimation part de la fourchette de niveau ${quoi}.`;
+                    })()}
               />
             )}
 
