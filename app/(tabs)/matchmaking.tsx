@@ -22,7 +22,8 @@ import { defiRefusalMessage } from '../../lib/defiMessages';
 import { PlayerAvatar as Photo } from '../../components/PlayerAvatar';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
-import { isCreatorConflict, partnerSeatAfterAccepting } from '../../lib/games';
+import { isCreatorConflict } from '../../lib/games';
+import { useReleveDefi } from '../../hooks/useReleveDefi';
 import { fetchBusyPlayerIds } from '../../lib/slotConflict';
 import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
@@ -245,6 +246,11 @@ export default function MatchmakingScreen() {
   }, [player]);
 
   const router = useRouter();
+  // Relever un défi nominatif : même hook que le lobby (hooks/useReleveDefi).
+  const releve = useReleveDefi({
+    me: player ? { id: player.id, name: player.name } : null,
+    onDone: () => { void fetchData(); reloadNotifs(); },
+  });
   const launchDefi = () => router.push('/(tabs)/lobby?create=1&challenge=1' as any);
   // Taper une carte défi → détail complet (réutilise le GameDetailsSheet du lobby).
   // On passe l'onglet d'origine : à la fermeture du détail, le lobby REVIENT au hub
@@ -525,13 +531,10 @@ export default function MatchmakingScreen() {
     setBinomeBusy(s => new Set(s).add(key));
     try {
       // Défi nominatif : relever le défi et amener son binôme sont UN SEUL
-      // geste. On n'accepte donc PAS ici — on emmène vers la fiche du match,
-      // le seul endroit où les deux partent ensemble. Accepter d'abord
-      // laisserait un camp incomplet que plus personne ne penserait à combler.
-      if (player && partnerSeatAfterAccepting(inv.game as any, inv.participantId, player.id)) {
-        router.push(`/(tabs)/lobby?gameId=${inv.game.id}` as any);
-        return;
-      }
+      // geste, et il se fait ICI — passer par la fiche du match obligeait à
+      // retaper « Relever le défi » une seconde fois. Même hook que le lobby :
+      // même fenêtre, même règle, même garde-fou.
+      if (releve.start(inv.game as any, inv.participantId)) return;
       const { error } = await supabase.from('game_participants')
         .update({ status: 'accepted' }).eq('id', inv.participantId);
       if (error) {

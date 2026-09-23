@@ -35,6 +35,7 @@ import {
 } from '../../lib/exploreFilters';
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
+import { useReleveDefi } from '../../hooks/useReleveDefi';
 import { formatGameDistance, sortByProximity, sortByMatchDate, originLabel, normClubName } from '../../lib/geo';
 import { gpsFailureMessage, shouldOfferGps } from '../../lib/originPolicy';
 import type { GpsPermission } from '../../lib/location';
@@ -45,7 +46,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt, partnerSeatAfterAccepting } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt } from '../../lib/games';
 import { OVERLAP_MS } from '../../lib/slotConflict';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
@@ -2712,17 +2713,12 @@ export default function LobbyScreen() {
    * Le serveur, lui, l'autorise depuis toujours sur un defi cible
    * (trg_defi_no_b_invite fait l'exception).
    */
-  const [partnerInvite, setPartnerInvite] = useState<{ gameId: string; teamSide: string } | null>(null);
-  /**
-   * Défi nominatif en train d'être relevé : mon acceptation ATTEND le binôme.
-   *
-   * Relever un défi qu'on m'adresse et amener mon partenaire sont un seul
-   * geste, pas deux. Accepter d'abord laissait un camp incomplet et personne
-   * n'a le réflexe de rouvrir la fiche pour le combler (retour du 2026-09-23).
-   * Tant que ce choix n'est pas fait, je reste « invité » : rien n'est engagé.
-   */
-  const [relevePending, setRelevePending] = useState<{ participantId: string; gameId: string } | null>(null);
-  const [partnerBusyId, setPartnerBusyId] = useState<string | null>(null);
+  // Relever un défi nominatif : état, fenêtre et écritures vivent dans
+  // hooks/useReleveDefi — le hub Défi applique EXACTEMENT la même règle.
+  const releve = useReleveDefi({
+    me: player ? { id: player.id, name: player.name } : null,
+    onDone: () => { fetchData(); reloadNotifs(); },
+  });
 
   /**
    * Le createur declare que le terrain est reserve — ou ne l'est plus.
@@ -2771,62 +2767,6 @@ export default function LobbyScreen() {
     fetchData();
   };
 
-  const invitePartner = async (p: { id: string; name: string }) => {
-    if (!partnerInvite || !player) return;
-    const releve = relevePending?.gameId === partnerInvite.gameId ? relevePending : null;
-    setPartnerBusyId(p.id);
-
-    // Défi nominatif relevé à l'instant : mon acceptation part AVEC le binôme.
-    // Elle d'abord — si elle échoue (conflit de créneau), on n'invite
-    // personne, sinon on aurait convoqué un partenaire dans une partie qu'on
-    // ne rejoint finalement pas.
-    if (releve && !(await acceptInvitationRow(releve.participantId, releve.gameId))) {
-      setPartnerBusyId(null);
-      setPartnerInvite(null);
-      setRelevePending(null);
-      return;
-    }
-
-    const { error } = await supabase.from('game_participants').insert({
-      game_id: partnerInvite.gameId,
-      player_id: p.id,
-      status: 'invited',
-      team_side: partnerInvite.teamSide,
-    });
-    setPartnerBusyId(null);
-    if (error) {
-      Alert.alert('Impossible', "L'invitation n'a pas pu être envoyée. Réessaie dans un instant.");
-      // Le défi est relevé, le binôme manque : la fiche du match propose
-      // « Amène ton partenaire » pour reprendre là où on s'est arrêté.
-      setPartnerInvite(null);
-      setRelevePending(null);
-      if (releve) fetchData();
-      return;
-    }
-    notifyPlayers({
-      playerIds: [p.id],
-      title: `${player.name} te prend comme partenaire`,
-      body: 'Un défi vous attend — accepte pour le confirmer.',
-      data: { type: 'lobby', gameId: partnerInvite.gameId },
-    });
-    setPartnerInvite(null);
-    setRelevePending(null);
-    fetchData();
-    if (releve) reloadNotifs();
-  };
-
-  /** Fermer le choix sans choisir : on n'a rien relevé, et on le dit. */
-  const closePartnerInvite = () => {
-    const releve = !!relevePending;
-    setPartnerInvite(null);
-    setRelevePending(null);
-    if (releve) {
-      Alert.alert(
-        'Défi pas encore relevé',
-        "Un défi se joue à deux : choisis ton partenaire pour le relever. L'invitation reste valable en attendant.",
-      );
-    }
-  };
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
   const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
@@ -3901,14 +3841,9 @@ export default function LobbyScreen() {
     const game = findGame(gameId);
 
     // Défi nominatif : on m'a défié MOI, et un défi se joue à deux. Le choix
-    // du partenaire passe AVANT l'acceptation — les deux partiront ensemble
-    // quand il sera fait. Tant qu'il ne l'est pas, rien n'est engagé.
-    const siege = game ? partnerSeatAfterAccepting(game as any, participantId, player.id) : null;
-    if (siege) {
-      setRelevePending({ participantId, gameId });
-      setPartnerInvite({ gameId, teamSide: siege });
-      return;
-    }
+    // du binôme passe AVANT l'acceptation — les deux partiront ensemble quand
+    // il sera fait. Tant qu'il ne l'est pas, rien n'est engagé.
+    if (game && releve.start(game as any, participantId)) return;
 
     if (!(await acceptInvitationRow(participantId, gameId))) return;
     fetchData();
@@ -4246,33 +4181,17 @@ export default function LobbyScreen() {
             setOpenGameId(null); setDetailGame(null);
             router.replace((`/(tabs)/matchmaking?tab=relever&relever=${id}`) as any);
           }}
-          onInvitePartner={(gameId, teamSide) => setPartnerInvite({ gameId, teamSide })}
+          onInvitePartner={(gameId) => {
+            const g = findGame(gameId);
+            if (g) releve.startInvite(g as any);
+          }}
           onSetReservation={setReservation}
           hasAppliedDefi={!!openGame && appliedDefiIds.has(openGame.id)}
         />
       )}
 
-      {/* Defi nominatif : l'adversaire designe choisit son propre partenaire. */}
-      <InvitePartnerSheet
-        visible={!!partnerInvite}
-        excludeIds={(() => {
-          // `detailGame` compris : sans lui, une fiche ouverte par id ne
-          // fournit aucune exclusion et la liste reproposerait des joueurs
-          // déjà dans la partie.
-          const g = [...games, ...upcomingGames].find(x => x.id === partnerInvite?.gameId)
-            ?? (detailGame?.id === partnerInvite?.gameId ? detailGame : undefined);
-          return [
-            g?.creator_id,
-            ...((g?.participants ?? []).map((x: any) => x.player_id)),
-          ].filter((v): v is string => !!v);
-        })()}
-        busyId={partnerBusyId}
-        subtitle={relevePending
-          ? "Un défi se joue à deux. En le choisissant, tu relèves le défi et il reçoit son invitation."
-          : undefined}
-        onClose={closePartnerInvite}
-        onPick={invitePartner}
-      />
+      {/* Defi nominatif : l'adversaire designe choisit son propre binome. */}
+      {releve.sheet}
 
       <ApplicationNoteSheet
         visible={noteSheet !== null}

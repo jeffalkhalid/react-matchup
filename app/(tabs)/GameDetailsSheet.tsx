@@ -306,7 +306,7 @@ interface Props {
   onCancelGame: (gameId: string) => void;
   onRelever?: (gameId: string) => void;   // défi : relève à deux (flux binôme)
   /** Défi nominatif : l'adversaire désigné amène son propre partenaire. */
-  onInvitePartner?: (gameId: string, teamSide: string) => void;
+  onInvitePartner?: (gameId: string) => void;
   /** Le créateur déclare que le terrain est réservé — ou ne l'est plus. */
   onSetReservation?: (gameId: string, booked: boolean) => void;
   hasAppliedDefi?: boolean;                // défi : j'ai déjà une candidature en attente
@@ -648,7 +648,7 @@ function GameDetailsSheetContenu({
         if (partnerSeat && onInvitePartner) {
           return (
             <View style={{ flex: 1, gap: 8 }}>
-              <TouchableOpacity onPress={() => onInvitePartner(game.id, partnerSeat)}
+              <TouchableOpacity onPress={() => onInvitePartner(game.id)}
                 style={[sty.ctaBtn, { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
                 <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>
                   Amène ton partenaire

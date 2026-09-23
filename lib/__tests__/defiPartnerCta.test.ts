@@ -85,26 +85,39 @@ describe('le bouton est dans une branche que le joueur atteint', () => {
   });
 });
 
-describe('tous les écrans qui acceptent mènent au même endroit', () => {
+describe("relever un défi nominatif ne s'écrit qu'une fois", () => {
   // Trois écrans font passer une invitation à « accepted » : le lobby, le hub
-  // Défi et le rail « On t'attend » de l'Activité. Un seul enchaînait sur le
-  // choix du partenaire — accepter depuis les deux autres déposait l'adversaire
-  // désigné dans la partie sans rien lui dire.
-  const ACCEPTENT = [
-    ['app', '(tabs)', 'lobby.tsx'],
-    ['app', '(tabs)', 'matchmaking.tsx'],
-    ['components', 'activity', 'InvitationCard.tsx'],
+  // Défi et le rail « On t'attend » de l'Activité. Chacun a eu sa version de
+  // la règle — l'un enchaînait sur le choix du binôme, un autre renvoyait
+  // vers la fiche, le troisième ne disait rien. Ils partagent désormais
+  // hooks/useReleveDefi : même fenêtre, même ordre, même garde-fou.
+  const FLUX = 'hooks/useReleveDefi.tsx';
+  const ECRANS = [
+    'app/(tabs)/lobby.tsx',
+    'app/(tabs)/matchmaking.tsx',
+    'components/activity/InvitationCard.tsx',
   ];
 
-  it('chacun consulte le siège à pourvoir', () => {
-    const sans = ACCEPTENT
-      .filter(rel => !readFileSync(join(ROOT, ...rel), 'utf8').includes('partnerSeatAfterAccepting'))
-      .map(rel => rel.join('/'));
+  it('chaque écran passe par le flux partagé', () => {
+    const sans = ECRANS.filter(rel => !readFileSync(join(ROOT, rel), 'utf8').includes('useReleveDefi'));
     expect(sans).toEqual([]);
   });
 
-  it("la liste couvre bien tous les écrans qui acceptent (test du test)", () => {
-    const connus = new Set(ACCEPTENT.map(r => r.join('/')));
+  it("le flux demande le binôme AVANT d'accepter", () => {
+    const src = readFileSync(join(ROOT, FLUX), 'utf8');
+    // `start` ouvre la fenêtre et ne touche à rien ; l'écriture n'arrive que
+    // dans `pick`, une fois le binôme choisi. Inverser les deux, c'est
+    // retomber sur le bug : un camp incomplet que personne ne revient finir.
+    const iStart = src.indexOf('const start =');
+    const iPick = src.indexOf('const pick =');
+    const iEcriture = src.indexOf("status: 'accepted'");
+    expect(iStart).toBeGreaterThan(-1);
+    expect(iPick).toBeGreaterThan(iStart);
+    expect(iEcriture).toBeGreaterThan(iPick);
+  });
+
+  it('aucun autre fichier ne fait accepter une invitation (test du test)', () => {
+    const connus = new Set([...ECRANS, FLUX]);
     const fautifs: string[] = [];
     const parcours = (dir: string[]) => {
       for (const nom of readdirSync(join(ROOT, ...dir))) {
@@ -118,7 +131,7 @@ describe('tous les écrans qui acceptent mènent au même endroit', () => {
         }
       }
     };
-    parcours(['app']); parcours(['components']);
+    parcours(['app']); parcours(['components']); parcours(['hooks']);
     expect(fautifs).toEqual([]);
   });
 });

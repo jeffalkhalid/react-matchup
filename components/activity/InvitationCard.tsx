@@ -16,7 +16,9 @@ import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { NaturePill } from '../profile/components';
 import { matchNature } from '../../lib/matchView';
-import { levelRangeLabel, isCreatorConflict, declineInvitationPlan, partnerSeatAfterAccepting } from '../../lib/games';
+import { levelRangeLabel, isCreatorConflict, declineInvitationPlan } from '../../lib/games';
+import { usePlayer } from '../../hooks/usePlayer';
+import { useReleveDefi } from '../../hooks/useReleveDefi';
 import {
   fetchMyInvitations, invitingDuo, invitationTitle, invitationDatePill, confirmedCount,
   type HubInvitation,
@@ -29,6 +31,7 @@ type Resolution = 'accepted' | 'declined';
 export function InvitationCard({ playerId }: { playerId: string }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const { player } = usePlayer();
   const [loading, setLoading] = useState(true);
   const [invitations, setInvitations] = useState<HubInvitation[]>([]);
   /** Répondu depuis la carte — par invitation, plusieurs vivant côte à côte. */
@@ -42,6 +45,13 @@ export function InvitationCard({ playerId }: { playerId: string }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Relever un défi nominatif : même hook que le lobby et le hub Défi
+  // (hooks/useReleveDefi) — une seule écriture de la règle pour trois écrans.
+  const releve = useReleveDefi({
+    me: player ? { id: player.id, name: player.name } : null,
+    onDone: load,
+  });
+
   // Pas d'invitation : le bloc ne s'affiche pas. Un encart « personne ne te
   // cherche » en pleine page ne dit rien d'utile et pèse sur l'écran.
   if (loading || invitations.length === 0) return null;
@@ -52,12 +62,9 @@ export function InvitationCard({ playerId }: { playerId: string }) {
   const accept = async (inv: HubInvitation) => {
     const { game, participantId } = inv;
     // Défi nominatif : relever le défi et amener son binôme sont UN SEUL
-    // geste. On n'accepte pas ici — on emmène vers la fiche du match, le seul
-    // endroit où les deux partent ensemble.
-    if (partnerSeatAfterAccepting(game as any, participantId, playerId)) {
-      router.push(`/(tabs)/lobby?gameId=${game.id}` as any);
-      return;
-    }
+    // geste, et il se fait ICI — la fenêtre du binôme prend la main, rien
+    // n'est accepté tant qu'il n'est pas choisi.
+    if (releve.start(game as any, participantId)) return;
     occupe(participantId, true);
     const { error } = await supabase.from('game_participants').update({ status: 'accepted' }).eq('id', participantId);
     occupe(participantId, false);
@@ -104,6 +111,8 @@ export function InvitationCard({ playerId }: { playerId: string }) {
 
   return (
     <View style={{ marginTop: 18 }}>
+      {/* Le choix du binôme quand on relève un défi nominatif d'ici. */}
+      {releve.sheet}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 }}>
         <Icon name="bellRing" size={15} color={Colors.textPrimary} stroke={2} />
         <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
