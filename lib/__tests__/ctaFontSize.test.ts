@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fitLabelFontSize } from '../homeLayout';
+import { fitLabelFontSize } from '../fitLabel';
 
 // Les deux boutons de l'accueil : la taille du texte dérive de la largeur
 // RÉELLE du bouton. `adjustsFontSizeToFit` n'est pas fiable sur Android avec

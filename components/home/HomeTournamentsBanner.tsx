@@ -16,6 +16,7 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
+import { texteUI } from '../../lib/uiText';
 
 export function HomeTournamentsBanner({ enabled, count, onPress }: {
   /**
@@ -85,10 +86,10 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
       </View>
 
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 25, color: Colors.textOnDark, paddingRight: 6 }}>
+        <Text {...texteUI} numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 25, color: Colors.textOnDark, paddingRight: 6 }}>
           Tournois <Text style={{ color: Colors.brand }}>&amp; événements</Text>
         </Text>
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.6)' }}>
+        <Text {...texteUI} numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.6)' }}>
           {ouvrable
             ? `${count} événement${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''} · touche pour voir`
             : 'Ne manque rien dans ta région'}
@@ -99,7 +100,7 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
         {!ouvrable && (
           <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 3 }}>
             <Icon name="calendar" size={11} color={Colors.primary} stroke={2.4} />
-            <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 11, color: Colors.primary }}>À venir</Text>
+            <Text {...texteUI} style={{ fontFamily: Fonts.uiBlack, fontSize: 11, color: Colors.primary }}>À venir</Text>
           </View>
         )}
       </View>

@@ -9,7 +9,7 @@ import {
   suggestibleGames, homeSlot,
   MAX_SUGGESTIONS, type SuggestibleGame,
 } from '../homeSlot';
-import { homeSectionSizes } from '../homeLayout';
+import { homeSections } from '../homeLayout';
 
 const NOW = new Date('2026-09-08T12:00:00Z');
 const dans = (heures: number) => new Date(NOW.getTime() + heures * 3600_000).toISOString();
@@ -311,14 +311,14 @@ describe('la decision et le budget de hauteur disent la MEME chose', () => {
         for (const nb of [0, 2]) {
           const suggestions = Array.from({ length: nb }, (_, n) => G({ id: `g${n}` }));
           const slot = homeSlot({ hasNextMatch, hasTournaments, suggestions });
-          const s = homeSectionSizes({
-            compact: true, hasTournaments, hasNextMatch, openGames: nb,
-          });
+          const cles = homeSections({
+            availableHeight: 680, availableWidth: 393,
+            hasTournaments, hasNextMatch, openGames: nb,
+          }).map(x => x.key);
           const contexte = `tournois=${hasTournaments} match=${hasNextMatch} parties=${nb}`;
-          expect(s.nextMatch !== null, contexte).toBe(slot.kind === 'nextMatch');
-          expect(s.openGames !== null, contexte)
+          expect(cles.includes('nextMatch'), contexte).toBe(slot.kind === 'nextMatch');
+          expect(cles.includes('openGames'), contexte)
             .toBe(slot.kind === 'openGames' || slot.kind === 'createFirst');
-          expect(s.filler !== null, contexte).toBe(slot.kind === 'none');
         }
       }
     }

@@ -17,22 +17,12 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
+import { GEO } from '../../lib/homeLayout';
+import { texteUI } from '../../lib/uiText';
 
-function Tuile({ variant, icon, titre, accent, sous, onPress, compact }: {
+function Tuile({ variant, icon, titre, accent, sous, onPress }: {
   variant: 'brand' | 'dark';
   icon: IconName;
-  /**
-   * Ecran ou police serres.
-   *
-   * Au plancher du bloc (112 points), la tuile doit loger 129 points de
-   * contenu : rembourrage 28 + pastille 38 + titre sur deux lignes 48 +
-   * phrase 15. Il en manque 17, et c'est le texte qui les prenait — d'ou la
-   * ligne tranchee en son milieu. On les rend ici plutot que de rogner.
-   *
-   * Seulement en compact : sur un ecran qui a la place, les grands titres de
-   * la maquette restent tels quels.
-   */
-  compact?: boolean;
   /** Première partie du titre, en couleur de texte normale. */
   titre: string;
   /** Seconde partie, mise en valeur — c'est elle qui nomme l'action. */
@@ -41,10 +31,11 @@ function Tuile({ variant, icon, titre, accent, sous, onPress, compact }: {
   onPress: () => void;
 }) {
   const jaune = variant === 'brand';
-  const c = !!compact;
-  const pastilleTaille = c ? 32 : 38;
-  const titreTaille = c ? 18 : 21;
-  const titreLigne = c ? 21 : 24;
+  // Tailles FIXES, et lues au meme endroit que le budget de hauteur
+  // (lib/homeLayout GEO) : le minimum reclame par la tuile est l'addition de
+  // ces nombres-la. Les faire varier ici sans les changer la-bas, c'etait
+  // rendre le calcul faux — et c'est ce qui arrivait avec le mode « compact ».
+  const G = GEO.cta;
   const fond = jaune ? Colors.brand : '#0A0A0A';
   const texte = jaune ? Colors.primary : Colors.textOnDark;
   const accentCouleur = jaune ? Colors.primary : Colors.brand;
@@ -61,8 +52,11 @@ function Tuile({ variant, icon, titre, accent, sous, onPress, compact }: {
         // `flex: 1` sur la tuile ET sur la rangee : la hauteur reservee par
         // l'accueil leur revient au lieu de rester en blanc sous les cartes.
         flex: 1, backgroundColor: fond, borderRadius: 20,
-        paddingVertical: c ? 11 : 14, paddingHorizontal: c ? 12 : 14, justifyContent: 'space-between',
-        minHeight: c ? 108 : 132, overflow: 'hidden',
+        // Pas de `minHeight` : la hauteur vient de l'accueil, qui l'a
+        // calculee sur la largeur reelle (`ctaHeightFor`). Un plancher ici
+        // permettrait a la tuile de REFUSER sa part, et la somme deborderait.
+        paddingVertical: G.padV, paddingHorizontal: 12, justifyContent: 'space-between',
+        overflow: 'hidden',
       }}
     >
       {/* Fond travaillé : de GRANDS anneaux concentriques qui traversent la
@@ -91,22 +85,20 @@ function Tuile({ variant, icon, titre, accent, sous, onPress, compact }: {
       }} />
 
       <View style={{
-        width: pastilleTaille, height: pastilleTaille, borderRadius: 12, backgroundColor: pastille,
+        width: G.pastille, height: G.pastille, borderRadius: 12, backgroundColor: pastille,
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Icon name={icon} size={c ? 17 : 20} color={jaune ? Colors.primary : Colors.brand} stroke={2.2} />
+        <Icon name={icon} size={17} color={jaune ? Colors.primary : Colors.brand} stroke={2.2} />
       </View>
 
-      {/* `flexShrink: 1` : c'est ce bloc qui cede quand la tuile est courte,
-          pas la pastille du haut ni la fleche. */}
       <View style={{ gap: 3 }}>
         {/* Le titre a le DROIT de passer à la ligne : c'est ce qui évite la
             coupure au mot vue sur Android. */}
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: titreTaille, lineHeight: titreLigne, color: texte, paddingRight: 4 }}>
+        <Text {...texteUI} numberOfLines={GEO.cta.titreLignes} style={{ fontFamily: Fonts.welcome, fontSize: G.titreLigne - 3, lineHeight: G.titreLigne, color: texte, paddingRight: 4 }}>
           {titre}
           <Text style={{ color: accentCouleur }}>{` ${accent}`}</Text>
         </Text>
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 15, color: secondaire, paddingRight: 24 }}>
+        <Text {...texteUI} numberOfLines={GEO.cta.phraseLignes} style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: G.phraseLigne, color: secondaire, paddingRight: 24 }}>
           {sous}
         </Text>
       </View>
@@ -123,18 +115,13 @@ function Tuile({ variant, icon, titre, accent, sous, onPress, compact }: {
   );
 }
 
-export function HomePrimaryActions({ onMatchmaking, onChallenge, compact }: {
+export function HomePrimaryActions({ onMatchmaking, onChallenge }: {
   onMatchmaking: () => void;
   onChallenge: () => void;
-  /** Écran ou police serrés : titres et pastilles resserrés. */
-  compact?: boolean;
-  /** Conservé pour l'appelant — la taille du texte ne se calcule plus. */
-  textScale?: number;
 }) {
   return (
     <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
       <Tuile
-        compact={compact}
         variant="brand"
         icon="search"
         titre="Trouver"
@@ -143,7 +130,6 @@ export function HomePrimaryActions({ onMatchmaking, onChallenge, compact }: {
         onPress={onMatchmaking}
       />
       <Tuile
-        compact={compact}
         variant="dark"
         icon="swords"
         titre="Match"

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal,
   ActivityIndicator, LayoutAnimation,
-  Platform, UIManager, Image, useWindowDimensions,
+  Platform, UIManager, Image,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,7 +27,7 @@ import { HomeRankButton } from '../../components/home/HomeRankButton';
 import { HomeTournamentsBanner } from '../../components/home/HomeTournamentsBanner';
 import { HomePulse } from '../../components/home/HomePulse';
 import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
-import { homeSectionSizes, COMPACT_THRESHOLD_H, BANNER_RESERVE, PULSE_RESERVE } from '../../lib/homeLayout';
+import { solveHomeLayout, MATCH_IDEAL } from '../../lib/homeLayout';
 import { suggestibleGames, homeSlot } from '../../lib/homeSlot';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import {
@@ -69,20 +69,11 @@ export default function HomeScreen() {
   const [submittingBadges, setSubmittingBadges] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height: winH, fontScale } = useWindowDimensions();
 
-  // Adaptatif TOUS appareils (aucune valeur par modèle) : hauteur réellement
-  // disponible = fenêtre − inset haut − header logo (~48) − tab bar (64 +
-  // inset bas, cf. (tabs)/_layout) − paddings (~18) − 4 gaps (~48). Les
-  // planchers normaux (~560 px) sont comparés en tenant compte de la taille
-  // de police SYSTÈME (fontScale) qui gonfle tous les textes. Trois étages :
-  // grand écran = proportions pleines · écran/police serrés = mode compact ·
-  // extreme (petit + grande police) = proportions resserrees. La tenue de
-  // l'ecran, elle, ne depend d'AUCUN de ces calculs : flexbox s'en charge.
-  // La section Tournois, quand elle est rendue, prend ~140 dp qu'il faut
-  // RETIRER du budget avant de comparer : sinon on reste en proportions
-  // pleines, la colonne deborde, et l'accueil se met a defiler -- ce qu'il ne
-  // faisait pas avant. C'est ce que le handoff demandait et que j'avais omis.
+  // La géométrie de l'accueil ne se DEVINE plus : elle se mesure (cf. `zone`
+  // plus bas, et lib/homeLayout). Ni la hauteur de l'écran, ni la taille de
+  // police système n'entrent dans le calcul — c'étaient les deux sources des
+  // écarts entre téléphones.
   const [tournois, setTournois] = useState<HomeTournamentEntry[]>([]);
   /**
    * Le drapeau des tournois, lu pour le BANDEAU d'entree.
@@ -117,21 +108,20 @@ export default function HomeScreen() {
    * soit leur taille sur cet appareil-la.
    */
   /**
-   * Les marges HAUT et BAS de la colonne.
+   * La zone de contenu, MESURÉE.
    *
-   * Elles n'entrent plus dans aucun calcul : flexbox distribue ce qui reste
-   * une fois les marges posees. Elles sont ici pour etre lues d'un coup d'oeil.
+   * Elle était calculée : `winH - insets.top - 48 - (64 + insets.bottom) - 18
+   * - 48`. Quatre de ces nombres étaient des suppositions — en-tête, barre
+   * d'onglets, marges, espaces — et il suffisait qu'une soit fausse sur un
+   * téléphone pour que l'accueil se croie plus riche qu'il ne l'est. On
+   * corrigeait alors la constante pour CE téléphone-là, et on recommençait au
+   * suivant.
+   *
+   * La zone est un `flex: 1` posé entre l'en-tête et la barre d'onglets : sa
+   * hauteur lui vient du dessus, jamais de son contenu. `onLayout` rend donc
+   * la vérité, quelle que soit la géométrie réelle de l'appareil.
    */
-  const PAD_COLONNE = { haut: 8, bas: 12 };
-  // Sert UNIQUEMENT a choisir des proportions resserrees (polices, espaces).
-  // Une erreur ici change l'allure, jamais la tenue de l'ecran : c'est flexbox
-  // qui garantit que tout rentre.
-  const hauteurColonne = winH - insets.top - 48 - (64 + insets.bottom)
-    - PAD_COLONNE.haut - PAD_COLONNE.bas;
-  const availableH = hauteurColonne - 48
-    - (soiree ? 0 : BANNER_RESERVE)
-    - (pulseVisible ? PULSE_RESERVE : 0);
-  const compact = availableH < COMPACT_THRESHOLD_H * Math.max(1, fontScale);
+  const [zone, setZone] = useState({ h: 0, w: 0 });
 
   const fetchData = useCallback(async () => {
     if (!player) return;
@@ -383,18 +373,23 @@ export default function HomeScreen() {
     suggestions,
   });
 
-  const sizes = homeSectionSizes({
-    compact,
-    // La carte de profil ne fait plus partie de l'accueil (decision produit
-    // du 2026-09-22). Le budget la garde en option : repasser a `true` la
-    // remet, avec ses proportions d'origine.
-    hasHero: false,
+  /**
+   * Ce que chaque bloc reçoit, en points.
+   *
+   * La somme des hauteurs et des espaces vaut EXACTEMENT la hauteur mesurée —
+   * c'est une propriété du calcul (lib/homeLayout), pas un réglage à tenir.
+   * Il n'y a donc rien à faire défiler, et rien ne peut passer sous la barre.
+   */
+  const layout = solveHomeLayout({
+    availableHeight: zone.h,
+    availableWidth: zone.w,
     hasTournaments: tournois.length > 0,
     hasNextMatch: visibleUpcoming.length > 0,
     openGames: suggestions.length,
-    hasLiveTournament: !!soiree,
+    hasLiveBanner: !!soiree,
     hasPulse: pulseVisible,
   });
+  const parts = layout.heights;
 
 
   return (
@@ -595,13 +590,22 @@ export default function HomeScreen() {
                 la seule facon pour un bloc de refuser sa part. Il n'y en a
                 aucun, et il ne doit jamais y en avoir. Ce qui ne rentre pas
                 dans un bloc se regle DANS le bloc. */}
-            <View style={{
-              flex: 1,
-              paddingHorizontal: 20,
-              paddingTop: PAD_COLONNE.haut,
-              paddingBottom: PAD_COLONNE.bas,
-              gap: sizes.gap,
-            }}>
+            {/* Le rembourrage est SUR L'ENVELOPPE, jamais sur la colonne
+                mesurée : `onLayout` rend la hauteur de la boîte, marges
+                comprises, alors que les blocs vivent à l'intérieur. Les
+                soustraire après coup, c'était réintroduire une constante — et
+                c'est l'erreur qui a survécu le plus longtemps. */}
+            <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 }}>
+            <View
+              onLayout={e => {
+                // Lire la valeur AVANT le setState : l'événement natif est
+                // recyclé, un accès différé rend une hauteur nulle.
+                const { height, width } = e.nativeEvent.layout;
+                setZone(p => (Math.abs(p.h - height) > 0.5 || Math.abs(p.w - width) > 0.5
+                  ? { h: height, w: width } : p));
+              }}
+              style={{ flex: 1, gap: layout.gap }}
+            >
               {/* Hauteurs RELATIVES : chaque section recoit une part
                   proportionnelle de la colonne. SANS plancher — c'est ce qui
                   garantit que la somme fasse exactement la hauteur
@@ -613,12 +617,12 @@ export default function HomeScreen() {
                   le chemin passait par l'onglet Tournois puis la fiche. Hors
                   soirée la bannière n'existe pas, donc elle ne coûte rien à
                   l'accueil ordinaire (cf. lib/homeLayout). */}
-              {sizes.liveBanner && soiree && (
+              {parts.liveBanner > 0 && soiree && (
                 <TouchableOpacity
                   onPress={() => router.push(`/tournaments/soiree/${soiree.id}` as any)}
                   activeOpacity={0.85}
                   style={{
-                    flex: sizes.liveBanner.flex,
+                    height: parts.liveBanner,
                     backgroundColor: Colors.primary, borderRadius: 16,
                     paddingHorizontal: 14,
                     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -652,12 +656,10 @@ export default function HomeScreen() {
               <View
                 ref={(v) => registerTourAnchor('home-ctas', v)}
                 collapsable={false}
-                style={{ flex: sizes.ctas.flex }}>
+                style={{ height: parts.ctas }}>
                 <HomePrimaryActions
-                  compact={compact}
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
-                  textScale={sizes.ctas.textScale}
                 />
               </View>
 
@@ -671,11 +673,11 @@ export default function HomeScreen() {
                   etre le sommaire. Il est toujours la — c'est une porte, pas
                   une actualite — sauf pendant une soiree, ou la banniere du
                   haut dit deja ou aller. */}
-              {sizes.tournaments && (
+              {parts.tournaments > 0 && (
                 /* Enveloppe a hauteur imposee : sans elle le bandeau prend la
                    hauteur de son contenu et sort de la repartition — c'est
                    exactement ce qui faisait deborder la colonne. */
-                <View style={{ flex: sizes.tournaments.flex }}>
+                <View style={{ height: parts.tournaments }}>
                   <HomeTournamentsBanner
                     enabled={tournoisOuverts}
                     count={tournois.length}
@@ -690,8 +692,8 @@ export default function HomeScreen() {
                   nul et c'est le vide (`sizes.filler`) qui prend sa part, pour
                   que les cartes restantes ne gonflent pas d'autant. Le budget
                   et son test vivent dans lib/homeLayout. */}
-              {sizes.nextMatch && (
-                <View style={{ flex: sizes.nextMatch.flex }}>
+              {parts.nextMatch > 0 && (
+                <View style={{ height: parts.nextMatch }}>
                   <UpcomingMatchCard
                     game={visibleUpcoming[0] ?? null}
                     count={visibleUpcoming.length}
@@ -701,7 +703,7 @@ export default function HomeScreen() {
                     }}
                     onSeeAll={() => router.push('/(tabs)/lobby?tab=upcoming' as any)}
                     onFindGame={() => router.push('/(tabs)/lobby' as any)}
-                    compact={compact}
+                    compact={parts.nextMatch < MATCH_IDEAL - 1}
                   />
                 </View>
               )}
@@ -709,8 +711,8 @@ export default function HomeScreen() {
               {/* D bis. « Ça se joue bientôt » — ni match ni tournoi. Deux
                   vraies parties à rejoindre, ou l'invitation à en créer une
                   s'il n'y en a aucune. */}
-              {sizes.openGames && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
-                <View style={{ flex: sizes.openGames.flex }}>
+              {parts.openGames > 0 && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
+                <View style={{ height: parts.openGames }}>
                   <OpenGamesSlot
                     games={slot.kind === 'openGames' ? slot.games : []}
                     myId={player.id}
@@ -731,14 +733,13 @@ export default function HomeScreen() {
                   sans hauteur réservée, donc sans toucher au budget qui garantit
                   que le haut ne scrolle pas (lib/homeLayout). Le bloc se tait
                   quand il n'a rien à dire. */}
-              {sizes.filler && (
-                <View pointerEvents="none" style={{ flex: sizes.filler.flex }} />
-              )}
-
               {/* Le bloc qui cede : il s'efface quand la place manque plutot
                   que de s'afficher coupe. Son contenu reste entier dans
                   l'onglet Activite, ou « Voir tout » mene deja. */}
-              <View style={{ flex: sizes.pulse ? sizes.pulse.flex : 0 }}>
+              {/* Le bloc qui cède : il se réduit quand la place manque, puis
+                  s'efface. Rendu même à hauteur nulle tant qu'on ne sait pas
+                  s'il a quelque chose à dire — c'est lui qui l'annonce. */}
+              <View style={{ height: parts.pulse > 0 ? parts.pulse : undefined, overflow: 'hidden' }}>
                 <HomePulse myId={player.id} myElo={player.elo_score} onVisible={setPulseVisible} />
               </View>
 
@@ -748,6 +749,7 @@ export default function HomeScreen() {
                   depuis le guide. Les ~52 dp rendus repartent aux sections
                   ci-dessus via le budget de lib/homeLayout. */}
 
+            </View>
             </View>
           </>
         )}

@@ -22,7 +22,7 @@
 import { Children, cloneElement, isValidElement, useState, type ReactNode } from 'react';
 import { Text, View, Platform, type StyleProp, type TextStyle, type ViewStyle, type TextProps } from 'react-native';
 import { Fonts } from '../lib/theme';
-import { fitLabelFontSize } from '../lib/homeLayout';
+import { fitLabelFontSize } from '../lib/fitLabel';
 
 /** Majuscules dans le texte lui-même, texte imbriqué compris. Un contenu fait
  *  uniquement de texte ressort en UN segment : plusieurs segments natifs

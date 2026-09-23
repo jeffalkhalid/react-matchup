@@ -15,6 +15,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
+import { texteUI } from '../../lib/uiText';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { availabilitySlots, fetchAvailableOnSlot, slotShortLabel, type AvailabilityRow } from '../../lib/availability';
 import { MERCATO_LEVEL_BAND } from '../../lib/mercato';
@@ -108,12 +109,13 @@ function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous?: s
             mesurer : il ne peut pas etre coupe. */}
         <Text
           numberOfLines={2}
+          {...texteUI}
           style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}
         >
           {titre}
         </Text>
         {sous ? (
-          <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
+          <Text {...texteUI} numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
             {sous}
           </Text>
         ) : null}
@@ -237,12 +239,12 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
     <View style={{ gap: 10, flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Icon name="users" size={18} color={Colors.textPrimary} stroke={2.2} />
-        <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
+        <Text {...texteUI} numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
           Ça bouge chez les <Text style={{ color: Colors.brandDeep }}>PAGUISTES</Text>
         </Text>
         <TouchableOpacity onPress={() => router.push('/(tabs)/activite' as any)} hitSlop={8}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textSecondary }}>Voir tout</Text>
+          <Text {...texteUI} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 12, color: Colors.textSecondary }}>Voir tout</Text>
           <Icon name="chevronRight" size={12} color={Colors.textSecondary} stroke={2.6} />
         </TouchableOpacity>
       </View>

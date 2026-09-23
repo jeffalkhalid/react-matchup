@@ -1,380 +1,155 @@
+// L'accueil ne défile pas : tout doit tenir, sur tous les téléphones.
+//
+// Ce test est la garantie. Il balaie une matrice de hauteurs et d'états et
+// vérifie à chaque fois le seul invariant qui compte :
+//
+//     Σ hauteurs + Σ espaces  ≤  hauteur disponible
+//
+// La version précédente du budget donnait à chaque bloc une part ET un
+// plancher. Une part se partage toujours ; un plancher permet à un bloc de
+// REFUSER sa part — et quand la somme des planchers dépassait l'écran, le
+// dernier bloc passait sous la barre d'onglets. Six corrections ont suivi,
+// chacune sur une constante différente. Le problème était le modèle.
 import { describe, it, expect } from 'vitest';
 import {
-  homeSectionSizes, totalMinHeight, fitsWithoutScroll,
-  ANDROID_COLUMN_H, NON_COMPACT_COLUMN_H,
+  solveHomeLayout, occupiedHeight, homeSections, ctaHeightFor, gapFor,
+  CTA_MIN, MATCH_MIN, TOURNOIS_MIN, PULSE_MIN, PULSE_IDEAL,
+  type HomeLayoutInput,
 } from '../homeLayout';
 
-const sizes = (o: Partial<Parameters<typeof homeSectionSizes>[0]> = {}) =>
-  homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false, ...o });
+/** Les hauteurs de colonne qu'on rencontre vraiment, du plus petit au plus grand. */
+const HAUTEURS = [380, 440, 500, 560, 620, 680, 740];
+const LARGEURS = [320, 360, 393, 412, 430];
 
-describe('le budget doit tenir dans l ecran', () => {
-  it('SANS match programme, avec des tournois : AUCUN defilement', () => {
-    // Le cas le plus frequent, et celui qui a echoue : la carte vide reclamait
-    // 2,2 parts sur 8,3, la colonne debordait, l'accueil se mettait a defiler
-    // et le haut du hero passait sous l'en-tete.
-    expect(fitsWithoutScroll(sizes(), ANDROID_COLUMN_H)).toBe(true);
-  });
+/** Les sept combinaisons de l'écran. */
+const ETATS: { nom: string; etat: Partial<HomeLayoutInput> }[] = [
+  { nom: 'match + tournoi + pulse', etat: { hasNextMatch: true, hasTournaments: true, hasPulse: true } },
+  { nom: 'match + tournoi',         etat: { hasNextMatch: true, hasTournaments: true, hasPulse: false } },
+  { nom: 'match + pulse',           etat: { hasNextMatch: true, hasTournaments: false, hasPulse: true } },
+  { nom: 'tournoi + pulse',         etat: { hasNextMatch: false, hasTournaments: true, hasPulse: true } },
+  { nom: 'match seul',              etat: { hasNextMatch: true, hasTournaments: false, hasPulse: false } },
+  { nom: 'tournoi seul',            etat: { hasNextMatch: false, hasTournaments: true, hasPulse: false } },
+  { nom: 'pulse seul',              etat: { hasNextMatch: false, hasTournaments: false, hasPulse: true } },
+  { nom: 'soirée en cours',         etat: { hasNextMatch: true, hasTournaments: true, hasPulse: true, hasLiveBanner: true } },
+];
 
-  it('SANS match et SANS tournoi : encore plus de marge', () => {
-    expect(fitsWithoutScroll(sizes({ hasTournaments: false }), ANDROID_COLUMN_H)).toBe(true);
-  });
-
-  it('SANS match, la carte n est pas rendue du tout', () => {
-    // Elle disait « Aucun match programme · explore les parties ouvertes »
-    // avec une fleche vers le lobby, juste sous le bouton « Trouver un
-    // match » qui dit la meme chose et mene au meme endroit.
-    const vide = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false });
-    const pleine = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
-    expect(vide.nextMatch).toBe(null);
-    expect(pleine.nextMatch).not.toBe(null);
-    // Et ce qu'elle occupait est vraiment rendu, pas juste redistribue.
-    expect(totalMinHeight(vide)).toBeLessThan(totalMinHeight(pleine));
-  });
-
-  it('le bandeau Tournois COUTE de la place, et on la compte', () => {
-    // Piege paye une premiere fois : la section avait ete ajoutee sans etre
-    // retiree du budget, et l'accueil s'etait mis a defiler.
-    //
-    // Depuis 2026-09-22 c'est un BANDEAU d'entree : present meme sans soiree
-    // ouverte, donc son cout ne depend plus de `hasTournaments`. Il disparait
-    // en revanche pendant une soiree, la banniere du haut prenant le relais.
-    const ordinaire = sizes({ hasTournaments: false });
-    const pendantSoiree = sizes({ hasTournaments: false, hasLiveTournament: true });
-    expect(ordinaire.tournaments).not.toBe(null);
-    expect(pendantSoiree.tournaments).toBe(null);
-    expect(totalMinHeight(ordinaire)).toBeGreaterThan(
-      totalMinHeight(pendantSoiree) - pendantSoiree.liveBanner!.minHeight - ordinaire.gap,
-    );
-  });
+const entree = (h: number, w: number, etat: Partial<HomeLayoutInput>): HomeLayoutInput => ({
+  availableHeight: h, availableWidth: w,
+  hasTournaments: false, hasNextMatch: false, ...etat,
 });
 
-describe('mode compact', () => {
-  it('reduit tous les planchers', () => {
-    const c = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
-    const p = homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: true });
-    expect(totalMinHeight(c)).toBeLessThan(totalMinHeight(p));
-  });
-
-  it('garde les MEMES parts : seules les hauteurs changent, pas les proportions', () => {
-    // Le compact resserre, il ne redessine pas la page.
-    const c = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true });
-    const p = homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: true });
-    expect(c.hero!.flex).toBe(p.hero!.flex);
-    expect(c.nextMatch?.flex).toBe(p.nextMatch?.flex);
-    expect(c.tournaments?.flex).toBe(p.tournaments?.flex);
-  });
-});
-
-describe('somme des planchers', () => {
-  it('compte les espaces ENTRE les sections, pas apres la derniere', () => {
-    const s = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false });
-    // hero + boutons + tournois + vide = 4 sections rendues -> 3 espaces
-    const planchers = s.hero!.minHeight + s.ctas.minHeight
-      + s.tournaments!.minHeight + s.filler!.minHeight;
-    expect(totalMinHeight(s)).toBe(planchers + 3 * s.gap);
-  });
-
-  it('un ecran plus court que le budget fait defiler, et on le dit', () => {
-    expect(fitsWithoutScroll(sizes(), 300)).toBe(false);
-  });
-});
-
-describe('le cas le plus charge — la limite haute du handoff', () => {
-  it('un match programme ET des tournois ouverts TIENNENT sans defilement', () => {
-    // Le handoff designe ce cas comme la limite haute de l'ecran. Avant le
-    // resserrage il reclamait 572 dp pour une colonne de 517.
-    // Sans carte de profil : c'est la configuration livree depuis le
-    // 2026-09-22. Avec elle, l'accueil ne tient plus — c'est le choix assume
-    // de la maquette, et le ScrollView prend le relais.
-    const charge = homeSectionSizes({ compact: true, hasHero: false, hasTournaments: true, hasNextMatch: true });
-    expect(fitsWithoutScroll(charge, ANDROID_COLUMN_H)).toBe(true);
-  });
-
-  it('les quatre combinaisons tiennent', () => {
-    for (const hasTournaments of [true, false]) {
-      for (const hasNextMatch of [true, false]) {
-        for (const openGames of [0, 2]) {
-          const s = homeSectionSizes({ compact: true, hasHero: false, hasTournaments, hasNextMatch, openGames });
-          expect(
-            fitsWithoutScroll(s, ANDROID_COLUMN_H),
-            `deborde : tournois=${hasTournaments} match=${hasNextMatch} parties=${openGames} -> ${totalMinHeight(s)}dp`,
-          ).toBe(true);
+describe('rien ne peut déborder', () => {
+  it('sur toute la matrice hauteurs × largeurs × états', () => {
+    const fautifs: string[] = [];
+    for (const h of HAUTEURS) {
+      for (const w of LARGEURS) {
+        for (const { nom, etat } of ETATS) {
+          const r = solveHomeLayout(entree(h, w, etat));
+          const total = occupiedHeight(r);
+          if (total > h + 0.01) fautifs.push(`${nom} ${w}x${h} → ${total.toFixed(1)}`);
         }
       }
     }
+    expect(fautifs).toEqual([]);
   });
 
-  it('les proportions PLEINES tiennent aussi, sur l ecran qui vient juste d y passer', () => {
-    // Rien ne verifiait ce cote-la : les planchers pleins n'etaient compares a
-    // aucune hauteur. Un ecran juste au-dessus du seuil prend les proportions
-    // pleines et n'a, par definition, pas un pixel de marge en plus.
-    for (const hasTournaments of [true, false]) {
-      for (const hasNextMatch of [true, false]) {
-        for (const openGames of [0, 2]) {
-          const s = homeSectionSizes({ compact: false, hasHero: false, hasTournaments, hasNextMatch, openGames });
-          expect(
-            fitsWithoutScroll(s, NON_COMPACT_COLUMN_H),
-            `deborde : tournois=${hasTournaments} match=${hasNextMatch} parties=${openGames} -> ${totalMinHeight(s)}dp`,
-          ).toBe(true);
-        }
-      }
-    }
+  it('et la somme fait EXACTEMENT la hauteur quand tout tient', () => {
+    // Pas « à peu près » : le reliquat se partage, il ne reste pas en blanc au
+    // pied de l'écran.
+    const r = solveHomeLayout(entree(680, 393, { hasNextMatch: true, hasTournaments: true, hasPulse: true }));
+    expect(r.contraint).toBe(false);
+    expect(occupiedHeight(r)).toBeCloseTo(680, 5);
+  });
+
+  it('une hauteur pas encore mesurée ne rend rien', () => {
+    const r = solveHomeLayout(entree(0, 393, { hasNextMatch: true, hasTournaments: true }));
+    expect(occupiedHeight(r)).toBe(0);
+    expect(r.contraint).toBe(true);
   });
 });
 
-describe('la banniere de soiree en cours', () => {
-  it('n existe QUE pendant une soiree', () => {
-    expect(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true }).liveBanner)
-      .toBe(null);
-    expect(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true, hasLiveTournament: true }).liveBanner)
-      .not.toBe(null);
-  });
+describe('la hiérarchie de compression', () => {
+  const charge = { hasNextMatch: true, hasTournaments: true, hasPulse: true };
 
-  it('prend la plus petite part de l ecran : une banniere ne s etire pas', () => {
-    // Elle a une part, comme tout le monde depuis que la repartition se fait
-    // en pourcentages d'une hauteur mesuree — une hauteur libre etait
-    // justement ce qui faisait deborder la colonne. Mais c'est la PLUS PETITE
-    // part : une banniere ne prend pas la place d'une carte.
-    const s = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: true, hasLiveTournament: true });
-    expect(s.liveBanner!.flex).toBeGreaterThan(0);
-    expect(s.liveBanner!.flex).toBeLessThan(s.ctas.flex);
-    expect(s.liveBanner!.flex).toBeLessThan(s.nextMatch!.flex);
-  });
-
-  it('le cas le plus charge tient TOUJOURS, banniere comprise', () => {
-    // Elle s'ajoute a un ecran deja plein : c'est exactement le piege paye
-    // deux fois sur ce fichier — une section ajoutee sans etre comptee.
-    for (const compact of [true, false]) {
-      const s = homeSectionSizes({
-        compact, hasTournaments: true, hasNextMatch: true, hasLiveTournament: true,
-      });
-      expect(
-        fitsWithoutScroll(s, compact ? ANDROID_COLUMN_H : NON_COMPACT_COLUMN_H),
-        `deborde : compact=${compact} -> ${totalMinHeight(s)}dp`,
-      ).toBe(true);
-    }
-  });
-});
-
-describe('le texte des boutons grossit quand l ecran se degarnit', () => {
-  it('deux sections de cartes : taille d origine, on ne touche a rien', () => {
-    // Un match programme ET des tournois ouverts : c'est le cas le plus
-    // charge, il n'y a rien a rendre.
-    expect(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true }).ctas.textScale)
-      .toBe(1);
-    expect(homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: true }).ctas.textScale)
-      .toBe(1);
-  });
-
-  it('une seule section de cartes : le texte monte', () => {
-    for (const [hasTournaments, hasNextMatch] of [[true, false], [false, true], [false, false]] as const) {
-      const s = homeSectionSizes({ compact: false, hasTournaments, hasNextMatch, openGames: 1 });
-      expect(s.ctas.textScale, `tournois=${hasTournaments} match=${hasNextMatch}`)
-        .toBeGreaterThan(1);
+  it('les blocs essentiels gardent leur minimum tant que Pulse est là pour céder', () => {
+    for (const h of HAUTEURS) {
+      const r = solveHomeLayout(entree(h, 360, charge));
+      if (r.contraint) continue;   // écran minuscule : cas 3, traité plus bas
+      expect(r.heights.ctas, `ctas à ${h}`).toBeGreaterThanOrEqual(CTA_MIN - 0.01);
+      expect(r.heights.tournaments, `tournois à ${h}`).toBeGreaterThanOrEqual(TOURNOIS_MIN - 0.01);
+      expect(r.heights.nextMatch, `match à ${h}`).toBeGreaterThanOrEqual(MATCH_MIN - 0.01);
     }
   });
 
-  it('le compact leve moins haut que le plein ecran', () => {
-    // Sur un petit telephone, la marge qu'on croit avoir est celle qui
-    // manquera a la carte du dessous.
-    const petit = homeSectionSizes({ compact: true,  hasTournaments: true, hasNextMatch: false });
-    const grand = homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: false });
-    expect(petit.ctas.textScale).toBeGreaterThan(1);
-    expect(petit.ctas.textScale).toBeLessThan(grand.ctas.textScale);
+  it('Pulse se réduit AVANT de disparaître', () => {
+    // Large : il a sa forme complète. Serré : il tombe vers son minimum.
+    const large = solveHomeLayout(entree(740, 393, charge));
+    const serre = solveHomeLayout(entree(560, 393, charge));
+    expect(large.heights.pulse).toBeGreaterThan(serre.heights.pulse);
+    expect(serre.heights.pulse).toBeGreaterThanOrEqual(PULSE_MIN - 0.01);
   });
 
-  it.skip('la rangee reserve la hauteur du texte agrandi', () => {
-    // Obsolete depuis les TUILES (2026-09-22) : le titre a le droit de passer
-    // a la ligne, il n'y a plus de taille a calculer ni de hauteur a reserver
-    // en consequence. `textScale` survit pour l'appelant, sans effet.
-    // Sans ca, le texte grossit dans une rangee restee a sa taille d'avant :
-    // il deborde ou `adjustsFontSizeToFit` le redescend aussitot, et
-    // l'agrandissement ne se voit jamais.
-    const large = homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: false });
-    const serre = homeSectionSizes({ compact: false, hasTournaments: true, hasNextMatch: true });
-    expect(large.ctas.minHeight).toBeGreaterThan(serre.ctas.minHeight);
-  });
-});
-
-describe('l emplacement du milieu, selon ce qui est vrai', () => {
-  const parts = (s: ReturnType<typeof homeSectionSizes>) =>
-    [s.hero, s.ctas, s.tournaments, s.nextMatch, s.openGames, s.filler]
-      .reduce((n, x) => n + (x?.flex ?? 0), 0);
-
-  it('un seul occupant a la fois, jamais deux', () => {
-    // Trois occupants possibles pour une seule place : si deux se reservent de
-    // la hauteur en meme temps, la colonne deborde et l'accueil se met a
-    // defiler — le symptome, une fois de plus, ne ressemblera pas a un
-    // probleme de hauteur.
-    for (const hasTournaments of [true, false]) {
-      for (const hasNextMatch of [true, false]) {
-        for (const openGames of [0, 2]) {
-          const s = homeSectionSizes({ compact: true, hasHero: false, hasTournaments, hasNextMatch, openGames });
-          const occupants = [s.nextMatch, s.openGames, s.filler].filter(x => x !== null);
-          expect(occupants, `tournois=${hasTournaments} match=${hasNextMatch}`).toHaveLength(1);
-        }
-      }
-    }
+  it('Pulse disparaît plutôt que de couper « Prochain match »', () => {
+    // Juste assez pour les essentiels, pas pour Pulse.
+    const h = CTA_MIN + TOURNOIS_MIN + MATCH_MIN + 2 * gapFor(420) + 10;
+    const r = solveHomeLayout(entree(h, 360, charge));
+    expect(r.heights.pulse).toBe(0);
+    expect(r.heights.nextMatch).toBeGreaterThanOrEqual(MATCH_MIN - 0.01);
+    expect(occupiedHeight(r)).toBeLessThanOrEqual(h + 0.01);
   });
 
-  it('un match programme prend la place, quoi qu il arrive', () => {
-    const s = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: true, openGames: 2 });
-    expect(s.nextMatch).not.toBe(null);
-    expect(s.openGames).toBe(null);
+  it('écran vraiment minuscule : tout rétrécit ensemble, rien ne déborde', () => {
+    const r = solveHomeLayout(entree(260, 360, charge));
+    expect(r.contraint).toBe(true);
+    expect(r.heights.pulse).toBe(0);
+    expect(occupiedHeight(r)).toBeLessThanOrEqual(260 + 0.01);
+    expect(r.heights.ctas).toBeGreaterThan(0);
   });
 
-  it('des tournois ouverts : c est le vide qui prend la place, pas des suggestions', () => {
-    // Empiler des parties SOUS une section Tournois surchargerait l'ecran au
-    // lieu de l'aerer.
-    const s = homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false, openGames: 2 });
-    expect(s.filler).not.toBe(null);
-    expect(s.openGames).toBe(null);
-  });
-
-  it('le vide ne reserve AUCUN plancher : il cede des que ca serre', () => {
-    expect(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false }).filler!.minHeight)
-      .toBe(0);
-  });
-
-  it('rend a l ecran « tournois sans match » les parts qu il avait avec la carte vide', () => {
-    // La carte vide valait 1,1 part. Le vide en reprend 0,8 et le hero 0,3 :
-    // ce total-la ne doit pas bouger, sinon la place rendue est repartie
-    // ailleurs que dans le vide et les cartes se deforment.
-    //
-    // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8), 5,9
-    // quand Tournois n'avait plus de part du tout, 6,9 quand il en a retrouve
-    // une, puis 6,3 apres le reequilibrage qui a rendu de l'air au bloc du
-    // bas (tuiles 1,8 -> 1,4 ; Tournois 1 -> 0,8). La part ajoutee ou retiree
-    // est celle de la section concernee, jamais celle du vide.
-    expect(parts(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false })))
-      .toBeCloseTo(6.3);
-  });
-
-  it('« cree le tien » ne reclame pas la place de deux vignettes', () => {
-    // Meme pli que « Prochain match » : ce qui a deux lignes a dire ne prend
-    // pas la hauteur de ce qui en a dix.
-    const avec = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: false, openGames: 2 });
-    const sans = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: false, openGames: 0 });
-    expect(sans.openGames!.minHeight).toBeLessThan(avec.openGames!.minHeight);
-    expect(sans.openGames!.flex).toBeLessThan(avec.openGames!.flex);
-  });
-
-  it('quand on suggere, le hero ne gonfle pas : il est relaye', () => {
-    // Le hero ne prend sa part supplementaire que si PERSONNE ne le relaie.
-    const suggere = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: false, openGames: 2 });
-    const vide    = homeSectionSizes({ compact: true, hasTournaments: true,  hasNextMatch: false });
-    expect(suggere.hero!.flex).toBeLessThan(vide.hero!.flex);
+  it('seul Pulse peut céder', () => {
+    const cedables = homeSections(entree(680, 393, charge)).filter(s => s.yields).map(s => s.key);
+    expect(cedables).toEqual(['pulse']);
   });
 });
 
-describe('l air rendu par la rangee de raccourcis', () => {
-  it('reste de l air : le pire cas garde une vraie marge', () => {
-    // La rangee « Classement · Score » du bas a ete retiree et ses ~52 dp
-    // repartis sur les sections. Le risque, plus tard, est qu'une nouvelle
-    // section les reprenne en silence et qu'on revienne a la colonne au ras
-    // du bord — le symptome ne ressemblera pas a un probleme de hauteur, il
-    // ressemblera a « le haut du hero est coupe ». D'ou ce garde-fou.
-    // Sur la configuration REELLEMENT livree — sans carte de profil.
-    const charge = homeSectionSizes({ compact: true, hasHero: false, hasTournaments: true, hasNextMatch: true });
-    expect(ANDROID_COLUMN_H - totalMinHeight(charge)).toBeGreaterThanOrEqual(24);
+describe('les tuiles suivent la LARGEUR, pas un plancher choisi à la main', () => {
+  it('un écran plus large donne des tuiles plus hautes', () => {
+    expect(ctaHeightFor(430)).toBeGreaterThan(ctaHeightFor(360));
   });
 
-  it('en a mis une part dans les espaces entre cartes', () => {
-    // C'est ce qu'« aerer » veut dire ici : ce n'est pas une carte de plus,
-    // c'est du vide entre celles qui restent.
-    expect(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: true }).gap)
-      .toBeGreaterThan(6);
+  it('jamais sous ce que leur contenu réclame', () => {
+    const r = solveHomeLayout(entree(680, 320, { hasNextMatch: true, hasTournaments: true, hasPulse: true }));
+    expect(r.heights.ctas).toBeGreaterThanOrEqual(CTA_MIN - 0.01);
   });
 });
 
-describe("sans carte de profil (accueil 2026-09-22)", () => {
-  const base = { compact: false, hasTournaments: false, hasNextMatch: true, openGames: 0 };
-
-  it("la section n est pas rendue", () => {
-    expect(homeSectionSizes({ ...base, hasHero: false }).hero).toBeNull();
+describe('la place se partage, elle ne se gaspille pas', () => {
+  it('sur un grand écran, Pulse prend sa forme complète', () => {
+    const r = solveHomeLayout(entree(740, 412, { hasNextMatch: true, hasTournaments: true, hasPulse: true }));
+    expect(r.heights.pulse).toBeGreaterThanOrEqual(PULSE_IDEAL - 0.01);
   });
 
-  it("les autres sections gardent EXACTEMENT leurs proportions", () => {
-    // Leur redistribuer la part du hero les ferait doubler de hauteur pour
-    // remplir un ecran qui defile desormais de toute facon.
-    const avec = homeSectionSizes({ ...base });
-    const sans = homeSectionSizes({ ...base, hasHero: false });
-    expect(sans.ctas.flex).toBe(avec.ctas.flex);
-    expect(sans.nextMatch!.flex).toBe(avec.nextMatch!.flex);
-  });
-
-  it("par defaut, la carte est toujours la — la retirer reste un choix explicite", () => {
-    expect(homeSectionSizes({ ...base }).hero).not.toBeNull();
+  it('l espace entre blocs ne dépend que de la place, pas du modèle de téléphone', () => {
+    expect(gapFor(500)).toBeLessThan(gapFor(700));
   });
 });
 
-// ── « Ça bouge chez les PAGUISTES » ────────────────────────────────────────
-//
-// Sur Android, ses deux cartes étaient coupées par la barre d'onglets : leurs
-// boutons (« Voir les joueurs », « Voter ») n'existaient tout simplement plus
-// à l'écran. Le bloc s'ajoutait au bas de la colonne sans que sa hauteur soit
-// réservée nulle part — le piège nº 1 de l'en-tête, une troisième fois.
-describe('le bloc du bas occupe de la place, et le budget le sait', () => {
-  it('sa hauteur compte dans le total', () => {
-    const avec = sizes({ hasNextMatch: true, hasPulse: true });
-    const sans = sizes({ hasNextMatch: true, hasPulse: false });
-    expect(sans.pulse).toBeNull();
-    expect(totalMinHeight(avec)).toBe(totalMinHeight(sans) + avec.pulse!.minHeight + avec.gap);
+describe('les blocs presents suivent ce qui est vrai', () => {
+  it('sans match ni tournoi, l emplacement du milieu revient aux suggestions', () => {
+    const cles = homeSections(entree(680, 393, { hasNextMatch: false, hasTournaments: false })).map(s => s.key);
+    expect(cles).toContain('openGames');
+    expect(cles).not.toContain('nextMatch');
   });
 
-  it('il a une part, comme tout le monde', () => {
-    // Une part (`flex`) le ferait grandir avec l'écran, au détriment de ce qui
-    // compte davantage plus haut. Deux cartes n'ont pas plus à dire sur une
-    // tablette que sur un téléphone.
-    // Il a desormais une PART, comme tout le monde : c'est justement parce
-    // qu'il n'en avait pas — hauteur libre, egale a son contenu — qu'il
-    // debordait. Ce qui le distingue, c'est qu'il CEDE sa place.
-    expect(sizes({ hasPulse: true }).pulse!.flex).toBeGreaterThan(0);
+  it('avec un match, pas de suggestions', () => {
+    const cles = homeSections(entree(680, 393, { hasNextMatch: true, hasTournaments: false })).map(s => s.key);
+    expect(cles).toContain('nextMatch');
+    expect(cles).not.toContain('openGames');
   });
 
-  it("sur la plus petite colonne Android, il fait déborder — et c'est assumé", () => {
-    // Constat, pas regret : avec ce bloc, le cas chargé ne tient pas dans 517
-    // dp. C'est précisément pourquoi le filet (le ScrollView) doit rester
-    // atteignable — le test suivant s'en assure. Si un jour on raccourcit les
-    // cartes, ce test échouera : ce sera une bonne nouvelle à enregistrer ici.
-    const charge = sizes({ hasNextMatch: true, hasPulse: true });
-    expect(fitsWithoutScroll(charge, ANDROID_COLUMN_H)).toBe(false);
-  });
-});
-
-describe('aucun plancher : la seule chose qui garantit que tout rentre', () => {
-  it('chaque section a une part, et AUCUN plancher', () => {
-    // C'est l'invariant du fichier. Une part se partage toujours ; un
-    // plancher, lui, permet a un bloc de refuser sa part — et la somme
-    // depasse. C'est ce qui poussait le dernier bloc sous la barre d'onglets.
-    //
-    // Une repartition maison (mesure + distribution en points) a remplace ce
-    // modele un temps : une demi-douzaine de corrections, toutes pour une
-    // erreur de comptabilite differente — marges oubliees, en-tete compte en
-    // trop, mesure prise dans une zone deroulante qui suivait son contenu.
-    // Flexbox, lui, connait la hauteur et n'en estime aucune part.
-    const cas = [
-      { compact: true, hasTournaments: true, hasNextMatch: true, hasPulse: true, hasLiveTournament: true, openGames: 2 },
-      { compact: false, hasTournaments: false, hasNextMatch: false, hasPulse: false, openGames: 0 },
-      { compact: true, hasTournaments: true, hasNextMatch: false, hasPulse: true, openGames: 0 },
-    ];
-    for (const c of cas) {
-      const s = homeSectionSizes(c as any);
-      for (const [nom, sec] of Object.entries(s)) {
-        if (!sec || typeof sec !== 'object' || !('minHeight' in sec)) continue;
-        expect((sec as any).flex, `${nom} sans part`).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it("l'accueil n'utilise aucun plancher sur ses sections", () => {
-    const { readFileSync } = require('node:fs');
-    const { join } = require('node:path');
-    const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    const colonne = src.slice(src.indexOf('LA REPARTITION EST FAITE PAR FLEXBOX'));
-    expect(colonne).toContain('flex: sizes.ctas.flex');
-    // `minHeight: sizes.` ou `height: parts.` = le retour du probleme.
-    expect(colonne).not.toContain('minHeight: sizes.');
-    expect(colonne).not.toContain('parts.');
+  it('pendant une soirée, la bannière remplace le bandeau Tournois', () => {
+    const cles = homeSections(entree(680, 393, { hasNextMatch: true, hasTournaments: true, hasLiveBanner: true })).map(s => s.key);
+    expect(cles).toContain('liveBanner');
+    expect(cles).not.toContain('tournaments');
   });
 });
