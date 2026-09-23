@@ -510,7 +510,10 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     if (isDefi && step === 2) return defiPartnerChosen;          // Mon binôme
     // Un defi avec adversaire designe n'a pas de bande : l'exiger bloquerait
     // la publication sur un reglage qu'on ne montre meme plus.
-    if (isDefi && step === 3) return (defiTargeted || isDefiBandWideEnough(form.minLevel, form.maxLevel)) && DEFI_STAKES.some(p => p.value === form.stakeMultiplier);
+    // La largeur minimale vaut aussi pour un defi cible : son plafond
+    // contraint desormais le binome que l'adversaire amenera, et une
+    // fourchette de largeur nulle exigerait une moyenne au centieme pres.
+    if (isDefi && step === 3) return isDefiBandWideEnough(form.minLevel, form.maxLevel) && DEFI_STAKES.some(p => p.value === form.stakeMultiplier);
     return true; // L'équipe (non-défi) : publication libre comme aujourd'hui
   })();
 
@@ -1634,7 +1637,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               'Niveau moyen du binôme',
               `C'est la moyenne de ton niveau et de celui de ${partenaire}. `
               + (targeted
-                ? 'Pour un défi ciblé, les adversaires sont déjà choisis : pas de plafond à régler.'
+                ? 'Ton adversaire est choisi, mais c\u2019est LUI qui amènera son binôme : leur niveau moyen devra tenir entre ce plancher et le maximum ci-dessous.'
                 : 'Les binômes adverses doivent avoir au moins ce niveau moyen, et au plus le niveau maximum choisi ci-dessous.'),
             )}
           >
@@ -1642,15 +1645,25 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
           </TouchableOpacity>
         </View>
 
-        {/* Niveau maximum adverse — masqué en mode ciblé (adversaires pré-désignés) */}
-        {!targeted && (
+        {/* Niveau maximum adverse — visible AUSSI en mode cible.
+            Il etait masque : « les adversaires sont deja choisis, pas de
+            plafond a regler ». C'etait vrai tant qu'un defi cible opposait
+            deux binomes entierement nommes. Depuis que l'adversaire designe
+            AMENE son propre binome, ce plafond est la seule chose qui
+            contraigne le joueur qu'il choisira — et sans lui, rien ne
+            l'empeche d'arriver avec n'importe qui. */}
+        {(
           <>
-            <Text style={[sty.sectionLabel, { marginBottom: -4 }]}>Niveau maximum adverse</Text>
+            <Text style={[sty.sectionLabel, { marginBottom: -4 }]}>
+              {targeted ? 'Niveau maximum du binôme adverse' : 'Niveau maximum adverse'}
+            </Text>
             <View style={carte}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
                 <Icon name="signal" size={26} color={Colors.textPrimary} stroke={2.2} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Niveau maximum adverse</Text>
+                  <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                    {targeted ? 'Le binôme qu\u2019il amènera' : 'Niveau maximum adverse'}
+                  </Text>
                   <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, marginTop: 1 }}>Limite du niveau moyen du binôme</Text>
                 </View>
               </View>

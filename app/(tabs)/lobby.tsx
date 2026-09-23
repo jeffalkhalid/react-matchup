@@ -3447,8 +3447,14 @@ export default function LobbyScreen() {
         match_date: matchDateIso,
         location: data.location,
         has_reservation: data.hasReservation,
-        min_elo: data.isTargeted ? null : padelLevelToElo(data.minLevel),
-        max_elo: data.isTargeted ? null : padelLevelToElo(data.maxLevel),
+        // ENREGISTREE aussi pour un defi cible. Elle etait mise a vide — « les
+        // adversaires sont deja choisis » — et la regle du jeu (« la moyenne
+        // du binome candidat doit tomber dans [min_elo, max_elo] », verifiee
+        // par le serveur) n'avait alors plus rien a comparer. Depuis que
+        // l'adversaire designe amene son propre binome, c'est le seul garde-fou
+        // sur ce joueur-la : on pouvait arriver a 2,5 sur un defi 4,2-4,8.
+        min_elo: padelLevelToElo(data.minLevel),
+        max_elo: padelLevelToElo(data.maxLevel),
         status: plan.status,
         spots_available: 3 - plan.invites.length,
         target_players: plan.targetPlayers,
