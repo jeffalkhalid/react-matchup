@@ -18,6 +18,8 @@ import { Colors, Fonts, formatPadelLevel } from '../lib/theme';
 import { Icon } from './community/icons';
 import { PlayerAvatar } from './PlayerAvatar';
 import { supabase } from '../lib/supabase';
+import { isBinomeEligible, binomeAvg } from '../lib/defis';
+import { eloToLevel } from '../lib/theme';
 
 export interface PartnerCandidate {
   id: string;
@@ -26,7 +28,7 @@ export interface PartnerCandidate {
   avatar_path?: string | null;
 }
 
-export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyId, subtitle }: {
+export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyId, subtitle, bande }: {
   visible: boolean;
   /** Déjà dans la partie : on ne les propose pas. */
   excludeIds: string[];
@@ -40,6 +42,16 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
    * quelqu'un à une partie qu'on a déjà rejointe.
    */
   subtitle?: string;
+  /**
+   * La contrainte de niveau du défi, quand il en a une.
+   *
+   * Un défi se relève dans une bande, et c'est la MOYENNE du duo qui doit y
+   * tenir — la règle est déjà appliquée dans « Choisis ton binôme » du hub
+   * Défi. Cette fenêtre-ci ne la connaissait pas : on pouvait y amener un
+   * joueur de niveau 2,5 sur un défi 4,2–4,8. Le serveur, lui, ne dit rien —
+   * la règle ne vit que dans les écrans, donc chaque écran doit la porter.
+   */
+  bande?: { monElo: number; minElo: number | null; maxElo: number | null } | null;
 }) {
   const insets = useSafeAreaInsets();
   const { height: hauteurEcran } = useWindowDimensions();
@@ -148,16 +160,18 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
                 </Text>
               ) : rows.map(p => {
                 const busy = busyId === p.id;
+                const admis = !bande || bande.minElo == null || bande.maxElo == null
+                  || isBinomeEligible(bande.monElo, p.elo_score, bande.minElo, bande.maxElo);
                 return (
                   <TouchableOpacity
                     key={p.id}
                     onPress={() => onPick(p)}
-                    disabled={!!busyId}
+                    disabled={!!busyId || !admis}
                     activeOpacity={0.8}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 12,
                       backgroundColor: Colors.bgCard, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
-                      padding: 12, opacity: busyId && !busy ? 0.5 : 1,
+                      padding: 12, opacity: (busyId && !busy) || !admis ? 0.5 : 1,
                     }}
                   >
                     <PlayerAvatar name={p.name} path={p.avatar_path} size={44}
@@ -165,8 +179,12 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
                       fontFamily={Fonts.uiBlack} fontSize={16} initialsMax={2} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontSize: 14, color: Colors.textPrimary }}>{p.name}</Text>
-                      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: Colors.textMuted, marginTop: 1 }}>
-                        Niv. {formatPadelLevel(p.elo_score)}
+                      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, color: admis ? Colors.textMuted : Colors.danger, marginTop: 1 }}>
+                        {admis
+                          ? `Niv. ${formatPadelLevel(p.elo_score)}`
+                          // On DIT pourquoi : « hors niveau » sans le chiffre
+                          // laisse chercher lequel des deux est en cause.
+                          : `Niv. ${formatPadelLevel(p.elo_score)} · votre moyenne ${eloToLevel(binomeAvg(bande!.monElo, p.elo_score)).toFixed(1)} sort de la bande`}
                       </Text>
                     </View>
                     {busy

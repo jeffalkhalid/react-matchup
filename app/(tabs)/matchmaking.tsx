@@ -16,8 +16,7 @@ import {
   fetchMyApplications, fetchBinomeInvitations, fetchMyDefiInvites, defiGameWithMyBinome, defiOtherBinomeCount,
   acceptBinomeInvitation, declineBinomeInvitation, withdrawApplication, applyToDefi, cancelDefi,
   applicationPairAverage, targetedOpponentsLine,
-  type DefiGame, type DefiApplication, type DefiInvite,
-} from '../../lib/defis';
+  type DefiGame, type DefiApplication, type DefiInvite, isBinomeEligible } from '../../lib/defis';
 import { defiRefusalMessage } from '../../lib/defiMessages';
 import { PlayerAvatar as Photo } from '../../components/PlayerAvatar';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
@@ -250,7 +249,7 @@ export default function MatchmakingScreen() {
   const router = useRouter();
   // Relever un défi nominatif : même hook que le lobby (hooks/useReleveDefi).
   const releve = useReleveDefi({
-    me: player ? { id: player.id, name: player.name } : null,
+    me: player ? { id: player.id, name: player.name, elo_score: player.elo_score } : null,
     onDone: () => { void fetchData(); reloadNotifs(); },
   });
   const launchDefi = () => router.push('/(tabs)/lobby?create=1&challenge=1' as any);
@@ -393,11 +392,12 @@ export default function MatchmakingScreen() {
         const minE = releverGame.min_elo ?? 0;
         const maxE = releverGame.max_elo ?? 999999;
 
-        const cands = (freqPlayers as any[]).filter(p => {
-          if (excludedPartnerIds.has(p.id)) return false;
-          const avg = (myElo + p.elo_score) / 2;
-          return avg >= minE && avg <= maxE;
-        });
+        // `isBinomeEligible` (lib/defis) porte la regle : c'est la MOYENNE du
+        // duo qui doit tenir dans la bande. Elle etait recopiee ici et plus
+        // bas, et absente de « Amene ton partenaire » — trois lectures pour
+        // une regle, dont une qui ne l'appliquait pas du tout.
+        const cands = (freqPlayers as any[]).filter(p =>
+          !excludedPartnerIds.has(p.id) && isBinomeEligible(myElo, p.elo_score, minE, maxE));
 
         if (!cands.length) { setSuggestedPartners([]); setLoadingSuggestions(false); return; }
 
@@ -734,8 +734,10 @@ export default function MatchmakingScreen() {
                 </Text>
                 <View style={{ gap: 8 }}>
                   {partnerResults.map(p => {
-                    const avg = ((player?.elo_score ?? 0) + p.elo_score) / 2;
-                    const eligible = !releverGame || (avg >= (releverGame.min_elo ?? 0) && avg <= (releverGame.max_elo ?? 999999));
+                    const eligible = !releverGame || isBinomeEligible(
+                      player?.elo_score ?? 0, p.elo_score,
+                      releverGame.min_elo ?? 0, releverGame.max_elo ?? 999999,
+                    );
                     const pris = busyPartnerIds.has(p.id);
                     const selectable = eligible && !pris && !applying;
                     return (
@@ -1130,6 +1132,11 @@ export default function MatchmakingScreen() {
       )}
 
       {partnerPickerModal}
+      {/* La fenetre du binome, quand on releve un defi nominatif depuis ici.
+          Elle manquait : `releve.start()` s'executait, l'etat passait bien a
+          « en attente d'un binome »... et rien ne s'affichait. Le bouton
+          « Relever le defi » paraissait mort, on tapait dessus en boucle. */}
+      {releve.sheet}
     </View>
   );
 }

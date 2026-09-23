@@ -2765,7 +2765,7 @@ export default function LobbyScreen() {
   // Relever un défi nominatif : état, fenêtre et écritures vivent dans
   // hooks/useReleveDefi — le hub Défi applique EXACTEMENT la même règle.
   const releve = useReleveDefi({
-    me: player ? { id: player.id, name: player.name } : null,
+    me: player ? { id: player.id, name: player.name, elo_score: player.elo_score } : null,
     onDone: () => { fetchData(); reloadNotifs(); },
   });
 

@@ -48,7 +48,7 @@ export function InvitationCard({ playerId }: { playerId: string }) {
   // Relever un défi nominatif : même hook que le lobby et le hub Défi
   // (hooks/useReleveDefi) — une seule écriture de la règle pour trois écrans.
   const releve = useReleveDefi({
-    me: player ? { id: player.id, name: player.name } : null,
+    me: player ? { id: player.id, name: player.name, elo_score: player.elo_score } : null,
     onDone: load,
   });
 

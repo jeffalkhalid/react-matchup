@@ -27,6 +27,9 @@ export interface ReleveGame {
   is_challenge?: boolean | null;
   is_targeted?: boolean | null;
   status?: string | null;
+  /** La bande de niveau du défi : la MOYENNE du duo doit y tenir. */
+  min_elo?: number | null;
+  max_elo?: number | null;
   participants?: {
     id?: string | null; player_id: string; status: string;
     team_side?: string | null; invite_expires_at?: string | null;
@@ -39,6 +42,8 @@ interface Pending {
   gameId: string;
   teamSide: string;
   excludeIds: string[];
+  /** La contrainte de niveau, transmise telle quelle au sélecteur. */
+  bande: { monElo: number; minElo: number | null; maxElo: number | null } | null;
 }
 
 /** Les joueurs déjà dans la partie — jamais reproposés comme binôme. */
@@ -52,7 +57,7 @@ function dejaLa(game: ReleveGame): string[] {
 }
 
 export function useReleveDefi({ me, onDone }: {
-  me: { id: string; name: string } | null;
+  me: { id: string; name: string; elo_score: number } | null;
   /** Appelé après une relève réussie — chaque écran recharge ce qu'il affiche. */
   onDone: () => void;
 }) {
@@ -67,7 +72,10 @@ export function useReleveDefi({ me, onDone }: {
     if (!me) return false;
     const siege = partnerSeatAfterAccepting(game, participantId, me.id);
     if (!siege) return false;
-    setPending({ participantId, gameId: game.id, teamSide: siege, excludeIds: dejaLa(game) });
+    setPending({
+      participantId, gameId: game.id, teamSide: siege, excludeIds: dejaLa(game),
+      bande: { monElo: me.elo_score, minElo: game.min_elo ?? null, maxElo: game.max_elo ?? null },
+    });
     return true;
   };
 
@@ -79,7 +87,10 @@ export function useReleveDefi({ me, onDone }: {
     if (!me) return false;
     const siege = partnerSeatToFill(game, me.id);
     if (!siege) return false;
-    setPending({ participantId: null, gameId: game.id, teamSide: siege, excludeIds: dejaLa(game) });
+    setPending({
+      participantId: null, gameId: game.id, teamSide: siege, excludeIds: dejaLa(game),
+      bande: { monElo: me.elo_score, minElo: game.min_elo ?? null, maxElo: game.max_elo ?? null },
+    });
     return true;
   };
 
@@ -156,6 +167,7 @@ export function useReleveDefi({ me, onDone }: {
     <InvitePartnerSheet
       visible={!!pending}
       excludeIds={pending?.excludeIds ?? []}
+      bande={pending?.bande ?? null}
       busyId={busyId}
       subtitle={pending?.participantId
         ? 'Un défi se joue à deux. En le choisissant, tu relèves le défi et il reçoit son invitation.'
