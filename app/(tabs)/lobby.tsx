@@ -36,6 +36,8 @@ import {
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
 import { useReleveDefi } from '../../hooks/useReleveDefi';
+import { stakeOutcomeForGame, stakeOutcomeForJoining } from '../../lib/stakePreview';
+import { StakeLine } from '../../components/StakeLine';
 import { formatGameDistance, sortByProximity, sortByMatchDate, originLabel, normClubName } from '../../lib/geo';
 import { gpsFailureMessage, shouldOfferGps } from '../../lib/originPolicy';
 import type { GpsPermission } from '../../lib/location';
@@ -678,7 +680,7 @@ async function shareGame(game: EnrichedGame) {
 }
 
 // ─── Game Card ────────────────────────────────────────────────
-export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, footerSlot, tourSlotAnchor, avatarSize }: {
+export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onChangeSide, onCreatorChangeSide, hideActions, scorable, onScorePress, onAcceptInvitation, onDeclineInvitation, footerSlot, tourSlotAnchor, avatarSize, stakeJoining }: {
   game: EnrichedGame; variant: 'explore' | 'upcoming' | 'history';
   myElo: number; playerId?: string; onPress: () => void;
   onApply?: (gameId: string, side: string) => void;
@@ -692,9 +694,20 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
   footerSlot?: React.ReactNode;   // contenu additionnel rendu DANS la carte (ex. actions défi)
   tourSlotAnchor?: boolean;       // visite guidée : ancre 'lobby-slot' sur le 1ᵉʳ slot libre
   avatarSize?: number;            // taille fixe des photos (l'accueil passe 42) ; absente = s'adapte à la largeur
+  /**
+   * « Je n'y suis pas encore » : le chiffre se calcule comme si je RELEVAIS
+   * ce défi. Mes adversaires sont le camp du créateur ; mon binôme n'étant
+   * pas choisi, c'est une fourchette. Sans ce mode, un défi à relever
+   * n'afficherait rien du tout — je n'en suis pas un joueur.
+   */
+  stakeJoining?: boolean;
 }) {
   const router = useRouter();
   const { width: winW } = useWindowDimensions();
+  // Ma fiche COMPLETE : le mouvement de niveau depend surtout de mon
+  // coefficient personnel. Lue ici et dans la fiche du match par la meme
+  // fonction, pour que les deux ne puissent pas annoncer deux chiffres.
+  const { player: maFiche } = usePlayer();
   // Distance depuis le point de départ (GPS récent ou zone). L'historique n'en
   // a pas besoin. Même fonction que le filtre : la carte et la liste ne
   // peuvent pas se contredire.
@@ -914,6 +927,22 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               )}
             </View>
           ) : null}
+
+          {/* Ce que ce defi met en jeu POUR MOI. Sur les defis seulement : la
+              mise y multiplie le mouvement, c'est la que le chiffre surprend.
+              Et seulement dans « A venir » — dans l'Explorer ce n'est pas
+              encore mon match, le chiffre n'y voudrait rien dire. */}
+          {variant === 'upcoming' && game.is_challenge && maFiche ? (() => {
+            const moi = {
+              id: maFiche.id, elo_score: maFiche.elo_score,
+              win_count: maFiche.win_count, loss_count: maFiche.loss_count,
+              last_match_at: maFiche.last_match_at, fiability_pct: maFiche.fiability_pct,
+            };
+            const e = stakeJoining
+              ? stakeOutcomeForJoining(game as any, moi, null)
+              : stakeOutcomeForGame(game as any, moi);
+            return e ? <StakeLine outcome={e.outcome} exact={e.exact} s={ps} /> : null;
+          })() : null}
         </View>
       </View>
 

@@ -10,6 +10,9 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, courtNeedsAttention, partnerSeatToFill } from '../../lib/games';
+import { stakeOutcomeForGame } from '../../lib/stakePreview';
+import { StakePreview } from '../../components/create/StakePreview';
+import { usePlayer } from '../../hooks/usePlayer';
 import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
 import { fetchPlayersTotals, type PlayerTotals } from '../../lib/playerStats';
 import { FitTitle } from '../../components/DisplayTitle';
@@ -458,6 +461,26 @@ function GameDetailsSheetContenu({
       .catch(() => {});
     return () => { cancelled = true; };
   }, [filledIds]);
+
+  // Ma fiche COMPLETE, pas seulement mon niveau : le mouvement depend surtout
+  // de mon coefficient personnel (nombre de matchs, fiabilite). La lire ici
+  // plutot que de la faire descendre en prop evite que la carte et la fiche
+  // annoncent deux chiffres differents.
+  const { player: maFiche } = usePlayer();
+  /**
+   * Ce que ce match met en jeu POUR MOI.
+   *
+   * Deux joueurs du meme match ne voient pas le meme chiffre : l'ecart entre
+   * les camps leur est commun, leur coefficient personnel non. Ce n'est pas
+   * une approximation, c'est ce que fait le moteur a la validation du score.
+   */
+  const enjeu = maFiche
+    ? stakeOutcomeForGame(game as any, {
+        id: maFiche.id, elo_score: maFiche.elo_score,
+        win_count: maFiche.win_count, loss_count: maFiche.loss_count,
+        last_match_at: maFiche.last_match_at, fiability_pct: maFiche.fiability_pct,
+      })
+    : null;
 
   const isCreator    = game.creator_id === playerId;
   // Défi ciblé en brouillon : phrase visible au créateur ET à son partenaire
@@ -957,6 +980,20 @@ function GameDetailsSheetContenu({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 12, gap: 14, paddingBottom: (ctaH || insets.bottom) + 16 }}
           >
+
+            {/* Ce que ce match met en jeu POUR MOI — en tete du corps, juste
+                sous les pastilles : c'est la premiere question qu'on se pose
+                avant d'accepter, pas une note de bas de page. */}
+            {enjeu && (
+              <StakePreview
+                outcome={enjeu.outcome}
+                exact={enjeu.exact}
+                cible={(game as any).is_targeted === true}
+                note={enjeu.exact
+                  ? 'Calculé sur les quatre joueurs. Un score large rapporte davantage — et ton chiffre n’est pas celui de tes partenaires.'
+                  : 'Le camp adverse n’est pas complet : fourchette calculée sur la bande de niveau du défi.'}
+              />
+            )}
 
             {/* Status banners */}
             {(isFull || outOfLevel) && (

@@ -24,6 +24,8 @@ import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
 import { isCreatorConflict } from '../../lib/games';
 import { useReleveDefi } from '../../hooks/useReleveDefi';
+import { stakeOutcomeForJoining, formatLevelDelta, bestGain, worstLoss } from '../../lib/stakePreview';
+import { VERT_TEXTE, ROUGE_TEXTE } from '../../components/StakeLine';
 import { fetchBusyPlayerIds } from '../../lib/slotConflict';
 import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
@@ -86,7 +88,7 @@ function DefiActionButton({ label, onPress, danger }: { label: string; onPress: 
   );
 }
 
-function DefiGameCard({ game, myId, myElo, onPress, children }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode }) {
+function DefiGameCard({ game, myId, myElo, onPress, children, joining }: { game: DefiGame; myId: string; myElo: number; onPress?: () => void; children?: ReactNode; joining?: boolean }) {
   // is_creator / my_status absents d'un DefiGame → sinon GameCard masque
   // calendrier + chat (gated sur `is_creator || my_status==='accepted'`).
   // On les dérive pour que le CRÉATEUR ET les participants ACCEPTÉS aient le pied complet.
@@ -98,6 +100,7 @@ function DefiGameCard({ game, myId, myElo, onPress, children }: { game: DefiGame
       variant="upcoming" myElo={myElo} playerId={myId}
       onPress={onPress ?? (() => {})}
       footerSlot={children}
+      stakeJoining={joining}
     />
   );
 }
@@ -638,6 +641,42 @@ export default function MatchmakingScreen() {
   if (!player) return null;
 
   // ── Partner Picker Modal ─────────────────────────────────────
+  /**
+   * Ce que relever ce défi AVEC CE BINÔME me rapporterait ou me coûterait.
+   *
+   * Mes adversaires sont connus au niveau près — un défi n'est publié qu'une
+   * fois le camp du créateur complet. La seule inconnue était mon propre
+   * binôme, et c'est précisément ce qu'on choisit ici : le chiffre devient
+   * exact, et il change d'un candidat à l'autre. C'est ce qui rend cet écran
+   * utile plutôt que décoratif.
+   */
+  const enjeuAvec = (cand: { id: string; elo_score: number }) => {
+    if (!releverGame || !player) return null;
+    return stakeOutcomeForJoining(
+      releverGame as any,
+      {
+        id: player.id, elo_score: player.elo_score,
+        win_count: player.win_count, loss_count: player.loss_count,
+        last_match_at: player.last_match_at, fiability_pct: player.fiability_pct,
+      },
+      { id: cand.id, elo_score: cand.elo_score },
+    );
+  };
+
+  /** Le gain et la perte, en une ligne, sous le niveau du candidat. */
+  const LigneEnjeu = ({ cand }: { cand: { id: string; elo_score: number } }) => {
+    const e = enjeuAvec(cand);
+    if (!e) return null;
+    return (
+      <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, marginTop: 2 }}>
+        <Text style={{ color: VERT_TEXTE, fontFamily: Fonts.uiBlack }}>{formatLevelDelta(bestGain(e.outcome))}</Text>
+        <Text style={{ color: Colors.textMuted }}>{'  /  '}</Text>
+        <Text style={{ color: ROUGE_TEXTE, fontFamily: Fonts.uiBlack }}>{formatLevelDelta(worstLoss(e.outcome))}</Text>
+        <Text style={{ color: Colors.textMuted }}> de niveau</Text>
+      </Text>
+    );
+  };
+
   const partnerPickerModal = (
     <Modal
       visible={releverGame !== null}
@@ -715,6 +754,7 @@ export default function MatchmakingScreen() {
                             <Text style={{ fontSize: 11, color: Colors.textMuted }}>
                               {pris ? 'Déjà une partie à cette heure-là' : `Niv. ${eloToLevel(p.elo_score).toFixed(1)} · ELO ${Math.round(p.elo_score)}`}
                             </Text>
+                            {!pris && <LigneEnjeu cand={p} />}
                           </View>
                           {!eligible ? <Pill variant="danger">Non éligible</Pill>
                             : pris ? <Pill variant="neutral">Indisponible</Pill>
@@ -767,6 +807,7 @@ export default function MatchmakingScreen() {
                             <Text style={{ fontSize: 11, color: Colors.textMuted }}>
                               {pris ? 'Déjà une partie à cette heure-là' : `Niv. ${eloToLevel(p.elo_score).toFixed(1)} · ELO ${Math.round(p.elo_score)}`}
                             </Text>
+                            {!pris && <LigneEnjeu cand={p} />}
                           </View>
                           {pris ? <Pill variant="neutral">Indisponible</Pill> : (
                             <>
@@ -871,7 +912,7 @@ export default function MatchmakingScreen() {
                     {sortedOpenDefis.map(g => {
                       const myApp = myApplications.find(a => a.game_id === g.id);
                       return (
-                        <DefiGameCard key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
+                        <DefiGameCard joining key={g.id} game={g} myId={player.id} myElo={player.elo_score} onPress={() => openDefiDetails(g.id)}>
                           {myApp ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}>
                               <Pill variant="warning">⏳ Postulé</Pill>

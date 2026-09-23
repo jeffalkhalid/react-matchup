@@ -15,12 +15,10 @@
 import { View, Text } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
-import { formatLevelRange, type StakeOutcome } from '../../lib/stakePreview';
-
-const VERT_FOND = 'rgba(16,185,129,0.12)';
-const VERT_TEXTE = '#047857';
-const ROUGE_FOND = 'rgba(239,68,68,0.10)';
-const ROUGE_TEXTE = '#B91C1C';
+import { formatLevelDelta, bestGain, worstLoss, type StakeOutcome } from '../../lib/stakePreview';
+// Memes couleurs que la ligne compacte des cartes : deux verts differents
+// pour la meme idee se remarquent des que les deux affichages se suivent.
+import { VERT_FOND, VERT_TEXTE, ROUGE_FOND, ROUGE_TEXTE } from '../StakeLine';
 
 function Cote({ titre, valeur, fond, couleur }: {
   titre: string; valeur: string; fond: string; couleur: string;
@@ -40,7 +38,7 @@ function Cote({ titre, valeur, fond, couleur }: {
   );
 }
 
-export function StakePreview({ outcome, cible, exact }: {
+export function StakePreview({ outcome, cible, exact, note }: {
   /** `null` seulement si on ne connaît même pas les niveaux. */
   outcome: StakeOutcome | null;
   /** Défi ciblé : les adversaires sont connus, la fourchette est plus serrée. */
@@ -50,22 +48,33 @@ export function StakePreview({ outcome, cible, exact }: {
    * la mise). Sinon on calcule sur les seuls niveaux et on le dit.
    */
   exact: boolean;
+  /**
+   * Remplace la phrase du bas.
+   *
+   * Dans l'assistant, « approximatif » veut dire « on n'a que les niveaux ».
+   * Dans la fiche d'un match, ça veut dire « il manque un joueur en face ».
+   * Deux causes differentes ne peuvent pas partager la meme explication.
+   */
+  note?: string;
 }) {
   if (!outcome) return null;
 
   return (
     <View style={{ backgroundColor: Colors.bgCardAlt, borderRadius: 14, padding: 12, marginTop: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
+        {/* Une seule valeur par cote : le meilleur gain et la pire perte.
+            La fourchette complete disait la meme chose en deux fois plus de
+            caracteres — « jusqu'a » suffit a dire que c'est une borne. */}
         <Cote
           titre="Si tu gagnes"
-          valeur={formatLevelRange(outcome.winMin, outcome.winMax)}
+          valeur={`jusqu'à ${formatLevelDelta(bestGain(outcome))}`}
           fond={VERT_FOND}
           couleur={VERT_TEXTE}
         />
         <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 13, color: Colors.textMuted, paddingBottom: 12 }}>·</Text>
         <Cote
           titre="Si tu perds"
-          valeur={formatLevelRange(outcome.loseMin, outcome.loseMax)}
+          valeur={`jusqu'à ${formatLevelDelta(worstLoss(outcome))}`}
           fond={ROUGE_FOND}
           couleur={ROUGE_TEXTE}
         />
@@ -80,7 +89,7 @@ export function StakePreview({ outcome, cible, exact }: {
           <Icon name="eye" size={12} color={Colors.textMuted} stroke={2} />
         </View>
         <Text style={{ flex: 1, fontFamily: Fonts.ui, fontSize: 11, lineHeight: 15, color: Colors.textMuted }}>
-          {!exact
+          {note ?? (!exact
             // On n'a que les niveaux : on le dit plutôt que de laisser croire
             // à un calcul complet. La fiabilité pèse plus que la mise.
             ? 'Estimation sur les niveaux. Le chiffre s’affinera avec la fiabilité de chaque joueur.'
@@ -88,7 +97,7 @@ export function StakePreview({ outcome, cible, exact }: {
               // Niveaux et fiabilités sont dans le calcul : la seule inconnue
               // restante est la manière de gagner.
               ? 'Calculé sur les niveaux et la fiabilité des quatre joueurs. Un score large rapporte davantage.'
-              : 'Fourchette calculée sur la bande de niveau choisie. Elle se resserrera quand le binôme adverse sera connu.'}
+              : 'Fourchette calculée sur la bande de niveau choisie. Elle se resserrera quand le binôme adverse sera connu.')}
         </Text>
       </View>
     </View>
