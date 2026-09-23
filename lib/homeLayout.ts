@@ -254,7 +254,10 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // Le bloc qui CEDE : sa part revient aux autres quand la place manque, et
     // il s'efface plutot que de s'afficher coupe. Son contenu reste atteignable
     // en entier dans l'onglet Activite, ce qui rend la disparition acceptable.
-    pulse: i.hasPulse ? { flex: 1.6, minHeight: c ? 128 : 148 } : null,
+    // Le plancher couvre la forme MINIMALE reelle : titre de section (31) +
+    // carte reduite a son en-tete et son bouton (~110). En dessous, le bloc
+    // s'efface — il n'a plus rien d'utile a montrer.
+    pulse: i.hasPulse ? { flex: 1.6, minHeight: c ? 141 : 155 } : null,
     gap: c ? 10 : 16,
   };
 }

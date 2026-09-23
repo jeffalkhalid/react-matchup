@@ -10,7 +10,7 @@
 //
 // Chaque carte se tait quand elle n'a rien à dire, plutôt que d'afficher un
 // zéro : deux encarts vides côte à côte donnent l'impression d'une app morte.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
@@ -26,10 +26,33 @@ import {
 const CARTE = {
   flex: 1, backgroundColor: Colors.bgCard, borderRadius: 18,
   borderWidth: 1, borderColor: Colors.border, padding: 14, gap: 10,
-  // Le contenu se repartit dans la hauteur accordee au lieu de s'empiler
-  // par-dessus : une carte qui ignore sa place finit sous la barre d'onglets.
-  justifyContent: 'space-between',
 } as const;
+
+/**
+ * Le milieu ELASTIQUE d'une carte : les photos, et rien d'autre.
+ *
+ * C'est ce qui rend la carte increvable. L'en-tete garde sa taille en haut,
+ * le bouton la sienne en bas, et tout ce qui reste revient au milieu — qui
+ * peut valoir zero. Le bouton ne peut donc JAMAIS etre pousse hors de la
+ * carte, quelle que soit la place accordee.
+ *
+ * Et il ne DEVINE pas sa hauteur, il la mesure : elle lui est imposee par le
+ * dessus, jamais deduite de son contenu, donc la mesure est stable. En
+ * dessous de la taille d'un visage, il n'affiche rien plutot que des ronds
+ * coupes. Toutes les estimations de hauteur ont fini par etre fausses au
+ * moins une fois ; celle-ci n'en est pas une.
+ */
+function Milieu({ children }: { children: ReactNode }) {
+  const [h, setH] = useState(0);
+  return (
+    <View
+      onLayout={e => { const v = e.nativeEvent.layout.height; setH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
+      style={{ flex: 1, minHeight: 0, overflow: 'hidden', justifyContent: 'center' }}
+    >
+      {h >= 26 ? children : null}
+    </View>
+  );
+}
 
 const BOUTON = {
   backgroundColor: Colors.brand, borderRadius: 999,
@@ -126,6 +149,8 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
   hauteur?: number;
 }) {
   const router = useRouter();
+  /** La hauteur reelle de la rangee de cartes — imposee par l'accueil. */
+  const [rangeeH, setRangeeH] = useState(0);
   const [dispos, setDispos] = useState<AvailabilityRow[]>([]);
   /** Deux au plus : le second prend la place des dispos quand il n'y en a pas. */
   const [clashes, setClashes] = useState<Clash[]>([]);
@@ -178,17 +203,15 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
   //
   // Forme complete ~200 points (titre 21 + espace 10 + carte 167), sans la
   // phrase ~170, sans les photos ~124.
-  const place = hauteur ?? Number.MAX_SAFE_INTEGER;
-  const avecPhrase = place >= 198;
-  // Sans la phrase, la carte se resserre aussi (moins de rembourrage, photos
-  // plus petites) : ces quelques points suffisent a GARDER les visages, qui
-  // sont ce qui donne envie de toucher. Les perdre etait une degradation de
-  // trop pour une dizaine de points.
-  const avecPhotos = place >= 156;
+  // La hauteur des cartes, MESUREE. Le premier rendu se rabat sur la place
+  // annoncee moins le titre de section ; ensuite c'est la vraie valeur.
+  const carteH = rangeeH > 0 ? rangeeH : Math.max(0, (hauteur ?? 0) - 31);
+  // Seul choix restant : la phrase sous le titre. Les photos, elles, ne se
+  // decident plus ici — le milieu elastique s'en charge, lui qui connait sa
+  // hauteur reelle.
+  const avecPhrase = carteH === 0 || carteH >= 150;
   const serre = !avecPhrase;
-  const carte = serre
-    ? { ...CARTE, padding: 12, gap: 8 }
-    : CARTE;
+  const carte = serre ? { ...CARTE, padding: 12, gap: 8 } : CARTE;
 
   return (
     <View style={{ gap: 10, flex: 1 }}>
@@ -204,7 +227,10 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
         </TouchableOpacity>
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
+      <View
+        onLayout={e => { const v = e.nativeEvent.layout.height; setRangeeH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
+        style={{ flexDirection: 'row', gap: 10, flex: 1 }}
+      >
         {dispos.length > 0 && (
           <View style={carte}>
             <Entete
@@ -214,11 +240,11 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                 ? `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`
                 : null}
             />
-            {avecPhotos && (
+            <Milieu>
               <Photos taille={serre ? 30 : 34} rows={dispos.map(r => ({
                 id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
               }))} />
-            )}
+            </Milieu>
             <Bouton label="Voir les joueurs" onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
           </View>
         )}
@@ -232,13 +258,13 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
               titre={i === 0 ? 'Votes du moment' : 'Qui va gagner ?'}
               sous={`${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`}
             />
-            {avecPhotos && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Photos taille={serre ? 30 : 34} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
-              <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
-              <Photos taille={serre ? 30 : 34} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
-            </View>
-            )}
+            <Milieu>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Photos taille={serre ? 30 : 34} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
+                <Photos taille={serre ? 30 : 34} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+              </View>
+            </Milieu>
             {/* Vers CE match précisément, pas vers la liste : l'onglet place la
                 carte en tête du rail (cf. app/(tabs)/activite.tsx). */}
             <Bouton label="Voter" onPress={() => router.push(`/(tabs)/activite?focus=${clash.gameId}` as any)} />
