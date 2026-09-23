@@ -54,7 +54,17 @@ function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous: st
         <Icon name={icon} size={17} color={Colors.brandDeep} stroke={2.2} />
       </View>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}>
+        {/* Deux cartes cote a cote, ca fait un titre par demi-ecran : sur
+            Android, « Votes du moment » s'affichait « Votes du mom... ». Il
+            retrecit au lieu de se couper — regle habituelle des titres
+            Fonts.welcome (numberOfLines + adjustsFontSizeToFit + paddingRight),
+            oubliee ici parce que le titre TIENT sur iPhone. */}
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          style={{ fontFamily: Fonts.welcome, fontSize: 15, lineHeight: 20, color: Colors.textPrimary, paddingRight: 4 }}
+        >
           {titre}
         </Text>
         <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
