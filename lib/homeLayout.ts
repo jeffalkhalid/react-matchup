@@ -216,7 +216,10 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // Deux TUILES depuis le 2026-09-22 : titre sur deux lignes, phrase et
     // fleche. Elles reclament trois fois la hauteur des anciens boutons, et
     // c'est la seule section dont le plancher a change.
-    ctas:  { flex: 1.8, minHeight: c ? 118 : 132, textScale: ctaScale },
+    // Part reduite (1,8 -> 1,4) : deux tuiles n'ont pas plus a dire sur un
+    // grand ecran, et ce qu'elles rendent va au bloc du bas, qui manquait
+    // d'air au point d'y perdre ses visages.
+    ctas:  { flex: 1.4, minHeight: c ? 112 : 126, textScale: ctaScale },
     // PAS DE SECTION TOURNOIS PENDANT UNE SOIRÉE. On est déjà à un tournoi :
     // la liste des autres soirées ouvertes est du bruit à ce moment précis, et
     // elle coûte 92 à 136 dp — bien plus que la bannière n'en prend.
@@ -233,12 +236,12 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // Une PART, plus une hauteur libre. En `flex: 0` il prenait la hauteur de
     // son contenu : le budget le croyait a 104 points, il en prenait
     // davantage, et le bloc du bas passait sous la barre d'onglets.
-    tournaments: i.hasLiveTournament ? null : { flex: 1, minHeight: c ? 92 : 104 },
+    tournaments: i.hasLiveTournament ? null : { flex: 0.8, minHeight: c ? 88 : 100 },
     // La carte n'est plus rendue quand il n'y a rien à annoncer. Elle disait
     // « Aucun match programmé · explore les parties ouvertes », avec une
     // flèche vers le lobby — soit mot pour mot le bouton « Trouver un match »
     // situé juste au-dessus. Deux fois le même message et la même destination.
-    nextMatch: i.hasNextMatch ? { flex: 2.2, minHeight: c ? 150 : 180 } : null,
+    nextMatch: i.hasNextMatch ? { flex: 1.7, minHeight: c ? 145 : 175 } : null,
     // La carte du lobby (`GameCard`) précédée de son titre, ou la carte
     // « crée le tien ». Le pli est le même que pour « Prochain match » : ce
     // qui n'a que deux lignes à dire ne réclame pas la place de ce qui en a
@@ -257,7 +260,7 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // Le plancher couvre la forme MINIMALE reelle : titre de section (31) +
     // carte reduite a son en-tete et son bouton (~110). En dessous, le bloc
     // s'efface — il n'a plus rien d'utile a montrer.
-    pulse: i.hasPulse ? { flex: 1.6, minHeight: c ? 141 : 155 } : null,
+    pulse: i.hasPulse ? { flex: 2.5, minHeight: c ? 141 : 155 } : null,
     gap: c ? 10 : 16,
   };
 }

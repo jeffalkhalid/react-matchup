@@ -242,12 +242,12 @@ describe('l emplacement du milieu, selon ce qui est vrai', () => {
     // ailleurs que dans le vide et les cartes se deforment.
     //
     // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8), 5,9
-    // quand Tournois n'avait plus de part du tout, puis 6,9 depuis qu'il en a
-    // retrouve une (0 -> 1) : une hauteur libre etait ce qui faisait deborder
-    // la colonne. La part ajoutee ou retiree est celle de la section
-    // concernee, jamais celle du vide.
+    // quand Tournois n'avait plus de part du tout, 6,9 quand il en a retrouve
+    // une, puis 6,3 apres le reequilibrage qui a rendu de l'air au bloc du
+    // bas (tuiles 1,8 -> 1,4 ; Tournois 1 -> 0,8). La part ajoutee ou retiree
+    // est celle de la section concernee, jamais celle du vide.
     expect(parts(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false })))
-      .toBeCloseTo(6.9);
+      .toBeCloseTo(6.3);
   });
 
   it('« cree le tien » ne reclame pas la place de deux vignettes', () => {

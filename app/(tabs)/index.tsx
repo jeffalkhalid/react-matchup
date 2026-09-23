@@ -116,9 +116,22 @@ export default function HomeScreen() {
    * soit leur taille sur cet appareil-la.
    */
   const [colH, setColH] = useState(0);
+  /**
+   * Les marges HAUT et BAS de la colonne, definies ici et nulle part ailleurs.
+   *
+   * `onLayout` rend la hauteur de la boite, MARGES COMPRISES — alors que les
+   * blocs vivent a l'interieur. Les oublier distribuait donc une vingtaine de
+   * points qui n'existaient pas : tout depassait d'autant, systematiquement,
+   * a chaque reglage. C'est l'erreur qui a survecu a quatre corrections.
+   */
+  // Valeurs FIXES : elles entrent dans le calcul de la hauteur, qui decide du
+  // mode compact — les faire dependre de ce mode ferait tourner le calcul en
+  // rond.
+  const PAD_COLONNE = { haut: 8, bas: 12 };
   // Avant la premiere mesure on garde l'estimation : une image, le temps que
   // la colonne se pose. Sans elle, le premier rendu serait vide.
-  const hauteurColonne = colH > 0 ? colH : winH - insets.top - 48 - (64 + insets.bottom) - 18;
+  const hauteurColonne = (colH > 0 ? colH : winH - insets.top - 48 - (64 + insets.bottom))
+    - PAD_COLONNE.haut - PAD_COLONNE.bas;
   const availableH = hauteurColonne - 48
     - (soiree ? 0 : BANNER_RESERVE)
     - (pulseVisible ? PULSE_RESERVE : 0);
@@ -607,8 +620,8 @@ export default function HomeScreen() {
               // donc plus rien a faire defiler.
               flex: 1,
               paddingHorizontal: 20,
-              paddingTop: compact ? 6 : 10,
-              paddingBottom: 8,
+              paddingTop: PAD_COLONNE.haut,
+              paddingBottom: PAD_COLONNE.bas,
               gap: sizes.gap,
             }}>
               {/* Hauteurs RELATIVES : chaque section reçoit une part
