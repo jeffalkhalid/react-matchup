@@ -454,12 +454,22 @@ const MOIS_ABBR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'a
  * quantième, « mardi » peut être ce mardi ou celui d'après ; sans l'heure,
  * on ne sait pas si ça tombe pendant le travail.
  */
-export function gameWhenLabel(iso: string | null | undefined): string | null {
+export function gameWhenLabel(iso: string | null | undefined, now: Date = new Date()): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   const min = d.getMinutes();
   const heure = min ? `${d.getHours()}h${String(min).padStart(2, '0')}` : `${d.getHours()}h`;
+  // « Aujourd'hui » et « Demain » AVANT la date : c'est l'information qu'on
+  // cherche, et « ven. 2 oct. » oblige a la calculer de tete. Le calendrier
+  // decide, pas les heures ecoulees : un match demain a 9 h est « Demain »
+  // meme s'il est dans quinze heures.
+  const jour = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (jour(d, now)) return `Aujourd'hui · ${heure}`;
+  const demain = new Date(now);
+  demain.setDate(demain.getDate() + 1);
+  if (jour(d, demain)) return `Demain · ${heure}`;
   return `${JOURS_ABBR[d.getDay()]} ${d.getDate()} ${MOIS_ABBR[d.getMonth()]} · ${heure}`;
 }
 

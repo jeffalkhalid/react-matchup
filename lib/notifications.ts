@@ -163,7 +163,9 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
     // Défi : mon binôme en FILE D'ATTENTE (carte persistante tant qu'on attend).
     supabase
       .from('defi_applications')
-      .select('id, game:game_id(location, match_date, status)')
+      // `id` de la partie : sans lui, la notification ne peut pas mener a la
+      // fiche du match et retombait sur le hub Defi.
+      .select('id, game:game_id(id, location, match_date, status)')
       .or(`initiator_id.eq.${playerId},partner_id.eq.${playerId}`)
       .eq('status', 'queued'),
     // Défi : mon binôme RETENU récemment (verrouillage direct ou promotion) —
@@ -377,7 +379,9 @@ export async function buildNotificationItems(playerId: string): Promise<NotifIte
         type: 'challenge' as const,
         title: 'En file d\'attente',
         subtitle: `Votre binôme est en file pour le défi${q.game?.location ? ` à ${q.game.location}` : ''} — promus si une place se libère`,
-        route: '/(tabs)/matchmaking?tab=mes',
+        // Vers LA PARTIE, pas vers le hub Défi : la notification parle d'un
+        // match precis, et le hub obligeait a le retrouver dans une liste.
+        route: q.game?.id ? `/(tabs)/lobby?gameId=${q.game.id}` : '/(tabs)/matchmaking?tab=mes',
         when: q.game?.match_date ?? null,
       })),
     // Défi — binôme retenu (verrouillage direct ou promotion) : info supprimable.
