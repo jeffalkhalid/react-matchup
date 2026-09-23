@@ -198,7 +198,7 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // Hauteur FIXE (flex 0) : une bannière ne s'étire pas. Sans ça elle
     // prendrait sa part de l'écran comme une carte, et volerait au hero la
     // place qu'on vient de lui rendre.
-    liveBanner: i.hasLiveTournament ? { flex: 0, minHeight: c ? 52 : 58 } : null,
+    liveBanner: i.hasLiveTournament ? { flex: 0.6, minHeight: c ? 52 : 58 } : null,
     // La rangée de raccourcis du bas (Classement · Score) a été retirée : le
     // rang est monté dans l'en-tête, et « Score » s'atteint depuis le lobby
     // avec le match en contexte. Les ~52 dp rendus ne sont pas laissés en
@@ -230,7 +230,10 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // sans soiree ouverte — c'est une porte vers les tournois, pas une
     // actualite. Pendant une soiree il disparait quand meme : la banniere du
     // haut dit deja ou aller, et deux appels au meme endroit se nuisent.
-    tournaments: i.hasLiveTournament ? null : { flex: 0, minHeight: c ? 92 : 104 },
+    // Une PART, plus une hauteur libre. En `flex: 0` il prenait la hauteur de
+    // son contenu : le budget le croyait a 104 points, il en prenait
+    // davantage, et le bloc du bas passait sous la barre d'onglets.
+    tournaments: i.hasLiveTournament ? null : { flex: 1, minHeight: c ? 92 : 104 },
     // La carte n'est plus rendue quand il n'y a rien à annoncer. Elle disait
     // « Aucun match programmé · explore les parties ouvertes », avec une
     // flèche vers le lobby — soit mot pour mot le bouton « Trouver un match »
@@ -248,7 +251,10 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
     // Hauteur FIXE (flex 0), comme le bandeau : deux cartes dont le contenu
     // ne s'étire pas. Lui donner une part la ferait gonfler sur les grands
     // écrans au détriment de ce qui compte plus haut.
-    pulse: i.hasPulse ? { flex: 0, minHeight: c ? 150 : PULSE_RESERVE } : null,
+    // Le bloc qui CEDE : sa part revient aux autres quand la place manque, et
+    // il s'efface plutot que de s'afficher coupe. Son contenu reste atteignable
+    // en entier dans l'onglet Activite, ce qui rend la disparition acceptable.
+    pulse: i.hasPulse ? { flex: 1.6, minHeight: c ? 128 : 148 } : null,
     gap: c ? 10 : 16,
   };
 }
@@ -312,4 +318,83 @@ export function fitLabelFontSize(i: {
   const plusLong = Math.max(...mesures);
   const tient = (i.ref * i.width * safety) / plusLong;
   return Math.max(min, Math.min(i.max, tient));
+}
+
+// ── La répartition, en pourcentages d'une hauteur MESURÉE ───────────────────
+//
+// Le modèle précédent donnait à chaque bloc une part ET un plancher, et
+// laissait deux blocs (le bandeau Tournois, « Ça bouge ») prendre simplement
+// la hauteur de leur contenu. Le budget les croyait à 104 et 150 points ; à
+// l'écran ils en prenaient davantage. La somme débordait, rien ne pouvait
+// rétrécir, et le dernier bloc passait sous la barre d'onglets — corrigé
+// trois fois en croyant chaque fois à un problème différent.
+//
+// Ici la somme des parts fait EXACTEMENT la hauteur disponible. Rien ne peut
+// déborder : c'est une propriété de la répartition, pas une valeur à tenir à
+// jour. Et la hauteur n'est plus estimée à coups de constantes (l'en-tête, la
+// barre d'onglets, les marges) : l'écran la mesure une fois posé, donc les
+// barres du haut et du bas sont déduites pour de vrai, quelle que soit leur
+// taille réelle sur l'appareil.
+
+/** Ce qu'un bloc demande à l'accueil. */
+export interface HomeBlock {
+  key: string;
+  /** Sa part du gâteau quand la place ne manque pas. */
+  share: number;
+  /** En dessous, il ne sait plus s'afficher correctement. */
+  need: number;
+  /**
+   * Il peut rendre sa place, puis disparaître, pour que les autres tiennent.
+   *
+   * Un bloc à moitié visible ment sur ce qu'il contient : ses boutons passent
+   * sous la barre et on ne sait même pas qu'ils existent. Mieux vaut qu'il
+   * s'efface — surtout quand son contenu reste atteignable ailleurs.
+   */
+  yields?: boolean;
+}
+
+/**
+ * Combien de points chaque bloc reçoit, espaces déduits.
+ *
+ * `0` = le bloc n'est pas rendu. La somme des valeurs plus les espaces
+ * réellement posés ne dépasse JAMAIS la hauteur donnée.
+ */
+export function allocateHome(blocs: HomeBlock[], hauteur: number, gap: number): Record<string, number> {
+  const vide: Record<string, number> = {};
+  for (const b of blocs) vide[b.key] = 0;
+  if (blocs.length === 0 || hauteur <= 0) return vide;
+
+  let actifs = blocs.slice();
+  for (;;) {
+    const out: Record<string, number> = { ...vide };
+    const dispo = hauteur - gap * Math.max(0, actifs.length - 1);
+    if (dispo <= 0) return vide;
+
+    // Le besoin de chacun D'ABORD, la part ensuite sur ce qui reste. Prendre
+    // « le plus grand des deux » semblait equivalent : ca distribuait plus que
+    // la hauteur disponible, et la remise a l'echelle qui suivait faisait
+    // repasser un bloc SOUS son besoin. Un test l'a attrape.
+    const besoin = actifs.reduce((n, b) => n + b.need, 0);
+    if (besoin <= dispo) {
+      const reste = dispo - besoin;
+      const total = actifs.reduce((n, b) => n + b.share, 0) || 1;
+      for (const b of actifs) out[b.key] = b.need + (b.share / total) * reste;
+      return out;
+    }
+
+    // Ca ne rentre pas : le plus petit des blocs souples s'efface, et on
+    // recommence avec un espace de moins a poser.
+    const souples = actifs.filter(b => b.yields);
+    if (souples.length > 0) {
+      const sacrifie = souples.reduce((a, b) => (b.share < a.share ? b : a));
+      actifs = actifs.filter(b => b.key !== sacrifie.key);
+      continue;
+    }
+
+    // Plus rien a ceder. Tout le monde retrecit ensemble : on ne promet plus
+    // rien, mais rien ne depasse — ce qui reste la seule chose a tenir.
+    const f = dispo / besoin;
+    for (const b of actifs) out[b.key] = b.need * f;
+    return out;
+  }
 }

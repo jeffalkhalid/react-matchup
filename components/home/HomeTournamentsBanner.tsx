@@ -37,8 +37,12 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
       {...(ouvrable ? { onPress, activeOpacity: 0.88, accessibilityRole: 'button' } : {})}
       accessibilityLabel="Tournois et événements"
       style={{
+        // `flex: 1` : le bandeau remplit la hauteur que l'accueil lui accorde
+        // au lieu de l'imposer. Son rembourrage vertical devient un minimum,
+        // pas une hauteur — sinon il sort de la repartition.
+        flex: 1,
         backgroundColor: '#0A0A0A', borderRadius: 20,
-        paddingVertical: 18, paddingHorizontal: 16,
+        paddingVertical: 14, paddingHorizontal: 16,
         flexDirection: 'row', alignItems: 'center', gap: 14,
         overflow: 'hidden',
       }}

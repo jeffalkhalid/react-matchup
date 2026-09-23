@@ -44,7 +44,7 @@ function Bouton({ label, onPress }: { label: string; onPress: () => void }) {
 }
 
 /** L'en-tete d'une carte : l'icone dit d'un coup d'oeil de quoi il s'agit. */
-function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous: string }) {
+function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous?: string | null }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
       <View style={{
@@ -67,9 +67,11 @@ function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous: st
         >
           {titre}
         </Text>
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
-          {sous}
-        </Text>
+        {sous ? (
+          <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
+            {sous}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -100,7 +102,7 @@ function Photos({ rows, max = 4 }: { rows: { id: string; name: string; path?: st
   );
 }
 
-export function HomePulse({ myId, myElo, onVisible }: {
+export function HomePulse({ myId, myElo, onVisible, hauteur }: {
   myId: string; myElo: number;
   /**
    * Le bloc annonce sa présence à l'accueil.
@@ -110,6 +112,15 @@ export function HomePulse({ myId, myElo, onVisible }: {
    * par la barre d'onglets, ses deux boutons avec (Android, 2026-09-23).
    */
   onVisible?: (visible: boolean) => void;
+  /**
+   * La hauteur que l'accueil lui accorde, en points.
+   *
+   * Le bloc s'y tient au lieu de deborder : sous un certain seuil il laisse
+   * tomber la phrase sous le titre, puis les photos. Il garde toujours le
+   * titre, les noms et le bouton — ce qui permet d'agir. Un bloc a moitie
+   * visible, lui, ment sur ce qu'il contient.
+   */
+  hauteur?: number;
 }) {
   const router = useRouter();
   const [dispos, setDispos] = useState<AvailabilityRow[]>([]);
@@ -157,6 +168,11 @@ export function HomePulse({ myId, myElo, onVisible }: {
   if (!visible) return null;
 
   const quand = creneau ? slotShortLabel(creneau) : 'ce soir';
+  // Deux paliers, mesures sur le rendu complet (~170 points) : la phrase part
+  // en premier, les photos ensuite.
+  const place = hauteur ?? Number.MAX_SAFE_INTEGER;
+  const avecPhrase = place >= 158;
+  const avecPhotos = place >= 132;
 
   return (
     <View style={{ gap: 10 }}>
@@ -178,11 +194,15 @@ export function HomePulse({ myId, myElo, onVisible }: {
             <Entete
               icon="users"
               titre={`Dispos ${quand}`}
-              sous={`${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`}
+              sous={avecPhrase
+                ? `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`
+                : null}
             />
-            <Photos rows={dispos.map(r => ({
-              id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
-            }))} />
+            {avecPhotos && (
+              <Photos rows={dispos.map(r => ({
+                id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
+              }))} />
+            )}
             <Bouton label="Voir les joueurs" onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
           </View>
         )}
@@ -196,11 +216,13 @@ export function HomePulse({ myId, myElo, onVisible }: {
               titre={i === 0 ? 'Votes du moment' : 'Qui va gagner ?'}
               sous={`${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`}
             />
+            {avecPhotos && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Photos rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
               <Photos rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
             </View>
+            )}
             {/* Vers CE match précisément, pas vers la liste : l'onglet place la
                 carte en tête du rail (cf. app/(tabs)/activite.tsx). */}
             <Bouton label="Voter" onPress={() => router.push(`/(tabs)/activite?focus=${clash.gameId}` as any)} />

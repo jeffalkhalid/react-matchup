@@ -130,11 +130,15 @@ describe('la banniere de soiree en cours', () => {
       .not.toBe(null);
   });
 
-  it('a une hauteur FIXE : une banniere ne s etire pas', () => {
-    // Avec une part (flex > 0) elle prendrait sa portion d'ecran comme une
-    // carte, et volerait au hero la place qu'on vient de lui rendre.
-    expect(homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: true, hasLiveTournament: true }).liveBanner!.flex)
-      .toBe(0);
+  it('prend la plus petite part de l ecran : une banniere ne s etire pas', () => {
+    // Elle a une part, comme tout le monde depuis que la repartition se fait
+    // en pourcentages d'une hauteur mesuree — une hauteur libre etait
+    // justement ce qui faisait deborder la colonne. Mais c'est la PLUS PETITE
+    // part : une banniere ne prend pas la place d'une carte.
+    const s = homeSectionSizes({ compact: true, hasTournaments: false, hasNextMatch: true, hasLiveTournament: true });
+    expect(s.liveBanner!.flex).toBeGreaterThan(0);
+    expect(s.liveBanner!.flex).toBeLessThan(s.ctas.flex);
+    expect(s.liveBanner!.flex).toBeLessThan(s.nextMatch!.flex);
   });
 
   it('le cas le plus charge tient TOUJOURS, banniere comprise', () => {
@@ -237,12 +241,13 @@ describe('l emplacement du milieu, selon ce qui est vrai', () => {
     // ce total-la ne doit pas bouger, sinon la place rendue est repartie
     // ailleurs que dans le vide et les cartes se deforment.
     //
-    // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8), puis
-    // 5,9 depuis que Tournois est un BANDEAU a hauteur fixe (1,5 -> 0) : il ne
-    // prend plus de part, il prend des pixels. La part ajoutee ou retiree est
-    // celle de la section concernee, jamais celle du vide.
+    // 7,4 depuis que les boutons sont devenus des TUILES (0,8 -> 1,8), 5,9
+    // quand Tournois n'avait plus de part du tout, puis 6,9 depuis qu'il en a
+    // retrouve une (0 -> 1) : une hauteur libre etait ce qui faisait deborder
+    // la colonne. La part ajoutee ou retiree est celle de la section
+    // concernee, jamais celle du vide.
     expect(parts(homeSectionSizes({ compact: true, hasTournaments: true, hasNextMatch: false })))
-      .toBeCloseTo(5.9);
+      .toBeCloseTo(6.9);
   });
 
   it('« cree le tien » ne reclame pas la place de deux vignettes', () => {
@@ -317,11 +322,14 @@ describe('le bloc du bas occupe de la place, et le budget le sait', () => {
     expect(totalMinHeight(avec)).toBe(totalMinHeight(sans) + avec.pulse!.minHeight + avec.gap);
   });
 
-  it('hauteur FIXE : il ne gonfle pas sur les grands écrans', () => {
+  it('il a une part, comme tout le monde', () => {
     // Une part (`flex`) le ferait grandir avec l'écran, au détriment de ce qui
     // compte davantage plus haut. Deux cartes n'ont pas plus à dire sur une
     // tablette que sur un téléphone.
-    expect(sizes({ hasPulse: true }).pulse!.flex).toBe(0);
+    // Il a desormais une PART, comme tout le monde : c'est justement parce
+    // qu'il n'en avait pas — hauteur libre, egale a son contenu — qu'il
+    // debordait. Ce qui le distingue, c'est qu'il CEDE sa place.
+    expect(sizes({ hasPulse: true }).pulse!.flex).toBeGreaterThan(0);
   });
 
   it("sur la plus petite colonne Android, il fait déborder — et c'est assumé", () => {
@@ -334,20 +342,19 @@ describe('le bloc du bas occupe de la place, et le budget le sait', () => {
   });
 });
 
-describe('le filet de sécurité reste atteignable', () => {
-  it("la colonne de l'accueil peut grandir au-delà de l'écran", async () => {
+describe("la colonne se mesure au lieu de s'estimer", () => {
+  it("l'accueil lit sa hauteur reelle et distribue des hauteurs", async () => {
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
     const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    // `flex: 1` fixe la colonne à la hauteur visible quoi qu'elle contienne :
-    // ce qui dépasse est COUPÉ, et le ScrollView ne voit rien à faire défiler.
-    // En base auto (`flexGrow`), les planchers comptent et l'on atteint le bas.
-    // Ancre propre à la colonne de l'accueil : elle seule règle son
-    // rembourrage haut sur le mode compact.
-    const pied = src.indexOf('paddingTop: compact ?');
-    expect(pied).toBeGreaterThan(-1);
-    const colonne = src.slice(Math.max(0, pied - 200), pied);
-    expect(colonne).toContain('flexGrow: 1');
-    expect(colonne).not.toContain('flex: 1,');
+    // Mesurer plutot qu'estimer : l'en-tete, la barre d'onglets et les marges
+    // etaient trois constantes ecrites a la main, et il suffit qu'une soit
+    // fausse pour que l'accueil se croie plus riche qu'il ne l'est.
+    expect(src).toContain('onLayout');
+    expect(src).toContain('allocateHome');
+    // Des HAUTEURS, pas des parts : une part ne dit rien tant qu'un bloc
+    // voisin peut prendre la hauteur de son contenu.
+    expect(src).toContain('height: parts.ctas');
+    expect(src).not.toContain('flex: sizes.');
   });
 });

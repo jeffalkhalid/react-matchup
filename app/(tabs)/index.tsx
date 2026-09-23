@@ -27,7 +27,7 @@ import { HomeRankButton } from '../../components/home/HomeRankButton';
 import { HomeTournamentsBanner } from '../../components/home/HomeTournamentsBanner';
 import { HomePulse } from '../../components/home/HomePulse';
 import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
-import { homeSectionSizes, COMPACT_THRESHOLD_H, BANNER_RESERVE, PULSE_RESERVE } from '../../lib/homeLayout';
+import { homeSectionSizes, allocateHome, COMPACT_THRESHOLD_H, BANNER_RESERVE, PULSE_RESERVE, type HomeBlock } from '../../lib/homeLayout';
 import { suggestibleGames, homeSlot } from '../../lib/homeSlot';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import {
@@ -104,7 +104,22 @@ export default function HomeScreen() {
   // Le bandeau Tournois est rendu MÊME tournois fermés (c'est une porte, pas
   // une actualité) : sa place se déduit toujours, pas seulement quand il y a
   // des soirées ouvertes. Pendant une soirée il cède la place à la bannière.
-  const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48
+  /**
+   * La hauteur REELLE de la colonne, mesuree une fois posee a l'ecran.
+   *
+   * Elle etait calculee a coups de constantes : en-tete a 48, barre d'onglets
+   * a 64, marges a 18, espaces a 48. Trois de ces quatre nombres etaient des
+   * suppositions, et il suffit qu'une soit fausse — une police systeme plus
+   * grande, un en-tete qui grandit — pour que l'accueil se croie plus riche
+   * qu'il ne l'est et deborde. Mesuree, elle deduit pour de vrai la barre
+   * d'etat, l'en-tete, la barre d'onglets et la barre de gestes, quelle que
+   * soit leur taille sur cet appareil-la.
+   */
+  const [colH, setColH] = useState(0);
+  // Avant la premiere mesure on garde l'estimation : une image, le temps que
+  // la colonne se pose. Sans elle, le premier rendu serait vide.
+  const hauteurColonne = colH > 0 ? colH : winH - insets.top - 48 - (64 + insets.bottom) - 18;
+  const availableH = hauteurColonne - 48
     - (soiree ? 0 : BANNER_RESERVE)
     - (pulseVisible ? PULSE_RESERVE : 0);
   const compact = availableH < COMPACT_THRESHOLD_H * Math.max(1, fontScale);
@@ -372,6 +387,26 @@ export default function HomeScreen() {
     hasPulse: pulseVisible,
   });
 
+  /**
+   * Ce que chaque bloc recoit, en points, espaces deduits.
+   *
+   * La somme fait exactement la hauteur mesuree : rien ne peut deborder, ce
+   * n'est plus une valeur a tenir a jour mais une propriete de la repartition.
+   */
+  const blocs: HomeBlock[] = [
+    ...(sizes.liveBanner && soiree ? [{ key: 'liveBanner', share: sizes.liveBanner.flex, need: sizes.liveBanner.minHeight }] : []),
+    { key: 'ctas', share: sizes.ctas.flex, need: sizes.ctas.minHeight },
+    ...(sizes.tournaments ? [{ key: 'tournaments', share: sizes.tournaments.flex, need: sizes.tournaments.minHeight }] : []),
+    ...(sizes.nextMatch ? [{ key: 'nextMatch', share: sizes.nextMatch.flex, need: sizes.nextMatch.minHeight }] : []),
+    ...(sizes.openGames && (slot.kind === 'openGames' || slot.kind === 'createFirst')
+      ? [{ key: 'openGames', share: sizes.openGames.flex, need: sizes.openGames.minHeight }] : []),
+    ...(sizes.pulse ? [{ key: 'pulse', share: sizes.pulse.flex, need: sizes.pulse.minHeight, yields: true }] : []),
+    // Le vide garde sa part : sans lui, retirer « Prochain match » ferait
+    // simplement grossir les autres au lieu de laisser de l'air.
+    ...(sizes.filler ? [{ key: 'filler', share: sizes.filler.flex, need: 0 }] : []),
+  ];
+  const parts = allocateHome(blocs, hauteurColonne, sizes.gap);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F7F7F7' }}>
       <View style={{
@@ -561,14 +596,18 @@ export default function HomeScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ flexGrow: 1 }}
             >
-            <View style={{
-              // `flexGrow` et NON `flex` : avec `flex: 1` (base 0), cette
-              // colonne vaut exactement la hauteur visible, quoi qu'elle
-              // contienne — le contenu qui dépasse est COUPÉ, et le
-              // ScrollView, qui ne voit rien à faire défiler, ne prend jamais
-              // le relais annoncé juste au-dessus. En base auto, les planchers
-              // comptent : la colonne grandit et l'on peut atteindre le bas.
-              flexGrow: 1,
+            <View
+              onLayout={e => {
+                // Lire la valeur AVANT le setState : l'evenement natif est
+                // recycle, et un acces differe rend une hauteur nulle.
+                const h = e.nativeEvent.layout.height;
+                setColH(prev => (Math.abs(prev - h) > 0.5 ? h : prev));
+              }}
+              style={{
+              // La colonne vaut exactement la hauteur visible, et chaque bloc
+              // recoit sa part de cette hauteur : plus rien ne peut deborder,
+              // donc plus rien a faire defiler.
+              flex: 1,
               paddingHorizontal: 20,
               paddingTop: compact ? 6 : 10,
               paddingBottom: 8,
@@ -585,12 +624,12 @@ export default function HomeScreen() {
                   le chemin passait par l'onglet Tournois puis la fiche. Hors
                   soirée la bannière n'existe pas, donc elle ne coûte rien à
                   l'accueil ordinaire (cf. lib/homeLayout). */}
-              {sizes.liveBanner && soiree && (
+              {sizes.liveBanner && soiree && parts.liveBanner > 0 && (
                 <TouchableOpacity
                   onPress={() => router.push(`/tournaments/soiree/${soiree.id}` as any)}
                   activeOpacity={0.85}
                   style={{
-                    minHeight: sizes.liveBanner.minHeight,
+                    height: parts.liveBanner,
                     backgroundColor: Colors.primary, borderRadius: 16,
                     paddingHorizontal: 14,
                     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -624,7 +663,7 @@ export default function HomeScreen() {
               <View
                 ref={(v) => registerTourAnchor('home-ctas', v)}
                 collapsable={false}
-                style={{ flex: sizes.ctas.flex, minHeight: sizes.ctas.minHeight }}>
+                style={{ height: parts.ctas }}>
                 <HomePrimaryActions
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
@@ -642,12 +681,17 @@ export default function HomeScreen() {
                   etre le sommaire. Il est toujours la — c'est une porte, pas
                   une actualite — sauf pendant une soiree, ou la banniere du
                   haut dit deja ou aller. */}
-              {sizes.tournaments && (
-                <HomeTournamentsBanner
-                  enabled={tournoisOuverts}
-                  count={tournois.length}
-                  onPress={() => router.push('/tournaments' as any)}
-                />
+              {sizes.tournaments && parts.tournaments > 0 && (
+                /* Enveloppe a hauteur imposee : sans elle le bandeau prend la
+                   hauteur de son contenu et sort de la repartition — c'est
+                   exactement ce qui faisait deborder la colonne. */
+                <View style={{ height: parts.tournaments }}>
+                  <HomeTournamentsBanner
+                    enabled={tournoisOuverts}
+                    count={tournois.length}
+                    onPress={() => router.push('/tournaments' as any)}
+                  />
+                </View>
               )}
 
               {/* D. Prochain match — rendu SEULEMENT s'il y en a un. La carte
@@ -656,8 +700,8 @@ export default function HomeScreen() {
                   nul et c'est le vide (`sizes.filler`) qui prend sa part, pour
                   que les cartes restantes ne gonflent pas d'autant. Le budget
                   et son test vivent dans lib/homeLayout. */}
-              {sizes.nextMatch && (
-                <View style={{ flex: sizes.nextMatch.flex, minHeight: sizes.nextMatch.minHeight }}>
+              {sizes.nextMatch && parts.nextMatch > 0 && (
+                <View style={{ height: parts.nextMatch }}>
                   <UpcomingMatchCard
                     game={visibleUpcoming[0] ?? null}
                     count={visibleUpcoming.length}
@@ -675,8 +719,8 @@ export default function HomeScreen() {
               {/* D bis. « Ça se joue bientôt » — ni match ni tournoi. Deux
                   vraies parties à rejoindre, ou l'invitation à en créer une
                   s'il n'y en a aucune. */}
-              {sizes.openGames && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
-                <View style={{ flex: sizes.openGames.flex, minHeight: sizes.openGames.minHeight }}>
+              {sizes.openGames && parts.openGames > 0 && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
+                <View style={{ height: parts.openGames }}>
                   <OpenGamesSlot
                     games={slot.kind === 'openGames' ? slot.games : []}
                     myId={player.id}
@@ -698,10 +742,18 @@ export default function HomeScreen() {
                   que le haut ne scrolle pas (lib/homeLayout). Le bloc se tait
                   quand il n'a rien à dire. */}
               {sizes.filler && (
-                <View pointerEvents="none" style={{ flex: sizes.filler.flex }} />
+                <View pointerEvents="none" style={{ height: parts.filler }} />
               )}
 
-              <HomePulse myId={player.id} myElo={player.elo_score} onVisible={setPulseVisible} />
+              {/* Le bloc qui cede : il s'efface quand la place manque plutot
+                  que de s'afficher coupe. Son contenu reste entier dans
+                  l'onglet Activite, ou « Voir tout » mene deja. */}
+              {(parts.pulse > 0 || !pulseVisible) && (
+                <View style={{ height: pulseVisible ? parts.pulse : undefined }}>
+                  <HomePulse myId={player.id} myElo={player.elo_score}
+                    hauteur={parts.pulse} onVisible={setPulseVisible} />
+                </View>
+              )}
 
               {/* La rangée « Classement · Score » vivait ici. Le rang est monté
                   dans l'en-tête ; « Score » s'atteint depuis le lobby (avec le
