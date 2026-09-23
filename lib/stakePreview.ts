@@ -12,6 +12,7 @@
 // joueur de padel, « 5,41 → 5,55 » se comprend d'un coup d'œil.
 import { simulateElo, type EloPlayerInput } from './elo';
 import { eloToLevel, padelLevelToElo } from './theme';
+import { clashPlayersFrom, type ClashCreator, type ClashParticipant, type ClashPlayer } from './weekendClash';
 
 /** Ce qu'il faut savoir d'un joueur pour simuler — tout vient de sa fiche. */
 export interface StakePlayer {
@@ -155,3 +156,149 @@ export function formatLevelRange(a: number, b: number): string {
   const max = formatLevelDelta(b);
   return min === max ? min : `${min} à ${max}`;
 }
+
+// ── Ce que CE match met en jeu, pour MOI ────────────────────────────────────
+//
+// Le chiffre n'est jamais le même pour deux joueurs du même match, et c'est
+// voulu : il dépend de l'écart entre les deux camps — commun aux coéquipiers —
+// ET du coefficient personnel, qui suit le nombre de matchs et la fiabilité.
+// Un joueur en phase de placement bouge bien plus, sur exactement le même
+// match. Chacun voit donc SON chiffre.
+//
+// Les quatre joueurs viennent de `clashPlayersFrom` (lib/weekendClash), source
+// unique : le créateur n'a PAS de ligne `game_participants`, il vit sur
+// `creator_id` + `creator_side`. Une lecture maison des participants seuls
+// donnerait trois joueurs sur quatre — donc jamais deux contre deux, donc
+// aucun chiffre sur une partie pourtant complète.
+
+/** Ce qu'il faut savoir d'une partie pour projeter son enjeu. */
+export interface StakeGame extends ClashCreator {
+  participants?: ClashParticipant[] | null;
+  game_format?: string | null;
+  stake_multiplier?: number | null;
+  min_elo?: number | null;
+  max_elo?: number | null;
+}
+
+export interface StakeSides {
+  partner: StakePlayer;
+  opponents: StakePlayer[];
+}
+
+/** Ce qu'on annonce, et si c'est exact ou une fourchette. */
+export interface StakeProjection {
+  outcome: StakeOutcome;
+  /** `false` = il manque un joueur, on a raisonné sur la bande de niveau. */
+  exact: boolean;
+}
+
+const toStake = (p: ClashPlayer): StakePlayer | null =>
+  p.elo == null ? null : { id: p.id, elo_score: p.elo, win_count: p.wins, loss_count: p.losses };
+
+/** Un joueur supposé, dont on ne connaît que le niveau. */
+const suppose = (id: string, elo: number): StakePlayer =>
+  ({ id, elo_score: elo, win_count: MATCHS_SUPPOSES, loss_count: MATCHS_SUPPOSES, fiability_pct: FIABILITE_SUPPOSEE });
+
+/** L'enveloppe de deux projections — le meilleur gain, la pire perte. */
+function enveloppe(a: StakeOutcome | null, b: StakeOutcome | null): StakeOutcome | null {
+  if (!a || !b) return a ?? b;
+  return {
+    level: a.level,
+    winMin: Math.min(a.winMin, b.winMin),
+    winMax: Math.max(a.winMax, b.winMax),
+    loseMin: Math.max(a.loseMin, b.loseMin),
+    loseMax: Math.min(a.loseMax, b.loseMax),
+  };
+}
+
+/** Mon camp et celui d'en face — `null` si je n'y suis pas, ou sans binôme. */
+export function stakeSides(game: StakeGame, myId: string): StakeSides | null {
+  const tous = clashPlayersFrom(game.participants ?? [], game);
+  const moi = tous.find(p => p.id === myId);
+  if (!moi) return null;
+  const binome = tous.find(p => p.id !== myId && p.team === moi.team);
+  const partner = binome ? toStake(binome) : null;
+  if (!partner) return null;
+  return {
+    partner,
+    opponents: tous.filter(p => p.team !== moi.team).map(toStake).filter((p): p is StakePlayer => !!p),
+  };
+}
+
+/**
+ * La bande de niveau admissible pour mon binôme.
+ *
+ * La contrainte du défi porte sur la MOYENNE du duo — c'est la règle affichée
+ * dans « Choisis ton binôme ». Mon binôme peut donc sortir de la bande par le
+ * bas comme par le haut, tant que la moyenne y rentre.
+ */
+export function partnerEloRange(
+  myElo: number, minElo: number | null | undefined, maxElo: number | null | undefined,
+): [number, number] | null {
+  if (minElo == null || maxElo == null) return null;
+  const plancher = padelLevelToElo(1);
+  return [Math.max(plancher, 2 * minElo - myElo), Math.max(plancher, 2 * maxElo - myElo)];
+}
+
+/**
+ * Ce que ce match me fait gagner ou perdre — je SUIS dedans (accepté ou invité).
+ *
+ * Camp adverse incomplet : on retombe sur la bande de niveau du défi. Sans
+ * bande (défi nominatif, où elle n'existe pas), on se tait plutôt que
+ * d'inventer un adversaire.
+ */
+export function stakeOutcomeForGame(game: StakeGame, me: StakePlayer): StakeProjection | null {
+  if (game.game_format === 'friendly') return null;
+  const camps = stakeSides(game, me.id);
+  if (!camps) return null;
+  const mise = game.stake_multiplier ?? 1;
+
+  if (camps.opponents.length === 2) {
+    const o = stakeOutcome(me, camps.partner, camps.opponents, mise);
+    return o ? { outcome: o, exact: true } : null;
+  }
+  if (game.min_elo == null || game.max_elo == null) return null;
+  const o = stakeOutcomeForBand(me, camps.partner, eloToLevel(game.min_elo), eloToLevel(game.max_elo), mise);
+  return o ? { outcome: o, exact: false } : null;
+}
+
+/**
+ * Ce que ce défi me ferait gagner ou perdre si je le relevais — je n'y suis
+ * PAS encore.
+ *
+ * Mes adversaires sont le camp du créateur, connu au niveau près : un défi
+ * n'est publié qu'une fois ce camp complet. Ce qui manque, c'est mon propre
+ * binôme — et il compte, puisque c'est la moyenne du camp qui entre dans le
+ * calcul. Sans lui, on projette les deux bouts de la bande admissible et on
+ * montre l'enveloppe.
+ */
+export function stakeOutcomeForJoining(
+  game: StakeGame, me: StakePlayer, partner: StakePlayer | null,
+): StakeProjection | null {
+  if (game.game_format === 'friendly') return null;
+  const campCreateur = String(game.creator_side ?? 'A_GAU').toUpperCase().startsWith('B') ? 'B' : 'A';
+  const adversaires = clashPlayersFrom(game.participants ?? [], game)
+    .filter(p => p.team === campCreateur)
+    .map(toStake)
+    .filter((p): p is StakePlayer => !!p);
+  if (adversaires.length !== 2) return null;
+  const mise = game.stake_multiplier ?? 1;
+
+  if (partner) {
+    const o = stakeOutcome(me, partner, adversaires, mise);
+    return o ? { outcome: o, exact: true } : null;
+  }
+  const bande = partnerEloRange(me.elo_score, game.min_elo, game.max_elo);
+  if (!bande) return null;
+  const o = enveloppe(
+    stakeOutcome(me, suppose('_bin_bas', bande[0]), adversaires, mise),
+    stakeOutcome(me, suppose('_bin_haut', bande[1]), adversaires, mise),
+  );
+  return o ? { outcome: o, exact: false } : null;
+}
+
+/** Le meilleur gain possible — celui qu'on affiche. */
+export function bestGain(o: StakeOutcome): number { return o.winMax; }
+
+/** La perte la plus lourde — celle qu'on affiche. */
+export function worstLoss(o: StakeOutcome): number { return o.loseMax; }

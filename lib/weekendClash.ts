@@ -38,6 +38,15 @@ export interface ClashPlayer {
   memberNumber: number | null;
   elo: number | null;
   team: Team;
+  /**
+   * Matchs classés gagnés / perdus, quand la requête les rapporte.
+   *
+   * Le pronostic n'en a pas besoin, la projection de niveau si : les quatre
+   * premiers matchs d'un joueur bougent son niveau bien plus fort que les
+   * suivants. Absents, on suppose un joueur établi (cf. lib/stakePreview).
+   */
+  wins?: number | null;
+  losses?: number | null;
 }
 
 export interface ClashGame {
@@ -191,14 +200,14 @@ export interface ClashParticipant {
   status: string;
   team_side?: string | null;
   invite_expires_at?: string | null;
-  player?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null } | null;
+  player?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null; win_count?: number | null; loss_count?: number | null } | null;
 }
 
 /** Le créateur de la partie, qui n'est PAS dans `game_participants`. */
 export interface ClashCreator {
   creator_id?: string | null;
   creator_side?: string | null;
-  creator?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null } | null;
+  creator?: { name?: string | null; elo_score?: number | null; avatar_path?: string | null; member_number?: number | null; win_count?: number | null; loss_count?: number | null } | null;
 }
 
 /**
@@ -236,6 +245,8 @@ export function clashPlayersFrom(participants: ClashParticipant[], game?: ClashC
       memberNumber: game.creator?.member_number ?? null,
       elo: game.creator?.elo_score ?? null,
       team: campCreateur,
+      wins: game.creator?.win_count ?? null,
+      losses: game.creator?.loss_count ?? null,
     });
   }
 
@@ -249,6 +260,8 @@ export function clashPlayersFrom(participants: ClashParticipant[], game?: ClashC
       memberNumber: p.player?.member_number ?? null,
       elo: p.player?.elo_score ?? null,
       team: camp,
+      wins: p.player?.win_count ?? null,
+      losses: p.player?.loss_count ?? null,
     });
   }
   return out;
