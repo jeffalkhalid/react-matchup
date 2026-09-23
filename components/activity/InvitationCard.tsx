@@ -16,7 +16,7 @@ import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { NaturePill } from '../profile/components';
 import { matchNature } from '../../lib/matchView';
-import { levelRangeLabel, isCreatorConflict, declineInvitationPlan } from '../../lib/games';
+import { levelRangeLabel, isCreatorConflict, declineInvitationPlan, partnerSeatAfterAccepting } from '../../lib/games';
 import {
   fetchMyInvitations, invitingDuo, invitationTitle, invitationDatePill, confirmedCount,
   type HubInvitation,
@@ -72,6 +72,12 @@ export function InvitationCard({ playerId }: { playerId: string }) {
       }
     }
     setResolutions(r => ({ ...r, [participantId]: 'accepted' }));
+    // Défi nominatif : on m'a défié MOI, c'est à moi de compléter mon camp.
+    // On ouvre la fiche du match, où « Amène ton partenaire » attend — sinon
+    // accepter d'ici dépose le joueur seul dans son camp sans rien lui dire.
+    if (partnerSeatAfterAccepting(game as any, participantId, playerId)) {
+      router.push(`/(tabs)/lobby?gameId=${game.id}` as any);
+    }
   };
 
   const decline = async (inv: HubInvitation) => {

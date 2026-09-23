@@ -10,7 +10,7 @@
 // la fiche traitait « je suis accepté » AVANT d'y arriver. Deux conditions
 // que le code croyait complémentaires et qui sont en fait la même.
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 vi.mock('../supabase', () => ({ supabase: {} }));
 import { partnerSeatToFill, partnerSeatAfterAccepting } from '../games';
@@ -82,5 +82,43 @@ describe('le bouton est dans une branche que le joueur atteint', () => {
     // Hors de cet intervalle, le bouton est écrit mais jamais rendu.
     expect(bouton).toBeGreaterThan(accepte);
     expect(bouton).toBeLessThan(suivante);
+  });
+});
+
+describe('tous les écrans qui acceptent mènent au même endroit', () => {
+  // Trois écrans font passer une invitation à « accepted » : le lobby, le hub
+  // Défi et le rail « On t'attend » de l'Activité. Un seul enchaînait sur le
+  // choix du partenaire — accepter depuis les deux autres déposait l'adversaire
+  // désigné dans la partie sans rien lui dire.
+  const ACCEPTENT = [
+    ['app', '(tabs)', 'lobby.tsx'],
+    ['app', '(tabs)', 'matchmaking.tsx'],
+    ['components', 'activity', 'InvitationCard.tsx'],
+  ];
+
+  it('chacun consulte le siège à pourvoir', () => {
+    const sans = ACCEPTENT
+      .filter(rel => !readFileSync(join(ROOT, ...rel), 'utf8').includes('partnerSeatAfterAccepting'))
+      .map(rel => rel.join('/'));
+    expect(sans).toEqual([]);
+  });
+
+  it("la liste couvre bien tous les écrans qui acceptent (test du test)", () => {
+    const connus = new Set(ACCEPTENT.map(r => r.join('/')));
+    const fautifs: string[] = [];
+    const parcours = (dir: string[]) => {
+      for (const nom of readdirSync(join(ROOT, ...dir))) {
+        if (nom === 'node_modules' || nom === '__tests__' || nom.startsWith('.')) continue;
+        const suite = [...dir, nom];
+        if (statSync(join(ROOT, ...suite)).isDirectory()) { parcours(suite); continue; }
+        if (!nom.endsWith('.tsx') && !nom.endsWith('.ts')) continue;
+        const src = readFileSync(join(ROOT, ...suite), 'utf8');
+        if (/\.update\(\{\s*status:\s*'accepted'/.test(src) && !connus.has(suite.join('/'))) {
+          fautifs.push(suite.join('/'));
+        }
+      }
+    };
+    parcours(['app']); parcours(['components']);
+    expect(fautifs).toEqual([]);
   });
 });

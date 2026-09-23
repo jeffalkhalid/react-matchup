@@ -20,10 +20,13 @@ const SELECT = [
   // game_format + stake_multiplier : la carte annonce la nature et la mise.
   // spots_available manquait alors qu'un refus l'incremente — il repartait
   // donc de 0, ecrasant le vrai compte de places libres.
-  'game:game_id(id, location, match_date, status, is_challenge, game_format, ' +
+  // is_targeted + l'id et le côté de chaque participant : sans eux, la carte
+  // ne peut pas savoir qu'accepter un défi nominatif laisse un siège à
+  // pourvoir dans MON camp (lib/games.partnerSeatAfterAccepting).
+  'game:game_id(id, location, match_date, status, is_challenge, is_targeted, game_format, ' +
     'stake_multiplier, spots_available, min_elo, max_elo, ' +
     'creator_id, creator:creator_id(id, name, avatar_path, elo_score), ' +
-    'participants:game_participants(player_id, status, invite_expires_at, ' +
+    'participants:game_participants(id, player_id, status, team_side, invite_expires_at, ' +
     'player:player_id(id, name, avatar_path, elo_score)))',
 ].join(', ');
 

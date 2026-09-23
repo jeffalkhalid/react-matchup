@@ -22,7 +22,7 @@ import { defiRefusalMessage } from '../../lib/defiMessages';
 import { PlayerAvatar as Photo } from '../../components/PlayerAvatar';
 import { fetchVitrine, fetchActiveBinomes, type ShowcaseBinome } from '../../lib/showcase';
 import { notifyPartnerInvitedToRelever, notifyDefiConfirmed, notifyReleverDeclined, notifyBinomeQueued, notifyBinomeWithdrawn } from '../../lib/defiNotify';
-import { isCreatorConflict } from '../../lib/games';
+import { isCreatorConflict, partnerSeatAfterAccepting } from '../../lib/games';
 import { fetchBusyPlayerIds } from '../../lib/slotConflict';
 import { notifyPlayers } from '../../lib/notify';
 import { supabase } from '../../lib/supabase';
@@ -543,6 +543,13 @@ export default function MatchmakingScreen() {
         });
       }
       showToast('✅ Défi rejoint !');
+      // Défi nominatif : on m'a défié MOI, c'est à moi de compléter mon camp.
+      // On ouvre la fiche du match, où « Amène ton partenaire » attend. Sans
+      // ça, accepter depuis ce hub dépose le joueur seul dans son camp sans
+      // rien lui dire — le lobby, lui, enchaîne directement sur le choix.
+      if (player && partnerSeatAfterAccepting(g as any, inv.participantId, player.id)) {
+        router.push(`/(tabs)/lobby?gameId=${g.id}` as any);
+      }
       await fetchData();
       reloadNotifs();
     } finally {
