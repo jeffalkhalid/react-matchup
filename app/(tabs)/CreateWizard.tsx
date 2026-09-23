@@ -11,7 +11,7 @@ import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '..
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
 import { OVERLAP_MS, fetchBusyPlayerIds } from '../../lib/slotConflict';
-import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone } from '../../lib/defis';
+import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone, partnerLevelRangeFor, defiReachable } from '../../lib/defis';
 import { stakeOutcome, stakeOutcomeForBand, type StakePlayer } from '../../lib/stakePreview';
 import { StakePreview } from '../../components/create/StakePreview';
 import { consumePickedVenue } from '../../lib/venuePicker';
@@ -1679,6 +1679,34 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               <Text style={{ fontSize: 13, fontFamily: Fonts.uiBold, color: t.eloColor, textAlign: 'center', marginTop: 12 }}>
                 Binômes acceptés : {defiFloorLevel.toFixed(2)} → {form.maxLevel.toFixed(2)}
               </Text>
+
+              {/* Designer un adversaire fige la MOITIE de la moyenne adverse.
+                  On dit donc ce qu'il devra amener — et quand la fenetre se
+                  referme, on le dit avant de publier : sinon le defi part, et
+                  l'adversaire cherche un binome qui n'existe pas. */}
+              {targeted && defiOpponents.length === 1 && (() => {
+                const adv = eloToLevel(defiOpponents[0].elo_score);
+                const plage = partnerLevelRangeFor(adv, defiFloorLevel, form.maxLevel);
+                const prenom = defiOpponents[0].name.trim().split(/\s+/)[0];
+                return (
+                  <Text style={{
+                    fontSize: 12, fontFamily: Fonts.uiBold, textAlign: 'center', marginTop: 8, lineHeight: 17,
+                    color: plage ? Colors.textSecondary : Colors.danger,
+                  }}>
+                    {plage
+                      ? `${prenom} devra amener un binôme entre ${plage[0].toFixed(2)} et ${plage[1].toFixed(2)}.`
+                      : `Aucun binôme ne permettrait à ${prenom} de tenir dans cette fourchette. Monte le plafond, ou choisis un autre adversaire.`}
+                  </Text>
+                );
+              })()}
+
+              {targeted && defiOpponents.length >= 2 && !defiReachable(
+                defiOpponents.map(o => eloToLevel(o.elo_score)), defiFloorLevel, form.maxLevel,
+              ) && (
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.danger, textAlign: 'center', marginTop: 8, lineHeight: 17 }}>
+                  Le niveau moyen de tes adversaires sort de cette fourchette : ils ne pourront pas relever. Monte le plafond.
+                </Text>
+              )}
             </View>
           </>
         )}

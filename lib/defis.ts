@@ -412,3 +412,46 @@ export function formatStake(stake: number | null | undefined): string | null {
   if (n <= 1) return null;
   return `×${n % 1 === 0 ? n : n.toFixed(1)}`;
 }
+
+// ── Un défi ciblé reste-t-il relevable ? ────────────────────────────────────
+//
+// Le plancher d'un défi est la moyenne du binôme qui le lance ; le plafond,
+// le créateur le choisit. Et c'est la MOYENNE du binôme adverse qui doit
+// tomber entre les deux.
+//
+// Quand on désigne un adversaire, on fige donc la moitié de cette moyenne.
+// S'il est très loin de la fourchette, aucun partenaire ne peut la rattraper :
+// à 2,00 contre un plancher de 4,66, il lui faudrait un binôme à 7,32. Le défi
+// partait quand même, et l'adversaire cherchait un binôme qui n'existe pas.
+
+/** Les bornes de l'échelle de niveau : un joueur ne sort pas de là. */
+export const NIVEAU_PLANCHER = 1.0;
+export const NIVEAU_PLAFOND = 8.0;
+
+/**
+ * Entre quels niveaux doit se situer le binôme que l'adversaire désigné
+ * amènera — ou `null` si aucun ne convient.
+ */
+export function partnerLevelRangeFor(
+  advLevel: number, min: number, max: number,
+): [number, number] | null {
+  const lo = Math.max(NIVEAU_PLANCHER, +(2 * min - advLevel).toFixed(2));
+  const hi = Math.min(NIVEAU_PLAFOND, +(2 * max - advLevel).toFixed(2));
+  return lo <= hi ? [lo, hi] : null;
+}
+
+/**
+ * Le défi est-il relevable par les adversaires désignés ?
+ *
+ * Aucun adversaire : c'est un défi ouvert, n'importe quel binôme peut tenter.
+ * Deux adversaires : leur moyenne est déjà connue, on la vérifie. Un seul :
+ * il reste une place, on regarde si un partenaire peut y tenir.
+ */
+export function defiReachable(advLevels: number[], min: number, max: number): boolean {
+  if (advLevels.length === 0) return true;
+  if (advLevels.length >= 2) {
+    const moyenne = (advLevels[0] + advLevels[1]) / 2;
+    return moyenne >= min && moyenne <= max;
+  }
+  return partnerLevelRangeFor(advLevels[0], min, max) !== null;
+}
