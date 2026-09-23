@@ -624,7 +624,7 @@ function GameDetailsSheetContenu({
         );
       }
       if (isAccepted && myParticipant) {
-        return (
+        const quitter = (
           <TouchableOpacity
             onPress={() => onLeave(game.id, (myParticipant as any).id, true)}
             style={[sty.ctaBtn, sty.ctaDanger]}
@@ -633,28 +633,39 @@ function GameDetailsSheetContenu({
             <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Quitter la partie</Text>
           </TouchableOpacity>
         );
+        // Défi nominatif : on m'a défié MOI, je complète mon camp moi-même.
+        //
+        // Ce cas vit ICI, et pas dans la branche « alreadyIn » plus bas où il
+        // était écrit : un siège à pourvoir n'existe QUE pour un joueur déjà
+        // accepté (lib/games.partnerSeatToFill), et cette branche-ci attrape
+        // TOUS les joueurs acceptés. Les deux conditions qu'on croyait
+        // complémentaires étaient la même — le bouton n'a donc jamais été
+        // rendu une seule fois, et l'adversaire désigné restait seul dans son
+        // camp sans aucun moyen d'y amener quelqu'un.
+        //
+        // « Quitter la partie » reste dessous : relever un défi ne doit pas
+        // retirer le droit de s'en aller.
+        if (partnerSeat && onInvitePartner) {
+          return (
+            <View style={{ flex: 1, gap: 8 }}>
+              <TouchableOpacity onPress={() => onInvitePartner(game.id, partnerSeat)}
+                style={[sty.ctaBtn, { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
+                <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>
+                  Amène ton partenaire
+                </Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 16 }}>
+                Le défi sera confirmé quand il aura accepté.
+              </Text>
+              {quitter}
+            </View>
+          );
+        }
+        return quitter;
       }
       return null;
     }
     if (alreadyIn) {
-      // Defi NOMINATIF : on m'a defie MOI, je complete mon camp moi-meme.
-      // Sans ce bouton, aucun ecran ne permettait d'inviter quelqu'un dans
-      // une partie deja publiee — le defi restait a trois pour toujours.
-      if (partnerSeat && onInvitePartner) {
-        return (
-          <View style={{ flex: 1, gap: 8 }}>
-            <TouchableOpacity onPress={() => onInvitePartner(game.id, partnerSeat)}
-              style={[sty.ctaBtn, { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
-              <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textOnBrand }}>
-                Amène ton partenaire
-              </Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 16 }}>
-              Le défi sera confirmé quand il aura accepté.
-            </Text>
-          </View>
-        );
-      }
       if (isInvited && myParticipant) {
         const isChallenge = !!game.is_challenge;
         // Invité côté A d'un défi = le créateur me demande d'être son BINÔME

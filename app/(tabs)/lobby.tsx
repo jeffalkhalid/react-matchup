@@ -45,7 +45,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt, partnerSeatAfterAccepting } from '../../lib/games';
 import { OVERLAP_MS } from '../../lib/slotConflict';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
@@ -3805,7 +3805,12 @@ export default function LobbyScreen() {
 
   const handleAcceptInvitation = async (participantId: string, gameId: string) => {
     if (!player) return;
-    const game = upcomingGames.find(g => g.id === gameId) ?? games.find(g => g.id === gameId);
+    // `detailGame` aussi : un défi relevé depuis la fiche ouverte par id n'est
+    // dans aucune des deux listes, et sans lui on ne saurait pas qu'il reste
+    // un siège à pourvoir.
+    const game = upcomingGames.find(g => g.id === gameId)
+      ?? games.find(g => g.id === gameId)
+      ?? (detailGame?.id === gameId ? detailGame : undefined);
 
     const { error } = await supabase
       .from('game_participants')
@@ -3838,6 +3843,14 @@ export default function LobbyScreen() {
         });
       }
     }
+    // Défi nominatif : on m'a défié MOI, c'est à moi de compléter mon camp.
+    // On enchaîne DIRECTEMENT sur le choix du partenaire — sinon relever le
+    // défi dépose le joueur seul dans son camp et rien à l'écran ne dit que
+    // c'est à lui d'y remédier (constaté le 2026-09-23 : « je me retrouve
+    // avec Lebron dans la partie sans binôme »).
+    const siege = game ? partnerSeatAfterAccepting(game as any, participantId, player.id) : null;
+    if (siege) setPartnerInvite({ gameId, teamSide: siege });
+
     fetchData();
     reloadNotifs();
   };
@@ -4183,7 +4196,11 @@ export default function LobbyScreen() {
       <InvitePartnerSheet
         visible={!!partnerInvite}
         excludeIds={(() => {
-          const g = [...games, ...upcomingGames].find(x => x.id === partnerInvite?.gameId);
+          // `detailGame` compris : sans lui, une fiche ouverte par id ne
+          // fournit aucune exclusion et la liste reproposerait des joueurs
+          // déjà dans la partie.
+          const g = [...games, ...upcomingGames].find(x => x.id === partnerInvite?.gameId)
+            ?? (detailGame?.id === partnerInvite?.gameId ? detailGame : undefined);
           return [
             g?.creator_id,
             ...((g?.participants ?? []).map((x: any) => x.player_id)),

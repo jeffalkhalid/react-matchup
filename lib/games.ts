@@ -506,6 +506,30 @@ export function partnerSeatToFill(
 }
 
 /**
+ * Le siège que j'aurai à pourvoir SI j'accepte cette invitation maintenant.
+ *
+ * `partnerSeatToFill` ne répond que pour un joueur DÉJÀ accepté — au moment où
+ * l'on tape « Relever le défi », il répond donc toujours `null`. Cette
+ * fonction joue l'acceptation sur les lignes en mémoire et pose la même
+ * question : c'est ce qui permet d'enchaîner directement sur le choix du
+ * partenaire au lieu de laisser le joueur seul dans son camp.
+ */
+export function partnerSeatAfterAccepting(
+  game: Omit<Parameters<typeof partnerSeatToFill>[0], 'participants'> & {
+    participants?: {
+      id?: string | null; player_id: string; status: string;
+      team_side?: string | null; invite_expires_at?: string | null;
+    }[] | null;
+  },
+  participantId: string,
+  playerId: string,
+): string | null {
+  const parts = (game.participants ?? []).map(p =>
+    p.id === participantId ? { ...p, status: 'accepted' } : p);
+  return partnerSeatToFill({ ...game, participants: parts }, playerId);
+}
+
+/**
  * Ce qu'on annonce avant de quitter une partie.
  *
  * « Ta place sera libérée » était vrai d'une partie ordinaire, faux d'un
