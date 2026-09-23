@@ -342,51 +342,39 @@ describe('le bloc du bas occupe de la place, et le budget le sait', () => {
   });
 });
 
-describe("la colonne se mesure au lieu de s'estimer", () => {
-  it("l'accueil lit sa hauteur reelle et distribue des hauteurs", async () => {
-    const { readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    // Mesurer plutot qu'estimer : l'en-tete, la barre d'onglets et les marges
-    // etaient trois constantes ecrites a la main, et il suffit qu'une soit
-    // fausse pour que l'accueil se croie plus riche qu'il ne l'est.
-    expect(src).toContain('onLayout');
-    expect(src).toContain('allocateHome');
-    // Des HAUTEURS, pas des parts : une part ne dit rien tant qu'un bloc
-    // voisin peut prendre la hauteur de son contenu.
-    expect(src).toContain('height: parts.ctas');
-    expect(src).not.toContain('flex: sizes.');
+describe('aucun plancher : la seule chose qui garantit que tout rentre', () => {
+  it('chaque section a une part, et AUCUN plancher', () => {
+    // C'est l'invariant du fichier. Une part se partage toujours ; un
+    // plancher, lui, permet a un bloc de refuser sa part — et la somme
+    // depasse. C'est ce qui poussait le dernier bloc sous la barre d'onglets.
+    //
+    // Une repartition maison (mesure + distribution en points) a remplace ce
+    // modele un temps : une demi-douzaine de corrections, toutes pour une
+    // erreur de comptabilite differente — marges oubliees, en-tete compte en
+    // trop, mesure prise dans une zone deroulante qui suivait son contenu.
+    // Flexbox, lui, connait la hauteur et n'en estime aucune part.
+    const cas = [
+      { compact: true, hasTournaments: true, hasNextMatch: true, hasPulse: true, hasLiveTournament: true, openGames: 2 },
+      { compact: false, hasTournaments: false, hasNextMatch: false, hasPulse: false, openGames: 0 },
+      { compact: true, hasTournaments: true, hasNextMatch: false, hasPulse: true, openGames: 0 },
+    ];
+    for (const c of cas) {
+      const s = homeSectionSizes(c as any);
+      for (const [nom, sec] of Object.entries(s)) {
+        if (!sec || typeof sec !== 'object' || !('minHeight' in sec)) continue;
+        expect((sec as any).flex, `${nom} sans part`).toBeGreaterThan(0);
+      }
+    }
   });
 
-  it('la mesure ne peut pas s emballer', () => {
-    // Mesuree sur la colonne DANS une zone deroulante, la hauteur suit le
-    // contenu : les parts grandissent, donc le contenu, donc la mesure — une
-    // boucle qui a rempli l'ecran de deux tuiles geantes. La mesure doit donc
-    // venir d'un calque colle aux quatre bords, qui ne depend que de son
-    // parent, jamais de ce qu'on met dedans.
+  it("l'accueil n'utilise aucun plancher sur ses sections", () => {
     const { readFileSync } = require('node:fs');
     const { join } = require('node:path');
     const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    const i = src.indexOf('setColH(prev');
-    expect(i).toBeGreaterThan(-1);
-    const autour = src.slice(Math.max(0, i - 400), i + 400);
-    expect(autour).toContain("position: 'absolute'");
-  });
-
-  it('le filet existe, mais il dort', () => {
-    // Chaque bloc recoit sa part, donc tout tient. Mais une estimation de
-    // contenu peut se reveler courte sur un telephone qu'on n'a pas teste, et
-    // un bouton hors de portee est pire qu'un ecran qui defile.
-    const { readFileSync } = require('node:fs');
-    const { join } = require('node:path');
-    const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    // Il existe — mais il DORT. Avec des planchers, un bloc dont le contenu
-    // depassait de quelques points allongeait la page ; elle s'allongeait donc
-    // toujours, et le filet devenait l'etat normal. Les blocs prennent
-    // exactement leur part, la colonne est bornee en haut comme en bas, et la
-    // zone deroulante n'a rien a faire defiler tant que tout se passe bien.
-    expect(src).toContain('height: parts.ctas');
-    expect(src).toContain('minHeight: boiteColonne');
-    expect(src).toContain('maxHeight: boiteColonne');
+    const colonne = src.slice(src.indexOf('LA REPARTITION EST FAITE PAR FLEXBOX'));
+    expect(colonne).toContain('flex: sizes.ctas.flex');
+    // `minHeight: sizes.` ou `height: parts.` = le retour du probleme.
+    expect(colonne).not.toContain('minHeight: sizes.');
+    expect(colonne).not.toContain('parts.');
   });
 });
