@@ -27,7 +27,7 @@ import { HomeRankButton } from '../../components/home/HomeRankButton';
 import { HomeTournamentsBanner } from '../../components/home/HomeTournamentsBanner';
 import { HomePulse } from '../../components/home/HomePulse';
 import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
-import { homeSectionSizes, COMPACT_THRESHOLD_H, TOURNAMENTS_RESERVE } from '../../lib/homeLayout';
+import { homeSectionSizes, COMPACT_THRESHOLD_H, BANNER_RESERVE, PULSE_RESERVE } from '../../lib/homeLayout';
 import { suggestibleGames, homeSlot } from '../../lib/homeSlot';
 import { loadClubFavorites } from '../../lib/clubFavorites';
 import {
@@ -94,8 +94,19 @@ export default function HomeScreen() {
   const [tournoisOuverts, setTournoisOuverts] = useState(false);
   // La soiree en cours ou j'ai une place — la banniere du haut.
   const [soiree, setSoiree] = useState<Tournament | null>(null);
+  /**
+   * « Ça bouge chez les PAGUISTES » parle-t-il ? C'est lui qui le dit.
+   *
+   * Sa hauteur n'était réservée nulle part : il s'ajoutait au bas d'une
+   * colonne déjà pleine et se faisait couper par la barre d'onglets.
+   */
+  const [pulseVisible, setPulseVisible] = useState(false);
+  // Le bandeau Tournois est rendu MÊME tournois fermés (c'est une porte, pas
+  // une actualité) : sa place se déduit toujours, pas seulement quand il y a
+  // des soirées ouvertes. Pendant une soirée il cède la place à la bannière.
   const availableH = winH - insets.top - 48 - (64 + insets.bottom) - 18 - 48
-    - (tournois.length > 0 ? TOURNAMENTS_RESERVE : 0);
+    - (soiree ? 0 : BANNER_RESERVE)
+    - (pulseVisible ? PULSE_RESERVE : 0);
   const compact = availableH < COMPACT_THRESHOLD_H * Math.max(1, fontScale);
 
   const fetchData = useCallback(async () => {
@@ -358,6 +369,7 @@ export default function HomeScreen() {
     hasNextMatch: visibleUpcoming.length > 0,
     openGames: suggestions.length,
     hasLiveTournament: !!soiree,
+    hasPulse: pulseVisible,
   });
 
   return (
@@ -550,7 +562,13 @@ export default function HomeScreen() {
               contentContainerStyle={{ flexGrow: 1 }}
             >
             <View style={{
-              flex: 1,
+              // `flexGrow` et NON `flex` : avec `flex: 1` (base 0), cette
+              // colonne vaut exactement la hauteur visible, quoi qu'elle
+              // contienne — le contenu qui dépasse est COUPÉ, et le
+              // ScrollView, qui ne voit rien à faire défiler, ne prend jamais
+              // le relais annoncé juste au-dessus. En base auto, les planchers
+              // comptent : la colonne grandit et l'on peut atteindre le bas.
+              flexGrow: 1,
               paddingHorizontal: 20,
               paddingTop: compact ? 6 : 10,
               paddingBottom: 8,
@@ -683,7 +701,7 @@ export default function HomeScreen() {
                 <View pointerEvents="none" style={{ flex: sizes.filler.flex }} />
               )}
 
-              <HomePulse myId={player.id} myElo={player.elo_score} />
+              <HomePulse myId={player.id} myElo={player.elo_score} onVisible={setPulseVisible} />
 
               {/* La rangée « Classement · Score » vivait ici. Le rang est monté
                   dans l'en-tête ; « Score » s'atteint depuis le lobby (avec le

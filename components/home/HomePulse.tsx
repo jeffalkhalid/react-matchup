@@ -10,7 +10,7 @@
 //
 // Chaque carte se tait quand elle n'a rien à dire, plutôt que d'afficher un
 // zéro : deux encarts vides côte à côte donnent l'impression d'une app morte.
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
@@ -90,7 +90,17 @@ function Photos({ rows, max = 4 }: { rows: { id: string; name: string; path?: st
   );
 }
 
-export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
+export function HomePulse({ myId, myElo, onVisible }: {
+  myId: string; myElo: number;
+  /**
+   * Le bloc annonce sa présence à l'accueil.
+   *
+   * Il se tait quand il n'a rien à dire — l'écran ne peut donc pas savoir s'il
+   * occupe de la place, et il ne la réservait pas. Le bloc se faisait couper
+   * par la barre d'onglets, ses deux boutons avec (Android, 2026-09-23).
+   */
+  onVisible?: (visible: boolean) => void;
+}) {
   const router = useRouter();
   const [dispos, setDispos] = useState<AvailabilityRow[]>([]);
   /** Deux au plus : le second prend la place des dispos quand il n'y en a pas. */
@@ -130,7 +140,11 @@ export function HomePulse({ myId, myElo }: { myId: string; myElo: number }) {
   // Personne de dispo : un DEUXIEME match a voter prend la place libre plutot
   // que de laisser une carte seule au milieu de la ligne.
   const chocsMontres = dispos.length > 0 ? clashes.slice(0, 1) : clashes.slice(0, 2);
-  if (dispos.length === 0 && chocsMontres.length === 0) return null;
+  const visible = dispos.length > 0 || chocsMontres.length > 0;
+  // Dans un effet, jamais pendant le rendu : prévenir le parent en plein
+  // rendu déclencherait sa mise à jour au milieu du nôtre.
+  useEffect(() => { onVisible?.(visible); }, [visible, onVisible]);
+  if (!visible) return null;
 
   const quand = creneau ? slotShortLabel(creneau) : 'ce soir';
 

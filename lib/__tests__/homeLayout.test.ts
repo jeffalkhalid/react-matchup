@@ -302,3 +302,52 @@ describe("sans carte de profil (accueil 2026-09-22)", () => {
     expect(homeSectionSizes({ ...base }).hero).not.toBeNull();
   });
 });
+
+// ── « Ça bouge chez les PAGUISTES » ────────────────────────────────────────
+//
+// Sur Android, ses deux cartes étaient coupées par la barre d'onglets : leurs
+// boutons (« Voir les joueurs », « Voter ») n'existaient tout simplement plus
+// à l'écran. Le bloc s'ajoutait au bas de la colonne sans que sa hauteur soit
+// réservée nulle part — le piège nº 1 de l'en-tête, une troisième fois.
+describe('le bloc du bas occupe de la place, et le budget le sait', () => {
+  it('sa hauteur compte dans le total', () => {
+    const avec = sizes({ hasNextMatch: true, hasPulse: true });
+    const sans = sizes({ hasNextMatch: true, hasPulse: false });
+    expect(sans.pulse).toBeNull();
+    expect(totalMinHeight(avec)).toBe(totalMinHeight(sans) + avec.pulse!.minHeight + avec.gap);
+  });
+
+  it('hauteur FIXE : il ne gonfle pas sur les grands écrans', () => {
+    // Une part (`flex`) le ferait grandir avec l'écran, au détriment de ce qui
+    // compte davantage plus haut. Deux cartes n'ont pas plus à dire sur une
+    // tablette que sur un téléphone.
+    expect(sizes({ hasPulse: true }).pulse!.flex).toBe(0);
+  });
+
+  it("sur la plus petite colonne Android, il fait déborder — et c'est assumé", () => {
+    // Constat, pas regret : avec ce bloc, le cas chargé ne tient pas dans 517
+    // dp. C'est précisément pourquoi le filet (le ScrollView) doit rester
+    // atteignable — le test suivant s'en assure. Si un jour on raccourcit les
+    // cartes, ce test échouera : ce sera une bonne nouvelle à enregistrer ici.
+    const charge = sizes({ hasNextMatch: true, hasPulse: true });
+    expect(fitsWithoutScroll(charge, ANDROID_COLUMN_H)).toBe(false);
+  });
+});
+
+describe('le filet de sécurité reste atteignable', () => {
+  it("la colonne de l'accueil peut grandir au-delà de l'écran", async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
+    // `flex: 1` fixe la colonne à la hauteur visible quoi qu'elle contienne :
+    // ce qui dépasse est COUPÉ, et le ScrollView ne voit rien à faire défiler.
+    // En base auto (`flexGrow`), les planchers comptent et l'on atteint le bas.
+    // Ancre propre à la colonne de l'accueil : elle seule règle son
+    // rembourrage haut sur le mode compact.
+    const pied = src.indexOf('paddingTop: compact ?');
+    expect(pied).toBeGreaterThan(-1);
+    const colonne = src.slice(Math.max(0, pied - 200), pied);
+    expect(colonne).toContain('flexGrow: 1');
+    expect(colonne).not.toContain('flex: 1,');
+  });
+});

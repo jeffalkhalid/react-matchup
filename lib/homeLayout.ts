@@ -55,6 +55,17 @@ export interface HomeLayoutInput {
    * par mois -- donc elle ne pese pas sur l'accueil ordinaire.
    */
   hasLiveTournament?: boolean;
+  /**
+   * « Ça bouge chez les PAGUISTES » est-il rendu ?
+   *
+   * Il se tait quand il n'a rien à dire, donc l'écran ne peut pas le deviner :
+   * c'est le bloc lui-même qui annonce sa présence. Sans cette entrée, sa
+   * hauteur n'était réservée NULLE PART — il s'ajoutait au bas d'une colonne
+   * déjà pleine et se faisait couper par la barre d'onglets, ses deux boutons
+   * avec (vu sur Android le 2026-09-23). C'est le piège nº 1 de l'en-tête, une
+   * troisième fois : on ajoute une section sans la retirer du budget.
+   */
+  hasPulse?: boolean;
 }
 
 export interface SectionSize {
@@ -105,6 +116,8 @@ export interface HomeSizes {
    * l'écran se calme au lieu de se déformer.
    */
   filler: SectionSize | null;
+  /** « Ça bouge chez les PAGUISTES » — `null` quand le bloc se tait. */
+  pulse: SectionSize | null;
   /** L'espace entre deux sections. */
   gap: number;
 }
@@ -118,6 +131,18 @@ export interface HomeSizes {
  * valeur vit ici pour qu'on ne puisse plus la régler d'un côté seulement.
  */
 export const TOURNAMENTS_RESERVE = 140;
+
+/**
+ * Ce que le bandeau « Tournois & événements » coûte, en dp.
+ *
+ * Il est rendu MÊME sans tournoi ouvert (c'est une porte, pas une actualité),
+ * alors que l'écran ne déduisait sa place que lorsqu'il y avait des tournois.
+ * Résultat : tournois fermés, on croyait avoir 104 dp de plus qu'en réalité.
+ */
+export const BANNER_RESERVE = 104;
+
+/** Ce que « Ça bouge chez les PAGUISTES » coûte quand il parle, en dp. */
+export const PULSE_RESERVE = 170;
 
 /**
  * En dessous de cette hauteur disponible (tournois déduits, et pondérée par
@@ -220,13 +245,17 @@ export function homeSectionSizes(i: HomeLayoutInput): HomeSizes {
       : nb > 0 ? { flex: 2.2, minHeight: c ? 186 : 210 }
                : { flex: 1.1, minHeight: c ? 92  : 104 },
     filler: i.hasNextMatch || suggere ? null : { flex: 0.8, minHeight: 0 },
+    // Hauteur FIXE (flex 0), comme le bandeau : deux cartes dont le contenu
+    // ne s'étire pas. Lui donner une part la ferait gonfler sur les grands
+    // écrans au détriment de ce qui compte plus haut.
+    pulse: i.hasPulse ? { flex: 0, minHeight: c ? 150 : PULSE_RESERVE } : null,
     gap: c ? 10 : 16,
   };
 }
 
 /** La hauteur minimale que la colonne réclame, planchers et espaces compris. */
 export function totalMinHeight(s: HomeSizes): number {
-  const sections = [s.liveBanner, s.hero, s.ctas, s.tournaments, s.nextMatch, s.openGames, s.filler]
+  const sections = [s.liveBanner, s.hero, s.ctas, s.tournaments, s.nextMatch, s.openGames, s.filler, s.pulse]
     .filter((x): x is SectionSize => x !== null);
   const planchers = sections.reduce((n, x) => n + x.minHeight, 0);
   return planchers + s.gap * Math.max(0, sections.length - 1);
