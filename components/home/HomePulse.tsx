@@ -42,14 +42,21 @@ const CARTE = {
  * coupes. Toutes les estimations de hauteur ont fini par etre fausses au
  * moins une fois ; celle-ci n'en est pas une.
  */
-function Milieu({ children }: { children: ReactNode }) {
+function Haut({ entete, photos, serre }: { entete: (sous: boolean) => ReactNode; photos: ReactNode; serre: boolean }) {
   const [h, setH] = useState(0);
+  // Mesuree, jamais deduite du contenu : cette zone recoit ce que la carte lui
+  // laisse une fois le bouton servi. Les seuils ne decident plus que du
+  // CONFORT — se tromper coute une ligne de texte ou des visages, plus jamais
+  // un bouton.
+  const avecPhotos = h === 0 || h >= 64;
+  const avecPhrase = h === 0 || h >= 96;
   return (
     <View
       onLayout={e => { const v = e.nativeEvent.layout.height; setH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
-      style={{ flex: 1, minHeight: 0, overflow: 'hidden', justifyContent: 'center' }}
+      style={{ flex: 1, minHeight: 0, overflow: 'hidden', gap: serre ? 8 : 10 }}
     >
-      {h >= 26 ? children : null}
+      {entete(avecPhrase)}
+      {avecPhotos ? photos : null}
     </View>
   );
 }
@@ -209,9 +216,10 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
   // Seul choix restant : la phrase sous le titre. Les photos, elles, ne se
   // decident plus ici — le milieu elastique s'en charge, lui qui connait sa
   // hauteur reelle.
-  const avecPhrase = carteH === 0 || carteH >= 150;
-  const serre = !avecPhrase;
+  const serre = carteH > 0 && carteH < 150;
   const carte = serre ? { ...CARTE, padding: 12, gap: 8 } : CARTE;
+  /** Deux cartes cote a cote : chaque titre n'a qu'un demi-ecran. */
+  const court = (dispos.length > 0 ? 1 : 0) + chocsMontres.length > 1;
 
   return (
     <View style={{ gap: 10, flex: 1 }}>
@@ -233,19 +241,24 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
       >
         {dispos.length > 0 && (
           <View style={carte}>
-            <Entete
-              icon="users"
-              titre={`Dispos ${quand}`}
-              sous={avecPhrase
-                ? `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`
-                : null}
+            <Haut
+              serre={serre}
+              entete={sous => (
+                <Entete
+                  icon="users"
+                  titre={court ? 'Dispos' : `Dispos ${quand}`}
+                  sous={sous
+                    ? `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`
+                    : null}
+                />
+              )}
+              photos={
+                <Photos taille={serre ? 30 : 34} rows={dispos.map(r => ({
+                  id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
+                }))} />
+              }
             />
-            <Milieu>
-              <Photos taille={serre ? 30 : 34} rows={dispos.map(r => ({
-                id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
-              }))} />
-            </Milieu>
-            <Bouton label="Voir les joueurs" onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
+            <Bouton label={court ? 'Voir' : 'Voir les joueurs'} onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
           </View>
         )}
 
@@ -253,18 +266,32 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
           <View key={clash.gameId} style={carte}>
             {/* Deux cartes « Votes du moment » cote a cote se liraient comme
                 un doublon : la seconde pose la question directement. */}
-            <Entete
-              icon="signal"
-              titre={i === 0 ? 'Votes du moment' : 'Qui va gagner ?'}
-              sous={`${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`}
+            <Haut
+              serre={serre}
+              entete={sous => (
+                <Entete
+                  icon="signal"
+                  // Titres COURTS quand deux cartes se partagent la largeur :
+                  // « Votes du moment » s'affichait « Votes du » sur Android,
+                  // ou le retrecissement automatique ne tient pas ses
+                  // promesses. Un titre choisi pour la place disponible vaut
+                  // mieux qu'un titre coupe.
+                  titre={court
+                    ? (i === 0 ? 'Les votes' : 'Qui gagne ?')
+                    : (i === 0 ? 'Votes du moment' : 'Qui va gagner ?')}
+                  sous={sous
+                    ? `${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`
+                    : null}
+                />
+              )}
+              photos={
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Photos taille={serre ? 30 : 34} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+                  <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
+                  <Photos taille={serre ? 30 : 34} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+                </View>
+              }
             />
-            <Milieu>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Photos taille={serre ? 30 : 34} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
-                <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
-                <Photos taille={serre ? 30 : 34} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
-              </View>
-            </Milieu>
             {/* Vers CE match précisément, pas vers la liste : l'onglet place la
                 carte en tête du rail (cf. app/(tabs)/activite.tsx). */}
             <Bouton label="Voter" onPress={() => router.push(`/(tabs)/activite?focus=${clash.gameId}` as any)} />
