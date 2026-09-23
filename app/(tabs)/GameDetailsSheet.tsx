@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, courtNeedsAttention, partnerSeatToFill } from '../../lib/games';
-import { stakeOutcomeForGame } from '../../lib/stakePreview';
+import { stakeForViewer } from '../../lib/stakePreview';
 import { StakePreview } from '../../components/create/StakePreview';
 import { usePlayer } from '../../hooks/usePlayer';
 import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
@@ -477,7 +477,7 @@ function GameDetailsSheetContenu({
    * une approximation, c'est ce que fait le moteur a la validation du score.
    */
   const enjeu = maFiche
-    ? stakeOutcomeForGame(game as any, {
+    ? stakeForViewer(game as any, {
         id: maFiche.id, elo_score: maFiche.elo_score,
         win_count: maFiche.win_count, loss_count: maFiche.loss_count,
         last_match_at: maFiche.last_match_at, fiability_pct: maFiche.fiability_pct,
@@ -1017,7 +1017,7 @@ function GameDetailsSheetContenu({
                 cible={(game as any).is_targeted === true}
                 note={enjeu.exact
                   ? 'Calculé sur les quatre joueurs. Un score large rapporte davantage — et ton chiffre n’est pas celui de tes partenaires.'
-                  : 'Le camp adverse n’est pas complet : fourchette calculée sur la bande de niveau du défi.'}
+                  : 'Il manque un joueur : fourchette calculée sur la bande de niveau de la partie.'}
               />
             )}
 

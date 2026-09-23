@@ -36,7 +36,7 @@ import {
 import type { DistanceOf } from '../../lib/geo';
 import { useOrigin } from '../../hooks/useOrigin';
 import { useReleveDefi } from '../../hooks/useReleveDefi';
-import { stakeOutcomeForGame, stakeOutcomeForExploring } from '../../lib/stakePreview';
+import { stakeForViewer } from '../../lib/stakePreview';
 import { StakeLine } from '../../components/StakeLine';
 import { formatGameDistance, sortByProximity, sortByMatchDate, originLabel, normClubName } from '../../lib/geo';
 import { gpsFailureMessage, shouldOfferGps } from '../../lib/originPolicy';
@@ -942,7 +942,7 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
               win_count: maFiche.win_count, loss_count: maFiche.loss_count,
               last_match_at: maFiche.last_match_at, fiability_pct: maFiche.fiability_pct,
             };
-            const e = stakeOutcomeForGame(game as any, moi) ?? stakeOutcomeForExploring(game as any, moi);
+            const e = stakeForViewer(game as any, moi);
             return e ? <StakeLine outcome={e.outcome} exact={e.exact} s={ps} /> : null;
           })() : null}
         </View>

@@ -379,6 +379,22 @@ export function stakeOutcomeForExploring(game: StakeGame, me: StakePlayer): Stak
   return envelope ? { outcome: envelope, exact: toutConnu } : null;
 }
 
+/**
+ * Ce que ce match me met en jeu, que j'y sois ou non.
+ *
+ * Les deux cas s'excluent — `stakeOutcomeForGame` ne repond que si je suis un
+ * des quatre joueurs, `stakeOutcomeForExploring` que si je n'en suis pas — et
+ * c'est exactement pourquoi ils doivent etre appeles ensemble. La carte le
+ * faisait, la fiche du match non : en liste d'attente sur un defi complet, la
+ * carte annoncait « -0,36 / +0,32 » et la fiche ne disait rien. Le meme match,
+ * deux reponses.
+ *
+ * Tout ecran qui affiche l'enjeu passe par ici.
+ */
+export function stakeForViewer(game: StakeGame, me: StakePlayer): StakeProjection | null {
+  return stakeOutcomeForGame(game, me) ?? stakeOutcomeForExploring(game, me);
+}
+
 /** Le meilleur gain possible — celui qu'on affiche. */
 export function bestGain(o: StakeOutcome): number { return o.winMax; }
 

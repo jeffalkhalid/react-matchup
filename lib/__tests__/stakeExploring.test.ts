@@ -112,3 +112,20 @@ describe('un défi à relever donne le même chiffre par les deux chemins', () =
     expect(worstLoss(parExplorer.outcome)).toBeCloseTo(worstLoss(parRelever.outcome), 5);
   });
 });
+
+describe('une seule porte d entree, pour que les ecrans ne divergent pas', () => {
+  it('repond que je sois dans la partie ou non', async () => {
+    const { stakeForViewer } = await import('../stakePreview');
+    // En liste d'attente sur un defi COMPLET : je n'ai pas de ligne
+    // participants, donc `stakeOutcomeForGame` se tait. La carte appelait les
+    // deux fonctions, la fiche une seule : la carte annoncait un chiffre et la
+    // fiche ne disait rien, sur le meme match.
+    const complet = partie();
+    expect(stakeForViewer(complet, moi)).not.toBeNull();
+    // Et quand j'y suis, c'est l'autre qui repond — avec mon camp a moi.
+    const dedans = partie({
+      participants: [part('b', 'A_DRO'), { player_id: 'z', status: 'accepted', team_side: 'B_GAU', player: fiche(5) }, part('d', 'B_DRO')],
+    });
+    expect(stakeForViewer(dedans, moi)).not.toBeNull();
+  });
+});
