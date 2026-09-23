@@ -654,6 +654,7 @@ export default function HomeScreen() {
                 collapsable={false}
                 style={{ flex: sizes.ctas.flex }}>
                 <HomePrimaryActions
+                  compact={compact}
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
                   textScale={sizes.ctas.textScale}

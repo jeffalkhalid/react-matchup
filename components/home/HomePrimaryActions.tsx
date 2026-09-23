@@ -46,9 +46,21 @@ function Phrase({ children, couleur }: { children: string; couleur: string }) {
   );
 }
 
-function Tuile({ variant, icon, titre, accent, sous, onPress }: {
+function Tuile({ variant, icon, titre, accent, sous, onPress, compact }: {
   variant: 'brand' | 'dark';
   icon: IconName;
+  /**
+   * Ecran ou police serres.
+   *
+   * Au plancher du bloc (112 points), la tuile doit loger 129 points de
+   * contenu : rembourrage 28 + pastille 38 + titre sur deux lignes 48 +
+   * phrase 15. Il en manque 17, et c'est le texte qui les prenait — d'ou la
+   * ligne tranchee en son milieu. On les rend ici plutot que de rogner.
+   *
+   * Seulement en compact : sur un ecran qui a la place, les grands titres de
+   * la maquette restent tels quels.
+   */
+  compact?: boolean;
   /** Première partie du titre, en couleur de texte normale. */
   titre: string;
   /** Seconde partie, mise en valeur — c'est elle qui nomme l'action. */
@@ -57,6 +69,10 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
   onPress: () => void;
 }) {
   const jaune = variant === 'brand';
+  const c = !!compact;
+  const pastilleTaille = c ? 32 : 38;
+  const titreTaille = c ? 18 : 21;
+  const titreLigne = c ? 21 : 24;
   const fond = jaune ? Colors.brand : '#0A0A0A';
   const texte = jaune ? Colors.primary : Colors.textOnDark;
   const accentCouleur = jaune ? Colors.primary : Colors.brand;
@@ -73,8 +89,8 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
         // `flex: 1` sur la tuile ET sur la rangee : la hauteur reservee par
         // l'accueil leur revient au lieu de rester en blanc sous les cartes.
         flex: 1, backgroundColor: fond, borderRadius: 20,
-        paddingVertical: 14, paddingHorizontal: 14, justifyContent: 'space-between',
-        minHeight: 132, overflow: 'hidden',
+        paddingVertical: c ? 11 : 14, paddingHorizontal: c ? 12 : 14, justifyContent: 'space-between',
+        minHeight: c ? 108 : 132, overflow: 'hidden',
       }}
     >
       {/* Fond travaillé : de GRANDS anneaux concentriques qui traversent la
@@ -103,10 +119,10 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
       }} />
 
       <View style={{
-        width: 38, height: 38, borderRadius: 12, backgroundColor: pastille,
+        width: pastilleTaille, height: pastilleTaille, borderRadius: 12, backgroundColor: pastille,
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Icon name={icon} size={20} color={jaune ? Colors.primary : Colors.brand} stroke={2.2} />
+        <Icon name={icon} size={c ? 17 : 20} color={jaune ? Colors.primary : Colors.brand} stroke={2.2} />
       </View>
 
       {/* `flexShrink: 1` : c'est ce bloc qui cede quand la tuile est courte,
@@ -114,7 +130,7 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
       <View style={{ gap: 3, flexShrink: 1, minHeight: 0 }}>
         {/* Le titre a le DROIT de passer à la ligne : c'est ce qui évite la
             coupure au mot vue sur Android. */}
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 24, color: texte, paddingRight: 4 }}>
+        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: titreTaille, lineHeight: titreLigne, color: texte, paddingRight: 4 }}>
           {titre}
           <Text style={{ color: accentCouleur }}>{` ${accent}`}</Text>
         </Text>
@@ -133,15 +149,18 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
   );
 }
 
-export function HomePrimaryActions({ onMatchmaking, onChallenge }: {
+export function HomePrimaryActions({ onMatchmaking, onChallenge, compact }: {
   onMatchmaking: () => void;
   onChallenge: () => void;
+  /** Écran ou police serrés : titres et pastilles resserrés. */
+  compact?: boolean;
   /** Conservé pour l'appelant — la taille du texte ne se calcule plus. */
   textScale?: number;
 }) {
   return (
     <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
       <Tuile
+        compact={compact}
         variant="brand"
         icon="search"
         titre="Trouver"
@@ -150,6 +169,7 @@ export function HomePrimaryActions({ onMatchmaking, onChallenge }: {
         onPress={onMatchmaking}
       />
       <Tuile
+        compact={compact}
         variant="dark"
         icon="swords"
         titre="Match"
