@@ -441,17 +441,38 @@ export function partnerLevelRangeFor(
 }
 
 /**
- * Le défi est-il relevable par les adversaires désignés ?
- *
- * Aucun adversaire : c'est un défi ouvert, n'importe quel binôme peut tenter.
- * Deux adversaires : leur moyenne est déjà connue, on la vérifie. Un seul :
- * il reste une place, on regarde si un partenaire peut y tenir.
+ * De combien un binôme peut sortir de la fourchette sans que ça devienne
+ * absurde. Au-delà, on prévient.
  */
-export function defiReachable(advLevels: number[], min: number, max: number): boolean {
-  if (advLevels.length === 0) return true;
+export const ECART_TOLERE = 1.0;
+
+/**
+ * L'écart est-il trop grand pour que la moyenne retombe dans la fourchette ?
+ *
+ * On ne parle pas de possible ou d'impossible — sur le papier, il reste
+ * presque toujours un niveau qui compenserait. On dit simplement que l'écart
+ * demandé est déraisonnable : pour rattraper un adversaire très en dessous du
+ * plancher, il faudrait un binôme très au-dessus du plafond, et deux fois
+ * plus loin que lui puisqu'il s'agit d'une moyenne.
+ *
+ * Rend `'haut'` si le binôme devrait être bien au-dessus du plafond,
+ * `'bas'` s'il devrait être bien en dessous du plancher, `null` si l'écart
+ * reste raisonnable.
+ */
+export function defiGapTooWide(
+  advLevels: number[], min: number, max: number,
+): 'haut' | 'bas' | null {
+  if (advLevels.length === 0) return null;
   if (advLevels.length >= 2) {
     const moyenne = (advLevels[0] + advLevels[1]) / 2;
-    return moyenne >= min && moyenne <= max;
+    if (moyenne > max + ECART_TOLERE) return 'bas';
+    if (moyenne < min - ECART_TOLERE) return 'haut';
+    return null;
   }
-  return partnerLevelRangeFor(advLevels[0], min, max) !== null;
+  // Le binôme doit compenser DEUX fois l'écart de l'adversaire : c'est une
+  // moyenne, pas une somme.
+  const [lo, hi] = [2 * min - advLevels[0], 2 * max - advLevels[0]];
+  if (lo > max + ECART_TOLERE) return 'haut';
+  if (hi < min - ECART_TOLERE) return 'bas';
+  return null;
 }

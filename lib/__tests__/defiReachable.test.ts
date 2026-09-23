@@ -7,7 +7,7 @@
 // pas.
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
-import { defiReachable, partnerLevelRangeFor } from '../defis';
+import { defiGapTooWide, partnerLevelRangeFor } from '../defis';
 
 describe('quel binôme l adversaire désigné doit-il amener', () => {
   it('le cas ordinaire : une fourchette large et atteignable', () => {
@@ -40,21 +40,32 @@ describe('quel binôme l adversaire désigné doit-il amener', () => {
   });
 });
 
-describe('le défi est-il relevable', () => {
-  it('aucun adversaire désigné : ouvert à tous', () => {
-    expect(defiReachable([], 4.66, 5.5)).toBe(true);
+describe("l ecart est-il trop grand pour retomber sur la moyenne", () => {
+  it('aucun adversaire designe : rien a dire', () => {
+    expect(defiGapTooWide([], 4.66, 5.5)).toBeNull();
   });
 
-  it('un adversaire atteignable', () => {
-    expect(defiReachable([4.95], 4.66, 5.5)).toBe(true);
+  it('un adversaire dans la fourchette : rien a dire', () => {
+    expect(defiGapTooWide([4.95], 4.66, 5.5)).toBeNull();
   });
 
-  it('un adversaire hors de portée : aucun binôme ne convient', () => {
-    expect(defiReachable([8.0], 1.0, 1.5)).toBe(false);
+  it('un peu en dessous : ca reste rattrapable', () => {
+    // 4,20 contre un plancher de 4,66 : il faut un binome a 5,12, juste
+    // au-dessus du plafond. Raisonnable, on ne dit rien.
+    expect(defiGapTooWide([4.2], 4.66, 5.5)).toBeNull();
   });
 
-  it('deux adversaires : leur moyenne est déjà connue', () => {
-    expect(defiReachable([4.95, 4.81], 4.66, 5.5)).toBe(true);
-    expect(defiReachable([2.0, 2.5], 4.66, 5.5)).toBe(false);
+  it('tres en dessous : le binome devrait etre bien au-dessus du plafond', () => {
+    // 2,00 : il faudrait 7,32 pour une fourchette qui s arrete a 5,50.
+    expect(defiGapTooWide([2.0], 4.66, 5.5)).toBe('haut');
+  });
+
+  it('tres au-dessus : l inverse', () => {
+    expect(defiGapTooWide([8.0], 2.0, 2.5)).toBe('bas');
+  });
+
+  it('deux adversaires : c est leur moyenne qu on regarde', () => {
+    expect(defiGapTooWide([4.95, 4.81], 4.66, 5.5)).toBeNull();
+    expect(defiGapTooWide([2.0, 2.5], 4.66, 5.5)).toBe('haut');
   });
 });

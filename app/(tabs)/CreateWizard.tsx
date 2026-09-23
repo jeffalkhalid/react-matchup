@@ -11,7 +11,7 @@ import { Colors, eloToLevel, formatPadelLevel, padelLevelToElo, Fonts } from '..
 import { buildGameShareMessage } from '../../lib/community';
 import { isInviteActive } from '../../lib/games';
 import { OVERLAP_MS, fetchBusyPlayerIds } from '../../lib/slotConflict';
-import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone, partnerLevelRangeFor, defiReachable } from '../../lib/defis';
+import { DEFI_BAND_MIN_LEVEL, defiMinimumMaxLevel, isDefiBandWideEnough, stakeTone, defiGapTooWide } from '../../lib/defis';
 import { stakeOutcome, stakeOutcomeForBand, type StakePlayer } from '../../lib/stakePreview';
 import { StakePreview } from '../../components/create/StakePreview';
 import { consumePickedVenue } from '../../lib/venuePicker';
@@ -1681,32 +1681,25 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
               </Text>
 
               {/* Designer un adversaire fige la MOITIE de la moyenne adverse.
-                  On dit donc ce qu'il devra amener — et quand la fenetre se
-                  referme, on le dit avant de publier : sinon le defi part, et
-                  l'adversaire cherche un binome qui n'existe pas. */}
-              {targeted && defiOpponents.length === 1 && (() => {
-                const adv = eloToLevel(defiOpponents[0].elo_score);
-                const plage = partnerLevelRangeFor(adv, defiFloorLevel, form.maxLevel);
-                const prenom = defiOpponents[0].name.trim().split(/\s+/)[0];
+                  S'il est loin de la fourchette, son binome devrait etre deux
+                  fois plus loin dans l'autre sens pour la rattraper. On ne
+                  parle pas de possible ou d'impossible — sur le papier il
+                  reste presque toujours un niveau qui compenserait — on dit
+                  juste que l'ecart demande n'a pas de sens. */}
+              {targeted && (() => {
+                const ecart = defiGapTooWide(
+                  defiOpponents.map(o => eloToLevel(o.elo_score)), defiFloorLevel, form.maxLevel,
+                );
+                if (!ecart) return null;
+                const qui = defiOpponents.length > 1
+                  ? 'Tes adversaires sont'
+                  : `${defiOpponents[0].name.trim().split(/\s+/)[0]} est`;
                 return (
-                  <Text style={{
-                    fontSize: 12, fontFamily: Fonts.uiBold, textAlign: 'center', marginTop: 8, lineHeight: 17,
-                    color: plage ? Colors.textSecondary : Colors.danger,
-                  }}>
-                    {plage
-                      ? `${prenom} devra amener un binôme entre ${plage[0].toFixed(2)} et ${plage[1].toFixed(2)}.`
-                      : `Aucun binôme ne permettrait à ${prenom} de tenir dans cette fourchette. Monte le plafond, ou choisis un autre adversaire.`}
+                  <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.danger, textAlign: 'center', marginTop: 8, lineHeight: 17 }}>
+                    {`${qui} trop loin de ta fourchette : leur moyenne ne pourra pas y retomber. ${ecart === 'haut' ? 'Monte le plafond' : 'Baisse le plafond'}, ou choisis un autre adversaire.`}
                   </Text>
                 );
               })()}
-
-              {targeted && defiOpponents.length >= 2 && !defiReachable(
-                defiOpponents.map(o => eloToLevel(o.elo_score)), defiFloorLevel, form.maxLevel,
-              ) && (
-                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.danger, textAlign: 'center', marginTop: 8, lineHeight: 17 }}>
-                  Le niveau moyen de tes adversaires sort de cette fourchette : ils ne pourront pas relever. Monte le plafond.
-                </Text>
-              )}
             </View>
           </>
         )}
