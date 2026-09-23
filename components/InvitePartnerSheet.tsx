@@ -26,7 +26,7 @@ export interface PartnerCandidate {
   avatar_path?: string | null;
 }
 
-export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyId }: {
+export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyId, subtitle }: {
   visible: boolean;
   /** Déjà dans la partie : on ne les propose pas. */
   excludeIds: string[];
@@ -34,6 +34,12 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
   onPick: (p: PartnerCandidate) => void;
   /** Identifiant en cours d'invitation — évite le double tap. */
   busyId?: string | null;
+  /**
+   * Remplace la phrase sous le titre. Quand le choix du partenaire EST
+   * l'acceptation du défi, il faut le dire ici : sinon on croit inviter
+   * quelqu'un à une partie qu'on a déjà rejointe.
+   */
+  subtitle?: string;
 }) {
   const insets = useSafeAreaInsets();
   const [q, setQ] = useState('');
@@ -80,7 +86,7 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
                 Amène ton partenaire
               </Text>
               <Text style={{ fontFamily: Fonts.ui, fontSize: 12.5, color: Colors.textSecondary, marginTop: 3, lineHeight: 17 }}>
-                Il recevra une invitation. Le défi ne sera confirmé qu'une fois qu'il aura accepté.
+                {subtitle ?? "Il recevra une invitation. Le défi ne sera confirmé qu'une fois qu'il aura accepté."}
               </Text>
             </View>
 

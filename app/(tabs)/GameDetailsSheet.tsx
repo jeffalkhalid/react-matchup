@@ -695,6 +695,14 @@ function GameDetailsSheetContenu({
                 </Text>
               </TouchableOpacity>
             </View>
+            {/* Défi nominatif : le prévenir AVANT qu'il touche le bouton. On
+                lui demandera son binôme dans la foulée, et l'acceptation
+                partira avec — un défi se joue à deux. */}
+            {!isBinome && game.is_challenge && (game as any).is_targeted === true && (
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 16 }}>
+                Tu choisiras ton binôme juste après : le défi ne se relève qu'à deux.
+              </Text>
+            )}
           </View>
         );
       }

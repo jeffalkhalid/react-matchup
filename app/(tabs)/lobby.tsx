@@ -2713,6 +2713,15 @@ export default function LobbyScreen() {
    * (trg_defi_no_b_invite fait l'exception).
    */
   const [partnerInvite, setPartnerInvite] = useState<{ gameId: string; teamSide: string } | null>(null);
+  /**
+   * Défi nominatif en train d'être relevé : mon acceptation ATTEND le binôme.
+   *
+   * Relever un défi qu'on m'adresse et amener mon partenaire sont un seul
+   * geste, pas deux. Accepter d'abord laissait un camp incomplet et personne
+   * n'a le réflexe de rouvrir la fiche pour le combler (retour du 2026-09-23).
+   * Tant que ce choix n'est pas fait, je reste « invité » : rien n'est engagé.
+   */
+  const [relevePending, setRelevePending] = useState<{ participantId: string; gameId: string } | null>(null);
   const [partnerBusyId, setPartnerBusyId] = useState<string | null>(null);
 
   /**
@@ -2764,7 +2773,20 @@ export default function LobbyScreen() {
 
   const invitePartner = async (p: { id: string; name: string }) => {
     if (!partnerInvite || !player) return;
+    const releve = relevePending?.gameId === partnerInvite.gameId ? relevePending : null;
     setPartnerBusyId(p.id);
+
+    // Défi nominatif relevé à l'instant : mon acceptation part AVEC le binôme.
+    // Elle d'abord — si elle échoue (conflit de créneau), on n'invite
+    // personne, sinon on aurait convoqué un partenaire dans une partie qu'on
+    // ne rejoint finalement pas.
+    if (releve && !(await acceptInvitationRow(releve.participantId, releve.gameId))) {
+      setPartnerBusyId(null);
+      setPartnerInvite(null);
+      setRelevePending(null);
+      return;
+    }
+
     const { error } = await supabase.from('game_participants').insert({
       game_id: partnerInvite.gameId,
       player_id: p.id,
@@ -2774,6 +2796,11 @@ export default function LobbyScreen() {
     setPartnerBusyId(null);
     if (error) {
       Alert.alert('Impossible', "L'invitation n'a pas pu être envoyée. Réessaie dans un instant.");
+      // Le défi est relevé, le binôme manque : la fiche du match propose
+      // « Amène ton partenaire » pour reprendre là où on s'est arrêté.
+      setPartnerInvite(null);
+      setRelevePending(null);
+      if (releve) fetchData();
       return;
     }
     notifyPlayers({
@@ -2783,7 +2810,22 @@ export default function LobbyScreen() {
       data: { type: 'lobby', gameId: partnerInvite.gameId },
     });
     setPartnerInvite(null);
+    setRelevePending(null);
     fetchData();
+    if (releve) reloadNotifs();
+  };
+
+  /** Fermer le choix sans choisir : on n'a rien relevé, et on le dit. */
+  const closePartnerInvite = () => {
+    const releve = !!relevePending;
+    setPartnerInvite(null);
+    setRelevePending(null);
+    if (releve) {
+      Alert.alert(
+        'Défi pas encore relevé',
+        "Un défi se joue à deux : choisis ton partenaire pour le relever. L'invitation reste valable en attendant.",
+      );
+    }
   };
   const [storyMatch, setStoryMatch] = useState<StoryMatchData | null>(null);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
@@ -3803,14 +3845,22 @@ export default function LobbyScreen() {
     fetchData();
   };
 
-  const handleAcceptInvitation = async (participantId: string, gameId: string) => {
-    if (!player) return;
-    // `detailGame` aussi : un défi relevé depuis la fiche ouverte par id n'est
-    // dans aucune des deux listes, et sans lui on ne saurait pas qu'il reste
-    // un siège à pourvoir.
-    const game = upcomingGames.find(g => g.id === gameId)
-      ?? games.find(g => g.id === gameId)
-      ?? (detailGame?.id === gameId ? detailGame : undefined);
+  /**
+   * La partie que je vise, où qu'elle soit listée.
+   *
+   * `detailGame` compris : un défi relevé depuis la fiche ouverte par id n'est
+   * dans aucune des deux listes, et sans lui on ne saurait pas qu'il reste un
+   * siège à pourvoir.
+   */
+  const findGame = (gameId: string) =>
+    upcomingGames.find(g => g.id === gameId)
+    ?? games.find(g => g.id === gameId)
+    ?? (detailGame?.id === gameId ? detailGame : undefined);
+
+  /** L'acceptation seule : la ligne passe à « accepted », les autres sont prévenus. */
+  const acceptInvitationRow = async (participantId: string, gameId: string): Promise<boolean> => {
+    if (!player) return false;
+    const game = findGame(gameId);
 
     const { error } = await supabase
       .from('game_participants')
@@ -3826,7 +3876,7 @@ export default function LobbyScreen() {
         console.warn('[lobby] acceptation invitation refusée:', error);
         Alert.alert('Impossible de rejoindre', 'Une erreur est survenue, réessaie dans un instant.');
       }
-      return;
+      return false;
     }
 
     if (game?.creator_id) {
@@ -3843,14 +3893,24 @@ export default function LobbyScreen() {
         });
       }
     }
-    // Défi nominatif : on m'a défié MOI, c'est à moi de compléter mon camp.
-    // On enchaîne DIRECTEMENT sur le choix du partenaire — sinon relever le
-    // défi dépose le joueur seul dans son camp et rien à l'écran ne dit que
-    // c'est à lui d'y remédier (constaté le 2026-09-23 : « je me retrouve
-    // avec Lebron dans la partie sans binôme »).
-    const siege = game ? partnerSeatAfterAccepting(game as any, participantId, player.id) : null;
-    if (siege) setPartnerInvite({ gameId, teamSide: siege });
+    return true;
+  };
 
+  const handleAcceptInvitation = async (participantId: string, gameId: string) => {
+    if (!player) return;
+    const game = findGame(gameId);
+
+    // Défi nominatif : on m'a défié MOI, et un défi se joue à deux. Le choix
+    // du partenaire passe AVANT l'acceptation — les deux partiront ensemble
+    // quand il sera fait. Tant qu'il ne l'est pas, rien n'est engagé.
+    const siege = game ? partnerSeatAfterAccepting(game as any, participantId, player.id) : null;
+    if (siege) {
+      setRelevePending({ participantId, gameId });
+      setPartnerInvite({ gameId, teamSide: siege });
+      return;
+    }
+
+    if (!(await acceptInvitationRow(participantId, gameId))) return;
     fetchData();
     reloadNotifs();
   };
@@ -4207,7 +4267,10 @@ export default function LobbyScreen() {
           ].filter((v): v is string => !!v);
         })()}
         busyId={partnerBusyId}
-        onClose={() => setPartnerInvite(null)}
+        subtitle={relevePending
+          ? "Un défi se joue à deux. En le choisissant, tu relèves le défi et il reçoit son invitation."
+          : undefined}
+        onClose={closePartnerInvite}
         onPick={invitePartner}
       />
 

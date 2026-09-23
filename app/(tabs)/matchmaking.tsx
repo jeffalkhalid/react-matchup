@@ -524,6 +524,14 @@ export default function MatchmakingScreen() {
     if (binomeBusy.has(key)) return;
     setBinomeBusy(s => new Set(s).add(key));
     try {
+      // Défi nominatif : relever le défi et amener son binôme sont UN SEUL
+      // geste. On n'accepte donc PAS ici — on emmène vers la fiche du match,
+      // le seul endroit où les deux partent ensemble. Accepter d'abord
+      // laisserait un camp incomplet que plus personne ne penserait à combler.
+      if (player && partnerSeatAfterAccepting(inv.game as any, inv.participantId, player.id)) {
+        router.push(`/(tabs)/lobby?gameId=${inv.game.id}` as any);
+        return;
+      }
       const { error } = await supabase.from('game_participants')
         .update({ status: 'accepted' }).eq('id', inv.participantId);
       if (error) {
@@ -543,13 +551,6 @@ export default function MatchmakingScreen() {
         });
       }
       showToast('✅ Défi rejoint !');
-      // Défi nominatif : on m'a défié MOI, c'est à moi de compléter mon camp.
-      // On ouvre la fiche du match, où « Amène ton partenaire » attend. Sans
-      // ça, accepter depuis ce hub dépose le joueur seul dans son camp sans
-      // rien lui dire — le lobby, lui, enchaîne directement sur le choix.
-      if (player && partnerSeatAfterAccepting(g as any, inv.participantId, player.id)) {
-        router.push(`/(tabs)/lobby?gameId=${g.id}` as any);
-      }
       await fetchData();
       reloadNotifs();
     } finally {

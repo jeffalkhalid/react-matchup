@@ -51,6 +51,13 @@ export function InvitationCard({ playerId }: { playerId: string }) {
 
   const accept = async (inv: HubInvitation) => {
     const { game, participantId } = inv;
+    // Défi nominatif : relever le défi et amener son binôme sont UN SEUL
+    // geste. On n'accepte pas ici — on emmène vers la fiche du match, le seul
+    // endroit où les deux partent ensemble.
+    if (partnerSeatAfterAccepting(game as any, participantId, playerId)) {
+      router.push(`/(tabs)/lobby?gameId=${game.id}` as any);
+      return;
+    }
     occupe(participantId, true);
     const { error } = await supabase.from('game_participants').update({ status: 'accepted' }).eq('id', participantId);
     occupe(participantId, false);
@@ -72,12 +79,6 @@ export function InvitationCard({ playerId }: { playerId: string }) {
       }
     }
     setResolutions(r => ({ ...r, [participantId]: 'accepted' }));
-    // Défi nominatif : on m'a défié MOI, c'est à moi de compléter mon camp.
-    // On ouvre la fiche du match, où « Amène ton partenaire » attend — sinon
-    // accepter d'ici dépose le joueur seul dans son camp sans rien lui dire.
-    if (partnerSeatAfterAccepting(game as any, participantId, playerId)) {
-      router.push(`/(tabs)/lobby?gameId=${game.id}` as any);
-    }
   };
 
   const decline = async (inv: HubInvitation) => {
