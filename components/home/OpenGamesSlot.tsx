@@ -96,7 +96,11 @@ export function OpenGamesSlot({ games, myId, myElo, onOpenGame, onSeeAll, onCrea
     const hauteurs = Object.values(hauteursCartes);
     if (hauteurZone <= 0 || hauteurs.length === 0) return;
     const carte = Math.max(...hauteurs);
-    const cible = Math.max(42, Math.min(72, Math.floor(photoRef.current + (hauteurZone - carte) - 4)));
+    // Plancher a 24, pas a 42. A 42, une zone plus courte que la carte ne
+    // pouvait pas etre respectee : la photo gardait sa taille et le bas de la
+    // carte sortait. Meme piege que le budget et que « Prochain match » — un
+    // plancher est une facon de refuser la place qu'on a.
+    const cible = Math.max(24, Math.min(72, Math.floor(photoRef.current + (hauteurZone - carte) - 4)));
     if (Math.abs(cible - photoRef.current) > 1) {
       photoRef.current = cible;
       setPhoto(cible);

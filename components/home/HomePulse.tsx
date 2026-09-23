@@ -159,7 +159,7 @@ function Photos({ rows, max = 4, taille = 34 }: { rows: { id: string; name: stri
   );
 }
 
-export function HomePulse({ myId, myElo, onVisible, hauteur }: {
+export function HomePulse({ myId, myElo, onVisible }: {
   myId: string; myElo: number;
   /**
    * Le bloc annonce sa présence à l'accueil.
@@ -169,15 +169,6 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
    * par la barre d'onglets, ses deux boutons avec (Android, 2026-09-23).
    */
   onVisible?: (visible: boolean) => void;
-  /**
-   * La hauteur que l'accueil lui accorde, en points.
-   *
-   * Le bloc s'y tient au lieu de deborder : sous un certain seuil il laisse
-   * tomber la phrase sous le titre, puis les photos. Il garde toujours le
-   * titre, les noms et le bouton — ce qui permet d'agir. Un bloc a moitie
-   * visible, lui, ment sur ce qu'il contient.
-   */
-  hauteur?: number;
 }) {
   const router = useRouter();
   /** La hauteur reelle de la rangee de cartes — imposee par l'accueil. */
@@ -236,7 +227,9 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
   // phrase ~170, sans les photos ~124.
   // La hauteur des cartes, MESUREE. Le premier rendu se rabat sur la place
   // annoncee moins le titre de section ; ensuite c'est la vraie valeur.
-  const carteH = rangeeH > 0 ? rangeeH : Math.max(0, (hauteur ?? 0) - 31);
+  // Mesuree, ou nulle avant le premier passage : la carte prend alors sa
+  // forme complete le temps d'une image.
+  const carteH = rangeeH;
   // Seul choix restant : la phrase sous le titre. Les photos, elles, ne se
   // decident plus ici — le milieu elastique s'en charge, lui qui connait sa
   // hauteur reelle.
