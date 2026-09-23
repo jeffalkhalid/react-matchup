@@ -354,25 +354,35 @@ describe("la colonne se mesure au lieu de s'estimer", () => {
     expect(src).toContain('allocateHome');
     // Des HAUTEURS, pas des parts : une part ne dit rien tant qu'un bloc
     // voisin peut prendre la hauteur de son contenu.
-    expect(src).toContain('height: parts.ctas');
+    expect(src).toContain('minHeight: parts.ctas');
     expect(src).not.toContain('flex: sizes.');
   });
 
-  it("la colonne n'est PAS dans une zone deroulante", () => {
-    // Piege paye cher : mesuree DANS un ScrollView, sa hauteur suit le
-    // contenu. Les parts grandissent, donc le contenu grandit, donc la mesure
-    // grandit — l'accueil s'est retrouve rempli de deux tuiles geantes.
-    // Hors du ScrollView, elle vaut la place que son parent lui donne, quoi
-    // qu'elle contienne : la mesure est stable.
+  it('la mesure ne peut pas s emballer', () => {
+    // Mesuree sur la colonne DANS une zone deroulante, la hauteur suit le
+    // contenu : les parts grandissent, donc le contenu, donc la mesure — une
+    // boucle qui a rempli l'ecran de deux tuiles geantes. La mesure doit donc
+    // venir d'un calque colle aux quatre bords, qui ne depend que de son
+    // parent, jamais de ce qu'on met dedans.
     const { readFileSync } = require('node:fs');
     const { join } = require('node:path');
     const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    const colonne = src.indexOf('onLayout');
-    const avant = src.slice(0, colonne);
-    // Les ScrollView des modales sont refermes avant : aucun ne doit rester
-    // ouvert au moment ou la colonne commence.
-    const ouverts = (avant.match(/<ScrollView/g) ?? []).length;
-    const fermes = (avant.match(/<\/ScrollView>/g) ?? []).length;
-    expect(ouverts).toBe(fermes);
+    const i = src.indexOf('setColH(prev');
+    expect(i).toBeGreaterThan(-1);
+    const autour = src.slice(Math.max(0, i - 400), i + 400);
+    expect(autour).toContain("position: 'absolute'");
+  });
+
+  it('le filet existe : ce qui deborde reste atteignable', () => {
+    // Chaque bloc recoit sa part, donc tout tient. Mais une estimation de
+    // contenu peut se reveler courte sur un telephone qu'on n'a pas teste, et
+    // un bouton hors de portee est pire qu'un ecran qui defile.
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
+    // Des planchers, pas des hauteurs figees : sinon rien ne peut grandir et
+    // la zone deroulante n'a jamais rien a faire defiler.
+    expect(src).toContain('minHeight: parts.ctas');
+    expect(src).toContain('minHeight: boiteColonne');
   });
 });

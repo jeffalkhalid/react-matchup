@@ -130,8 +130,8 @@ export default function HomeScreen() {
   const PAD_COLONNE = { haut: 8, bas: 12 };
   // Avant la premiere mesure on garde l'estimation : une image, le temps que
   // la colonne se pose. Sans elle, le premier rendu serait vide.
-  const hauteurColonne = (colH > 0 ? colH : winH - insets.top - 48 - (64 + insets.bottom))
-    - PAD_COLONNE.haut - PAD_COLONNE.bas;
+  const boiteColonne = colH > 0 ? colH : winH - insets.top - 48 - (64 + insets.bottom);
+  const hauteurColonne = boiteColonne - PAD_COLONNE.haut - PAD_COLONNE.bas;
   const availableH = hauteurColonne - 48
     - (soiree ? 0 : BANNER_RESERVE)
     - (pulseVisible ? PULSE_RESERVE : 0);
@@ -598,27 +598,44 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            {/* PLUS DE ZONE DEROULANTE ICI, et c'est essentiel.
-                La colonne mesure sa hauteur pour repartir les parts. Dans un
-                ScrollView, cette hauteur suit le CONTENU : les parts
-                grandissent, donc le contenu grandit, donc la mesure grandit —
-                une boucle qui a rempli l'ecran de deux tuiles geantes. Hors
-                du ScrollView, la colonne vaut la place que son parent lui
-                donne, quoi qu'elle contienne. La mesure est alors stable, et
-                comme rien ne peut plus deborder, il n'y a plus rien a faire
-                defiler. */}
+            {/* LE FILET, et une mesure qui ne peut pas s'emballer.
+                La regle du jeu : chaque bloc recoit sa part, donc tout tient.
+                Mais une estimation de contenu peut toujours se reveler courte
+                sur un telephone qu'on n'a pas teste — et un bouton hors de
+                portee est pire qu'un ecran qui defile d'un centimetre.
+                D'ou le retour de la zone deroulante, avec des planchers
+                (`minHeight`) plutot que des hauteurs figees : ce qui deborde
+                fait grandir la colonne, et l'on peut y acceder.
+                La mesure, elle, ne vient PAS de la colonne : elle vient d'un
+                calque invisible qui remplit le parent. Mesuree sur la colonne
+                DANS une zone deroulante, la hauteur suivait le contenu — les
+                parts grandissaient, donc le contenu, donc la mesure : une
+                boucle qui a rempli l'ecran de deux tuiles geantes. Un calque
+                colle aux quatre bords ne depend, lui, que de son parent. */}
             <View
+              pointerEvents="none"
               onLayout={e => {
                 // Lire la valeur AVANT le setState : l'evenement natif est
                 // recycle, et un acces differe rend une hauteur nulle.
                 const h = e.nativeEvent.layout.height;
                 setColH(prev => (Math.abs(prev - h) > 0.5 ? h : prev));
               }}
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
+            />
+            <ScrollView
+              bounces={false}
+              overScrollMode="never"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ flexGrow: 1 }}
+            >
+            <View
               style={{
               // La colonne vaut exactement la hauteur visible, et chaque bloc
               // recoit sa part de cette hauteur : plus rien ne peut deborder,
               // donc plus rien a faire defiler.
-              flex: 1,
+              // Un PLANCHER, pas une hauteur figee : la colonne vaut l'ecran
+              // tant que tout tient, et grandit si quelque chose deborde.
+              minHeight: boiteColonne,
               paddingHorizontal: 20,
               paddingTop: PAD_COLONNE.haut,
               paddingBottom: PAD_COLONNE.bas,
@@ -640,7 +657,7 @@ export default function HomeScreen() {
                   onPress={() => router.push(`/tournaments/soiree/${soiree.id}` as any)}
                   activeOpacity={0.85}
                   style={{
-                    height: parts.liveBanner,
+                    minHeight: parts.liveBanner,
                     backgroundColor: Colors.primary, borderRadius: 16,
                     paddingHorizontal: 14,
                     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -674,7 +691,7 @@ export default function HomeScreen() {
               <View
                 ref={(v) => registerTourAnchor('home-ctas', v)}
                 collapsable={false}
-                style={{ height: parts.ctas }}>
+                style={{ minHeight: parts.ctas }}>
                 <HomePrimaryActions
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
@@ -696,7 +713,7 @@ export default function HomeScreen() {
                 /* Enveloppe a hauteur imposee : sans elle le bandeau prend la
                    hauteur de son contenu et sort de la repartition — c'est
                    exactement ce qui faisait deborder la colonne. */
-                <View style={{ height: parts.tournaments }}>
+                <View style={{ minHeight: parts.tournaments }}>
                   <HomeTournamentsBanner
                     enabled={tournoisOuverts}
                     count={tournois.length}
@@ -712,7 +729,7 @@ export default function HomeScreen() {
                   que les cartes restantes ne gonflent pas d'autant. Le budget
                   et son test vivent dans lib/homeLayout. */}
               {sizes.nextMatch && parts.nextMatch > 0 && (
-                <View style={{ height: parts.nextMatch }}>
+                <View style={{ minHeight: parts.nextMatch }}>
                   <UpcomingMatchCard
                     game={visibleUpcoming[0] ?? null}
                     count={visibleUpcoming.length}
@@ -731,7 +748,7 @@ export default function HomeScreen() {
                   vraies parties à rejoindre, ou l'invitation à en créer une
                   s'il n'y en a aucune. */}
               {sizes.openGames && parts.openGames > 0 && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
-                <View style={{ height: parts.openGames }}>
+                <View style={{ minHeight: parts.openGames }}>
                   <OpenGamesSlot
                     games={slot.kind === 'openGames' ? slot.games : []}
                     myId={player.id}
@@ -753,7 +770,7 @@ export default function HomeScreen() {
                   que le haut ne scrolle pas (lib/homeLayout). Le bloc se tait
                   quand il n'a rien à dire. */}
               {sizes.filler && (
-                <View pointerEvents="none" style={{ height: parts.filler }} />
+                <View pointerEvents="none" style={{ minHeight: parts.filler }} />
               )}
 
               {/* Le bloc qui cede : il s'efface quand la place manque plutot
@@ -761,10 +778,11 @@ export default function HomeScreen() {
                   l'onglet Activite, ou « Voir tout » mene deja. */}
               {(parts.pulse > 0 || !pulseVisible) && (
                 <View style={{
+                  // Une hauteur FIXE ici, et c'est le seul bloc dans ce cas :
+                  // sa carte est concue pour remplir exactement la place
+                  // donnee (bouton en bas, reste elastique au-dessus). Lui
+                  // laisser un plancher la ferait grandir au lieu de s'adapter.
                   height: pulseVisible ? parts.pulse : undefined,
-                  // Derniere garantie : meme si son contenu depassait encore,
-                  // il s'arrete ici et jamais sous la barre d'onglets.
-                  overflow: 'hidden',
                 }}>
                   <HomePulse myId={player.id} myElo={player.elo_score}
                     hauteur={parts.pulse} onVisible={setPulseVisible} />
@@ -778,6 +796,7 @@ export default function HomeScreen() {
                   ci-dessus via le budget de lib/homeLayout. */}
 
             </View>
+            </ScrollView>
           </>
         )}
       </View>
