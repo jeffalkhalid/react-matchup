@@ -165,7 +165,7 @@ export function HomePrimaryActions({ onMatchmaking, onChallenge, compact }: {
         icon="search"
         titre="Trouver"
         accent="un match"
-        sous="Des matchs à ton niveau, près de chez toi"
+        sous="À ton niveau, près de chez toi"
         onPress={onMatchmaking}
       />
       <Tuile
