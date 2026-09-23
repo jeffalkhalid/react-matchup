@@ -48,7 +48,7 @@ import {
   listSavedFilters, createSavedFilter, deleteSavedFilter, type SavedFilter,
 } from '../../lib/savedFilters';
 import { loadClubFavorites } from '../../lib/clubFavorites';
-import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt } from '../../lib/games';
+import { joinGame, occupiesSpot, withdrawInvitation, isInviteActive, isCreatorConflict, isGameReadyToScore, isConfirmedInGame, pendingInviteCount, spotsLabel, freeSpots, isUrgentGame, urgentDelayLabel, isOngoingGame, staysInUpcoming, gameEloRange, eloFitsGame, SCORE_WINDOW_MS, levelRangeLabel, declineInvitationPlan, courtBooking, courtNeedsAttention, leaveGamePrompt, defiInviteRole } from '../../lib/games';
 import { OVERLAP_MS } from '../../lib/slotConflict';
 import { matchNeedsMyAction, isMyPendingScore, MATCH_ACTION_FIELDS } from '../../lib/matches';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
@@ -980,7 +980,9 @@ export function GameCard({ game, variant, myElo, playerId, onPress, onApply, onC
         {variant === 'upcoming' && game.my_status === 'invited' && playerId && onAcceptInvitation && onDeclineInvitation && (() => {
           const myPart = (game.participants ?? []).find((p: any) => p.player_id === playerId && p.status === 'invited');
           if (!myPart) return null;
-          const isBinome = game.is_challenge && String((myPart as any).team_side ?? '').startsWith('A');
+          // Meme lecture que la fiche du match (lib/games.defiInviteRole).
+          const roleDefi = defiInviteRole(game as any, playerId!);
+          const isBinome = game.is_challenge && roleDefi?.role === 'binome';
           return (
             <>
               <View style={{ height: 1, backgroundColor: Colors.border, marginTop: 10, marginBottom: 8 }} />

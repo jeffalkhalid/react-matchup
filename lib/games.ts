@@ -489,6 +489,48 @@ export function gameWhenLabel(iso: string | null | undefined, now: Date = new Da
  * rôle — seul un adversaire CONFIRMÉ amène son partenaire, pas un invité qui
  * n'a pas encore répondu.
  */
+/**
+ * Sur un défi, qu'est-ce qu'on me propose au juste ?
+ *
+ * Deux invitations très différentes portaient le même texte. Si personne
+ * n'occupe encore mon camp, on me DÉFIE : j'amènerai mon binôme. Si quelqu'un
+ * y est déjà, c'est LUI qui m'invite comme binôme — mon partenaire est déjà
+ * choisi, et « tu choisiras ton binôme juste après » n'a plus de sens.
+ *
+ * Le créateur n'a pas de ligne `participants` : sans le lire, un invité du
+ * camp du créateur passerait pour un joueur défié.
+ */
+export function defiInviteRole(
+  game: {
+    is_challenge?: boolean | null;
+    creator_id?: string | null;
+    creator_side?: string | null;
+    creator?: { name?: string | null } | null;
+    participants?: {
+      player_id: string; status: string; team_side?: string | null;
+      invite_expires_at?: string | null; player?: { name?: string | null } | null;
+    }[] | null;
+  },
+  playerId: string,
+): { role: 'binome' | 'defie'; coequipier: string | null } | null {
+  if (!game?.is_challenge) return null;
+  const camp = (v: unknown) => String(v ?? '').toUpperCase().charAt(0);
+  const moi = (game.participants ?? []).find(p => p.player_id === playerId);
+  if (!moi) return null;
+  const monCamp = camp(moi.team_side);
+  if (!monCamp) return null;
+
+  if (game.creator_id && game.creator_id !== playerId && camp(game.creator_side || 'A_GAU') === monCamp) {
+    return { role: 'binome', coequipier: game.creator?.name ?? null };
+  }
+  const autre = (game.participants ?? []).find(
+    p => p.player_id !== playerId && occupiesSpot(p) && camp(p.team_side) === monCamp,
+  );
+  return autre
+    ? { role: 'binome', coequipier: autre.player?.name ?? null }
+    : { role: 'defie', coequipier: null };
+}
+
 export function partnerSeatToFill(
   game: {
     is_challenge?: boolean | null;

@@ -9,8 +9,9 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { Colors, formatPadelLevel, Fonts, Radius } from '../../lib/theme';
 import { buildGameShareMessage } from '../../lib/community';
-import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, courtNeedsAttention, partnerSeatToFill } from '../../lib/games';
+import { isInviteActive, isConfirmedInGame, spotsLabel, freeSpots, gameEloRange, courtBooking, courtNeedsAttention, partnerSeatToFill, defiInviteRole } from '../../lib/games';
 import { stakeForViewer } from '../../lib/stakePreview';
+import { partnerSeatAfterAccepting } from '../../lib/games';
 import { StakePreview } from '../../components/create/StakePreview';
 import { usePlayer } from '../../hooks/usePlayer';
 import { fetchQueuedBinomes, targetedOpponentsLine, stakeTone, type QueuedBinome } from '../../lib/defis';
@@ -706,8 +707,13 @@ function GameDetailsSheetContenu({
         const isChallenge = !!game.is_challenge;
         // Invité côté A d'un défi = le créateur me demande d'être son BINÔME
         // (« Tu as été défié » n'avait pas de sens) ; côté B = on me défie.
-        const isBinome = isChallenge && String((myParticipant as any).team_side ?? '').startsWith('A');
-        const createur = ((game as any).creator?.name ?? '').trim().split(/\s+/)[0] || 'Le créateur';
+        // Qui m'invite, et a quoi (lib/games.defiInviteRole) : on me DEFIE si
+        // mon camp est vide, on m'invite comme BINOME si quelqu'un y est deja.
+        // Le cote A/B ne suffisait pas : le binome amene par l'adversaire
+        // designe est en B, et lisait « Tu as ete defie ! ».
+        const role = defiInviteRole(game as any, playerId);
+        const isBinome = isChallenge && role?.role === 'binome';
+        const createur = (role?.coequipier ?? (game as any).creator?.name ?? '').trim().split(/\s+/)[0] || 'Le créateur';
         return (
           <View style={{ flex: 1, gap: 8 }}>
             <View style={{ height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,193,26,0.14)', borderWidth: 1, borderColor: 'rgba(255,193,26,0.55)' }}>
@@ -734,7 +740,10 @@ function GameDetailsSheetContenu({
             {/* Défi nominatif : le prévenir AVANT qu'il touche le bouton. On
                 lui demandera son binôme dans la foulée, et l'acceptation
                 partira avec — un défi se joue à deux. */}
-            {!isBinome && game.is_challenge && (game as any).is_targeted === true && (
+            {/* La phrase ne vaut que pour celui qui devra AMENER quelqu'un.
+                Elle s'affichait aussi au binome deja invite par un joueur —
+                dont le partenaire est justement celui qui l'invite. */}
+            {!isBinome && game.is_challenge && !!partnerSeatAfterAccepting(game as any, (myParticipant as any).id, playerId) && (
               <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 16 }}>
                 Tu choisiras ton binôme juste après : le défi ne se relève qu'à deux.
               </Text>
