@@ -612,6 +612,12 @@ export default function HomeScreen() {
                 parts grandissaient, donc le contenu, donc la mesure : une
                 boucle qui a rempli l'ecran de deux tuiles geantes. Un calque
                 colle aux quatre bords ne depend, lui, que de son parent. */}
+            {/* Cette enveloppe n'est PAS decorative : c'est elle que le
+                calque mesure. Sans elle, le calque se collait aux bords du
+                parent — qui contient AUSSI l'en-tete au logo — et annoncait
+                une centaine de points qui n'existaient pas pour la colonne.
+                Le dernier bloc passait donc sous la barre d'onglets. */}
+            <View style={{ flex: 1 }}>
             <View
               pointerEvents="none"
               onLayout={e => {
@@ -806,6 +812,7 @@ export default function HomeScreen() {
 
             </View>
             </ScrollView>
+            </View>
           </>
         )}
       </View>
