@@ -16,6 +16,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
 import { texteUI } from '../../lib/uiText';
+import { PULSE_IDEAL } from '../../lib/homeLayout';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { availabilitySlots, fetchAvailableOnSlot, slotShortLabel, type AvailabilityRow } from '../../lib/availability';
 import { MERCATO_LEVEL_BAND } from '../../lib/mercato';
@@ -239,7 +240,20 @@ export function HomePulse({ myId, myElo, onVisible }: {
   const court = (dispos.length > 0 ? 1 : 0) + chocsMontres.length > 1;
 
   return (
-    <View style={{ gap: 10, flex: 1 }}>
+    // LE CONTRAT DE CE COMPOSANT : il ne dépasse jamais sa hauteur idéale.
+    //
+    // `flex: 1` est nécessaire — les cartes doivent utiliser la hauteur
+    // réellement disponible. Mais sans borne, il transmet AUSSI tout surplus :
+    // racine → rangée des cartes → cartes étirées → zone haute, qui l'absorbe
+    // en blanc entre le titre et le bouton. Quatre maillons qui passent 100 %
+    // de la hauteur vers le bas, aucun qui plafonne.
+    //
+    // Vu a l'ecran le 2026-09-24 : une hauteur de ~253 accordee par le parent
+    // donnait des cartes de 218 avec 140 points de vide dedans.
+    //
+    // La protection etait alors entierement chez le parent. Elle est ici
+    // desormais : donne-lui 400 points, il en prend 185 et rend le reste.
+    <View style={{ gap: 10, flex: 1, maxHeight: PULSE_IDEAL }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Icon name="users" size={18} color={Colors.textPrimary} stroke={2.2} />
         <Text {...texteUI} numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
