@@ -3,7 +3,6 @@
 // (follows, activity_events, game_alerts, parrainage, RPC réactions, matching).
 
 import { supabase } from './supabase';
-import { notifyPlayers } from './notify';
 import { isBadgeVisible } from './badges';
 import { getLeague, eloToLevel, formatPadelLevel } from './theme';
 import { formatStake } from './defis';
@@ -369,18 +368,11 @@ export async function addComment(eventId: string, content: string, me: Player): 
     league: getLeague(me.elo_score) as League,
   };
 
-  // Notif auteur (fire-and-forget)
-  const { data: ev } = await supabase
-    .from('activity_events').select('player_id').eq('id', eventId).single();
-  const authorId = (ev as any)?.player_id as string | undefined;
-  if (authorId && authorId !== me.id) {
-    notifyPlayers({
-      playerIds: [authorId],
-      title: `${me.name} a commenté ton activité`,
-      body: content.slice(0, 80),
-      data: { type: 'activity', eventId },
-    });
-  }
+  // Notif auteur : plus rien à faire ici. Le serveur prévient tout seul à
+  // l'écriture du commentaire (déclencheur trg_notify_activity_comment).
+  // L'auteur d'une publication n'a pas forcément joué avec celui qui commente :
+  // la règle « uniquement les gens avec qui je partage une partie » ne pouvait
+  // pas s'appliquer, donc ce cas est passé côté serveur.
 
   return { ok: true, comment };
 }
@@ -524,18 +516,17 @@ export function playerStoryLink(playerId: string): string {
 // ─── Matching alertes → push ─────────────────────────────────
 // À appeler juste après la création d'une partie (open_games) pour pousser
 // une notif aux joueurs dont une alerte correspond. Fire-and-forget.
-export async function notifyMatchingAlerts(gameId: string, location?: string): Promise<void> {
+// Le serveur calcule LUI-MÊME les destinataires : ces joueurs n'ont aucun lien
+// avec le créateur de la partie (c'est le principe même d'une alerte), donc la
+// règle « uniquement les gens avec qui je partage quelque chose » ne peut pas
+// s'appliquer. L'app ne transmet que la partie ; elle ne choisit ni qui reçoit,
+// ni ce qui est écrit. Le serveur vérifie au passage qu'on en est le créateur.
+// `location` reste dans la signature pour ne pas toucher aux appelants : le
+// serveur relit le lieu lui-même.
+export async function notifyMatchingAlerts(gameId: string, _location?: string): Promise<void> {
   try {
-    const { data, error } = await supabase.rpc('find_matching_alerts', { p_game_id: gameId });
-    if (error) { console.log('[notifyMatchingAlerts]', error.message); return; }
-    const targets = (data ?? []).filter((r: any) => r.push_on).map((r: any) => r.player_id);
-    if (targets.length === 0) return;
-    await notifyPlayers({
-      playerIds: targets,
-      title: 'Une partie pour toi',
-      body: location ? `Nouvelle partie à ${location} correspond à ton alerte.` : 'Une nouvelle partie correspond à ton alerte.',
-      data: { type: 'application', gameId },
-    });
+    const { error } = await supabase.rpc('notify_matching_alerts', { p_game_id: gameId });
+    if (error) console.log('[notifyMatchingAlerts]', error.message);
   } catch (e) {
     console.log('[notifyMatchingAlerts] threw', String(e));
   }
