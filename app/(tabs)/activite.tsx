@@ -61,13 +61,20 @@ export default function ActiviteTab() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const pageRef = useRef<ScrollView>(null);
   const disposYRef = useRef(0);
+  const votesYRef = useRef(0);
   const focusClashId = focus && focus !== 'dispo' ? focus : null;
 
   useEffect(() => {
-    if (focus !== 'dispo') return;
+    if (!focus) return;
+    // Les deux raccourcis de l'accueil defilent, pas seulement « dispo ».
+    // Avec un identifiant de partie, la carte passait bien en tete du rail —
+    // mais l'ecran restait en haut, et il fallait chercher le bloc des votes
+    // pour la voir. Un raccourci qui depose ailleurs qu'a l'endroit promis
+    // oblige a chercher, et on ne s'en sert plus.
+    const cible = focus === 'dispo' ? disposYRef : votesYRef;
     // Apres la premiere mise en page, sinon la position n'est pas encore connue.
     const t = setTimeout(() => {
-      pageRef.current?.scrollTo({ y: Math.max(0, disposYRef.current - 12), animated: true });
+      pageRef.current?.scrollTo({ y: Math.max(0, cible.current - 12), animated: true });
       router.setParams({ focus: undefined });
     }, 350);
     return () => clearTimeout(t);
@@ -354,7 +361,14 @@ export default function ActiviteTab() {
                   if (samedi) toggleSlot(samedi);
                 }}
               />
-              <FeaturedClash myId={myId} focusGameId={focusClashId} />
+              {/* `collapsable={false}` : sans lui, Android peut fondre cette
+                  enveloppe dans son parent et `onLayout` ne se declenche
+                  jamais — la position resterait a zero. */}
+              <View
+                collapsable={false}
+                onLayout={e => { votesYRef.current = e.nativeEvent.layout.y; }}>
+                <FeaturedClash myId={myId} focusGameId={focusClashId} />
+              </View>
               <MyOddsCard myId={myId} />
 
 
