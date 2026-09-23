@@ -492,6 +492,15 @@ function GameDetailsSheetContenu({
   const myParticipant = (game.participants ?? []).find((p: any) => p.player_id === playerId);
   // Le siège à pourvoir dans MON camp, sur un défi nominatif (lib/games).
   const partnerSeat = partnerSeatToFill(game as any, playerId);
+  /** Le camp d'un participant : « A » ou « B ». */
+  const campDe = (v: any) => String(v ?? '').toUpperCase().charAt(0);
+  const monCampSheet = campDe(
+    game.creator_id === playerId
+      ? (game as any).creator_side
+      : (game.participants ?? []).find((p: any) => p.player_id === playerId)?.team_side,
+  );
+  /** Une invitation en cours dans MON camp : c'est moi qui l'ai lancee. */
+  const memeCamp = (p: any) => !!monCampSheet && campDe(p.team_side) === monCampSheet;
   const myStatus     = (myParticipant as any)?.status;
   // Une invitation expirée (cron pas encore passée) ne « réserve » plus la place :
   // on la traite comme non-occupante pour rouvrir le chemin de candidature.
@@ -501,6 +510,8 @@ function GameDetailsSheetContenu({
     (myStatus === 'invited' && myInviteActive)
   );
   const isAccepted   = myStatus === 'accepted';
+  const peutRetirerDansMonCamp = myStatus === 'accepted'
+    && (game.participants ?? []).some((p: any) => p.status === 'invited' && isInviteActive(p) && memeCamp(p));
   const isInvited    = myStatus === 'invited' && myInviteActive;
   // Un défi ne se rejoint JAMAIS en solo depuis ici (slots non tappables) : on le
   // relève à deux via le CTA dédié.
@@ -1283,7 +1294,11 @@ function GameDetailsSheetContenu({
             )}
 
             {/* Invitations en attente — créateur uniquement (peut retirer) */}
-            {isCreator && invitedPlayers.length > 0 && (
+            {/* Le createur, ET le joueur qui a lui-meme invite quelqu'un dans
+                SON camp (defi nominatif). Reserve au createur, un joueur dont
+                le binome ne repond pas restait bloque jusqu'a l'expiration —
+                sans bouton pour changer, ni moyen de relancer. */}
+            {(isCreator || peutRetirerDansMonCamp) && invitedPlayers.length > 0 && (
               <View style={sty.card}>
                 <SectionHeader
                   icon={<Icon name="mail" size={20} color={Colors.brandDeep} stroke={2.4} />}
@@ -1291,7 +1306,7 @@ function GameDetailsSheetContenu({
                   aside={`${invitedPlayers.length} en attente`}
                 />
                 <View style={{ gap: 6 }}>
-                  {invitedPlayers.map((p: any) => {
+                  {invitedPlayers.filter((p: any) => isCreator || memeCamp(p)).map((p: any) => {
                     const countdown = inviteCountdown(p);
                     return (
                       <View key={p.id} style={{

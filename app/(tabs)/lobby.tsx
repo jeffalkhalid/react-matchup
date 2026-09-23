@@ -3922,13 +3922,26 @@ export default function LobbyScreen() {
       await supabase.from('open_games')
         .update({ spots_available: Math.min(3, (game.spots_available ?? 0) + 1) })
         .eq('id', gameId);
-      if (game.creator_id && game.creator_id !== player.id) {
+      // Le createur ET mes coequipiers. Depuis qu'un joueur peut amener son
+      // propre binome (defi nominatif), celui qui invite n'est plus forcement
+      // le createur : seul ce dernier etait prevenu, et l'autre voyait son
+      // camp redevenir incomplet sans jamais savoir pourquoi.
+      const monCamp = String((game.participants ?? []).find((x: any) => x.player_id === player.id)?.team_side ?? '')
+        .toUpperCase().charAt(0);
+      const camp = (v: any) => String(v ?? '').toUpperCase().charAt(0);
+      const aPrevenir = [
+        game.creator_id,
+        ...(game.participants ?? [])
+          .filter((x: any) => x.status === 'accepted' && monCamp && camp(x.team_side) === monCamp)
+          .map((x: any) => x.player_id),
+      ].filter((id: string) => !!id && id !== player.id);
+      if (aPrevenir.length > 0) {
         notifyPlayers({
-          playerIds: [game.creator_id],
+          playerIds: [...new Set(aPrevenir)],
           title: '❌ Invitation refusée',
           body: game.is_challenge
-            ? `${player.name} a refusé de jouer le défi avec toi`
-            : `${player.name} a refusé ton invitation`,
+            ? `${player.name} ne jouera pas ce défi — une place se libère`
+            : `${player.name} a refusé l'invitation`,
           data: { type: 'lobby', gameId },
         });
       }
