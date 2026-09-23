@@ -65,7 +65,7 @@ function initials(name: string): string {
   return name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-function PlayerSlot({ p, team, size = 52 }: { p: SlotPlayer | null; team: 'A' | 'B'; size?: number }) {
+function PlayerSlot({ p, team, size = 52, avecPrenom = true }: { p: SlotPlayer | null; team: 'A' | 'B'; size?: number; avecPrenom?: boolean }) {
   const dark = team === 'A';
   return (
     <View style={{ alignItems: 'center', width: size + 16 }}>
@@ -90,9 +90,11 @@ function PlayerSlot({ p, team, size = 52 }: { p: SlotPlayer | null; team: 'A' | 
               {p.invited ? '⏳' : eloToLevel(p.elo).toFixed(1)}
             </Text>
           </View>
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 3, maxWidth: size + 16 }}>
-            {p.name.split(/\s+/)[0]}
-          </Text>
+          {avecPrenom ? (
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBold, fontWeight: '700', fontSize: 10, lineHeight: 13, color: p.invited ? Colors.textMuted : Colors.textSecondary, marginTop: 3, maxWidth: size + 16 }}>
+              {p.name.split(/\s+/)[0]}
+            </Text>
+          ) : null}
         </>
       ) : (
         <>
@@ -159,9 +161,22 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
         : `Niv. ${eloToLevel(range.min).toFixed(1)} – ${eloToLevel(range.max).toFixed(1)}`)
     : null;
   // Largeur : 4 places (photo + 16) + 2 écarts de 4 + rond VS de 30 + 2 écarts de 8.
-  // Hauteur : photo + pastille de niveau et prénom (~28).
-  const taillePhoto = zone.w > 0 && zone.h > 0
-    ? Math.max(40, Math.min(76, Math.floor(Math.min((zone.w - 118) / 4, zone.h - 28))))
+  //
+  // Hauteur : la photo, plus ce qu'on met SOUS elle — la pastille de niveau
+  // (4 points nets, elle chevauche) et le prénom (18). Le plancher était à
+  // 40 : quand la zone mesurait moins que 40 + 22, la photo gardait 40 et le
+  // prénom passait sous le bord de la carte. C'est le même piège que les
+  // `minHeight` du budget, à l'intérieur d'un bloc cette fois — un plancher
+  // permet de refuser la place qu'on a.
+  //
+  // Le prénom s'efface donc quand il n'y a pas de quoi le loger, plutôt que
+  // d'être coupé. Le visage et le niveau suffisent à reconnaître qui joue.
+  const SOUS_PHOTO = 22;
+  const zoneH = zone.h > 0 ? zone.h : 0;
+  const avecPrenom = zoneH === 0 || zoneH >= 30 + SOUS_PHOTO;
+  const reserve = avecPrenom ? SOUS_PHOTO : 6;
+  const taillePhoto = zone.w > 0 && zoneH > 0
+    ? Math.max(24, Math.min(76, Math.floor(Math.min((zone.w - 118) / 4, zoneH - reserve))))
     : (compact ? 44 : 52);
   const slots = (team: SlotPlayer[], size: number): (SlotPlayer | null)[] =>
     [...team, ...Array(Math.max(0, size - team.length)).fill(null)];
@@ -261,13 +276,13 @@ export function UpcomingMatchCard({ game, count, onOpenDetails, onSeeAll, onFind
             >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <View style={{ flexDirection: 'row', gap: 4 }}>
-                {slots(teams.A, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `a${i}`} p={p} team="A" size={taillePhoto} />)}
+                {slots(teams.A, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `a${i}`} p={p} team="A" size={taillePhoto} avecPrenom={avecPrenom} />)}
               </View>
               <View style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 10, color: Colors.textSecondary }}>VS</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 4 }}>
-                {slots(teams.B, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `b${i}`} p={p} team="B" size={taillePhoto} />)}
+                {slots(teams.B, teams.teamSize).map((p, i) => <PlayerSlot key={p?.id ?? `b${i}`} p={p} team="B" size={taillePhoto} avecPrenom={avecPrenom} />)}
               </View>
             </View>
             </View>

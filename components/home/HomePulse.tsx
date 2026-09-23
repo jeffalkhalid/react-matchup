@@ -43,7 +43,7 @@ const CARTE = {
  * coupes. Toutes les estimations de hauteur ont fini par etre fausses au
  * moins une fois ; celle-ci n'en est pas une.
  */
-function Haut({ entete, photos, serre }: { entete: (sous: boolean) => ReactNode; photos: (taille?: number) => ReactNode; serre: boolean }) {
+function Haut({ entete, photos, serre }: { entete: (lignes: number) => ReactNode; photos: (taille?: number) => ReactNode; serre: boolean }) {
   const [h, setH] = useState(0);
   // Mesuree, jamais deduite du contenu : cette zone recoit ce que la carte lui
   // laisse une fois le bouton servi. Les seuils ne decident plus que du
@@ -54,16 +54,26 @@ function Haut({ entete, photos, serre }: { entete: (sous: boolean) => ReactNode;
   // eux qui donnent envie de toucher — une carte sans photo est un pave de
   // texte. Sur Android, ou tout est un peu plus grand, ils disparaissaient en
   // premier parce que les deux seuils etaient trop proches.
-  const avecPhrase = h === 0 || h >= 96;
+  //
+  // Quatre paliers. Le troisieme a ete ajoute en voyant une carte qui avait
+  // PERDU sa phrase tout en laissant du blanc : une phrase sur UNE ligne et
+  // des visages plus petits tiennent dans la meme place, et disent bien plus.
+  //
+  //   >= 96  entete complet (2 lignes) + visages 34   = 52 + 10 + 34
+  //   >= 74  phrase sur UNE ligne      + visages 30   = 37 +  8 + 30
+  //   >= 50  pas de phrase             + visages 34   = 22 + 10 + 34
+  //   sinon  le titre seul
+  const complet = h === 0 || h >= 96;
+  const intermediaire = !complet && h >= 74;
+  const lignesSous = complet ? 2 : intermediaire ? 1 : 0;
   const avecPhotos = h === 0 || h >= 50;
-  // Derniers points a gratter avant de les perdre : des visages plus petits.
-  const taillePhoto = h > 0 && h < 62 ? 28 : undefined;
+  const taillePhoto = intermediaire || (h > 0 && h < 62) ? 30 : undefined;
   return (
     <View
       onLayout={e => { const v = e.nativeEvent.layout.height; setH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
       style={{ flex: 1, minHeight: 0, overflow: 'hidden', gap: serre ? 8 : 10 }}
     >
-      {entete(avecPhrase)}
+      {entete(lignesSous)}
       {avecPhotos ? photos(taillePhoto) : null}
     </View>
   );
@@ -87,7 +97,7 @@ function Bouton({ label, onPress }: { label: string; onPress: () => void }) {
 }
 
 /** L'en-tete d'une carte : l'icone dit d'un coup d'oeil de quoi il s'agit. */
-function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous?: string | null }) {
+function Entete({ icon, titre, sous, lignes = 2 }: { icon: IconName; titre: string; sous?: string | null; lignes?: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
       <View style={{
@@ -115,7 +125,7 @@ function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous?: s
           {titre}
         </Text>
         {sous ? (
-          <Text {...texteUI} numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
+          <Text {...texteUI} numberOfLines={lignes} style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textSecondary }}>
             {sous}
           </Text>
         ) : null}
@@ -257,7 +267,7 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
           <View style={carte}>
             <Haut
               serre={serre}
-              entete={sous => (
+              entete={lignes => (
                 <Entete
                   icon="users"
                   titre={court ? 'Dispos' : `Dispos ${quand}`}
@@ -265,8 +275,9 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                   // « 3 joueurs de ton niveau sont dispos » s'affichait
                   // « 3 joueurs de ton niveau son.. » — la fin, qui porte le
                   // sens, etait justement ce qu'on perdait.
-                  sous={sous
-                    ? (court
+                  lignes={lignes}
+                  sous={lignes > 0
+                    ? (court || lignes === 1
                         ? `${dispos.length} à ton niveau`
                         : `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`)
                     : null}
@@ -288,7 +299,7 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                 un doublon : la seconde pose la question directement. */}
             <Haut
               serre={serre}
-              entete={sous => (
+              entete={lignes => (
                 <Entete
                   icon="signal"
                   // Titres COURTS quand deux cartes se partagent la largeur :
@@ -299,7 +310,8 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                   titre={court
                     ? (i === 0 ? 'Les votes' : 'Qui gagne ?')
                     : (i === 0 ? 'Votes du moment' : 'Qui va gagner ?')}
-                  sous={sous
+                  lignes={lignes}
+                  sous={lignes > 0
                     ? `${clash.teamA.map(p => p.name.split(' ')[0]).join(' / ')} vs ${clash.teamB.map(p => p.name.split(' ')[0]).join(' / ')}`
                     : null}
                 />
