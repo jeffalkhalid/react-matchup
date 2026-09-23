@@ -13,10 +13,38 @@
 // `adjustsFontSizeToFit` s'arrêtait à son plancher puis coupait au mot —
 // « TROUVER UN MATCH » s'affichait « TROUVER UN ». Un titre qui a le droit de
 // passer à la ligne n'a plus ce problème : il n'y a plus rien à mesurer.
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon, type IconName } from '../community/icons';
+
+/**
+ * La phrase du bas, qui n'affiche que les lignes qui TIENNENT.
+ *
+ * Elle etait figee a deux lignes. Sur un Android a grande police, la tuile
+ * n'avait pas la hauteur pour les deux : la seconde etait coupee en son
+ * milieu, moitie visible sous le bord de la carte. Une demi-ligne de texte
+ * est pire que pas de ligne du tout.
+ *
+ * La zone ne DEVINE pas sa place, elle la mesure — sa hauteur lui vient du
+ * dessus, jamais de son contenu, donc la mesure est stable. On en deduit
+ * combien de lignes entrent, et le texte s'arrete proprement.
+ */
+function Phrase({ children, couleur }: { children: string; couleur: string }) {
+  const LIGNE = 15;
+  const [h, setH] = useState(0);
+  const lignes = h > 0 ? Math.max(1, Math.floor(h / LIGNE)) : 2;
+  return (
+    <View
+      onLayout={e => { const v = e.nativeEvent.layout.height; setH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
+      style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}
+    >
+      <Text numberOfLines={lignes} style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: LIGNE, color: couleur, paddingRight: 24 }}>
+        {children}
+      </Text>
+    </View>
+  );
+}
 
 function Tuile({ variant, icon, titre, accent, sous, onPress }: {
   variant: 'brand' | 'dark';
@@ -81,16 +109,16 @@ function Tuile({ variant, icon, titre, accent, sous, onPress }: {
         <Icon name={icon} size={20} color={jaune ? Colors.primary : Colors.brand} stroke={2.2} />
       </View>
 
-      <View style={{ gap: 3 }}>
+      {/* `flexShrink: 1` : c'est ce bloc qui cede quand la tuile est courte,
+          pas la pastille du haut ni la fleche. */}
+      <View style={{ gap: 3, flexShrink: 1, minHeight: 0 }}>
         {/* Le titre a le DROIT de passer à la ligne : c'est ce qui évite la
             coupure au mot vue sur Android. */}
-        <Text style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 24, color: texte, paddingRight: 4 }}>
+        <Text numberOfLines={2} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 24, color: texte, paddingRight: 4 }}>
           {titre}
           <Text style={{ color: accentCouleur }}>{` ${accent}`}</Text>
         </Text>
-        <Text numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 15, color: secondaire, paddingRight: 24 }}>
-          {sous}
-        </Text>
+        <Phrase couleur={secondaire}>{sous}</Phrase>
       </View>
 
       <View pointerEvents="none" style={{

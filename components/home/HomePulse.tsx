@@ -259,8 +259,14 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                 <Entete
                   icon="users"
                   titre={court ? 'Dispos' : `Dispos ${quand}`}
+                  // Phrase COURTE quand deux cartes se partagent la largeur :
+                  // « 3 joueurs de ton niveau sont dispos » s'affichait
+                  // « 3 joueurs de ton niveau son.. » — la fin, qui porte le
+                  // sens, etait justement ce qu'on perdait.
                   sous={sous
-                    ? `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`
+                    ? (court
+                        ? `${dispos.length} à ton niveau`
+                        : `${dispos.length} joueur${dispos.length > 1 ? 's' : ''} de ton niveau ${dispos.length > 1 ? 'sont dispos' : 'est dispo'}`)
                     : null}
                 />
               )}
