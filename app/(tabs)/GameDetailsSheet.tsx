@@ -931,10 +931,19 @@ function GameDetailsSheetContenu({
                   (lib/games.courtBooking), en version longue : ici la place
                   ne manque pas. */}
               {(() => {
-                // Le CREATEUR peut changer l'etat ici : une reservation se
-                // decroche souvent apres la publication, et il n'existait
-                // aucun moyen de le dire — la partie restait « a reserver »
-                // jusqu'au bout, meme le terrain en poche.
+                // ETAT et ACTION sont SEPARES.
+                //
+                // Une seule pastille portait les deux : elle affichait
+                // « Terrain à réserver · c'est reserve », et se touchait pour
+                // basculer. On y lisait deux etats contradictoires cote a
+                // cote sans savoir lequel etait le vrai — et « · annuler »
+                // colle a « Terrain reserve » se lisait comme un statut, pas
+                // comme un bouton.
+                //
+                // Desormais la pastille DIT ou en est le terrain, et rien
+                // d'autre. Le bouton, a cote, dit ce qu'on peut FAIRE, avec
+                // un verbe a la premiere personne — « J'ai reserve » ne peut
+                // pas se confondre avec un etat.
                 const b = courtBooking(game as any);
                 const modifiable = isCreator && !!onSetReservation
                   && (game as any).status !== 'closed' && (game as any).status !== 'cancelled';
@@ -943,32 +952,46 @@ function GameDetailsSheetContenu({
                 // A moins de trois heures sans terrain, la pastille passe au
                 // rouge : la discretion ne sert plus a rien.
                 const alerte = courtNeedsAttention(game as any);
-                const Wrap: any = modifiable ? TouchableOpacity : View;
+                const teinte = alerte ? '#FCA5A5' : booked ? Colors.brand : 'rgba(255,255,255,0.8)';
                 return (
-                  <Wrap
-                    {...(modifiable ? {
-                      onPress: () => onSetReservation!(game.id, !booked),
-                      activeOpacity: 0.8,
-                      accessibilityLabel: booked ? 'Indiquer que le terrain n’est plus réservé' : 'Indiquer que le terrain est réservé',
-                    } : {})}
-                    style={{
+                  <>
+                    <View style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
                       paddingHorizontal: 10, paddingVertical: 4,
                       backgroundColor: alerte ? 'rgba(239,68,68,0.22)' : booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
-                      borderWidth: modifiable || alerte ? 1 : 0,
-                      borderColor: alerte ? 'rgba(239,68,68,0.7)' : booked ? 'rgba(255,193,26,0.55)' : 'rgba(255,255,255,0.35)',
+                      borderWidth: alerte ? 1 : 0,
+                      borderColor: 'rgba(239,68,68,0.7)',
                     }}>
-                    <Icon name={booked ? 'check' : alerte ? 'x' : 'clock'} size={12}
-                      color={alerte ? '#FCA5A5' : booked ? Colors.brand : 'rgba(255,255,255,0.8)'} stroke={booked ? 3 : 2.6} />
-                    <Text style={{ color: alerte ? '#FCA5A5' : booked ? Colors.brand : 'rgba(255,255,255,0.8)', fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
-                      {alerte ? 'Toujours pas de terrain' : (b?.long ?? 'Terrain à réserver')}
-                    </Text>
-                    {modifiable && (
-                      <Text style={{ color: 'rgba(255,255,255,0.55)', fontFamily: Fonts.uiBold, fontSize: 9.5 }}>
-                        {booked ? '· annuler' : '· c’est réservé'}
+                      <Icon name={booked ? 'check' : alerte ? 'x' : 'clock'} size={12}
+                        color={teinte} stroke={booked ? 3 : 2.6} />
+                      <Text style={{ color: teinte, fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
+                        {alerte ? 'Toujours pas de terrain' : (b?.long ?? 'Terrain à réserver')}
                       </Text>
+                    </View>
+                    {modifiable && (
+                      <TouchableOpacity
+                        onPress={() => onSetReservation!(game.id, !booked)}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={booked ? 'Indiquer que le terrain n’est plus réservé' : 'Indiquer que j’ai réservé le terrain'}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999,
+                          paddingHorizontal: 10, paddingVertical: 4,
+                          backgroundColor: booked ? 'transparent' : Colors.brand,
+                          borderWidth: 1,
+                          borderColor: booked ? 'rgba(255,255,255,0.45)' : Colors.brand,
+                        }}>
+                        <Icon name={booked ? 'x' : 'check'} size={11}
+                          color={booked ? 'rgba(255,255,255,0.9)' : Colors.textOnBrand} stroke={2.8} />
+                        <Text style={{
+                          color: booked ? 'rgba(255,255,255,0.9)' : Colors.textOnBrand,
+                          fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900',
+                        }}>
+                          {booked ? 'Plus de réservation' : 'J’ai réservé'}
+                        </Text>
+                      </TouchableOpacity>
                     )}
-                  </Wrap>
+                  </>
                 );
               })()}
             </View>
