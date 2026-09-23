@@ -2,7 +2,8 @@
 //
 // L'accueil NE DÉFILE PAS. C'est une contrainte, pas une préférence : il n'y
 // a pas de zone déroulante sur cet écran, et il ne doit jamais y en avoir.
-// Tout doit donc tenir exactement dans la place disponible.
+// Tout doit donc tenir dans la place disponible — sans jamais la dépasser,
+// et sans gonfler pour la remplir.
 //
 // ── POURQUOI CE FICHIER A ÉTÉ RÉÉCRIT ──────────────────────────────────────
 //
@@ -29,9 +30,15 @@
 // points par section. L'invariant, vérifié par les tests sur toute une
 // matrice de tailles et d'états :
 //
-//     Σ hauteurs + Σ espaces === hauteur disponible
+//     Σ hauteurs + Σ espaces  ≤  hauteur disponible
 //
 // Ce n'est pas un réglage qui tient, c'est une propriété du calcul.
+//
+// Une INÉGALITÉ, pas une égalité : chaque bloc a une taille juste, dictée par
+// son dessin, et au-delà la place supplémentaire ne lui sert à rien. Je
+// l'avais d'abord redistribuée pour tomber pile — mesure à l'appui, les
+// tuiles montaient à 438 points pour un idéal de 157. Le surplus reste donc
+// du blanc.
 //
 // ── CE QUI REND LES MINIMUMS FIABLES ───────────────────────────────────────
 //
@@ -192,12 +199,12 @@ export function homeSections(i: HomeLayoutInput): HomeSection[] {
 /**
  * Répartit la hauteur mesurée entre les blocs.
  *
- * Trois cas, un seul invariant : la somme des hauteurs et des espaces vaut
- * EXACTEMENT la hauteur disponible.
+ * Trois cas, un seul invariant : la somme des hauteurs et des espaces ne
+ * DÉPASSE JAMAIS la hauteur disponible. Ce qui reste est du blanc — un bloc
+ * ne grossit jamais au-delà de sa taille juste pour remplir l'écran.
  *
  *  1. Tout tient : chacun a son minimum, le surplus se partage au prorata des
- *     poids, plafonné à l'idéal — puis le reliquat au prorata, sans plafond,
- *     pour tomber pile.
+ *     poids, PLAFONNÉ à l'idéal. Le reliquat reste en espace.
  *  2. Ça ne tient pas : le bloc cédable de plus faible priorité s'efface, et
  *     on recommence avec un espace de moins à poser.
  *  3. Plus rien à céder et ça ne tient toujours pas : tout le monde rétrécit
@@ -263,12 +270,20 @@ export function solveHomeLayout(i: HomeLayoutInput): HomeLayoutResult {
       candidats = suivants;
     }
 
-    // Tout le monde est à son idéal et il reste de la place : on la partage au
-    // prorata plutôt que de laisser un blanc au pied de l'écran.
-    if (reste > 0.01) {
-      const poids = actives.reduce((n, s) => n + s.weight, 0) || 1;
-      for (const s of actives) h[s.key] += (s.weight / poids) * reste;
-    }
+    // AUCUNE redistribution au-delà de l'idéal. Ce qui reste reste du BLANC.
+    //
+    // Je l'avais d'abord reparti, pour que la somme fasse exactement la
+    // hauteur. Mesure a l'appui : sur un Android 412x892 avec match et
+    // tournoi mais sans « Ca bouge », les tuiles passaient a 251 points pour
+    // un ideal de 157, et la carte du match a 277 pour 163. Sans match ni
+    // Pulse, les tuiles atteignaient 438 — les « tuiles geantes », revenues
+    // par un autre chemin.
+    //
+    // Un bloc a une taille juste, dictee par son dessin. Au-dela, la place
+    // supplementaire ne lui sert a rien : elle doit rester de l'espace, pas
+    // devenir une carte demesuree. L'invariant devient donc une INEGALITE —
+    // somme + espaces <= hauteur disponible — ce qui suffit a garantir que
+    // rien ne deborde.
     return { heights: h, gap, contraint: false };
   }
 }

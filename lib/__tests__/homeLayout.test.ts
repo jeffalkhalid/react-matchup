@@ -53,12 +53,33 @@ describe('rien ne peut déborder', () => {
     expect(fautifs).toEqual([]);
   });
 
-  it('et la somme fait EXACTEMENT la hauteur quand tout tient', () => {
-    // Pas « à peu près » : le reliquat se partage, il ne reste pas en blanc au
-    // pied de l'écran.
-    const r = solveHomeLayout(entree(680, 393, { hasNextMatch: true, hasTournaments: true, hasPulse: true }));
-    expect(r.contraint).toBe(false);
-    expect(occupiedHeight(r)).toBeCloseTo(680, 5);
+  it('aucun bloc ne depasse sa taille juste, jamais', () => {
+    // C'est le pendant de l'invariant. Sans ce plafond, le surplus se
+    // redistribuait et les tuiles atteignaient 438 points pour un ideal de
+    // 157 — les « tuiles geantes », revenues par un autre chemin. Le surplus
+    // doit rester du BLANC.
+    const fautifs: string[] = [];
+    for (const h of HAUTEURS) {
+      for (const w of LARGEURS) {
+        for (const { nom, etat } of ETATS) {
+          const e = entree(h, w, etat);
+          const r = solveHomeLayout(e);
+          for (const s of homeSections(e)) {
+            const recu = r.heights[s.key] ?? 0;
+            if (recu > s.ideal + 0.01) fautifs.push(`${nom} ${w}x${h} ${s.key} ${recu.toFixed(0)}>${s.ideal}`);
+          }
+        }
+      }
+    }
+    expect(fautifs).toEqual([]);
+  });
+
+  it('le surplus reste du blanc, il ne gonfle personne', () => {
+    // Un grand ecran sans match ni Pulse : deux blocs seulement. Ils gardent
+    // leur taille, le reste est de l'espace.
+    const r = solveHomeLayout(entree(740, 412, { hasNextMatch: false, hasTournaments: true, hasPulse: false }));
+    expect(occupiedHeight(r)).toBeLessThan(740);
+    expect(r.heights.ctas).toBeLessThanOrEqual(ctaHeightFor(412) + 0.01);
   });
 
   it('une hauteur pas encore mesurée ne rend rien', () => {
