@@ -357,4 +357,22 @@ describe("la colonne se mesure au lieu de s'estimer", () => {
     expect(src).toContain('height: parts.ctas');
     expect(src).not.toContain('flex: sizes.');
   });
+
+  it("la colonne n'est PAS dans une zone deroulante", () => {
+    // Piege paye cher : mesuree DANS un ScrollView, sa hauteur suit le
+    // contenu. Les parts grandissent, donc le contenu grandit, donc la mesure
+    // grandit — l'accueil s'est retrouve rempli de deux tuiles geantes.
+    // Hors du ScrollView, elle vaut la place que son parent lui donne, quoi
+    // qu'elle contienne : la mesure est stable.
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
+    const colonne = src.indexOf('onLayout');
+    const avant = src.slice(0, colonne);
+    // Les ScrollView des modales sont refermes avant : aucun ne doit rester
+    // ouvert au moment ou la colonne commence.
+    const ouverts = (avant.match(/<ScrollView/g) ?? []).length;
+    const fermes = (avant.match(/<\/ScrollView>/g) ?? []).length;
+    expect(ouverts).toBe(fermes);
+  });
 });

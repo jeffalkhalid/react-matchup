@@ -585,17 +585,15 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            {/* Adaptatif : sur un écran assez haut, tout tient exactement
-                (flexGrow:1 → le contenu remplit le viewport, l'excédent est
-                absorbé par le hero et Prochain match, AUCUN scroll possible).
-                Sur un petit écran (Android compact), le contenu dépasse et le
-                ScrollView prend le relais au lieu de rogner les cartes. */}
-            <ScrollView
-              bounces={false}
-              overScrollMode="never"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ flexGrow: 1 }}
-            >
+            {/* PLUS DE ZONE DEROULANTE ICI, et c'est essentiel.
+                La colonne mesure sa hauteur pour repartir les parts. Dans un
+                ScrollView, cette hauteur suit le CONTENU : les parts
+                grandissent, donc le contenu grandit, donc la mesure grandit —
+                une boucle qui a rempli l'ecran de deux tuiles geantes. Hors
+                du ScrollView, la colonne vaut la place que son parent lui
+                donne, quoi qu'elle contienne. La mesure est alors stable, et
+                comme rien ne peut plus deborder, il n'y a plus rien a faire
+                defiler. */}
             <View
               onLayout={e => {
                 // Lire la valeur AVANT le setState : l'evenement natif est
@@ -762,7 +760,6 @@ export default function HomeScreen() {
                   ci-dessus via le budget de lib/homeLayout. */}
 
             </View>
-            </ScrollView>
           </>
         )}
       </View>
