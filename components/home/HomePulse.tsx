@@ -42,36 +42,45 @@ const CARTE = {
  * coupes. Toutes les estimations de hauteur ont fini par etre fausses au
  * moins une fois ; celle-ci n'en est pas une.
  */
-function Haut({ entete, photos, serre }: { entete: (sous: boolean) => ReactNode; photos: ReactNode; serre: boolean }) {
+function Haut({ entete, photos, serre }: { entete: (sous: boolean) => ReactNode; photos: (taille?: number) => ReactNode; serre: boolean }) {
   const [h, setH] = useState(0);
   // Mesuree, jamais deduite du contenu : cette zone recoit ce que la carte lui
   // laisse une fois le bouton servi. Les seuils ne decident plus que du
   // CONFORT — se tromper coute une ligne de texte ou des visages, plus jamais
   // un bouton.
-  const avecPhotos = h === 0 || h >= 64;
+  //
+  // ORDRE DE SACRIFICE : la phrase d'abord, les visages en dernier. Ce sont
+  // eux qui donnent envie de toucher — une carte sans photo est un pave de
+  // texte. Sur Android, ou tout est un peu plus grand, ils disparaissaient en
+  // premier parce que les deux seuils etaient trop proches.
   const avecPhrase = h === 0 || h >= 96;
+  const avecPhotos = h === 0 || h >= 50;
+  // Derniers points a gratter avant de les perdre : des visages plus petits.
+  const taillePhoto = h > 0 && h < 62 ? 28 : undefined;
   return (
     <View
       onLayout={e => { const v = e.nativeEvent.layout.height; setH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
       style={{ flex: 1, minHeight: 0, overflow: 'hidden', gap: serre ? 8 : 10 }}
     >
       {entete(avecPhrase)}
-      {avecPhotos ? photos : null}
+      {avecPhotos ? photos(taillePhoto) : null}
     </View>
   );
 }
 
 const BOUTON = {
   backgroundColor: Colors.brand, borderRadius: 999,
-  paddingVertical: 9, alignItems: 'center', justifyContent: 'center',
+  // Plus bas et plus discret qu'avant : chaque point rendu ici revient aux
+  // visages juste au-dessus, qui sont ce qui donne envie de toucher.
+  paddingVertical: 7, alignItems: 'center', justifyContent: 'center',
   flexDirection: 'row', gap: 5,
 } as const;
 
 function Bouton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={BOUTON}>
-      <Text style={{ fontFamily: Fonts.uiBlack, fontSize: 12.5, color: Colors.primary }}>{label}</Text>
-      <Icon name="chevronRight" size={12} color={Colors.primary} stroke={2.6} />
+      <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 11.5, color: Colors.primary }}>{label}</Text>
+      <Icon name="chevronRight" size={11} color={Colors.primary} stroke={2.6} />
     </TouchableOpacity>
   );
 }
@@ -255,11 +264,11 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                     : null}
                 />
               )}
-              photos={
-                <Photos taille={serre ? 30 : 34} rows={dispos.map(r => ({
+              photos={taille => (
+                <Photos taille={taille ?? (serre ? 30 : 34)} rows={dispos.map(r => ({
                   id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
                 }))} />
-              }
+              )}
             />
             <Bouton label={court ? 'Voir' : 'Voir les joueurs'} onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
           </View>
@@ -287,13 +296,13 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                     : null}
                 />
               )}
-              photos={
+              photos={taille => (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Photos taille={serre ? 30 : 34} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+                  <Photos taille={taille ?? (serre ? 30 : 34)} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
                   <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
-                  <Photos taille={serre ? 30 : 34} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+                  <Photos taille={taille ?? (serre ? 30 : 34)} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
                 </View>
-              }
+              )}
             />
             {/* Vers CE match précisément, pas vers la liste : l'onglet place la
                 carte en tête du rail (cf. app/(tabs)/activite.tsx). */}

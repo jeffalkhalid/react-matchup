@@ -633,9 +633,18 @@ export default function HomeScreen() {
               // La colonne vaut exactement la hauteur visible, et chaque bloc
               // recoit sa part de cette hauteur : plus rien ne peut deborder,
               // donc plus rien a faire defiler.
-              // Un PLANCHER, pas une hauteur figee : la colonne vaut l'ecran
-              // tant que tout tient, et grandit si quelque chose deborde.
+              // La colonne vaut l'ecran. Les blocs prennent EXACTEMENT leur
+              // part : la somme fait cette hauteur, donc il n'y a rien a
+              // faire defiler.
+              //
+              // Des planchers avaient ete essayes ici pour que le filet serve
+              // vraiment : un bloc dont le contenu depassait grandissait, et
+              // la page s'allongeait. Sauf qu'elle s'allongeait TOUJOURS, pour
+              // quelques points — le filet etait devenu l'etat normal. Un
+              // filet qui se declenche tout le temps n'est plus un filet.
+              // Il reste en dessous, dormant, pour les cas qu'on n'a pas vus.
               minHeight: boiteColonne,
+              maxHeight: boiteColonne,
               paddingHorizontal: 20,
               paddingTop: PAD_COLONNE.haut,
               paddingBottom: PAD_COLONNE.bas,
@@ -657,7 +666,7 @@ export default function HomeScreen() {
                   onPress={() => router.push(`/tournaments/soiree/${soiree.id}` as any)}
                   activeOpacity={0.85}
                   style={{
-                    minHeight: parts.liveBanner,
+                    height: parts.liveBanner,
                     backgroundColor: Colors.primary, borderRadius: 16,
                     paddingHorizontal: 14,
                     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -691,7 +700,7 @@ export default function HomeScreen() {
               <View
                 ref={(v) => registerTourAnchor('home-ctas', v)}
                 collapsable={false}
-                style={{ minHeight: parts.ctas }}>
+                style={{ height: parts.ctas }}>
                 <HomePrimaryActions
                   onMatchmaking={() => router.push('/(tabs)/lobby' as any)}
                   onChallenge={() => router.push('/(tabs)/matchmaking' as any)}
@@ -713,7 +722,7 @@ export default function HomeScreen() {
                 /* Enveloppe a hauteur imposee : sans elle le bandeau prend la
                    hauteur de son contenu et sort de la repartition — c'est
                    exactement ce qui faisait deborder la colonne. */
-                <View style={{ minHeight: parts.tournaments }}>
+                <View style={{ height: parts.tournaments }}>
                   <HomeTournamentsBanner
                     enabled={tournoisOuverts}
                     count={tournois.length}
@@ -729,7 +738,7 @@ export default function HomeScreen() {
                   que les cartes restantes ne gonflent pas d'autant. Le budget
                   et son test vivent dans lib/homeLayout. */}
               {sizes.nextMatch && parts.nextMatch > 0 && (
-                <View style={{ minHeight: parts.nextMatch }}>
+                <View style={{ height: parts.nextMatch }}>
                   <UpcomingMatchCard
                     game={visibleUpcoming[0] ?? null}
                     count={visibleUpcoming.length}
@@ -748,7 +757,7 @@ export default function HomeScreen() {
                   vraies parties à rejoindre, ou l'invitation à en créer une
                   s'il n'y en a aucune. */}
               {sizes.openGames && parts.openGames > 0 && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
-                <View style={{ minHeight: parts.openGames }}>
+                <View style={{ height: parts.openGames }}>
                   <OpenGamesSlot
                     games={slot.kind === 'openGames' ? slot.games : []}
                     myId={player.id}
@@ -770,7 +779,7 @@ export default function HomeScreen() {
                   que le haut ne scrolle pas (lib/homeLayout). Le bloc se tait
                   quand il n'a rien à dire. */}
               {sizes.filler && (
-                <View pointerEvents="none" style={{ minHeight: parts.filler }} />
+                <View pointerEvents="none" style={{ height: parts.filler }} />
               )}
 
               {/* Le bloc qui cede : il s'efface quand la place manque plutot

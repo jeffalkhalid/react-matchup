@@ -354,7 +354,7 @@ describe("la colonne se mesure au lieu de s'estimer", () => {
     expect(src).toContain('allocateHome');
     // Des HAUTEURS, pas des parts : une part ne dit rien tant qu'un bloc
     // voisin peut prendre la hauteur de son contenu.
-    expect(src).toContain('minHeight: parts.ctas');
+    expect(src).toContain('height: parts.ctas');
     expect(src).not.toContain('flex: sizes.');
   });
 
@@ -373,16 +373,20 @@ describe("la colonne se mesure au lieu de s'estimer", () => {
     expect(autour).toContain("position: 'absolute'");
   });
 
-  it('le filet existe : ce qui deborde reste atteignable', () => {
+  it('le filet existe, mais il dort', () => {
     // Chaque bloc recoit sa part, donc tout tient. Mais une estimation de
     // contenu peut se reveler courte sur un telephone qu'on n'a pas teste, et
     // un bouton hors de portee est pire qu'un ecran qui defile.
     const { readFileSync } = require('node:fs');
     const { join } = require('node:path');
     const src = readFileSync(join(__dirname, '..', '..', 'app', '(tabs)', 'index.tsx'), 'utf8');
-    // Des planchers, pas des hauteurs figees : sinon rien ne peut grandir et
-    // la zone deroulante n'a jamais rien a faire defiler.
-    expect(src).toContain('minHeight: parts.ctas');
+    // Il existe — mais il DORT. Avec des planchers, un bloc dont le contenu
+    // depassait de quelques points allongeait la page ; elle s'allongeait donc
+    // toujours, et le filet devenait l'etat normal. Les blocs prennent
+    // exactement leur part, la colonne est bornee en haut comme en bas, et la
+    // zone deroulante n'a rien a faire defiler tant que tout se passe bien.
+    expect(src).toContain('height: parts.ctas');
     expect(src).toContain('minHeight: boiteColonne');
+    expect(src).toContain('maxHeight: boiteColonne');
   });
 });
