@@ -73,8 +73,36 @@ export const GEO = {
   match: { padV: 12, entete: 22, club: 20, avatarPlein: 52, avatarReduit: 40, nom: 13, niveau: 12, gapInterne: 10 },
   /** « Ça se joue bientôt », quand il n'y a ni match ni tournoi. */
   parties: { entete: 21, gap: 10, carte: 120, carteReduite: 84 },
-  /** « Ça bouge chez les PAGUISTES ». */
-  pulse: { entete: 21, gap: 10, padCarte: 14, enteteCarte: 22, bouton: 30, phrase: 30, photos: 44 },
+  /**
+   * « Ça bouge chez les PAGUISTES ».
+   *
+   * Chaque nombre est relevé sur ce que le composant DESSINE. La version
+   * précédente annonçait 185 d'idéal là où il en dessine 197 : elle oubliait
+   * l'espace entre le contenu de la carte et son bouton, et comptait
+   * l'en-tête de section à 21 pour un interligne de 25. Ce n'était pas une
+   * marge de sécurité, c'était une erreur d'addition — et elle empêchait la
+   * carte d'atteindre sa forme complète, même sur un grand écran.
+   */
+  pulse: {
+    /** La ligne « Ça bouge chez les PAGUISTES » : l'interligne de son titre. */
+    enteteSection: 25,
+    /** Entre cette ligne et la rangée de cartes. */
+    gap: 10,
+    /** Le rembourrage d'une carte, en haut comme en bas. */
+    padCarte: 14,
+    /** Entre le contenu de la carte et son bouton. */
+    gapCarte: 10,
+    /** Le bouton : rembourrage 7 × 2 + une ligne de texte. */
+    bouton: 28,
+    /** L'en-tête d'une carte réduite au titre : la pastille fait la hauteur. */
+    enteteCarteMin: 32,
+    /** Avec sa phrase sur deux lignes : titre 20 + espace 2 + 2 × 15. */
+    enteteCarteIdeal: 52,
+    /** Entre l'en-tête de la carte et les visages. */
+    gapHaut: 10,
+    /** Le diamètre d'un visage. */
+    photos: 34,
+  },
   /** La bannière de soirée en cours. */
   soiree: { min: 52, ideal: 58 },
 } as const;
@@ -104,11 +132,21 @@ export const MATCH_MIN =
   + GEO.match.avatarReduit + GEO.match.nom + GEO.match.niveau + GEO.match.gapInterne;
 export const MATCH_IDEAL = MATCH_MIN + (GEO.match.avatarPlein - GEO.match.avatarReduit) + 10;
 
-/** « Ça bouge » : titre + carte réduite à son en-tête et son bouton, puis complète. */
-export const PULSE_MIN =
-  GEO.pulse.entete + GEO.pulse.gap
-  + GEO.pulse.padCarte * 2 + GEO.pulse.enteteCarte + GEO.pulse.bouton;
-export const PULSE_IDEAL = PULSE_MIN + GEO.pulse.phrase + GEO.pulse.photos;
+/**
+ * « Ça bouge » : la carte réduite à son titre et son bouton, puis complète.
+ *
+ * Les deux sont des ADDITIONS de la décomposition ci-dessus — il n'y a pas de
+ * nombre écrit à la main. Le composant borne sa propre racine avec
+ * `PULSE_IDEAL` : la valeur qu'il dessine et celle que le calculateur lui
+ * accorde sont la même, par construction.
+ */
+const PULSE_CADRE =
+  GEO.pulse.enteteSection + GEO.pulse.gap
+  + GEO.pulse.padCarte * 2 + GEO.pulse.gapCarte + GEO.pulse.bouton;
+
+export const PULSE_MIN = PULSE_CADRE + GEO.pulse.enteteCarteMin;
+export const PULSE_IDEAL =
+  PULSE_CADRE + GEO.pulse.enteteCarteIdeal + GEO.pulse.gapHaut + GEO.pulse.photos;
 
 /** « Ça se joue bientôt ». */
 export const PARTIES_MIN = GEO.parties.entete + GEO.parties.gap + GEO.parties.carteReduite;
