@@ -747,7 +747,12 @@ export default function HomeScreen() {
                   que de s'afficher coupe. Son contenu reste entier dans
                   l'onglet Activite, ou « Voir tout » mene deja. */}
               {(parts.pulse > 0 || !pulseVisible) && (
-                <View style={{ height: pulseVisible ? parts.pulse : undefined }}>
+                <View style={{
+                  height: pulseVisible ? parts.pulse : undefined,
+                  // Derniere garantie : meme si son contenu depassait encore,
+                  // il s'arrete ici et jamais sous la barre d'onglets.
+                  overflow: 'hidden',
+                }}>
                   <HomePulse myId={player.id} myElo={player.elo_score}
                     hauteur={parts.pulse} onVisible={setPulseVisible} />
                 </View>

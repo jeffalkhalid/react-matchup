@@ -26,6 +26,9 @@ import {
 const CARTE = {
   flex: 1, backgroundColor: Colors.bgCard, borderRadius: 18,
   borderWidth: 1, borderColor: Colors.border, padding: 14, gap: 10,
+  // Le contenu se repartit dans la hauteur accordee au lieu de s'empiler
+  // par-dessus : une carte qui ignore sa place finit sous la barre d'onglets.
+  justifyContent: 'space-between',
 } as const;
 
 const BOUTON = {
@@ -77,21 +80,21 @@ function Entete({ icon, titre, sous }: { icon: IconName; titre: string; sous?: s
   );
 }
 
-function Photos({ rows, max = 4 }: { rows: { id: string; name: string; path?: string | null }[]; max?: number }) {
+function Photos({ rows, max = 4, taille = 34 }: { rows: { id: string; name: string; path?: string | null }[]; max?: number; taille?: number }) {
   const vus = rows.slice(0, max);
   const reste = rows.length - vus.length;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {vus.map((p, i) => (
         <View key={p.id} style={{ marginLeft: i > 0 ? -10 : 0 }}>
-          <PlayerAvatar name={p.name} path={p.path} size={34} ring={2} ringColor={Colors.bgCard}
+          <PlayerAvatar name={p.name} path={p.path} size={taille} ring={2} ringColor={Colors.bgCard}
             backgroundColor={Colors.brand} textColor={Colors.primary}
             fontFamily={Fonts.uiBlack} fontSize={13} initialsMax={2} />
         </View>
       ))}
       {reste > 0 && (
         <View style={{
-          marginLeft: -10, width: 34, height: 34, borderRadius: 17,
+          marginLeft: -10, width: taille, height: taille, borderRadius: taille,
           backgroundColor: Colors.bgCardAlt, borderWidth: 2, borderColor: Colors.bgCard,
           alignItems: 'center', justifyContent: 'center',
         }}>
@@ -168,14 +171,27 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
   if (!visible) return null;
 
   const quand = creneau ? slotShortLabel(creneau) : 'ce soir';
-  // Deux paliers, mesures sur le rendu complet (~170 points) : la phrase part
-  // en premier, les photos ensuite.
+  // Deux paliers, mesures sur le BLOC ENTIER — titre de section compris, ce
+  // que le premier jet avait oublie : il comparait la place accordee a la
+  // hauteur de la seule carte, donc il gardait la phrase et les photos dans
+  // un bloc trop court, et le bas passait sous la barre d'onglets.
+  //
+  // Forme complete ~200 points (titre 21 + espace 10 + carte 167), sans la
+  // phrase ~170, sans les photos ~124.
   const place = hauteur ?? Number.MAX_SAFE_INTEGER;
-  const avecPhrase = place >= 158;
-  const avecPhotos = place >= 132;
+  const avecPhrase = place >= 198;
+  // Sans la phrase, la carte se resserre aussi (moins de rembourrage, photos
+  // plus petites) : ces quelques points suffisent a GARDER les visages, qui
+  // sont ce qui donne envie de toucher. Les perdre etait une degradation de
+  // trop pour une dizaine de points.
+  const avecPhotos = place >= 156;
+  const serre = !avecPhrase;
+  const carte = serre
+    ? { ...CARTE, padding: 12, gap: 8 }
+    : CARTE;
 
   return (
-    <View style={{ gap: 10 }}>
+    <View style={{ gap: 10, flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Icon name="users" size={18} color={Colors.textPrimary} stroke={2.2} />
         <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
@@ -188,9 +204,9 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
         </TouchableOpacity>
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 10 }}>
+      <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
         {dispos.length > 0 && (
-          <View style={CARTE}>
+          <View style={carte}>
             <Entete
               icon="users"
               titre={`Dispos ${quand}`}
@@ -199,7 +215,7 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
                 : null}
             />
             {avecPhotos && (
-              <Photos rows={dispos.map(r => ({
+              <Photos taille={serre ? 30 : 34} rows={dispos.map(r => ({
                 id: r.player?.id ?? r.id ?? '', name: r.player?.name ?? 'Joueur', path: r.player?.avatar_path,
               }))} />
             )}
@@ -208,7 +224,7 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
         )}
 
         {chocsMontres.map((clash, i) => (
-          <View key={clash.gameId} style={CARTE}>
+          <View key={clash.gameId} style={carte}>
             {/* Deux cartes « Votes du moment » cote a cote se liraient comme
                 un doublon : la seconde pose la question directement. */}
             <Entete
@@ -218,9 +234,9 @@ export function HomePulse({ myId, myElo, onVisible, hauteur }: {
             />
             {avecPhotos && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Photos rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+              <Photos taille={serre ? 30 : 34} rows={clash.teamA.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
               <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10.5, color: Colors.textMuted }}>VS</Text>
-              <Photos rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
+              <Photos taille={serre ? 30 : 34} rows={clash.teamB.map(p => ({ id: p.id, name: p.name, path: p.avatarPath }))} max={2} />
             </View>
             )}
             {/* Vers CE match précisément, pas vers la liste : l'onglet place la
