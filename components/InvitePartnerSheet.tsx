@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Platform, Keyboard, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts, formatPadelLevel } from '../lib/theme';
@@ -42,6 +42,28 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
   subtitle?: string;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: hauteurEcran } = useWindowDimensions();
+  /**
+   * La hauteur du clavier, ecoutee a la main.
+   *
+   * `KeyboardAvoidingView` ne suffit pas ici : dans une <Modal> RN, Android ne
+   * redimensionne PAS la fenetre, donc le comportement « padding » n'a rien a
+   * quoi s'accrocher et le composant ne fait rien. Resultat : le clavier
+   * s'ouvrait par-dessus la feuille et couvrait le champ de recherche et les
+   * resultats — on tapait a l'aveugle (vu sur Android le 2026-09-23).
+   *
+   * On mesure donc le clavier et on remonte la feuille de sa hauteur.
+   */
+  const [clavier, setClavier] = useState(0);
+  useEffect(() => {
+    const ios = Platform.OS === 'ios';
+    const ouvre = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow',
+      e => setClavier(e.endCoordinates?.height ?? 0));
+    const ferme = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setClavier(0));
+    return () => { ouvre.remove(); ferme.remove(); };
+  }, []);
+
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<PartnerCandidate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -72,11 +94,17 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={{
-            backgroundColor: Colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-            paddingBottom: insets.bottom + 14, maxHeight: '80%',
-          }}>
+        {/* La feuille remonte exactement de la hauteur du clavier. Et sa
+            hauteur maximale se calcule sur la place qui RESTE : sinon elle
+            deborderait par le haut au lieu du bas. */}
+        <View style={{
+          marginBottom: clavier,
+          backgroundColor: Colors.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22,
+          // Clavier ouvert, la marge du bas ne sert plus : elle evitait la
+          // barre de gestes, que le clavier recouvre deja.
+          paddingBottom: clavier > 0 ? 12 : insets.bottom + 14,
+          maxHeight: Math.max(240, hauteurEcran - clavier - 90),
+        }}>
             <View style={{ alignItems: 'center', paddingTop: 10 }}>
               <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border }} />
             </View>
@@ -147,9 +175,8 @@ export function InvitePartnerSheet({ visible, excludeIds, onClose, onPick, busyI
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+          </ScrollView>
+        </View>
       </View>
     </Modal>
   );

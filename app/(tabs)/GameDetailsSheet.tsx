@@ -312,7 +312,9 @@ interface Props {
   onInvitePartner?: (gameId: string) => void;
   /** Le créateur déclare que le terrain est réservé — ou ne l'est plus. */
   onSetReservation?: (gameId: string, booked: boolean) => void;
-  hasAppliedDefi?: boolean;                // défi : j'ai déjà une candidature en attente
+  hasAppliedDefi?: boolean;
+  /** Le binome avec qui j'ai postule — « deja postule » tout court fait chercher. */
+  appliedPartnerName?: string;                // défi : j'ai déjà une candidature en attente
 }
 
 // ─── Calendar + Share helpers ─────────────────────────────────
@@ -373,7 +375,7 @@ export default function GameDetailsSheet(props: Props) {
 }
 
 function GameDetailsSheetContenu({
-  visible = true, game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, onInvitePartner, onSetReservation, hasAppliedDefi,
+  visible = true, game, myElo, playerId, onClose, onApply, onChangeSide, onCreatorChangeSide, onApprovePending, onDeclinePending, onAcceptInvitation, onDeclineInvitation, onWithdrawInvitation, onLeave, onCancelGame, onRelever, onInvitePartner, onSetReservation, hasAppliedDefi, appliedPartnerName,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -771,7 +773,8 @@ function GameDetailsSheetContenu({
               ? { backgroundColor: Colors.bgCardAlt, borderWidth: 1, borderColor: Colors.border }
               : { backgroundColor: Colors.brand, elevation: 6, shadowColor: Colors.brand, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }]}>
             <Text style={{ fontSize: 15, fontFamily: Fonts.uiBlack, fontWeight: '900', color: hasAppliedDefi ? Colors.textSecondary : Colors.textOnBrand }}>
-              {hasAppliedDefi ? '⏳ Déjà postulé — changer de binôme'
+              {hasAppliedDefi
+                ? `⏳ Postulé avec ${appliedPartnerName ?? 'ton binôme'} — changer`
                 : st === 'confirmed' ? 'Rejoindre la file d\'attente (à deux)' : 'Relever le défi (à deux)'}
             </Text>
           </TouchableOpacity>

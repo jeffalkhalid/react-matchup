@@ -1682,7 +1682,7 @@ function exploreCtx(
   };
 }
 
-function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, appliedDefiIds, view, setView, viewportHeight, setMapFits }: {
+function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved, myGender, favorites, topPlayers, onSaveFilter, onDeleteFilter, onOpenGame, playerId, onApply, onChangeSide, onCreatorChangeSide, onCreate, onRelever, myDefiApps, view, setView, viewportHeight, setMapFits }: {
   games: EnrichedGame[]; myElo: number;
   filters: ExploreFilters; setFilters: (v: ExploreFilters) => void;
   clubs: ClubRef[];
@@ -1699,7 +1699,15 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   onCreatorChangeSide: (gameId: string, side: string) => void;
   onCreate: () => void;
   onRelever: (gameId: string) => void;
-  appliedDefiIds: Set<string>;
+  /**
+   * Mes candidatures en cours, ENTIERES.
+   *
+   * C'etait un simple ensemble d'identifiants : on savait qu'on avait postule,
+   * pas avec qui — alors que l'onglet Defi, lui, le disait. Le meme fait,
+   * raconte de deux facons selon l'ecran. Les deux listes venaient pourtant de
+   * la meme requete : l'ensemble n'etait qu'une copie appauvrie.
+   */
+  myDefiApps: DefiApplication[];
   view: 'list' | 'map';
   setView: (v: 'list' | 'map') => void;
   /** Hauteur visible de la zone de contenu (mesurée par l'écran). */
@@ -1711,14 +1719,24 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
   // « Déjà postulé » (toucher rouvre le sélecteur pour changer de binôme).
   const defiFooter = (g: EnrichedGame) => {
     if (!g.is_challenge) return undefined;
-    const applied = appliedDefiIds.has(g.id);
+    const app = myDefiApps.find(a => a.game_id === g.id);
+    const binome = app?.partner?.name;
     return (
       <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); onRelever(g.id); }} activeOpacity={0.85}
-        style={{ backgroundColor: applied ? Colors.bgCardAlt : Colors.brand, borderWidth: applied ? 1 : 0, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
-        <Text style={{ color: applied ? Colors.textSecondary : Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>
-          {applied ? '⏳ Déjà postulé — changer'
-            : (g as any).status === 'confirmed' ? 'Rejoindre la file (à deux)' : 'Relever le défi (à deux)'}
-        </Text>
+        style={{ backgroundColor: app ? Colors.bgCardAlt : Colors.brand, borderWidth: app ? 1 : 0, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center' }}>
+        {app ? (
+          // Avec QUI, comme dans l'onglet Defi. « Deja postule » tout court
+          // laissait chercher dans un autre ecran de quel binome il s'agit.
+          <Text numberOfLines={1} style={{ color: Colors.textSecondary, fontFamily: Fonts.uiBold, fontSize: 12.5 }}>
+            {'⏳ Postulé avec '}
+            <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{binome ?? 'ton binôme'}</Text>
+            {' — touche pour changer'}
+          </Text>
+        ) : (
+          <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontWeight: '900', fontSize: 13 }}>
+            {(g as any).status === 'confirmed' ? 'Rejoindre la file (à deux)' : 'Relever le défi (à deux)'}
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -2802,7 +2820,6 @@ export default function LobbyScreen() {
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
   const [binomeInvites, setBinomeInvites] = useState<DefiApplication[]>([]);
   // Défis où j'ai DÉJÀ une candidature en attente (initiateur) → pas de « Relever » à nouveau.
-  const [appliedDefiIds, setAppliedDefiIds] = useState<Set<string>>(new Set());
   // Mes candidatures défi (pour les afficher dans « À venir » avec mon binôme transparent).
   const [myDefiApps, setMyDefiApps] = useState<DefiApplication[]>([]);
   const [otherBinomeCounts, setOtherBinomeCounts] = useState<Record<string, number>>({});
@@ -2935,7 +2952,6 @@ export default function LobbyScreen() {
         .neq('created_by', player.id),
     ]);
     setBinomeInvites(binomeInvitesRes);
-    setAppliedDefiIds(new Set((myAppsRes ?? []).map(a => a.game_id).filter(Boolean)));
     setMyDefiApps(myAppsRes ?? []);
     // « X autres binômes » par défi candidaté (RLS → RPC).
     (async () => {
@@ -4141,7 +4157,7 @@ export default function LobbyScreen() {
               onCreatorChangeSide={handleCreatorChangeSide}
               onCreate={() => setShowCreate(true)}
               onRelever={(id) => router.push((`/(tabs)/matchmaking?tab=relever&relever=${id}`) as any)}
-              appliedDefiIds={appliedDefiIds}
+              myDefiApps={myDefiApps}
               view={exploreView}
               setView={setExploreView}
               viewportHeight={viewportH}
@@ -4217,7 +4233,8 @@ export default function LobbyScreen() {
             if (g) releve.startInvite(g as any);
           }}
           onSetReservation={setReservation}
-          hasAppliedDefi={!!openGame && appliedDefiIds.has(openGame.id)}
+          hasAppliedDefi={!!openGame && myDefiApps.some(a => a.game_id === openGame.id)}
+          appliedPartnerName={openGame ? myDefiApps.find(a => a.game_id === openGame.id)?.partner?.name : undefined}
         />
       )}
 
