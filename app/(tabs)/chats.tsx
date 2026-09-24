@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   ActivityIndicator, ScrollView, Image,
@@ -11,7 +11,10 @@ import { otherName, otherAvatarPath } from '../../lib/directChats';
 import { previewLine, relativeTime, requestsLine } from '../../lib/chatList';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { Colors, Spacing, FontSize, Radius, Fonts } from '../../lib/theme';
-import { ChatCard, POINTILLES } from '../../components/ChatCard';
+import { ChatCard, POINTILLES, chatPlayers } from '../../components/ChatCard';
+import { NewChatSheet } from '../../components/NewChatSheet';
+import { startGameConversation } from '../../lib/gameConversations';
+import type { StartableGame } from '../../hooks/useGameChats';
 import { HeaderActions } from '../../components/HeaderActions';
 import { Icon, type IconName } from '../../components/community/icons';
 
@@ -20,11 +23,27 @@ type TypeFilter = 'all' | 'unread' | 'challenge' | 'standard';
 export default function ChatsScreen() {
   const { player } = usePlayer();
   const router = useRouter();
-  const { games, loading, loadGames } = useGameChats();
+  const { games, startableGames, loading, loadGames } = useGameChats();
   const { conversations: dms, requests, requestsCount, load: loadDms, isConversationBlocked, unreadCount, lastMessage } = useDirectChats();
   const [section, setSection] = useState<'parties' | 'directs'>('parties');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [toast, setToast] = useState<{ mot: string; erreur?: boolean } | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+
+  // Le bandeau et le surlignage s'effacent seuls : rien à refermer à la main.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
+  useEffect(() => {
+    if (!flashId) return;
+    const t = setTimeout(() => setFlashId(null), 2600);
+    return () => clearTimeout(t);
+  }, [flashId]);
 
   useFocusEffect(useCallback(() => {
     if (player) { loadGames(); loadDms(); }
@@ -58,6 +77,35 @@ export default function ChatsScreen() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dms, search, player?.id, lastMessage]);
+
+  // Les matchs à venir qui ont DÉJÀ une conversation : la feuille les montre
+  // à part, avec « Ouvrir ». C'est ce qui empêche les doublons.
+  const dejaOuvertes = useMemo(
+    () => active.filter(g => new Date(g.match_date).getTime() >= Date.now()),
+    [active],
+  );
+
+  const lancerConversation = useCallback(async (game: StartableGame, message: string) => {
+    if (!player) return;
+    setEnvoi(true);
+    const joueurs = chatPlayers(game, player.id).map(j => j.id);
+    const r = await startGameConversation(
+      { gameId: game.id, location: game.location, matchDate: game.match_date, playerIds: joueurs },
+      message,
+      { id: player.id, name: player.name },
+    );
+    setEnvoi(false);
+    if (!r.ok) { setToast({ mot: r.erreur ?? "La conversation n'a pas pu être lancée.", erreur: true }); return; }
+    setSheetOpen(false);
+    await loadGames();
+    setFlashId(game.id);
+    const prevenus = Math.max(0, joueurs.length - 1);
+    setToast({
+      mot: r.dejaLancee
+        ? 'Cette conversation existait déjà.'
+        : `Conversation créée · ${prevenus} joueur${prevenus > 1 ? 's' : ''} notifié${prevenus > 1 ? 's' : ''}`,
+    });
+  }, [player, loadGames]);
 
   const totalUnread = active.reduce((s, g) => s + g.unread, 0);
   // Les non-lus des directs, demandes comprises : le sélecteur annonce ce
@@ -214,10 +262,10 @@ export default function ChatsScreen() {
           <FlatList
             data={filtered}
             keyExtractor={g => g.id}
-            contentContainerStyle={{ paddingTop: 8, paddingBottom: 80, flexGrow: 1 }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 88, flexGrow: 1 }}
             ListFooterComponent={typeFilter === 'all' && !search ? ArchivedRow : null}
             renderItem={({ item: game }) => (
-              <ChatCard game={game} playerId={player?.id} onPress={() => router.push(`/chat/${game.id}` as any)} />
+              <ChatCard game={game} playerId={player?.id} flash={flashId === game.id} onPress={() => router.push(`/chat/${game.id}` as any)} />
             )}
             ListEmptyComponent={
               <EtatVide
@@ -333,6 +381,59 @@ export default function ChatsScreen() {
           }
         />
       )}
+      {/* Le bouton « Écrire » ne vaut que pour les parties : un direct se
+          lance depuis le profil d'un joueur, pas d'ici. */}
+      {section === 'parties' && !loading && !toast ? (
+        <TouchableOpacity
+          onPress={() => setSheetOpen(true)}
+          activeOpacity={0.85}
+          style={{
+            // `bottom: 16` et non « hauteur de barre + 16 » : l'écran
+            // s'arrête déjà au bord de la barre d'onglets.
+            position: 'absolute', right: 16, bottom: 16,
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            height: 52, paddingLeft: 16, paddingRight: 18, borderRadius: 18,
+            backgroundColor: Colors.primary,
+            shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 20,
+            shadowOffset: { width: 0, height: 8 }, elevation: 8,
+          }}
+        >
+          <Icon name="pencil" size={18} color={Colors.brand} stroke={2.2} />
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textOnDark }}>Écrire</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {toast ? (
+        <View style={{
+          position: 'absolute', left: 16, right: 16, bottom: 16,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+          backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14,
+          shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 20,
+          shadowOffset: { width: 0, height: 8 }, elevation: 10,
+        }}>
+          <View style={{
+            width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: toast.erreur ? Colors.danger : Colors.brand,
+          }}>
+            <Icon name={toast.erreur ? 'x' : 'check'} size={13} color={Colors.primary} stroke={3} />
+          </View>
+          <Text style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 13, color: Colors.textOnDark }}>
+            {toast.mot}
+          </Text>
+        </View>
+      ) : null}
+
+      <NewChatSheet
+        visible={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        startables={startableGames}
+        dejaOuvertes={dejaOuvertes}
+        myId={player?.id}
+        envoi={envoi}
+        onChoose={lancerConversation}
+        onOpenExisting={id => router.push(`/chat/${id}` as any)}
+      />
+
     </View>
   );
 }

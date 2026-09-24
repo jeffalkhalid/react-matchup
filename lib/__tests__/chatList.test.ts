@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   relativeTime, dateTag, hourLabel, firstName, previewLine, othersLabel, requestsLine, dayGap,
-  initialsColor, INITIALS_COLORS,
+  initialsColor, INITIALS_COLORS, dayMoment, whenLabel, autoTitle,
 } from '../chatList';
 
 // Jeudi 24 septembre 2026, 9 h 52 — l'heure des captures.
@@ -146,5 +146,45 @@ describe('la couleur des initiales', () => {
   it('sans nom, elle reste une couleur de la palette', () => {
     expect(INITIALS_COLORS).toContain(initialsColor(null));
     expect(INITIALS_COLORS).toContain(initialsColor('   '));
+  });
+});
+
+describe('le titre auto, comme on en parle', () => {
+  it('donne le moment de la journée', () => {
+    expect(dayMoment(le(24, 9))).toBe('matin');
+    expect(dayMoment(le(24, 13))).toBe('midi');
+    expect(dayMoment(le(24, 16))).toBe('aprèm');
+    expect(dayMoment(le(24, 20))).toBe('soir');
+  });
+
+  it('« Ce soir », « Cet aprèm » — la seule élision de la série', () => {
+    expect(whenLabel(le(24, 20), now)).toBe('Ce soir');
+    expect(whenLabel(le(24, 16), now)).toBe('Cet aprèm');
+    expect(whenLabel(le(24, 9), now)).toBe('Ce matin');
+  });
+
+  it('demain, hier, puis le jour en toutes lettres', () => {
+    expect(whenLabel(le(25, 13), now)).toBe('Demain midi');
+    expect(whenLabel(le(23, 20), now)).toBe('Hier soir');
+    expect(whenLabel(le(26, 20), now)).toBe('Samedi soir');
+  });
+
+  it('jusqu a J+6, le jour en toutes lettres suffit', () => {
+    expect(whenLabel(le(30, 20), now)).toBe('Mercredi soir');
+  });
+
+  it('au-delà d une semaine, le nom du jour ne situe plus rien', () => {
+    // « vendredi » peut être dans deux jours comme dans trois semaines :
+    // passé J+6 on repasse à la date. (le(32) = 2 octobre.)
+    expect(whenLabel(le(32, 20), now)).toBe('Ven. 2 oct.');
+  });
+
+  it('colle le club derrière', () => {
+    expect(autoTitle(le(24, 20), 'Casa Padel', now)).toBe('Ce soir · Casa Padel');
+  });
+
+  it('se contente de ce qu il a', () => {
+    expect(autoTitle(le(24, 20), null, now)).toBe('Ce soir');
+    expect(autoTitle(null, 'Casa Padel', now)).toBe('Casa Padel');
   });
 });

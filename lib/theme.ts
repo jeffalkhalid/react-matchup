@@ -17,6 +17,18 @@ export const Colors = ColorsRaw as {
 
 export const LeagueGradients = LeagueGradientsRaw as Record<League, string[]>;
 
+/**
+ * La hauteur de la barre d'onglets, hors encoche du bas.
+ *
+ * ATTENTION au repère : la barre n'est PAS en superposition (pas de
+ * `position: absolute`). L'espace d'un écran d'onglet s'arrête donc déjà à son
+ * bord haut, et un élément flottant se place en `bottom: 16` — surtout pas en
+ * `bottom: TAB_BAR_HEIGHT + 16`, qui le ferait léviter d'une barre entière.
+ * C'est la même erreur de repère que celle qui a coûté la refonte du budget de
+ * l'accueil : une constante juste, lue dans le mauvais système de coordonnées.
+ */
+export const TAB_BAR_HEIGHT = 64;
+
 export const Spacing = {
   xs: 4,
   sm: 8,

@@ -9,7 +9,7 @@ import { useNotificationCount } from '../../hooks/useNotificationCount';
 import { useGameChats } from '../../hooks/useGameChats';
 import { supabase } from '../../lib/supabase';
 import { fetchUnreadCounts } from '../../lib/directChats';
-import { Colors } from '../../lib/theme';
+import { Colors, TAB_BAR_HEIGHT } from '../../lib/theme';
 import { AMB_REVEAL_SEEN_KEY, isAmbassador } from '../../lib/ambassador';
 import { WELCOME_PHOTO_SEEN_KEY, shouldOfferWelcomePhoto, onWelcomePhotoDone } from '../../lib/welcomePhoto';
 import HelpCenter from '../../components/HelpCenter';
@@ -242,7 +242,7 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
-          height: 64 + insets.bottom,
+          height: TAB_BAR_HEIGHT + insets.bottom,
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
           shadowColor: Colors.textPrimary,

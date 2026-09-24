@@ -19,7 +19,7 @@ import {
   longDateLabel, dayParts,
   type DateTagKind,
 } from '../lib/chatList';
-import type { GameChat } from '../hooks/useGameChats';
+import type { GameChat, StartableGame } from '../hooks/useGameChats';
 
 /** Le gris des bordures en pointillés — une place libre, une archive. */
 export const POINTILLES = '#D4D4D8';
@@ -44,7 +44,10 @@ interface Joueur {
  * partie (`creator_id`). Ne lire que les participants donnait trois joueurs
  * sur quatre — le piège le plus cher de cette base.
  */
-export function chatPlayers(game: GameChat, myId: string | undefined): Joueur[] {
+export function chatPlayers(
+  game: Pick<GameChat, 'creator_id' | 'creator' | 'participants'>,
+  myId: string | undefined,
+): Joueur[] {
   const vus = new Set<string>();
   const out: Joueur[] = [];
   const ajouter = (id: string, name: string, path: string | null) => {
@@ -145,7 +148,10 @@ function BlocCalendrier({ matchDate }: { matchDate: string }) {
   );
 }
 
-export function ChatCard({ game, playerId, onPress, now, variant = 'live' }: {
+/** Le jaune très pâle d'une carte qui vient d'apparaître. */
+const FLASH = '#FFF6DB';
+
+export function ChatCard({ game, playerId, onPress, now, variant = 'live', flash }: {
   game: GameChat;
   playerId: string | undefined;
   onPress: () => void;
@@ -153,6 +159,8 @@ export function ChatCard({ game, playerId, onPress, now, variant = 'live' }: {
   now?: Date;
   /** `archive` : match joué, bloc calendrier et date en toutes lettres. */
   variant?: 'live' | 'archive';
+  /** La conversation vient d'être lancée : on la désigne quelques secondes. */
+  flash?: boolean;
 }) {
   const maintenant = now ?? new Date();
   const joueurs = chatPlayers(game, playerId);
@@ -172,7 +180,8 @@ export function ChatCard({ game, playerId, onPress, now, variant = 'live' }: {
       activeOpacity={0.85}
       style={{
         marginHorizontal: 16, marginBottom: 8,
-        backgroundColor: Colors.bgCard, borderWidth: 1, borderColor: Colors.border, borderRadius: 16,
+        backgroundColor: flash ? FLASH : Colors.bgCard,
+        borderWidth: 1, borderColor: flash ? Colors.brand : Colors.border, borderRadius: 16,
         paddingTop: 12, paddingHorizontal: 12, paddingBottom: 14,
         flexDirection: 'row', alignItems: 'center', gap: 14,
         shadowColor: Colors.primary, shadowOpacity: 0.04, shadowRadius: 2,

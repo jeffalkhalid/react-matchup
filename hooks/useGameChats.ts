@@ -15,6 +15,14 @@ export interface GameChat {
   last_message_at: string | null;
   /** Le dernier message, pour l'apercu de la carte. `null` si la conversation est vide. */
   last_message: { content: string; player_id: string } | null;
+  /**
+   * Quand la conversation a ete LANCEE. `null` = il n'y en a pas.
+   *
+   * Avant, toute partie ETAIT une conversation : creer un match creait un fil
+   * vide, et la liste se remplissait de conversations ou personne n'avait
+   * jamais ecrit. Voir supabase/migrations/game_conversations.sql.
+   */
+  chat_started_at: string | null;
   archived: boolean;
 }
 
@@ -22,6 +30,18 @@ export interface GameChat {
 // more than the grace window. A 24h grace keeps the chat active through the
 // score accept/refuse flow (a pending score must NOT archive — that's exactly
 // when players relaunch the discussion to settle the score).
+/**
+ * Un match a venir SANS conversation.
+ *
+ * Ce n'est PAS un `GameChat` : il n'a ni non-lus, ni dernier message, ni
+ * archivage — ces champs n'ont aucun sens tant que personne n'a ecrit. Le dire
+ * dans le type evite qu'un ecran lise `unread` sur un objet qui n'en a pas.
+ */
+export type StartableGame = Pick<
+  GameChat,
+  'id' | 'location' | 'match_date' | 'is_challenge' | 'game_format' | 'creator_id' | 'creator' | 'participants'
+>;
+
 export const ARCHIVE_GRACE_MS = 24 * 60 * 60 * 1000;
 
 // Whether a match is past the active window (grace included). Shared with the
@@ -32,7 +52,7 @@ export function isMatchPast(matchDate: string | null | undefined): boolean {
 }
 
 const GAME_SELECT =
-  'id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(name, avatar_path), participants:game_participants(player_id, status, player:player_id(name, avatar_path))';
+  'id, location, match_date, is_challenge, game_format, creator_id, chat_started_at, creator:creator_id(name, avatar_path), participants:game_participants(player_id, status, player:player_id(name, avatar_path))';
 
 /**
  * L'ordre d'arrivee, comme une messagerie : le dernier message en haut.
@@ -60,8 +80,12 @@ export function sortGames<T extends { last_message_at: string | null; match_date
 export function useGameChats() {
   const { player } = usePlayer();
   const [games, setGames] = useState<GameChat[]>([]);
+  /** Mes matchs a venir SANS conversation : de quoi en lancer une. */
+  const [startableGames, setStartable] = useState<StartableGame[]>([]);
   const [loading, setLoading] = useState(true);
   const hasLoadedRef = useRef(false);
+  /** Les parties deja dans la liste, lisibles depuis l'abonnement temps reel. */
+  const idsRef = useRef<Set<string>>(new Set());
 
   const loadGames = useCallback(async () => {
     if (!player) return;
@@ -106,7 +130,16 @@ export function useGameChats() {
       return true;
     });
 
-    const ids = all.map(g => g.id);
+    // Une conversation existe quand quelqu'un l'a lancee. Le reste, ce sont
+    // des matchs a venir dans lesquels on PEUT en lancer une — ils alimentent
+    // la feuille « Nouvelle conversation », pas la liste.
+    const maintenant = Date.now();
+    const avecChat = all.filter((g: any) => !!g.chat_started_at);
+    const startables = all
+      .filter((g: any) => !g.chat_started_at && g.match_date && new Date(g.match_date).getTime() >= maintenant)
+      .sort((a: any, b: any) => new Date(a.match_date).getTime() - new Date(b.match_date).getTime());
+
+    const ids = avecChat.map(g => g.id);
 
     // Games whose score is VALIDATED → archived. A pending score is left active
     // so the chat stays reachable during the accept/refuse-score flow.
@@ -147,7 +180,7 @@ export function useGameChats() {
       }
     }
 
-    const enriched: GameChat[] = all.map((game) => ({
+    const enriched: GameChat[] = avecChat.map((game) => ({
       ...game,
       unread: unreadByGame.get(game.id) ?? 0,
       last_message_at: lastByGame.get(game.id) ?? null,
@@ -156,6 +189,7 @@ export function useGameChats() {
     }));
 
     setGames(sortGames(enriched));
+    setStartable(startables as StartableGame[]);
     hasLoadedRef.current = true;
     setLoading(false);
   }, [player]);
@@ -170,6 +204,11 @@ export function useGameChats() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
         const m = payload.new as { game_id: string; player_id: string; created_at: string; content?: string } | null;
         if (!m) return;
+        // Premier message d'une partie qu'on ne suivait pas : quelqu'un vient
+        // de lancer la conversation. Elle n'existe nulle part dans l'etat, il
+        // faut aller la chercher — une mise a jour optimiste ne peut pas
+        // inventer la partie et ses joueurs.
+        if (!idsRef.current.has(m.game_id)) { loadGames(); return; }
         setGames(prev => {
           if (!prev.some(g => g.id === m.game_id)) return prev;
           return sortGames(prev.map(g => g.id !== m.game_id ? g : {
@@ -194,7 +233,10 @@ export function useGameChats() {
       .subscribe();
 
     return () => { supabase.removeChannel(msgCh); supabase.removeChannel(readCh); };
-  }, [player]);
+  }, [player, loadGames]);
 
-  return { games, loading, loadGames };
+  // L'abonnement temps reel lit cet ensemble sans dependre de l'etat React.
+  useEffect(() => { idsRef.current = new Set(games.map(g => g.id)); }, [games]);
+
+  return { games, startableGames, loading, loadGames };
 }
