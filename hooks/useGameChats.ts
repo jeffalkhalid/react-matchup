@@ -61,10 +61,20 @@ export function useGameChats() {
     // l'écran et on rafraîchit en arrière-plan → plus de spinner à chaque visite.
     if (!hasLoadedRef.current) setLoading(true);
 
-    // Games created by the player
+    // Games created by the player.
+    //
+    // On EXCLUT ce qui est mort ('cancelled') au lieu de LISTER ce qui est
+    // vivant. Une liste à cocher a déjà coûté : le cycle de vie des défis a
+    // gagné deux statuts après l'écriture de ce fichier — 'draft' (défi en
+    // attente de son binôme) et 'confirmed' (defi_accept_rpc.sql : le binôme
+    // adverse a verrouillé). Le lobby a été corrigé, pas cette liste : la
+    // discussion d'un défi COMPLET n'apparaissait donc nulle part, ni active ni
+    // archivée, alors que le bouton « Discussion » du lobby l'ouvrait — et que
+    // ses messages non lus restaient invisibles dans le badge de l'onglet, qui
+    // dérive de ce même hook.
     const { data: created } = await supabase
       .from('open_games').select(GAME_SELECT)
-      .eq('creator_id', player.id).in('status', ['open', 'closed']);
+      .eq('creator_id', player.id).neq('status', 'cancelled');
 
     // Games where the player is an accepted participant
     const { data: joinedParts } = await supabase
@@ -75,7 +85,7 @@ export function useGameChats() {
     if (joinedIds.length > 0) {
       const { data } = await supabase
         .from('open_games').select(GAME_SELECT)
-        .in('id', joinedIds).in('status', ['open', 'closed']).neq('creator_id', player.id);
+        .in('id', joinedIds).neq('status', 'cancelled').neq('creator_id', player.id);
       joined = data ?? [];
     }
 
