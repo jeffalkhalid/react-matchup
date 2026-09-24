@@ -91,6 +91,7 @@ function RootNavigator() {
         <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="dm/[conversationId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="archived-chats" options={{ presentation: 'card' }} />
+        <Stack.Screen name="dm-requests" options={{ presentation: 'card' }} />
         <Stack.Screen name="live/[sessionId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="score-entry" options={{ presentation: 'modal' }} />
         <Stack.Screen name="bilan/[month]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />

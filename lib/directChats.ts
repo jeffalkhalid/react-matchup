@@ -7,6 +7,8 @@ export type DirectStatus = 'pending' | 'accepted' | 'declined';
 export interface DirectPlayerInfo {
   name: string;
   avatar_path?: string | null;
+  /** Pour l'ecran Demandes : « Niveau 4.10 · il y a 1 h ». */
+  elo_score?: number | null;
 }
 
 export interface DirectConversation {
@@ -29,6 +31,12 @@ export function otherName(conv: DirectConversation, myId: string): string {
 }
 
 /** Photo de l'autre joueur (`players.avatar_path`), ou null → initiales. */
+/** L'ELO de l'autre joueur, quand la requete l'a rapporte. */
+export function otherElo(conv: DirectConversation, myId: string): number | null {
+  const side = conv.requester_id === myId ? conv.addressee : conv.requester;
+  return side?.elo_score ?? null;
+}
+
 export function otherAvatarPath(conv: DirectConversation, myId: string): string | null {
   const side = conv.requester_id === myId ? conv.addressee : conv.requester;
   return side?.avatar_path ?? null;
@@ -63,7 +71,7 @@ export function unreadFor(conv: DirectConversation, myId: string): number {
 export async function fetchConversations(): Promise<DirectConversation[]> {
   const { data, error } = await supabase
     .from('direct_conversations')
-    .select('*, requester:players!requester_id(name, avatar_path), addressee:players!addressee_id(name, avatar_path)')
+    .select('*, requester:players!requester_id(name, avatar_path, elo_score), addressee:players!addressee_id(name, avatar_path, elo_score)')
     .neq('status', 'declined')
     .order('last_message_at', { ascending: false });
   if (error) throw error;
@@ -94,6 +102,38 @@ export async function fetchUnreadCounts(
     }
   });
   return counts;
+}
+
+/** Le dernier message d'une conversation, pour l'apercu de la liste. */
+export interface DirectPreview {
+  content: string;
+  sender_id: string;
+  created_at: string;
+}
+
+/**
+ * Le dernier message de plusieurs conversations, en UNE requete.
+ *
+ * Separe de `fetchUnreadCounts` a dessein : le badge d'onglet compte les
+ * non-lus et n'a que faire du TEXTE des messages. Lui faire porter les deux
+ * l'aurait alourdi pour tout le monde.
+ */
+export async function fetchDirectPreviews(convIds: string[]): Promise<Map<string, DirectPreview>> {
+  const out = new Map<string, DirectPreview>();
+  const ids = [...new Set(convIds.filter(Boolean))];
+  if (ids.length === 0) return out;
+  const { data, error } = await supabase
+    .from('direct_messages')
+    .select('conversation_id, sender_id, content, created_at')
+    .in('conversation_id', ids)
+    .order('created_at', { ascending: false });
+  if (error) { console.warn('[directChats] previews', error); return out; }
+  for (const m of (data ?? []) as any[]) {
+    // Trie du + recent au + ancien : le 1er vu par conversation est le dernier.
+    if (out.has(m.conversation_id)) continue;
+    out.set(m.conversation_id, { content: m.content ?? '', sender_id: m.sender_id, created_at: m.created_at });
+  }
+  return out;
 }
 
 export async function fetchMessages(conversationId: string): Promise<DirectMessage[]> {

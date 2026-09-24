@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { usePlayer } from './usePlayer';
 import {
-  DirectConversation, fetchConversations, fetchUnreadCounts, unreadFor, isRequestFor, otherId,
+  DirectConversation, DirectPreview, fetchConversations, fetchUnreadCounts, fetchDirectPreviews,
+  unreadFor, isRequestFor, otherId,
 } from '../lib/directChats';
 import { getBlockedByMe } from '../lib/moderation';
 
@@ -11,6 +12,7 @@ export function useDirectChats() {
   const [all, setAll] = useState<DirectConversation[]>([]);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [unreadByConv, setUnreadByConv] = useState<Map<string, number>>(new Map());
+  const [previewByConv, setPreviewByConv] = useState<Map<string, DirectPreview>>(new Map());
   const [loading, setLoading] = useState(true);
   const loadedRef = useRef(false);
 
@@ -25,7 +27,12 @@ export function useDirectChats() {
       setAll(rows);
       setBlockedIds(new Set(blocked));
       // Vrai compteur de non-lus PAR conversation (source unique partagée).
-      setUnreadByConv(await fetchUnreadCounts(player.id, rows));
+      const [counts, previews] = await Promise.all([
+        fetchUnreadCounts(player.id, rows),
+        fetchDirectPreviews(rows.map(c => c.id)),
+      ]);
+      setUnreadByConv(counts);
+      setPreviewByConv(previews);
     } catch (e) {
       console.log('[useDirectChats] load failed', String(e));
     } finally {
@@ -57,10 +64,12 @@ export function useDirectChats() {
   const isConversationBlocked = (conv: DirectConversation) => blockedIds.has(otherId(conv, myId));
   // Vrai nombre de messages non lus de cette conversation.
   const unreadCount = (conv: DirectConversation) => unreadByConv.get(conv.id) ?? 0;
+  // Le dernier message, pour l'apercu de la liste.
+  const lastMessage = (conv: DirectConversation) => previewByConv.get(conv.id) ?? null;
 
   return {
     conversations, requests, loading,
     totalUnread, requestsCount: requests.length, load,
-    isConversationBlocked, unreadCount,
+    isConversationBlocked, unreadCount, lastMessage,
   };
 }

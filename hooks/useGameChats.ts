@@ -13,6 +13,8 @@ export interface GameChat {
   participants: Array<{ player_id: string; status: string; player: { name: string; avatar_path?: string | null } | null }>;
   unread: number;
   last_message_at: string | null;
+  /** Le dernier message, pour l'apercu de la carte. `null` si la conversation est vide. */
+  last_message: { content: string; player_id: string } | null;
   archived: boolean;
 }
 
@@ -32,11 +34,18 @@ export function isMatchPast(matchDate: string | null | undefined): boolean {
 const GAME_SELECT =
   'id, location, match_date, is_challenge, game_format, creator_id, creator:creator_id(name, avatar_path), participants:game_participants(player_id, status, player:player_id(name, avatar_path))';
 
-// WhatsApp-like order: unread first, then most recent activity (last message
-// or match_date as fallback for chats with no messages yet).
-export function sortGames<T extends { unread: number; last_message_at: string | null; match_date: string }>(arr: T[]): T[] {
+/**
+ * L'ordre d'arrivee, comme une messagerie : le dernier message en haut.
+ *
+ * Les non-lus ne remontent PLUS a part (refonte 4a). Une conversation qui
+ * saute par-dessus les autres parce qu'elle contient un non-lu casse le seul
+ * reperage qu'offre une liste de messages — l'ordre dans lequel les choses
+ * sont arrivees. Le non-lu se voit deja : pastille rouge et texte en gras.
+ *
+ * `match_date` reste le repli des conversations sans message.
+ */
+export function sortGames<T extends { last_message_at: string | null; match_date: string }>(arr: T[]): T[] {
   return [...arr].sort((a, b) => {
-    if (b.unread !== a.unread) return b.unread - a.unread;
     const aTs = new Date(a.last_message_at ?? a.match_date).getTime();
     const bTs = new Date(b.last_message_at ?? b.match_date).getTime();
     return bTs - aTs;
@@ -118,14 +127,18 @@ export function useGameChats() {
     // les parties, au lieu de 2 requêtes par partie (N+1). On ne tire que les 3
     // colonnes nécessaires et on agrège en JS.
     const lastByGame = new Map<string, string>();
+    const contentByGame = new Map<string, { content: string; player_id: string }>();
     const unreadByGame = new Map<string, number>();
     if (ids.length > 0) {
       const { data: msgs } = await supabase
-        .from('messages').select('game_id, created_at, player_id')
+        .from('messages').select('game_id, created_at, player_id, content')
         .in('game_id', ids).order('created_at', { ascending: false });
       for (const m of (msgs ?? []) as any[]) {
         // Trié du + récent au + ancien → le 1er vu par partie = son dernier message.
-        if (!lastByGame.has(m.game_id)) lastByGame.set(m.game_id, m.created_at);
+        if (!lastByGame.has(m.game_id)) {
+          lastByGame.set(m.game_id, m.created_at);
+          contentByGame.set(m.game_id, { content: m.content ?? '', player_id: m.player_id });
+        }
         // Non-lus : messages des autres postérieurs à mon dernier accusé de lecture.
         const lastReadMs = new Date(readMap[m.game_id] ?? '1970-01-01').getTime();
         if (m.player_id !== player.id && new Date(m.created_at).getTime() > lastReadMs) {
@@ -138,6 +151,7 @@ export function useGameChats() {
       ...game,
       unread: unreadByGame.get(game.id) ?? 0,
       last_message_at: lastByGame.get(game.id) ?? null,
+      last_message: contentByGame.get(game.id) ?? null,
       archived: scoredIds.has(game.id) || isMatchPast(game.match_date),
     }));
 
@@ -154,13 +168,14 @@ export function useGameChats() {
     const msgCh = supabase
       .channel(`chats-list-msgs:${player.id}:${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-        const m = payload.new as { game_id: string; player_id: string; created_at: string } | null;
+        const m = payload.new as { game_id: string; player_id: string; created_at: string; content?: string } | null;
         if (!m) return;
         setGames(prev => {
           if (!prev.some(g => g.id === m.game_id)) return prev;
           return sortGames(prev.map(g => g.id !== m.game_id ? g : {
             ...g,
             last_message_at: m.created_at,
+            last_message: { content: m.content ?? '', player_id: m.player_id },
             unread: m.player_id === player.id ? g.unread : g.unread + 1,
           }));
         });

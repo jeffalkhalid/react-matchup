@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../hooks/usePlayer';
 import { useGameChats } from '../hooks/useGameChats';
 import { Colors, Spacing, FontSize, Radius, Fonts } from '../lib/theme';
-import { ChatRow } from '../components/ChatRow';
+import { ChatCard } from '../components/ChatCard';
 
 export default function ArchivedChatsScreen() {
   const { player } = usePlayer();
@@ -75,6 +75,12 @@ export default function ArchivedChatsScreen() {
         </View>
       </View>
 
+      {/* Ce qu'on trouve ici, et ce qu'on peut encore y faire : sans cette
+          ligne, une archive ressemble à une conversation fermée. */}
+      <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: Colors.textMuted, paddingTop: 14, paddingHorizontal: 20, paddingBottom: 4 }}>
+        Les matchs joués ou passés depuis plus de 24 h. Tu peux toujours y écrire.
+      </Text>
+
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={Colors.primary} />
@@ -85,7 +91,7 @@ export default function ArchivedChatsScreen() {
           keyExtractor={g => g.id}
           contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
           renderItem={({ item: game }) => (
-            <ChatRow game={game} playerId={player?.id} onPress={() => router.push(`/chat/${game.id}` as any)} />
+            <ChatCard game={game} playerId={player?.id} variant="archive" onPress={() => router.push(`/chat/${game.id}` as any)} />
           )}
           ListEmptyComponent={
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingTop: 80 }}>

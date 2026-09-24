@@ -8,11 +8,12 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { useGameChats } from '../../hooks/useGameChats';
 import { useDirectChats } from '../../hooks/useDirectChats';
 import { otherName, otherAvatarPath } from '../../lib/directChats';
+import { previewLine, relativeTime, requestsLine } from '../../lib/chatList';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { Colors, Spacing, FontSize, Radius, Fonts } from '../../lib/theme';
-import { ChatRow } from '../../components/ChatRow';
+import { ChatCard, POINTILLES } from '../../components/ChatCard';
 import { HeaderActions } from '../../components/HeaderActions';
-import { Icon } from '../../components/community/icons';
+import { Icon, type IconName } from '../../components/community/icons';
 
 type TypeFilter = 'all' | 'unread' | 'challenge' | 'standard';
 
@@ -20,7 +21,7 @@ export default function ChatsScreen() {
   const { player } = usePlayer();
   const router = useRouter();
   const { games, loading, loadGames } = useGameChats();
-  const { conversations: dms, requests, requestsCount, load: loadDms, isConversationBlocked, unreadCount } = useDirectChats();
+  const { conversations: dms, requests, requestsCount, load: loadDms, isConversationBlocked, unreadCount, lastMessage } = useDirectChats();
   const [section, setSection] = useState<'parties' | 'directs'>('parties');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -46,7 +47,25 @@ export default function ChatsScreen() {
     });
   }, [active, search, typeFilter]);
 
+  // La recherche du bandeau vaut pour les DEUX listes : on cherche « Karim »
+  // sans savoir si on lui a parlé en direct ou dans une partie.
+  const dmsFiltres = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return dms;
+    return dms.filter(conv => {
+      if (otherName(conv, player?.id ?? '').toLowerCase().includes(q)) return true;
+      return (lastMessage(conv)?.content ?? '').toLowerCase().includes(q);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dms, search, player?.id, lastMessage]);
+
   const totalUnread = active.reduce((s, g) => s + g.unread, 0);
+  // Les non-lus des directs, demandes comprises : le sélecteur annonce ce
+  // qu'on trouvera de l'autre côté sans avoir à y aller.
+  const dmUnread = useMemo(
+    () => dms.reduce((s, c) => s + (isConversationBlocked(c) ? 0 : unreadCount(c)), 0) + requestsCount,
+    [dms, isConversationBlocked, unreadCount, requestsCount],
+  );
 
   const FILTERS: Array<{ id: TypeFilter; label: string }> = [
     { id: 'all', label: 'Tous' },
@@ -55,42 +74,31 @@ export default function ChatsScreen() {
     { id: 'standard', label: 'Parties' },
   ];
 
-  // "Archivées" entry pinned at the top of the list (WhatsApp-style).
+  // « Archivées » ferme la liste au lieu de l'ouvrir : épinglée en tête, elle
+  // était la première chose lue alors qu'elle est la moins urgente. Les
+  // pointillés disent que c'est un rangement, pas une conversation.
   const ArchivedRow = archived.length > 0 ? (
     <TouchableOpacity
       onPress={() => router.push('/archived-chats' as any)}
+      activeOpacity={0.85}
       style={{
-        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-        paddingHorizontal: Spacing.lg, paddingVertical: 14,
-        borderBottomWidth: 1, borderBottomColor: Colors.border,
-        backgroundColor: Colors.bgCardAlt,
+        marginTop: 16, marginHorizontal: 16, marginBottom: 8,
+        paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14,
+        borderWidth: 1, borderStyle: 'dashed', borderColor: POINTILLES,
+        flexDirection: 'row', alignItems: 'center', gap: 10,
       }}
     >
-      <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.bgCard, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 22 }}>🗄️</Text>
-      </View>
+      <Text style={{ fontSize: 18 }}>🗄️</Text>
       <View style={{ flex: 1 }}>
-        <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: '900', fontFamily: Fonts.uiBlack }}>
+        <Text style={{ color: Colors.textPrimary, fontSize: 13, fontFamily: Fonts.uiExtraBold }}>
           Archivées
         </Text>
-        <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, marginTop: 2 }}>
+        <Text style={{ color: Colors.textMuted, fontSize: 11, marginTop: 2, fontFamily: Fonts.ui }}>
           {archived.length} conversation{archived.length > 1 ? 's' : ''}
           {archivedUnread > 0 ? `  ·  ${archivedUnread} non lu${archivedUnread > 1 ? 's' : ''}` : ''}
         </Text>
       </View>
-      {archivedUnread > 0 ? (
-        <View style={{
-          minWidth: 22, height: 22, borderRadius: 11,
-          backgroundColor: Colors.primary, paddingHorizontal: 7,
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900' }}>
-            {archivedUnread > 99 ? '99+' : archivedUnread}
-          </Text>
-        </View>
-      ) : (
-        <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
-      )}
+      <Text style={{ color: Colors.textMuted, fontSize: 16 }}>›</Text>
     </TouchableOpacity>
   ) : null;
 
@@ -117,7 +125,7 @@ export default function ChatsScreen() {
             style={{ color: Colors.textOnDark, fontSize: 28, lineHeight: 36, fontFamily: Fonts.welcome, letterSpacing: -0.5, flexShrink: 1, textAlign: 'center', paddingRight: 5 }}>Mes <Text style={{ color: Colors.brand }}>conversations</Text></Text>
         </View>
         <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.md }}>
-          {active.length} match{active.length !== 1 ? 's' : ''} actif{active.length !== 1 ? 's' : ''}
+          {active.length} conversation{active.length !== 1 ? 's' : ''}
           {totalUnread > 0 ? `  ·  ${totalUnread} non lu${totalUnread > 1 ? 's' : ''}` : ''}
         </Text>
 
@@ -132,7 +140,7 @@ export default function ChatsScreen() {
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Rechercher une conversation…"
+            placeholder="Club, joueur, message…"
             placeholderTextColor={Colors.textMuted}
             style={{ flex: 1, color: Colors.textSecondary, fontSize: FontSize.sm, fontWeight: '500' }}
           />
@@ -151,8 +159,10 @@ export default function ChatsScreen() {
             paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999,
             backgroundColor: section === s ? Colors.primary : Colors.bgCard,
           }}>
-            <Text style={{ color: section === s ? '#fff' : Colors.textPrimary, fontWeight: '800', fontSize: FontSize.sm }}>
-              {s === 'parties' ? 'Parties' : `Directs${requestsCount > 0 ? ` · ${requestsCount}` : ''}`}
+            <Text style={{ color: section === s ? '#fff' : Colors.textPrimary, fontWeight: '800', fontSize: FontSize.sm, fontFamily: Fonts.uiExtraBold }}>
+              {s === 'parties'
+                ? `Parties${totalUnread > 0 ? ` · ${totalUnread}` : ''}`
+                : `Directs${dmUnread > 0 ? ` · ${dmUnread}` : ''}`}
             </Text>
           </TouchableOpacity>
         ))}
@@ -204,28 +214,22 @@ export default function ChatsScreen() {
           <FlatList
             data={filtered}
             keyExtractor={g => g.id}
-            contentContainerStyle={{ paddingBottom: 80, flexGrow: 1 }}
-            ListHeaderComponent={typeFilter === 'all' && !search ? ArchivedRow : null}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 80, flexGrow: 1 }}
+            ListFooterComponent={typeFilter === 'all' && !search ? ArchivedRow : null}
             renderItem={({ item: game }) => (
-              <ChatRow game={game} playerId={player?.id} onPress={() => router.push(`/chat/${game.id}` as any)} />
+              <ChatCard game={game} playerId={player?.id} onPress={() => router.push(`/chat/${game.id}` as any)} />
             )}
             ListEmptyComponent={
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingTop: 80 }}>
-                <Text style={{ fontSize: 40, marginBottom: Spacing.md }}>
-                  {typeFilter === 'unread' ? '✅' : '💬'}
-                </Text>
-                <Text style={{ color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '900', textAlign: 'center', fontFamily: Fonts.uiBlack }}>
-                  {typeFilter === 'unread' ? 'Tout est lu !' : search ? 'Aucun résultat' : 'Aucune conversation active'}
-                </Text>
-                <Text style={{ color: Colors.textSecondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: 4 }}>
-                  {typeFilter === 'unread' ? 'Tu es à jour.' : search ? `"${search}" introuvable` : 'Rejoins une partie dans le Lobby.'}
-                </Text>
-                {(search || typeFilter !== 'all') && (
-                  <TouchableOpacity onPress={() => { setSearch(''); setTypeFilter('all'); }} style={{ marginTop: Spacing.md }}>
-                    <Text style={{ color: Colors.primary, fontSize: FontSize.sm, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Voir toutes les conversations</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+              <EtatVide
+                icon={typeFilter === 'unread' ? 'check' : search ? 'search' : 'message'}
+                titre={typeFilter === 'unread' ? 'Tout est lu !' : search ? 'Aucun résultat' : 'Aucune conversation'}
+                phrase={typeFilter === 'unread' ? 'Tu es à jour.'
+                  : search ? `« ${search} » introuvable`
+                  : 'Rejoins une partie dans le Lobby, la conversation arrive avec.'}
+                action={search || typeFilter !== 'all'
+                  ? { mot: 'Voir toutes les conversations', faire: () => { setSearch(''); setTypeFilter('all'); } }
+                  : null}
+              />
             }
           />
         )
@@ -234,24 +238,28 @@ export default function ChatsScreen() {
       {/* Directs list */}
       {section === 'directs' && (
         <FlatList
-          data={dms}
+          data={dmsFiltres}
           keyExtractor={c => c.id}
           contentContainerStyle={{ paddingBottom: 80, flexGrow: 1 }}
           ListHeaderComponent={requestsCount > 0 ? (
             <TouchableOpacity
-              onPress={() => router.push(`/dm/${requests[0].id}` as any)}
+              onPress={() => router.push('/dm-requests' as any)}
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
                 paddingHorizontal: Spacing.lg, paddingVertical: 14,
                 borderBottomWidth: 1, borderBottomColor: Colors.border,
                 backgroundColor: Colors.bgCardAlt,
               }}>
-              <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.bgCard, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 22 }}>✉️</Text>
+              <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="mail" size={20} color={Colors.brand} stroke={2.2} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: '900', fontFamily: Fonts.uiBlack }}>Demandes</Text>
-                <Text style={{ color: Colors.textMuted, fontSize: FontSize.xs, marginTop: 2 }}>{requestsCount} en attente</Text>
+                {/* Qui attend, plutôt qu'un compte : un prénom donne envie
+                    d'ouvrir, « 2 en attente » ne dit rien de personne. */}
+                <Text numberOfLines={1} style={{ color: Colors.textMuted, fontSize: FontSize.xs, marginTop: 2, fontFamily: Fonts.ui }}>
+                  {requestsLine(requests.map(r => otherName(r, player?.id ?? '')))}
+                </Text>
               </View>
               <View style={{
                 minWidth: 22, height: 22, borderRadius: 11,
@@ -268,6 +276,7 @@ export default function ChatsScreen() {
             const name = otherName(conv, player?.id ?? '');
             const photoPath = otherAvatarPath(conv, player?.id ?? '');
             const blocked = isConversationBlocked(conv);
+            const apercu = lastMessage(conv);
             const unread = blocked ? 0 : unreadCount(conv);
             return (
               <TouchableOpacity
@@ -282,18 +291,27 @@ export default function ChatsScreen() {
                 <PlayerAvatar name={name} path={photoPath} size={48} backgroundColor={Colors.bgCardAlt} textColor={Colors.textPrimary} fontFamily={Fonts.uiBlack} fontSize={18} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: unread > 0 ? '900' : '800', fontFamily: unread > 0 ? Fonts.uiBlack : Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>
+                    <Text style={{ flex: 1, color: Colors.textPrimary, fontSize: FontSize.sm, fontWeight: unread > 0 ? '900' : '800', fontFamily: unread > 0 ? Fonts.uiBlack : Fonts.uiExtraBold }} numberOfLines={1}>{name}</Text>
                     {blocked && (
                       <View style={{ backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
                         <Text style={{ color: Colors.danger, fontSize: 10, fontWeight: '900' }}>🚫 Bloqué</Text>
                       </View>
                     )}
-                  </View>
-                  {conv.last_message_at && (
-                    <Text style={{ color: unread > 0 ? Colors.textPrimary : Colors.textMuted, fontSize: FontSize.xs, marginTop: 2, fontWeight: unread > 0 ? '700' : '400' }}>
-                      {new Date(conv.last_message_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                    <Text style={{ color: Colors.textMuted, fontSize: 11, fontFamily: Fonts.uiSemi }}>
+                      {relativeTime(conv.last_message_at)}
                     </Text>
-                  )}
+                  </View>
+                  {/* Ce qui s'est dit, pas seulement quand : une date seule ne
+                      distingue pas deux conversations du même jour. */}
+                  <Text numberOfLines={1} style={{
+                    marginTop: 2, fontSize: 12,
+                    color: blocked ? Colors.textMuted : unread > 0 ? Colors.textPrimary : '#71717A',
+                    fontFamily: unread > 0 ? Fonts.uiSemi : Fonts.ui,
+                  }}>
+                    {blocked
+                      ? 'Conversation bloquée'
+                      : previewLine(apercu?.content, name, apercu?.sender_id === player?.id) ?? 'Pas encore de message'}
+                  </Text>
                 </View>
                 {unread > 0 ? (
                   <View style={{ minWidth: 22, height: 22, borderRadius: 11, backgroundColor: Colors.primary, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' }}>
@@ -306,14 +324,57 @@ export default function ChatsScreen() {
             );
           }}
           ListEmptyComponent={
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingTop: 80 }}>
-              <Text style={{ fontSize: 40, marginBottom: Spacing.md }}>💬</Text>
-              <Text style={{ color: Colors.textPrimary, fontSize: FontSize.md, fontWeight: '900', textAlign: 'center', fontFamily: Fonts.uiBlack }}>Aucune conversation directe</Text>
-              <Text style={{ color: Colors.textSecondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: 4 }}>Lance un message depuis le profil d'un joueur.</Text>
-            </View>
+            <EtatVide
+              icon={search ? 'search' : 'message'}
+              titre={search ? 'Aucun résultat' : 'Aucune conversation directe'}
+              phrase={search ? `« ${search} » introuvable` : "Lance un message depuis le profil d'un joueur."}
+              action={search ? { mot: 'Voir toutes les conversations', faire: () => setSearch('') } : null}
+            />
           }
         />
       )}
+    </View>
+  );
+}
+
+/**
+ * L'état vide, partagé par les deux listes et leurs trois raisons d'être
+ * vides : rien du tout, une recherche sans résultat, un filtre trop serré.
+ *
+ * Les trois disaient « 💬 Aucune conversation » avec un emoji et la même
+ * mise en page approximative. Un écran vide est le seul contenu à ce
+ * moment-là : il mérite d'être dessiné.
+ */
+function EtatVide({ icon, titre, phrase, action }: {
+  icon: IconName;
+  titre: string;
+  phrase: string;
+  action?: { mot: string; faire: () => void } | null;
+}) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, paddingTop: 60 }}>
+      <View style={{
+        width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.bgCard,
+        borderWidth: 1, borderColor: Colors.border,
+        alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+      }}>
+        <Icon name={icon} size={26} color={Colors.textSecondary} stroke={2} />
+      </View>
+      <Text style={{ fontFamily: Fonts.welcome, fontSize: 24, lineHeight: 30, color: Colors.textPrimary, textAlign: 'center' }}>
+        {titre}
+      </Text>
+      <Text style={{ fontFamily: Fonts.ui, fontSize: 13, lineHeight: 18, color: Colors.textSecondary, textAlign: 'center', marginTop: 4 }}>
+        {phrase}
+      </Text>
+      {action ? (
+        <TouchableOpacity
+          onPress={action.faire}
+          activeOpacity={0.85}
+          style={{ marginTop: 16, backgroundColor: Colors.primary, borderRadius: 999, paddingVertical: 12, paddingHorizontal: 20 }}
+        >
+          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 13, color: Colors.textOnDark }}>{action.mot}</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
