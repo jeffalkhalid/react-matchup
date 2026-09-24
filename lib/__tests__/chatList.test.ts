@@ -53,10 +53,19 @@ describe("l'étiquette de date du match", () => {
     expect(dateTag(le(23, 19), now)).toEqual({ label: 'HIER', kind: 'yesterday' });
   });
 
-  it('au-delà, la date avec une majuscule', () => {
+  it('au-delà, le jour et son numéro, avec une majuscule', () => {
     const tag = dateTag(le(26, 14), now);
     expect(tag.kind).toBe('other');
-    expect(tag.label).toBe('Sam. 26 sept.');
+    expect(tag.label).toBe('Sam. 26');
+  });
+
+  it('reste assez court pour tenir dans la pastille', () => {
+    // La pastille ne dispose que de 80 points sous la mosaïque. Au-delà d'une
+    // douzaine de caractères en gras majuscule, elle se fait couper — c'est
+    // exactement ce qui est arrivé avec le mois.
+    const tous = [le(24, 20), le(25, 19), le(23, 19), le(26, 14), le(30, 9)]
+      .map(d => dateTag(d, now).label);
+    for (const label of tous) expect(label.length).toBeLessThanOrEqual(11);
   });
 
   it('un match tard ce soir reste AUJOURD HUI', () => {

@@ -72,8 +72,14 @@ export function dateTag(matchDate: string | null | undefined, now: Date = new Da
   if (ecart === 1) return { label: 'DEMAIN', kind: 'tomorrow' };
   if (ecart === -1) return { label: 'HIER', kind: 'yesterday' };
   const d = new Date(matchDate as string);
+  // Le jour et son numéro, SANS le mois. La pastille est posée sous une
+  // mosaïque de 54 points et ne dispose que des 80 points qui la séparent du
+  // nom du club : « SAM. 26 SEPT. » n'y tient à aucune taille lisible, et se
+  // faisait couper au milieu. Le mois manque rarement — la carte parle d'une
+  // conversation en cours, pas d'un match dans six semaines, et les archives
+  // affichent la date en toutes lettres.
   return {
-    label: capitale(d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })),
+    label: capitale(d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })),
     kind: 'other',
   };
 }

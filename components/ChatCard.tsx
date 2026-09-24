@@ -92,13 +92,25 @@ function Mosaique({ joueurs, tag }: { joueurs: Joueur[]; tag: { label: string; k
       </View>
 
       {tag.label ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: -7, alignItems: 'center' }}>
+        // `left/right: 0` enfermait la pastille dans les 54 px de la
+        // mosaïque : « AUJOURD'HUI » et « DIM. 27 SEPT. » y étaient coupés au
+        // milieu. Elle déborde donc des deux côtés, de la marge gauche de la
+        // carte (12) à l'espace qui la sépare du texte (14) — les 80 points
+        // que le dessin lui réserve, et pas un de plus, sinon elle passerait
+        // sous le nom du club.
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', left: -13, right: -13, bottom: -7, alignItems: 'center' }}
+        >
           <View style={{
-            backgroundColor: fond, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1,
+            backgroundColor: fond, borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1,
             borderWidth: 2, borderColor: Colors.bgCard,
           }}>
-            <Text numberOfLines={1} style={{
-              fontFamily: Fonts.uiBlack, fontSize: 9, letterSpacing: 0.4, color: encre,
+            {/* La largeur est dictée par la mosaïque, pas par le texte : la
+                police système ne doit pas la faire grossir, elle serait
+                tronquée à nouveau chez qui écrit en grand. */}
+            <Text numberOfLines={1} maxFontSizeMultiplier={1} style={{
+              fontFamily: Fonts.uiBlack, fontSize: 8.5, letterSpacing: 0.2, color: encre,
             }}>
               {tag.label.toUpperCase()}
             </Text>
