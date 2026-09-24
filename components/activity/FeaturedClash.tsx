@@ -60,6 +60,14 @@ const BLANC_45 = 'rgba(255,255,255,0.45)';
 const JAUNE_DOUX = 'rgba(255,193,26,0.16)';
 const VERT_DOUX = 'rgba(16,185,129,0.14)';
 
+/**
+ * Ce qu'on regarde dans le rail.
+ *
+ * « Tout » garde l'ordre complet, filtre compris les matchs en cours — ils ne
+ * sont ni à voter ni un résultat, ils n'ont donc pas de pastille à eux.
+ */
+type Filtre = 'tout' | 'voter' | 'resultats';
+
 /** Une carte du rail : une partie, son âge, et ce qu'on sait de son issue. */
 interface Carte extends Clash {
   phase: ClashPhase;
@@ -151,6 +159,7 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
   const [mine, setMine] = useState<Record<string, Team>>({});
   const [erreur, setErreur] = useState<string | null>(null);
   const [charge, setCharge] = useState(false);
+  const [filtre, setFiltre] = useState<Filtre>('tout');
 
   const load = useCallback(() => {
     let vivant = true;
@@ -228,9 +237,17 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
   // Une carte par partie, presque pleine largeur : on en voit une, on devine
   // la suivante, et on fait défiler.
   const LARGEUR = Math.min(width - 56, 320);
-  const votables = clashes.filter(c => c.phase === 'a_venir');
+  const aVoterTout = clashes.filter(c => c.phase === 'a_venir');
+  const resultatsTout = clashes.filter(c => c.phase === 'termine');
+  // Les pastilles n'apparaissent que s'il y a vraiment deux choses à séparer.
+  const filtrable = aVoterTout.length > 0 && resultatsTout.length > 0;
+  const visibles = !filtrable || filtre === 'tout' ? clashes
+    : filtre === 'voter' ? aVoterTout : resultatsTout;
+
+  // Le titre suit CE QU'ON VOIT, pas ce qu'on a chargé : une seule règle
+  // couvre le rail sans rien à voter ET le rail filtré sur les résultats.
+  const votables = visibles.filter(c => c.phase === 'a_venir');
   const votes = votables.filter(c => mine[c.gameId]).length;
-  // Plus rien à voter : le rail ne parle que du passé, le titre le dit.
   const titre = votables.length > 0 ? 'Qui va gagner ?' : 'Résultat du match';
 
   return (
@@ -254,6 +271,33 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
           : 'Ce que tu avais vu, et ce qui s’est passé.'}
       </Text>
 
+      {filtrable ? (
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+          {([['tout', 'Tout'], ['voter', 'À voter'], ['resultats', 'Résultats']] as const).map(([cle, mot]) => {
+            const actif = filtre === cle;
+            return (
+              <TouchableOpacity
+                key={cle}
+                onPress={() => setFiltre(cle)}
+                activeOpacity={0.85}
+                style={{
+                  borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
+                  backgroundColor: actif ? Colors.brand : 'transparent',
+                  borderWidth: 1, borderColor: actif ? Colors.brand : Colors.borderLight,
+                }}
+              >
+                <Text style={{
+                  fontFamily: Fonts.uiExtraBold, fontSize: 11,
+                  color: actif ? Colors.primary : Colors.textSecondary,
+                }}>
+                  {mot}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -262,7 +306,7 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
         style={{ marginHorizontal: -16 }}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
       >
-        {clashes.map(clash => {
+        {visibles.map(clash => {
           const c = counts[clash.gameId] ?? { A: 0, B: 0, total: 0 };
           const mien = mine[clash.gameId] ?? null;
           const estLeChoc = clash.gameId === choc;
@@ -286,7 +330,10 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
             <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, overflow: 'hidden' }}>
               {/* La griffe d'un défi : sa couleur dit le niveau de mise. */}
               <StakeGriffe stake={mise} />
-              <View style={{ padding: 14 }}>
+              {/* `flex: 1` : la colonne occupe toute la carte, qui a la
+                  hauteur de la plus haute du rail — une carte de résultat.
+                  Sans ça, la différence restait un pavé noir muet. */}
+              <View style={{ padding: 14, flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                 <StakePill stake={mise} />
                 {estLeChoc ? (
@@ -365,6 +412,25 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
                   ? `${c.total} pronostic${c.total > 1 ? 's' : ''}${aVenir && !mien ? " pour l'instant" : ''}`
                   : "Personne ne s'est prononcé"}
               </Text>
+
+              {/* La place qui reste dit ce qui va s'y passer. Deux cales en
+                  `flexGrow` et non en `flex` : une cale en `flex: 1` prend
+                  une base de 0 et écrase le texte à zéro quand il n'y a pas
+                  de place — on l'a déjà payé sur l'accueil. */}
+              {termine ? null : (
+                <>
+                  <View style={{ flexGrow: 1 }} />
+                  <Text style={{
+                    fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: BLANC_45,
+                    textAlign: 'center', paddingHorizontal: 8, marginTop: 10,
+                  }}>
+                    {aVenir
+                      ? 'Reviens à la fin du match pour voir le résultat.'
+                      : "Le résultat s'affichera dès que le score sera validé."}
+                  </Text>
+                  <View style={{ flexGrow: 1 }} />
+                </>
+              )}
               </View>
             </View>
           );

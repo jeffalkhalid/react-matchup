@@ -179,7 +179,10 @@ export function MyOddsCard({ myId }: { myId: string }) {
             <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, overflow: 'hidden' }}>
               {/* Sur MON match, la mise est l'enjeu : elle se voit d'abord. */}
               <StakeGriffe stake={mise} />
-              <View style={{ padding: 14 }}>
+              {/* `flex: 1` : la colonne occupe toute la carte, qui prend la
+                  hauteur de la plus haute du rail — une carte de résultat.
+                  Sans ça, la différence restait un pavé noir muet. */}
+              <View style={{ padding: 14, flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                 <StakePill stake={mise} />
                 <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 11, color: BLANC_45 }}>
@@ -239,6 +242,23 @@ export function MyOddsCard({ myId }: { myId: string }) {
               <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 10, textAlign: 'center' }}>
                 {`${c.total} pronostic${c.total > 1 ? 's' : ''}`}
               </Text>
+
+              {/* Deux cales en `flexGrow`, jamais `flex: 1` : une base de 0
+                  écraserait le texte à zéro sur la carte la plus haute. */}
+              {termine ? null : (
+                <>
+                  <View style={{ flexGrow: 1 }} />
+                  <Text style={{
+                    fontFamily: Fonts.uiSemi, fontSize: 11, lineHeight: 15, color: BLANC_45,
+                    textAlign: 'center', paddingHorizontal: 8, marginTop: 10,
+                  }}>
+                    {clash.phase === 'a_venir'
+                      ? "Reviens à la fin du match pour voir ce que ça a donné."
+                      : "Le résultat s'affichera dès que le score sera validé."}
+                  </Text>
+                  <View style={{ flexGrow: 1 }} />
+                </>
+              )}
               </View>
             </View>
           );
