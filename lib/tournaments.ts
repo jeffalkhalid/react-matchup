@@ -735,10 +735,13 @@ export interface TournamentMatch {
   forfeited_team: string | null;
   confirmed_at: string | null;
   started_at: string | null;
+  /** Quand la rotation a été tirée. Le seul repère temporel d'un terrain dont
+   *  personne n'a lancé le chrono — voir `blockedCourts`. */
+  created_at: string | null;
 }
 
 const TOURNAMENT_MATCH_COLS =
-  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at, started_at';
+  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at, started_at, created_at';
 
 /** Les matchs d'UN TOUR, terrain par terrain — le tableau de la soirée.
  *  Triés Terrain 1 en premier : « du Terrain 1 en haut » se lit directement
@@ -861,6 +864,102 @@ export function matchLiveStatus(
     teamBEntries.some(b => a.games_a === b.games_a && a.games_b === b.games_b));
   if (bothEntered && !anyAgree) return 'disputed';
   return 'awaiting';
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * CE QUI BLOQUE LA ROTATION, DU POINT DE VUE DE L'ORGANISATEUR.
+ *
+ * Trois motifs, trois gestes différents — c'est pour ça qu'ils ne se
+ * confondent pas en un seul « pas de score ».
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export type BlockedReason =
+  /** Personne n'a lancé le chrono, et la rotation traîne depuis une durée de
+   *  tour. Ces quatre-là n'ont eu AUCUNE sonnerie non plus. */
+  | 'sans_chrono'
+  /** Le chrono a tourné, le temps est passé, aucun score n'est rentré. */
+  | 'muet'
+  /** Les deux camps se contredisent. Seul un accord — ou l'organisateur —
+   *  débloque ce terrain, et ça n'a pas de raison de s'arranger tout seul. */
+  | 'litige';
+
+export interface BlockedCourtInput {
+  id: string;
+  courtNo: number;
+  /** `false` pour un bye : un repos n'attend aucun score. */
+  hasOpponent: boolean;
+  forfeitedTeam: string | null;
+  confirmedAt: string | null;
+  gamesA: number | null;
+  startedAt: string | null;
+  /** L'heure du tirage de la rotation — voir `sans_chrono`. */
+  createdAt: string | null;
+  teamAEntries: Pick<TournamentMatchEntry, 'games_a' | 'games_b'>[];
+  teamBEntries: Pick<TournamentMatchEntry, 'games_a' | 'games_b'>[];
+}
+
+export interface BlockedCourt {
+  id: string;
+  courtNo: number;
+  reason: BlockedReason;
+}
+
+/**
+ * Ce terrain bloque-t-il la rotation, et pourquoi ? `null` s'il n'y a rien à
+ * faire.
+ *
+ * MÊME RÈGLE QUE LE SERVEUR, pas une seconde lecture : un terrain bloque
+ * quand son score n'est pas ACQUIS — aucune saisie, ou deux saisies
+ * contraires — ce que `fn_tournament_score_acquis` dit côté SQL et ce que
+ * `matchLiveStatus` dit ici. Un score PROVISOIRE (un seul camp a saisi) ne
+ * bloque rien : il compte déjà, et le lister ferait relancer des gens qui ont
+ * fait leur part. La condition précédente — « zéro saisie » — ratait tous les
+ * désaccords, c'est-à-dire le seul état qui réclame vraiment l'organisateur.
+ *
+ * LE TEMPS SE COMPTE DEPUIS `startedAt ?? createdAt`, comme
+ * `send_tournament_silent_courts`. Avec `startedAt` seul, un terrain dont
+ * personne n'a appuyé sur « On commence » n'apparaissait JAMAIS — alors que
+ * c'est le blocage le plus probable, et le seul que rien d'autre ne rattrape
+ * (aucune sonnerie locale n'a pu être programmée non plus).
+ *
+ * Le DÉSACCORD, lui, se signale tout de suite : il n'y a pas de délai après
+ * lequel deux scores contraires s'accorderaient d'eux-mêmes.
+ */
+export function blockedCourtReason(
+  c: BlockedCourtInput, roundMinutes: number, now: number,
+): BlockedReason | null {
+  if (!c.hasOpponent) return null;
+  const st = matchLiveStatus(true, c.forfeitedTeam, c.confirmedAt, c.teamAEntries, c.teamBEntries);
+  if (st === 'forfeited' || st === 'confirmed') return null;
+  if (st === 'disputed') return 'litige';
+  if (c.gamesA != null) return null;             // provisoire : ne bloque rien
+  const depart = c.startedAt ?? c.createdAt;
+  if (!depart) return null;
+  const fin = new Date(depart).getTime() + Math.max(0, roundMinutes) * 60_000;
+  if (now < fin) return null;
+  return c.startedAt ? 'muet' : 'sans_chrono';
+}
+
+/** Les terrains qui bloquent, triés par numéro — l'ordre du gymnase. */
+export function blockedCourts(
+  courts: BlockedCourtInput[], roundMinutes: number, now: number,
+): BlockedCourt[] {
+  return courts
+    .map(c => {
+      const reason = blockedCourtReason(c, roundMinutes, now);
+      return reason ? { id: c.id, courtNo: c.courtNo, reason } : null;
+    })
+    .filter((c): c is BlockedCourt => c != null)
+    .sort((a, b) => a.courtNo - b.courtNo);
+}
+
+/** La phrase d'un blocage — trois motifs, trois gestes. */
+export function blockedCourtLabel(reason: BlockedReason): string {
+  switch (reason) {
+    case 'litige':      return 'les deux camps ne disent pas la même chose';
+    case 'sans_chrono': return 'chrono jamais lancé, pas de score';
+    case 'muet':        return 'pas de score';
+  }
 }
 
 /** Refuse un score À ÉGALITÉ (et les valeurs hors bornes) CÔTÉ ÉCRAN, avant
@@ -1527,7 +1626,16 @@ export async function fetchTournamentMatches(tournamentId: string): Promise<Tour
  * Le client Supabase est importé dynamiquement, comme partout dans ce module :
  * les tests purs n'ont pas à charger les variables d'environnement.
  */
-export function subscribeTournamentMatches(tournamentId: string, onChange: () => void): () => void {
+export function subscribeTournamentMatches(
+  tournamentId: string,
+  onChange: () => void,
+  /** Appelé à CHAQUE fois que le canal s'ouvre — la première, et après chaque
+   *  reconnexion. Deux minutes de réseau mort au club, et les changements
+   *  survenus pendant la coupure ne sont JAMAIS rejoués par le temps réel :
+   *  sans ce rappel, l'écran reste sur la rotation précédente, et quatre
+   *  joueurs vont sur le mauvais terrain. */
+  onSubscribed?: () => void,
+): () => void {
   let channel: any = null;
   let fini = false;
   const suffix = Math.random().toString(36).slice(2, 8);
@@ -1538,7 +1646,9 @@ export function subscribeTournamentMatches(tournamentId: string, onChange: () =>
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'tournament_matches', filter: `tournament_id=eq.${tournamentId}` },
         () => onChange())
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED' && !fini) onSubscribed?.();
+      });
   });
   return () => {
     fini = true;

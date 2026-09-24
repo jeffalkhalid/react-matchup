@@ -55,6 +55,7 @@ import {
   missingMatchLabel, countLaterRoundMatches, stakeLabel, groupResultsByTeam,
   validateTournamentScore, matchLiveStatus, pointsScaleValid,
   defaultPointsScale, resizePointsScale, teamCount,
+  blockedCourts, blockedCourtLabel, roundMinutesOf,
 } from '../../lib/tournaments';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
@@ -2999,6 +3000,20 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
+  // L'HORLOGE DES BLOCAGES. Depuis que « ce qui bloque » se mesure au temps
+  // écoulé (`blockedCourts`, la même règle que le serveur) et non plus au
+  // nombre de saisies, la liste dépend de l'heure autant que des données. Sans
+  // ce battement, un terrain qui devient muet pendant qu'on regarde l'écran
+  // n'apparaîtrait qu'au prochain rechargement — c'est-à-dire au prochain
+  // geste, alors que c'est justement ce geste qu'on cherche à provoquer.
+  // Trente secondes, et seulement pendant une soirée qui tourne.
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  useEffect(() => {
+    if (t.status !== 'EN_COURS') return undefined;
+    const minuteur = setInterval(() => setMaintenant(Date.now()), 30_000);
+    return () => clearInterval(minuteur);
+  }, [t.status]);
+
   const isOrganizer = t.created_by === myPlayerId;
   // Miroir exact des deux refus de `tournament_cancel` (en-tête SQL) : la
   // sortie universelle est offerte partout SAUF sur ces deux états terminaux.
@@ -3261,27 +3276,49 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
   }
 
   // Ce qui bloque la soirée MAINTENANT que le serveur tire chaque rotation
-  // tout seul (Tâche 8) : un terrain de la rotation COURANTE où personne n'a
-  // encore rien saisi. Sans cette liste en tête de carte, l'organisateur
-  // devait ouvrir chaque match un par un pour trouver le terrain muet.
-  // Un bye (`!m.team_b`) n'attend aucun score, on ne le liste pas ; un match
-  // déjà confirmé ou forfaité non plus.
-  const blockedCourts = t.status === 'EN_COURS'
-    ? roundMatches
-        .filter(m => m.team_b != null && m.confirmed_at == null && m.forfeited_team == null
-          && (entriesByMatch.get(m.id) ?? []).length === 0)
-        .map(m => {
-          const teamAInfo = teamById.get(m.team_a);
-          const teamBInfo = m.team_b ? teamById.get(m.team_b) : null;
-          if (!teamAInfo || !teamBInfo) return null;
+  // tout seul (Tâche 8). La règle vit dans `blockedCourts` (lib/tournaments),
+  // avec ses tests, et c'est LA MÊME que celle du serveur
+  // (`send_tournament_silent_courts`) : un score non ACQUIS, et un temps
+  // compté depuis `started_at ?? created_at`.
+  //
+  // Elle a remplacé un « zéro saisie » qui ratait les DEUX blocages les plus
+  // probables : le terrain dont personne n'a lancé le chrono (rien à compter
+  // depuis `started_at`, donc invisible pour toujours) et le DÉSACCORD (deux
+  // saisies, donc « pas zéro », alors que c'est le seul état qui réclame
+  // vraiment l'organisateur).
+  const roundEntriesOf = (m: TournamentMatch) => {
+    const eq = teamById.get(m.team_a);
+    const toutes = entriesByMatch.get(m.id) ?? [];
+    const dansA = (e: TournamentMatchEntry) =>
+      !!eq && (eq.player1_id === e.player_id || eq.player2_id === e.player_id);
+    return { a: toutes.filter(dansA), b: toutes.filter(e => !dansA(e)) };
+  };
+  const blocages = t.status === 'EN_COURS'
+    ? blockedCourts(
+        roundMatches.map(m => {
+          const { a, b } = roundEntriesOf(m);
           return {
-            id: m.id,
-            label: `Terrain ${m.court_no} — ${namesOf(teamAInfo.player1_id, teamAInfo.player2_id).join(' & ')} vs `
-              + `${namesOf(teamBInfo.player1_id, teamBInfo.player2_id).join(' & ')} : pas de score`,
+            id: m.id, courtNo: m.court_no, hasOpponent: m.team_b != null,
+            forfeitedTeam: m.forfeited_team, confirmedAt: m.confirmed_at,
+            gamesA: m.games_a, startedAt: m.started_at, createdAt: m.created_at,
+            teamAEntries: a, teamBEntries: b,
           };
-        })
-        .filter((c): c is { id: string; label: string } => c != null)
+        }),
+        roundMinutesOf(t), maintenant)
     : [];
+  const blockedRows = blocages
+    .map(c => {
+      const m = roundMatches.find(x => x.id === c.id);
+      const teamAInfo = m ? teamById.get(m.team_a) : null;
+      const teamBInfo = m?.team_b ? teamById.get(m.team_b) : null;
+      if (!teamAInfo || !teamBInfo) return null;
+      return {
+        id: c.id,
+        label: `Terrain ${c.courtNo} — ${namesOf(teamAInfo.player1_id, teamAInfo.player2_id).join(' & ')} vs `
+          + `${namesOf(teamBInfo.player1_id, teamBInfo.player2_id).join(' & ')} : ${blockedCourtLabel(c.reason)}`,
+      };
+    })
+    .filter((c): c is { id: string; label: string } => c != null);
 
   const standingRows: StandingRowData[] = standings.map(s => ({
     standing: s,
@@ -3506,9 +3543,9 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
           {/* Ce qui bloque MAINTENANT : la rotation suivante part toute
               seule dès que ces terrains-là ont un score — l'organisateur n'a
               plus qu'à débloquer, pas à rythmer. */}
-          {blockedCourts.length > 0 && (
+          {blockedRows.length > 0 && (
             <View style={{ gap: 4 }}>
-              {blockedCourts.map(c => (
+              {blockedRows.map(c => (
                 <Text key={c.id} style={[sty.orgCardDesc, { color: Colors.danger, fontWeight: '700' }]}>
                   {c.label}
                 </Text>

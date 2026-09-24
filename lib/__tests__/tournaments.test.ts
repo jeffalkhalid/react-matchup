@@ -19,6 +19,7 @@ import {
   monthMatrix, isoDay, timeSlots, defaultPointsScale, resizePointsScale,
   daysUntilLabel, shortFormatLabel, homeTournamentList, isExpiredUnstarted,
   levelAccepted, isThisWeekend, filterTournaments, bestFilterToDrop, activeFilterCount, NO_FILTERS,
+  blockedCourts, blockedCourtReason, blockedCourtLabel, type BlockedCourtInput,
   type TournamentRegistration, type TournamentTeam, type TournamentStatus,
   type TournamentMissingMatch, type TournamentResultTeamRow, type Tournament,
 } from '../tournaments';
@@ -1230,5 +1231,88 @@ describe('choisir un partenaire deja inscrit', () => {
     // « Nous inscrire » mentirait : dans les deux cas une demande part.
     expect(registerCtaLabel('direct')).toContain('inviter');
     expect(registerCtaLabel(null)).toBe('S’inscrire');
+  });
+});
+
+// Ce qui bloque la rotation, du point de vue de l'organisateur (relecture
+// finale, 2026-09-24). La règle vivait en ligne dans `admin.tsx` et disait
+// « zéro saisie » : elle ratait les deux blocages les plus probables.
+describe('blockedCourts — la même règle que le serveur, pas une seconde lecture', () => {
+  const MINUTES = 15;
+  const T0 = Date.parse('2026-09-24T20:00:00Z');
+  const court = (o: Partial<BlockedCourtInput> = {}): BlockedCourtInput => ({
+    id: 'm1', courtNo: 3, hasOpponent: true,
+    forfeitedTeam: null, confirmedAt: null, gamesA: null,
+    startedAt: null, createdAt: '2026-09-24T20:00:00Z',
+    teamAEntries: [], teamBEntries: [], ...o,
+  });
+  // 15 minutes de rotation : à T0 + 20 min, tout seuil est franchi.
+  const APRES = T0 + 20 * 60_000;
+
+  it('un repos n’attend aucun score', () => {
+    expect(blockedCourtReason(court({ hasOpponent: false }), MINUTES, APRES)).toBe(null);
+  });
+
+  it('un match confirmé ou forfaité ne bloque rien', () => {
+    expect(blockedCourtReason(court({ confirmedAt: '2026-09-24T20:10:00Z', gamesA: 6 }), MINUTES, APRES))
+      .toBe(null);
+    expect(blockedCourtReason(court({ forfeitedTeam: 'A', gamesA: 0 }), MINUTES, APRES)).toBe(null);
+  });
+
+  it('un score PROVISOIRE (un seul camp) ne bloque rien, même longtemps après', () => {
+    // Il compte déjà : le lister ferait relancer des gens qui ont fait leur part.
+    expect(blockedCourtReason(
+      court({ gamesA: 6, startedAt: '2026-09-24T20:00:00Z', teamAEntries: [entry(6, 3)] }),
+      MINUTES, APRES)).toBe(null);
+  });
+
+  it('LE DÉSACCORD bloque, tout de suite, sans attendre aucun délai', () => {
+    // C'est le seul état qui réclame vraiment l'organisateur, et le seul que
+    // l'ancienne règle (« zéro saisie ») ne voyait jamais : il y a DEUX
+    // saisies. Deux scores contraires ne s'accordent pas d'eux-mêmes en
+    // attendant.
+    const litige = court({
+      gamesA: 6, startedAt: '2026-09-24T20:00:00Z',
+      teamAEntries: [entry(6, 3)], teamBEntries: [entry(3, 6)],
+    });
+    expect(blockedCourtReason(litige, MINUTES, T0 + 60_000)).toBe('litige');
+    expect(blockedCourtReason(litige, MINUTES, APRES)).toBe('litige');
+  });
+
+  it('LE CHRONO JAMAIS LANCÉ bloque une fois la durée d’un tour passée', () => {
+    // L'ancienne règle ne pouvait PAS le voir : rien à compter depuis
+    // `started_at`, qui est nul. Ces quatre joueurs n'ont eu aucune sonnerie
+    // locale non plus — personne, nulle part, n'était prévenu.
+    const c = court({ startedAt: null, createdAt: '2026-09-24T20:00:00Z' });
+    expect(blockedCourtReason(c, MINUTES, T0 + 10 * 60_000)).toBe(null);
+    expect(blockedCourtReason(c, MINUTES, APRES)).toBe('sans_chrono');
+  });
+
+  it('le terrain MUET (chrono lancé, pas de score) bloque après sa durée', () => {
+    const c = court({ startedAt: '2026-09-24T20:05:00Z', createdAt: '2026-09-24T20:00:00Z' });
+    // Le temps se compte depuis le DÉPART du chrono, pas depuis le tirage :
+    // à 20h19 ce terrain joue encore, alors qu'un compte depuis `createdAt`
+    // l'aurait déjà déclaré en retard.
+    expect(blockedCourtReason(c, MINUTES, T0 + 19 * 60_000)).toBe(null);
+    expect(blockedCourtReason(c, MINUTES, T0 + 25 * 60_000)).toBe('muet');
+  });
+
+  it('sans aucun repère de temps, on n’invente pas un blocage', () => {
+    expect(blockedCourtReason(court({ startedAt: null, createdAt: null }), MINUTES, APRES)).toBe(null);
+  });
+
+  it('la liste ne garde que les bloqués, triés par numéro de terrain', () => {
+    const l = blockedCourts([
+      court({ id: 'm5', courtNo: 4, confirmedAt: '2026-09-24T20:10:00Z', gamesA: 6 }),
+      court({ id: 'm2', courtNo: 3 }),
+      court({ id: 'm1', courtNo: 1, startedAt: '2026-09-24T20:00:00Z' }),
+    ], MINUTES, APRES);
+    expect(l.map(c => [c.courtNo, c.reason])).toEqual([[1, 'muet'], [3, 'sans_chrono']]);
+  });
+
+  it('trois motifs, trois phrases — on ne dit pas « pas de score » à un désaccord', () => {
+    expect(blockedCourtLabel('litige')).toBe('les deux camps ne disent pas la même chose');
+    expect(blockedCourtLabel('sans_chrono')).toBe('chrono jamais lancé, pas de score');
+    expect(blockedCourtLabel('muet')).toBe('pas de score');
   });
 });

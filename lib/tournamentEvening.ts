@@ -77,6 +77,47 @@ export function blocks(state: CourtState): boolean {
     || state === 'litige';
 }
 
+/**
+ * Cet état demande-t-il qu'un HUMAIN se lève ?
+ *
+ * `blocks` répond à une autre question : « le serveur peut-il tirer la
+ * rotation suivante ? ». Les deux se ressemblent et ne sont pas la même
+ * chose — et les confondre à l'écran a un coût précis. Un terrain qui vient
+ * d'être tiré (`a_demarrer`) ou qui joue (`en_cours`) bloque bien
+ * l'avancement, mais il n'appelle personne : c'est le déroulement NORMAL
+ * d'une rotation. Peindre les quatre terrains en rouge de la seconde où la
+ * rotation est tirée jusqu'au premier score — c'est-à-dire l'essentiel de
+ * chaque quart d'heure, sur seize téléphones — fait ressembler l'alarme
+ * « allez leur parler » à « ils jouent », et plus personne ne la lit.
+ *
+ * Deux états, et deux seulement, réclament quelqu'un :
+ *   * `temps_ecoule` — le chrono est fini et aucun score n'est rentré ;
+ *   * `litige` — les deux camps se contredisent, seul un accord (ou
+ *     l'organisateur) débloque ce terrain.
+ */
+export function needsHuman(state: CourtState): boolean {
+  return state === 'temps_ecoule' || state === 'litige';
+}
+
+/**
+ * Ce push de tournoi annonce-t-il une soirée QUI TOURNE ?
+ *
+ * La spec (§6) dit où atterrir en ces termes : « le Mode soirée si la soirée
+ * tourne, la fiche du tournoi sinon ». Le routage lisait `kind === 'round'`,
+ * ce qui n'est pas la même chose — un abandon de binôme arrive lui aussi en
+ * pleine soirée, et renvoyer son destinataire sur la fiche l'oblige à
+ * retrouver le Mode soirée à la main pendant que sa rotation tourne.
+ *
+ * `validated` est le seul des quatre qui arrive APRÈS : le classement est
+ * crédité, il n'y a plus de terrain à rejoindre. Un `kind` inconnu (un push
+ * plus ancien que cette version de l'app) est traité comme « pas en soirée » :
+ * la fiche du tournoi est toujours une destination sensée, le Mode soirée ne
+ * l'est pas quand rien ne se joue.
+ */
+export function tournamentEveningIsLive(kind: string | null | undefined): boolean {
+  return kind === 'round' || kind === 'forfeit';
+}
+
 /** Le temps restant sur un terrain, en secondes — négatif une fois dépassé.
  *  `null` tant que personne n'a lancé le chrono. Dérivé de l'heure SERVEUR :
  *  aucun compteur local, donc aucune dérive entre les quatre téléphones. */
@@ -213,11 +254,18 @@ export function eveningCourts(
       const tb = teamOf(teams, m.team_b);
       const mes = parMatch.get(m.id) ?? [];
       const dansA = (e: TournamentMatchEntry) => inTeam(ta, e.player_id);
+      // UN REPOS N'EST PAS « MON TERRAIN ». Le binôme exempté figure bien sur
+      // la ligne du bye (côté A, sans adversaire), mais s'il était marqué
+      // `mine` l'écran lui montrait « TON TERRAIN », un VS avec un côté vide
+      // et une saisie de score que le serveur refuse (`bye_match`) — au lieu
+      // de la carte « Tu ne joues pas cette rotation », qui est la vérité. Le
+      // cas apparaît dès que le nombre de binômes est impair.
+      const repos = m.team_b == null;
       return {
         matchId: m.id,
         courtNo: m.court_no,
         state: courtState(m, mes.filter(dansA), mes.filter(e => !dansA(e)), roundMinutes, now),
-        mine: inTeam(ta, myId) || inTeam(tb, myId),
+        mine: !repos && (inTeam(ta, myId) || inTeam(tb, myId)),
         gamesA: m.games_a,
         gamesB: m.games_b,
         secondsLeft: secondsLeft(m.started_at, roundMinutes, now),

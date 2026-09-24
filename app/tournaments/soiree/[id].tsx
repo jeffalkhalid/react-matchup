@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextInput,
+  AppState,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,7 +40,7 @@ import {
 } from '../../../lib/tournaments';
 import { displayName } from '../../../lib/players';
 import {
-  eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, inTeam,
+  eveningCourts, myCourt, blockingLabel, needsHuman, courtsDone, roundLabel, inTeam,
   formatCountdown, shouldTickClock, shouldSyncAlarms,
   type CourtView, type CourtState,
 } from '../../../lib/tournamentEvening';
@@ -149,10 +150,31 @@ export default function SoireeScreen() {
   // restait sur l'ancienne rotation — et on allait jouer sur le mauvais
   // terrain. Actif seulement quand l'ecran a le focus : pas d'ecoute en
   // arriere-plan pour un ecran que personne ne regarde.
+  // DEUX RATTRAPAGES, parce que le temps réel ne rejoue PAS ce qu'on a manqué.
+  //
+  //  * `SUBSCRIBED` : le canal s'ouvre, et se ROUVRE après chaque coupure.
+  //    Deux minutes de réseau mort au club et les changements survenus
+  //    pendant la coupure sont perdus pour toujours — l'écran resterait sur
+  //    la rotation précédente, et quatre joueurs iraient sur le mauvais
+  //    terrain.
+  //  * `AppState` qui revient à `'active'` : téléphone dans la poche pendant
+  //    que l'adversaire saisit le score. Sans cette relecture, les sonneries
+  //    de CE match ne sont jamais annulées (l'effet plus bas ne tourne que
+  //    sur des données fraîches) et elles sonnent pendant la rotation
+  //    suivante — la « sonnerie qui ne s'annule pas », que la conception
+  //    nomme comme pire que pas de sonnerie du tout (§15).
+  //
+  // Ni l'un ni l'autre ne tourne à la seconde : `load()` part sur un
+  // ÉVÉNEMENT (ouverture du canal, retour au premier plan), jamais sur un
+  // minuteur.
   useFocusEffect(useCallback(() => {
     load();
     if (!id) return undefined;
-    return subscribeTournamentMatches(id, () => { load(); });
+    const stop = subscribeTournamentMatches(id, () => { load(); }, () => { load(); });
+    const abonnement = AppState.addEventListener('change', etat => {
+      if (etat === 'active') load();
+    });
+    return () => { stop(); abonnement.remove(); };
   }, [load, id]));
 
   // `courts` et `mien` doivent exister AVANT tout retour anticipé : les deux
@@ -223,7 +245,70 @@ export default function SoireeScreen() {
   }
   if (!t) return null;
 
-  const blocage = blockingLabel(courts);
+  // LA SOIRÉE EST FINIE (spec §9). La dernière saisie clôture le tournoi dans
+  // sa propre transaction : sans cette branche, seize téléphones continuaient
+  // d'afficher la dernière rotation comme si elle tournait, et « Nous
+  // abandonnons » restait cliquable — le serveur répondait `tournament_not_live`
+  // et le joueur lisait un message générique. Plus de chrono, plus de saisie,
+  // plus d'abandon : le classement est figé, et il se lit sur la fiche.
+  if (t.status === 'TERMINE' || t.status === 'CLASSEMENT_VALIDE') {
+    const valide = t.status === 'CLASSEMENT_VALIDE';
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.heroBg }}>
+        <ScrollView contentContainerStyle={{
+          paddingTop: insets.top + 10, paddingHorizontal: 18,
+          paddingBottom: insets.bottom + 24, gap: 16,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TouchableOpacity onPress={() => router.back()} hitSlop={10}>
+              <Icon name="chevronLeft" size={22} color={Colors.textOnDark} />
+            </TouchableOpacity>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                {t.name}
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.brand }}>
+                Soirée terminée
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ backgroundColor: Colors.bgCard, borderRadius: 22, padding: 20, gap: 8 }}>
+            <Text style={{ fontSize: 17, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary, textAlign: 'center' }}>
+              C’est fini pour ce soir
+            </Text>
+            <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 }}>
+              {valide
+                ? 'Le classement est validé : les points sont crédités.'
+                : 'Le classement est figé, en attente de validation par l’organisateur.'}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => router.push(`/tournaments/${t.id}` as any)}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: Colors.primary, borderRadius: 14,
+              paddingVertical: 14, alignItems: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+              VOIR LE CLASSEMENT
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // CE QUI RÉCLAME QUELQU'UN, et ce qui se déroule normalement — deux phrases,
+  // deux couleurs. `blocks()` reste le prédicat d'AVANCEMENT (le serveur ne
+  // peut pas tirer la rotation suivante) ; il est vrai dès qu'une rotation est
+  // tirée, donc peindre l'écran en rouge dessus revenait à crier pendant la
+  // quasi-totalité de chaque quart d'heure, sur seize téléphones. `needsHuman`
+  // ne retient que les deux états qui appellent réellement quelqu'un.
+  const alarme = blockingLabel(courts.filter(c => needsHuman(c.state)));
+  const enCours = blockingLabel(courts.filter(c => !needsHuman(c.state)));
   const avancement = courtsDone(courts);
 
   const nomsDe = (teamId: string | null): string => {
@@ -483,8 +568,14 @@ export default function SoireeScreen() {
             )}
 
             {/* « Nous abandonnons » — irréversible, à ne montrer que si l'on n'a
-                pas déjà quitté ce tournoi (forfait déjà déclaré). */}
-            {mien.state !== 'forfait' && monEquipe && (
+                pas déjà quitté ce tournoi.
+                Le garde portait sur `mien.state !== 'forfait'`, qui est l'état
+                du TERRAIN : quand le binôme d'en face abandonnait, le match
+                passait en `forfait` et c'est MOI qui perdais mon bouton
+                d'abandon, alors que je joue toujours. Il porte désormais sur
+                MON binôme (`tournament_teams.withdrawn`), la seule donnée qui
+                dise si NOUS sommes partis. */}
+            {monEquipe && !monEquipe.withdrawn && (
               <TouchableOpacity
                 onPress={abandonner}
                 disabled={busyForfeit}
@@ -527,7 +618,7 @@ export default function SoireeScreen() {
                   minWidth: 62, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12,
                   alignItems: 'center', gap: 2,
                   backgroundColor: c.mine ? Colors.brand : 'rgba(255,255,255,0.08)',
-                  borderWidth: blocks(c.state) ? 1 : 0, borderColor: Colors.danger,
+                  borderWidth: needsHuman(c.state) ? 1 : 0, borderColor: Colors.danger,
                 }}
               >
                 <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: c.mine ? Colors.primary : Colors.textOnDark }}>
@@ -540,13 +631,20 @@ export default function SoireeScreen() {
             ))}
           </View>
 
-          {/* Ce qui bloque, nommé — pour qu'on aille leur parler. */}
-          {blocage && (
+          {/* Ce qui réclame quelqu'un, en rouge — pour qu'on aille leur parler. */}
+          {alarme && (
             <View style={{ backgroundColor: 'rgba(239,68,68,0.16)', borderRadius: 12, padding: 10 }}>
               <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: '#FCA5A5', lineHeight: 16 }}>
-                {blocage}
+                {alarme}
               </Text>
             </View>
+          )}
+
+          {/* Ce qui se déroule normalement : l'information, sans l'alarme. */}
+          {enCours && (
+            <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: 'rgba(255,255,255,0.5)', lineHeight: 16 }}>
+              {enCours}
+            </Text>
           )}
         </View>
 

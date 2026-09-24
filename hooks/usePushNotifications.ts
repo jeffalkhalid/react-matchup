@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { usePlayer } from './usePlayer';
 import { Colors } from '../lib/theme';
 import { track } from '../lib/analytics';
+import { tournamentEveningIsLive } from '../lib/tournamentEvening';
 
 // Push tokens don't work in Expo Go since SDK 53 — only in dev/prod builds
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
@@ -164,9 +165,25 @@ export function usePushNotifications() {
         case 'tournament':
           // Aujourd'hui un push de tournoi n'ouvrait RIEN : on restait où on
           // était, et « tu vas au Terrain 2 » ne menait nulle part.
-          if (data.kind === 'round' && data.tournamentId) {
+          //
+          // TROIS DESTINATIONS, ET CHACUNE EST L'ENDROIT DU GESTE :
+          //
+          //  * « terrain muet / désaccord » (`silent`) est le SEUL push qui
+          //    exige une action, et cette action — trancher, ou saisir le
+          //    score à leur place — vit dans l'onglet Admin. Il ouvrait la
+          //    fiche du tournoi, où ce geste n'existe pas : l'organisateur
+          //    était prévenu, puis abandonné devant un écran sans bouton.
+          //  * la soirée qui TOURNE (rotation tirée, abandon d'un binôme)
+          //    ouvre le Mode soirée — c'est là qu'on lit son terrain et qu'on
+          //    rentre son score (spec §6).
+          //  * le reste (classement validé) ouvre la fiche : la soirée est
+          //    finie, le Mode soirée n'a plus rien à dire.
+          if (!data.tournamentId) break;
+          if (data.kind === 'silent') {
+            router.push('/(tabs)/admin' as any);
+          } else if (tournamentEveningIsLive(data.kind)) {
             router.push(`/tournaments/soiree/${data.tournamentId}` as any);
-          } else if (data.tournamentId) {
+          } else {
             router.push(`/tournaments/${data.tournamentId}` as any);
           }
           break;

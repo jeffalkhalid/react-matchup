@@ -5,8 +5,9 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 
 import {
-  courtState, eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, secondsLeft,
-  formatCountdown, shouldTickClock, shouldSyncAlarms,
+  courtState, eveningCourts, myCourt, blockingLabel, blocks, needsHuman, courtsDone,
+  roundLabel, secondsLeft, formatCountdown, shouldTickClock, shouldSyncAlarms,
+  tournamentEveningIsLive,
 } from '../tournamentEvening';
 
 const M = (o: any = {}) => ({
@@ -286,5 +287,73 @@ describe('faut-il laisser l effet des sonneries agir', () => {
 
   it('vrai seulement quand tout est reuni', () => {
     expect(shouldSyncAlarms(PRET)).toBe(true);
+  });
+});
+
+// Relecture finale (2026-09-24) : l'alarme rouge doit vouloir dire quelque
+// chose. `blocks` reste le prédicat d'AVANCEMENT du moteur — d'autres lecteurs
+// en dépendent — et `needsHuman` devient celui de l'alarme.
+describe('needsHuman — l alarme rouge ne veut dire qu une chose', () => {
+  it('un terrain tout juste tiré ou en train de jouer n appelle personne', () => {
+    // C'est le déroulement NORMAL d'une rotation. Le peindre en rouge, c'est
+    // crier pendant l'essentiel de chaque quart d'heure sur seize téléphones,
+    // et l'alarme finit par vouloir dire « ils jouent ».
+    expect(needsHuman('a_demarrer')).toBe(false);
+    expect(needsHuman('en_cours')).toBe(false);
+  });
+
+  it('mais tous les deux BLOQUENT bien l avancement — les deux questions restent distinctes', () => {
+    expect(blocks('a_demarrer')).toBe(true);
+    expect(blocks('en_cours')).toBe(true);
+  });
+
+  it('le temps écoulé sans score et le désaccord, eux, réclament quelqu un', () => {
+    expect(needsHuman('temps_ecoule')).toBe(true);
+    expect(needsHuman('litige')).toBe(true);
+  });
+
+  it('rien à faire sur un score déjà là, un forfait ou un repos', () => {
+    expect(needsHuman('provisoire')).toBe(false);
+    expect(needsHuman('acquis')).toBe(false);
+    expect(needsHuman('forfait')).toBe(false);
+    expect(needsHuman('exempt')).toBe(false);
+  });
+});
+
+describe('le routage d un push de tournoi', () => {
+  it('une rotation tirée et un abandon arrivent PENDANT la soirée', () => {
+    // La spec §6 dit « le Mode soirée si la soirée tourne » : un abandon
+    // arrive lui aussi en pleine rotation, et renvoyer son destinataire sur
+    // la fiche l oblige à retrouver le Mode soirée à la main.
+    expect(tournamentEveningIsLive('round')).toBe(true);
+    expect(tournamentEveningIsLive('forfeit')).toBe(true);
+  });
+
+  it('un classement validé arrive APRÈS : plus de terrain à rejoindre', () => {
+    expect(tournamentEveningIsLive('validated')).toBe(false);
+  });
+
+  it('un kind inconnu ou absent ne mène pas au Mode soirée', () => {
+    expect(tournamentEveningIsLive('silent')).toBe(false);
+    expect(tournamentEveningIsLive(undefined)).toBe(false);
+    expect(tournamentEveningIsLive(null)).toBe(false);
+  });
+});
+
+describe('un repos n est pas « mon terrain »', () => {
+  it('le binôme exempté ne voit pas TON TERRAIN, mais la carte de repos', () => {
+    // Le bye porte le binôme côté A, sans adversaire. Marqué `mine`, l écran
+    // affichait un VS avec un côté vide et une saisie que le serveur refuse
+    // (`bye_match`). Arrive dès que le nombre de binômes est impair.
+    const bye = M({ id: 'bye', court_no: 4, team_a: 'A', team_b: null });
+    const c = eveningCourts([bye], EQUIPES, [], 'mina', 2, RM, N);
+    expect(c[0].state).toBe('exempt');
+    expect(c[0].mine).toBe(false);
+    expect(myCourt(c)).toBe(null);
+  });
+
+  it('un vrai match du même binôme reste bien le mien', () => {
+    const c = eveningCourts([M()], EQUIPES, [], 'mina', 2, RM, N);
+    expect(c[0].mine).toBe(true);
   });
 });
