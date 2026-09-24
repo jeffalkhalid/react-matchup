@@ -23,7 +23,9 @@ export const GENERIC_REASON = "Action impossible pour le moment. Réessaie dans 
 
 /** Les refus de `tournaments_rpcs.sql` (46 à l'origine, plus ceux de la Task 11
  *  : `tournament_create`, plus deux de la Task 12 : `already_cancelled` et
- *  `tournament_not_in_check_in`, pour la réversibilité et l'annulation),
+ *  `tournament_not_in_check_in`, pour la réversibilité et l'annulation, plus
+ *  deux de la Task 1 du plan « soirée autonome » (`tournament_court_clock.sql`)
+ *  : `already_scored` et `not_a_player`, pour le chrono de terrain),
  *  dans l'ordre alphabétique du SQL.
  *  Formulés du point de vue du JOUEUR, à la deuxième personne comme le reste
  *  de l'app. */
@@ -33,6 +35,7 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   already_finished:              'Ce tournoi est déjà terminé.',
   already_in_team:               'Tu fais déjà partie d’un binôme sur ce tournoi.',
   already_registered:            'Tu es déjà inscrit à ce tournoi.',
+  already_scored:                'Ce match a déjà un score : il n’y a plus de chrono à lancer ni à remettre à zéro.',
   already_started:               'Le tournoi a déjà commencé.',
   already_validated:             'Le classement de ce tournoi est déjà validé.',
   already_withdrawn:             'Ce binôme a déjà quitté le tournoi.',
@@ -63,6 +66,7 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   no_results:                    'Aucun résultat n’a encore été enregistré.',
   no_teams:                      'Aucun binôme n’est encore formé sur ce tournoi.',
   not_a_participant:             'Tu ne joues pas ce match.',
+  not_a_player:                  'Le chrono de ce terrain n’appartient qu’à ses quatre joueurs : eux seuls peuvent le lancer ou le remettre à zéro.',
   not_authenticated:             'Reconnecte-toi pour continuer.',
   not_confirmed:                 'Ce score n’est pas encore confirmé par les deux camps.',
   not_enough_teams:              'Il n’y a pas assez de binômes pour lancer le tournoi.',
