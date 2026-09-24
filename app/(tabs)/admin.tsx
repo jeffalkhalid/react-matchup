@@ -2841,7 +2841,7 @@ const TOURNAMENT_AUTOPAIR_OK = ['COMPLET', 'CHECK_IN', 'PRET'];
 
 function AdminMatchCard({
   match, teamA, teamB, status, entriesCount, isOrganizer, busy, laterCount, forfeitGames, stakeText,
-  onResolve, onReopen,
+  allowEmptyScore, onResolve, onReopen,
 }: {
   match: TournamentMatch;
   teamA: CourtTeamInfo;
@@ -2855,6 +2855,16 @@ function AdminMatchCard({
   /** L'enjeu de ce terrain à LA rotation de classement (Task 12), déjà
    *  traduit par `stakeLabel` — `undefined`/`null` hors de cette rotation. */
   stakeText?: string | null;
+  /** `tournament_resolve_dispute` refuse `tournament_not_live` hors EN_COURS
+   *  (en-tête SQL, `tournament_soiree_gestes.sql`). Un match `awaiting`
+   *  (aucune saisie, ou une seule) est l'état NORMAL du dernier tour d'un
+   *  tournoi TERMINE — « une saisie suffit » n'exige jamais les deux camps —
+   *  donc ce n'est vrai QUE dans la carte « Conduire » (EN_COURS) : y
+   *  répondre `true` ailleurs afficherait un bouton qui échoue toujours avec
+   *  « le tournoi n'est pas en cours ». La carte « Corriger un score »
+   *  (TERMINE) passe `false` : elle garde son comportement d'avant, seul un
+   *  vrai litige (`disputed`) y ouvre la saisie. */
+  allowEmptyScore: boolean;
   onResolve: (matchId: string, gamesA: number, gamesB: number) => void;
   onReopen: (match: TournamentMatch, laterCount: number) => void;
 }) {
@@ -2879,8 +2889,9 @@ function AdminMatchCard({
           il ne tranche plus seulement un désaccord, il fonctionne aussi
           quand personne n'a rien saisi du tout (terrain muet, Tâche 2) —
           donc sur tout match non confirmé (`disputed` ET `awaiting`), pas
-          uniquement `disputed` comme avant. */}
-      {isOrganizer && teamB && (status === 'disputed' || status === 'awaiting') && (
+          uniquement `disputed` comme avant. `allowEmptyScore` réserve ce
+          second cas à la carte EN_COURS : voir sa doc ci-dessus. */}
+      {isOrganizer && teamB && (status === 'disputed' || (allowEmptyScore && status === 'awaiting')) && (
         <View style={{ gap: 8 }}>
           <Text style={sty.fieldLabel}>Saisir le score à leur place (score de {teamA.names.join(' · ')} en premier)</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -3518,6 +3529,10 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                     laterCount={countLaterRoundMatches(allMatches, m.round_no)}
                     forfeitGames={t.forfeit_games}
                     stakeText={stakeByMatch.get(m.id)}
+                    // EN_COURS : `tournament_resolve_dispute` accepte un
+                    // terrain sans aucune saisie (Tâche 2) — c'est même le
+                    // seul endroit où « débloquer un terrain muet » a un sens.
+                    allowEmptyScore
                     onResolve={handleResolveDispute} onReopen={handleReopen}
                   />
                 );
@@ -3634,6 +3649,13 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                   isOrganizer={isOrganizer} busy={!!busy}
                   laterCount={countLaterRoundMatches(allMatches, m.round_no)}
                   forfeitGames={t.forfeit_games}
+                  // TERMINE : `tournament_resolve_dispute` refuse
+                  // `tournament_not_live` hors EN_COURS, et un match `awaiting`
+                  // (une seule saisie, jamais confirmé) y est l'état NORMAL du
+                  // dernier tour — proposer la saisie ici afficherait un
+                  // bouton qui échoue toujours. Comportement d'avant : garder
+                  // le contrôle réservé aux vrais litiges (`disputed`).
+                  allowEmptyScore={false}
                   onResolve={handleResolveDispute} onReopen={handleReopen}
                 />
               );

@@ -30,6 +30,17 @@ describe("l'action du moment sur un tournoi", () => {
     expect(nextTournamentAction(t('EN_COURS', 0), 8).label).toBe('Tirer le tour 1');
   });
 
+  it("a la derniere rotation, dit ce qui se passe ensuite -- pas 'la suivante part toute seule'", () => {
+    // Piege : a current_round === round_count, il n y a justement PLUS de
+    // rotation suivante -- c est le classement qui se fige tout seul. Cette
+    // fenetre dure tout le temps que la derniere rotation se joue, donc un
+    // vrai organisateur la lit.
+    const a = nextTournamentAction(t('EN_COURS', 6, 6), 8);
+    expect(a.label).toBeNull();
+    expect(a.subtitle).not.toContain('la suivante');
+    expect(a.subtitle).toContain('classement');
+  });
+
   it('un tournoi annule ne propose AUCUNE action', () => {
     const a = nextTournamentAction(t('ANNULE'), 8);
     expect(a.label).toBeNull();

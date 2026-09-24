@@ -1956,8 +1956,19 @@ export function nextTournamentAction(t: Tournament, seatedTeams: number): {
       // current_round === 0 : le lancement n'a pas réussi à tirer le tour 1
       // (pas assez de binômes assis), et sans porte de secours la seule
       // sortie de l'organisateur serait d'annuler le tournoi.
-      return t.current_round === 0
-        ? { label: 'Tirer le tour 1', tone: 'brand', subtitle: format }
+      if (t.current_round === 0) {
+        return { label: 'Tirer le tour 1', tone: 'brand', subtitle: format };
+      }
+      // À LA DERNIÈRE rotation, il n'y a justement plus de « suivante » : le
+      // classement se fige tout seul dès qu'elle est complète, et l'écran
+      // mentirait en disant « la suivante part toute seule ». Cette fenêtre
+      // dure tout le temps que la dernière rotation se joue — un organisateur
+      // la lit vraiment, ce n'est pas un cas limite théorique.
+      return t.current_round >= t.round_count
+        ? {
+            label: null,
+            subtitle: `Dernière rotation (${t.current_round} sur ${t.round_count}) — le classement se fige tout seul à la fin, tu n'auras plus qu'à valider.`,
+          }
         : {
             label: null,
             subtitle: `Rotation ${t.current_round} sur ${t.round_count} — la suivante part toute seule`,
