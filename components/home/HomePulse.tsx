@@ -31,6 +31,14 @@ const CARTE = {
 } as const;
 
 /**
+ * L'espace entre le titre de section et la rangée de cartes.
+ *
+ * ÉCRIT UNE FOIS, LU DEUX FOIS : par le `gap` de la racine et par la somme qui
+ * borne le bloc à la variante qu'il rend.
+ */
+const GAP_RACINE = 10;
+
+/**
  * Le milieu ELASTIQUE d'une carte : les photos, et rien d'autre.
  *
  * C'est ce qui rend la carte increvable. L'en-tete garde sa taille en haut,
@@ -44,7 +52,19 @@ const CARTE = {
  * coupes. Toutes les estimations de hauteur ont fini par etre fausses au
  * moins une fois ; celle-ci n'en est pas une.
  */
-function Haut({ entete, photos, serre }: { entete: (lignes: number) => ReactNode; photos: (taille?: number) => ReactNode; serre: boolean }) {
+function Haut({ entete, photos, serre, onContenu }: {
+  entete: (lignes: number) => ReactNode;
+  photos: (taille?: number) => ReactNode;
+  serre: boolean;
+  /**
+   * La hauteur NATURELLE du contenu — ce que la variante choisie dessine.
+   *
+   * Elle ne dépend PAS de la place reçue : c'est un enfant de colonne, il
+   * prend la hauteur de son contenu et rien de plus. C'est elle qui permet au
+   * bloc de se borner à la variante qu'il rend, au lieu de s'étirer.
+   */
+  onContenu?: (h: number) => void;
+}) {
   const [h, setH] = useState(0);
   // Mesuree, jamais deduite du contenu : cette zone recoit ce que la carte lui
   // laisse une fois le bouton servi. Les seuils ne decident plus que du
@@ -72,10 +92,18 @@ function Haut({ entete, photos, serre }: { entete: (lignes: number) => ReactNode
   return (
     <View
       onLayout={e => { const v = e.nativeEvent.layout.height; setH(p => (Math.abs(p - v) > 0.5 ? v : p)); }}
-      style={{ flex: 1, minHeight: 0, overflow: 'hidden', gap: serre ? 8 : 10 }}
+      style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}
     >
-      {entete(lignesSous)}
-      {avecPhotos ? photos(taillePhoto) : null}
+      {/* L'espacement vit ICI et non sur la boîte mesurée : la boîte dit la
+          place REÇUE (c'est elle qui choisit la variante), l'enveloppe dit la
+          place OCCUPÉE. Deux hauteurs différentes, deux rôles. */}
+      <View
+        onLayout={e => onContenu?.(e.nativeEvent.layout.height)}
+        style={{ gap: serre ? 8 : 10 }}
+      >
+        {entete(lignesSous)}
+        {avecPhotos ? photos(taillePhoto) : null}
+      </View>
     </View>
   );
 }
@@ -88,9 +116,14 @@ const BOUTON = {
   flexDirection: 'row', gap: 5,
 } as const;
 
-function Bouton({ label, onPress }: { label: string; onPress: () => void }) {
+function Bouton({ label, onPress, onLayout }: {
+  label: string; onPress: () => void;
+  /** Mesuré, pas supposé : c'est un rembourrage plus une ligne de texte. */
+  onLayout?: (h: number) => void;
+}) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={BOUTON}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={BOUTON}
+      onLayout={onLayout ? e => onLayout(e.nativeEvent.layout.height) : undefined}>
       <Text numberOfLines={1} style={{ fontFamily: Fonts.uiBlack, fontSize: 11.5, color: Colors.primary }}>{label}</Text>
       <Icon name="chevronRight" size={11} color={Colors.primary} stroke={2.6} />
     </TouchableOpacity>
@@ -174,6 +207,23 @@ export function HomePulse({ myId, myElo, onVisible }: {
   const router = useRouter();
   /** La hauteur reelle de la rangee de cartes — imposee par l'accueil. */
   const [rangeeH, setRangeeH] = useState(0);
+  /**
+   * Ce que la variante rendue OCCUPE vraiment, par carte — mesuré.
+   *
+   * L'accueil accorde au bloc sa forme complète ; quand la place se réduit, la
+   * carte descend d'une variante mais son conteneur, lui, gardait toute la
+   * hauteur accordée et l'absorbait en blanc entre le titre et le bouton (vu
+   * sur Android le 2026-09-24 : ~165 points accordés pour une variante qui en
+   * dessine 133). Le surplus doit rester DEHORS, comme partout ailleurs sur
+   * cet écran : un bloc a une taille juste, le reste est du blanc.
+   */
+  const [contenus, setContenus] = useState<Record<string, number>>({});
+  const [hBouton, setHBouton] = useState(0);
+  const [hTitre, setHTitre] = useState(0);
+  const mesurerContenu = (cle: string) => (v: number) =>
+    setContenus(p => (Math.abs((p[cle] ?? 0) - v) < 0.5 ? p : { ...p, [cle]: v }));
+  const mesurerBouton = (v: number) => setHBouton(p => (Math.abs(p - v) < 0.5 ? p : v));
+  const mesurerTitre = (v: number) => setHTitre(p => (Math.abs(p - v) < 0.5 ? p : v));
   const [dispos, setDispos] = useState<AvailabilityRow[]>([]);
   /** Deux au plus : le second prend la place des dispos quand il n'y en a pas. */
   const [clashes, setClashes] = useState<Clash[]>([]);
@@ -239,6 +289,29 @@ export function HomePulse({ myId, myElo, onVisible }: {
   /** Deux cartes cote a cote : chaque titre n'a qu'un demi-ecran. */
   const court = (dispos.length > 0 ? 1 : 0) + chocsMontres.length > 1;
 
+  // ── Ce que la variante rendue réclame VRAIMENT ──────────────────────────
+  //
+  // Additionnée de valeurs MESURÉES (le contenu de la carte la plus haute, le
+  // bouton, le titre de section) et des espacements que ce fichier dessine
+  // lui-même. Aucun chiffre n'est supposé : c'est ce qui permet de borner le
+  // bloc à sa variante sans savoir laquelle a été choisie — et sans que
+  // lib/homeLayout ait à connaître quoi que ce soit de tout ça.
+  //
+  // Pas de boucle : la boîte de `Haut` continue de mesurer la place REÇUE et
+  // c'est elle, inchangée, qui choisit la variante. Après la borne, cette
+  // place devient exactement la hauteur du contenu — et chaque variante reste
+  // alors au-dessus du seuil qui l'a fait choisir (96 pour 96 dessinés, 74
+  // pour 75, 50 pour 76, 0 pour 32). Le calcul se fige donc en une passe.
+  //
+  // `Math.ceil` : le seuil de la forme complète vaut exactement ce qu'elle
+  // dessine. Un arrondi d'un centième la ferait retomber d'un cran.
+  const cles = [...(dispos.length > 0 ? ['dispos'] : []), ...chocsMontres.map(c => c.gameId)];
+  const mesures = cles.map(k => contenus[k] ?? 0);
+  const mesure = hTitre > 0 && hBouton > 0 && mesures.every(v => v > 0);
+  const necessaire = mesure
+    ? hTitre + GAP_RACINE + carte.padding * 2 + Math.ceil(Math.max(...mesures)) + carte.gap + hBouton
+    : PULSE_IDEAL;
+
   return (
     // LE CONTRAT DE CE COMPOSANT : il ne dépasse jamais sa hauteur idéale.
     //
@@ -253,8 +326,15 @@ export function HomePulse({ myId, myElo, onVisible }: {
     //
     // La protection etait alors entierement chez le parent. Elle est ici
     // desormais : donne-lui 400 points, il en prend 185 et rend le reste.
-    <View style={{ gap: 10, flex: 1, maxHeight: PULSE_IDEAL }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+    // La borne n'est plus l'idéal mais la variante RENDUE : donne-lui 165
+    // points pour une forme qui en dessine 133, il en prend 133 et rend les
+    // 32 autres à l'écran — dehors, pas en blanc entre son titre et ses
+    // boutons. `PULSE_IDEAL` reste le plafond absolu.
+    <View style={{ gap: GAP_RACINE, flex: 1, maxHeight: Math.min(PULSE_IDEAL, necessaire) }}>
+      <View
+        onLayout={e => mesurerTitre(e.nativeEvent.layout.height)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+      >
         <Icon name="users" size={18} color={Colors.textPrimary} stroke={2.2} />
         <Text {...texteUI} numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 19, lineHeight: 25, color: Colors.textPrimary, paddingRight: 6 }}>
           Ça bouge chez les <Text style={{ color: Colors.brandDeep }}>PAGUISTES</Text>
@@ -274,6 +354,7 @@ export function HomePulse({ myId, myElo, onVisible }: {
           <View style={carte}>
             <Haut
               serre={serre}
+              onContenu={mesurerContenu('dispos')}
               entete={lignes => (
                 <Entete
                   icon="users"
@@ -296,7 +377,8 @@ export function HomePulse({ myId, myElo, onVisible }: {
                 }))} />
               )}
             />
-            <Bouton label={court ? 'Voir' : 'Voir les joueurs'} onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
+            <Bouton label={court ? 'Voir' : 'Voir les joueurs'} onLayout={mesurerBouton}
+              onPress={() => router.push('/(tabs)/activite?focus=dispo' as any)} />
           </View>
         )}
 
@@ -306,6 +388,7 @@ export function HomePulse({ myId, myElo, onVisible }: {
                 un doublon : la seconde pose la question directement. */}
             <Haut
               serre={serre}
+              onContenu={mesurerContenu(clash.gameId)}
               entete={lignes => (
                 <Entete
                   icon="signal"
@@ -333,7 +416,10 @@ export function HomePulse({ myId, myElo, onVisible }: {
             />
             {/* Vers CE match précisément, pas vers la liste : l'onglet place la
                 carte en tête du rail (cf. app/(tabs)/activite.tsx). */}
-            <Bouton label="Voter" onPress={() => router.push(`/(tabs)/activite?focus=${clash.gameId}` as any)} />
+            {/* Tous les boutons ont la même hauteur (rembourrage + une ligne) :
+                en mesurer un suffit. */}
+            <Bouton label="Voter" onLayout={mesurerBouton}
+              onPress={() => router.push(`/(tabs)/activite?focus=${clash.gameId}` as any)} />
           </View>
         ))}
       </View>

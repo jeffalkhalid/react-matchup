@@ -31,6 +31,11 @@ const ETATS: { nom: string; etat: Partial<HomeLayoutInput> }[] = [
   { nom: 'tournoi seul',            etat: { hasNextMatch: false, hasTournaments: true, hasPulse: false } },
   { nom: 'pulse seul',              etat: { hasNextMatch: false, hasTournaments: false, hasPulse: true } },
   { nom: 'soirée en cours',         etat: { hasNextMatch: true, hasTournaments: true, hasPulse: true, hasLiveBanner: true } },
+  // « Ça se joue bientôt » : sa hauteur ARRIVE MESURÉE. Les deux valeurs
+  // encadrent ce qu'un téléphone rend vraiment — carte courte (amical) et
+  // carte longue (compétitif, qui porte une ligne d'enjeu de plus).
+  { nom: 'suggestions + pulse',     etat: { hasNextMatch: false, hasTournaments: false, hasPulse: true, openGamesHeight: 232 } },
+  { nom: 'suggestions hautes',      etat: { hasNextMatch: false, hasTournaments: false, hasPulse: true, openGamesHeight: 300 } },
 ];
 
 const entree = (h: number, w: number, etat: Partial<HomeLayoutInput>): HomeLayoutInput => ({
@@ -133,6 +138,48 @@ describe('la hiérarchie de compression', () => {
   });
 });
 
+describe('« Ça se joue bientôt » : sa hauteur est MESURÉE, jamais estimée ici', () => {
+  // Le bloc dessine la carte du lobby (`GameCard`), qui ne nous appartient
+  // pas. Sa hauteur dépend du match affiché (un compétitif porte une ligne
+  // d'enjeu de plus), de la largeur, ET de la taille de police du téléphone —
+  // les textes de la carte sont du CONTENU, ils suivent le réglage système
+  // (cf. lib/uiText). Aucune constante écrite ici ne peut être vraie pour les
+  // trois. Le chiffre arrive donc d'un `onLayout`, et ce fichier n'en connaît
+  // ni la composition ni l'ordre de grandeur.
+  const suggestions = { hasNextMatch: false, hasTournaments: false, hasPulse: true };
+
+  it('la hauteur annoncée est prise telle quelle : ni rabotée, ni gonflée', () => {
+    const r = solveHomeLayout(entree(740, 412, { ...suggestions, openGamesHeight: 232 }));
+    expect(r.heights.openGames).toBeCloseTo(232, 5);
+  });
+
+  it('une carte plus haute obtient plus, sans que le calculateur sache pourquoi', () => {
+    // C'est la propriété qui remplace `GEO.parties` : changer la carte change
+    // la place qu'elle reçoit, sans toucher une ligne de ce fichier.
+    const court = solveHomeLayout(entree(740, 412, { ...suggestions, openGamesHeight: 232 }));
+    const long = solveHomeLayout(entree(740, 412, { ...suggestions, openGamesHeight: 300 }));
+    expect(long.heights.openGames - court.heights.openGames).toBeCloseTo(68, 5);
+  });
+
+  it('le surplus ne le gonfle jamais, même seul sur un grand écran', () => {
+    const r = solveHomeLayout(entree(740, 412, { hasNextMatch: false, hasTournaments: false, hasPulse: false, openGamesHeight: 232 }));
+    expect(r.heights.openGames).toBeCloseTo(232, 5);
+    expect(occupiedHeight(r)).toBeLessThan(740);
+  });
+
+  it('min et ideal sont le MÊME nombre : une seule forme mesurée', () => {
+    const s = homeSections(entree(680, 393, { ...suggestions, openGamesHeight: 232 })).find(x => x.key === 'openGames')!;
+    expect(s.min).toBe(s.ideal);
+    expect(s.min).toBe(232);
+  });
+
+  it('trop haut pour l écran : Pulse cède, et rien ne déborde', () => {
+    const r = solveHomeLayout(entree(500, 360, { ...suggestions, openGamesHeight: 300 }));
+    expect(r.heights.pulse).toBe(0);
+    expect(occupiedHeight(r)).toBeLessThanOrEqual(500 + 0.01);
+  });
+});
+
 describe('les tuiles suivent la LARGEUR, pas un plancher choisi à la main', () => {
   it('un écran plus large donne des tuiles plus hautes', () => {
     expect(ctaHeightFor(430)).toBeGreaterThan(ctaHeightFor(360));
@@ -157,7 +204,7 @@ describe('la place se partage, elle ne se gaspille pas', () => {
 
 describe('les blocs presents suivent ce qui est vrai', () => {
   it('sans match ni tournoi, l emplacement du milieu revient aux suggestions', () => {
-    const cles = homeSections(entree(680, 393, { hasNextMatch: false, hasTournaments: false })).map(s => s.key);
+    const cles = homeSections(entree(680, 393, { hasNextMatch: false, hasTournaments: false, openGamesHeight: 232 })).map(s => s.key);
     expect(cles).toContain('openGames');
     expect(cles).not.toContain('nextMatch');
   });
@@ -166,6 +213,16 @@ describe('les blocs presents suivent ce qui est vrai', () => {
     const cles = homeSections(entree(680, 393, { hasNextMatch: true, hasTournaments: false })).map(s => s.key);
     expect(cles).toContain('nextMatch');
     expect(cles).not.toContain('openGames');
+  });
+
+  it('tant que « Ça se joue bientôt » n est pas MESURÉ, il ne réserve rien', () => {
+    // Pas de valeur de repli : une estimation de secours redeviendrait la
+    // constante magique, simplement plus discrète. Le bloc n'existe pas pour
+    // le budget tant qu'un vrai onLayout n'a pas parlé.
+    const cles = homeSections(entree(680, 393, { hasNextMatch: false, hasTournaments: false })).map(s => s.key);
+    expect(cles).not.toContain('openGames');
+    const r = solveHomeLayout(entree(680, 393, { hasNextMatch: false, hasTournaments: false }));
+    expect(r.heights.openGames ?? 0).toBe(0);
   });
 
   it('pendant une soirée, la bannière remplace le bandeau Tournois', () => {

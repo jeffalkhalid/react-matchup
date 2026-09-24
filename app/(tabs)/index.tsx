@@ -26,7 +26,7 @@ import { UpcomingMatchCard } from '../../components/home/UpcomingMatchCard';
 import { HomeRankButton } from '../../components/home/HomeRankButton';
 import { HomeTournamentsBanner } from '../../components/home/HomeTournamentsBanner';
 import { HomePulse } from '../../components/home/HomePulse';
-import { OpenGamesSlot } from '../../components/home/OpenGamesSlot';
+import { OpenGamesSlot, OpenGamesProbe, type MesureOpenGames } from '../../components/home/OpenGamesSlot';
 import { solveHomeLayout, MATCH_IDEAL } from '../../lib/homeLayout';
 import { suggestibleGames, homeSlot } from '../../lib/homeSlot';
 import { loadClubFavorites } from '../../lib/clubFavorites';
@@ -122,6 +122,20 @@ export default function HomeScreen() {
    * la vérité, quelle que soit la géométrie réelle de l'appareil.
    */
   const [zone, setZone] = useState({ h: 0, w: 0 });
+
+  /**
+   * La hauteur du bloc « Ça se joue bientôt », MESURÉE elle aussi.
+   *
+   * Ce bloc dessine la carte du lobby, qui ne nous appartient pas : sa hauteur
+   * dépend du match affiché, de la largeur et de la taille de police du
+   * téléphone. lib/homeLayout ne l'estime donc plus — il attend ce chiffre,
+   * exactement comme il attend `pulseVisible` du bloc « Ça bouge ».
+   *
+   * `null` tant que la sonde n'a pas parlé : le bloc ne réserve alors rien. Pas
+   * de valeur de repli — une estimation de secours redeviendrait la constante
+   * magique, simplement plus discrète.
+   */
+  const [mesureParties, setMesureParties] = useState<MesureOpenGames | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!player) return;
@@ -385,7 +399,7 @@ export default function HomeScreen() {
     availableWidth: zone.w,
     hasTournaments: tournois.length > 0,
     hasNextMatch: visibleUpcoming.length > 0,
-    openGames: suggestions.length,
+    openGamesHeight: mesureParties?.height ?? null,
     hasLiveBanner: !!soiree,
     hasPulse: pulseVisible,
   });
@@ -711,17 +725,36 @@ export default function HomeScreen() {
               {/* D bis. « Ça se joue bientôt » — ni match ni tournoi. Deux
                   vraies parties à rejoindre, ou l'invitation à en créer une
                   s'il n'y en a aucune. */}
-              {parts.openGames > 0 && (slot.kind === 'openGames' || slot.kind === 'createFirst') && (
-                <View style={{ height: parts.openGames }}>
-                  <OpenGamesSlot
+              {(slot.kind === 'openGames' || slot.kind === 'createFirst') && (
+                <>
+                  {/* LA SONDE — hors flux, invisible, sans hauteur imposée :
+                      elle dessine le bloc pour de vrai et rend sa hauteur
+                      naturelle, que `solveHomeLayout` reçoit ci-dessus. Elle
+                      est rendue AVANT que le bloc ait une hauteur — c'est elle
+                      qui la débloque. Les règles qui garantissent l'absence de
+                      boucle sont écrites au-dessus du composant : ne pas lui
+                      donner de `height`, et ne pas la mettre dans une boîte
+                      qui en impose une. */}
+                  <OpenGamesProbe
                     games={slot.kind === 'openGames' ? slot.games : []}
                     myId={player.id}
                     myElo={player.elo_score}
-                    onOpenGame={(id) => router.push(`/(tabs)/lobby?gameId=${id}` as any)}
-                    onSeeAll={() => router.push('/(tabs)/lobby' as any)}
-                    onCreate={() => router.push('/(tabs)/lobby?create=1' as any)}
+                    onGeometry={setMesureParties}
                   />
-                </View>
+                  {parts.openGames > 0 && (
+                    <View style={{ height: parts.openGames }}>
+                      <OpenGamesSlot
+                        games={slot.kind === 'openGames' ? slot.games : []}
+                        myId={player.id}
+                        myElo={player.elo_score}
+                        onOpenGame={(id) => router.push(`/(tabs)/lobby?gameId=${id}` as any)}
+                        onSeeAll={() => router.push('/(tabs)/lobby' as any)}
+                        onCreate={() => router.push('/(tabs)/lobby?create=1' as any)}
+                        annonces={mesureParties?.parPartie}
+                      />
+                    </View>
+                  )}
+                </>
               )}
 
               {/* « Ça bouge chez les PAGUISTES » — qui est libre ce soir, et

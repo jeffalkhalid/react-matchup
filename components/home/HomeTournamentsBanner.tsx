@@ -17,6 +17,12 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { texteUI } from '../../lib/uiText';
+// La géométrie qui compte pour le budget de l'accueil vient d'ICI, elle n'est
+// pas réécrite plus bas : rembourrage vertical, pastille d'icône, interlignes,
+// hauteur de « À venir ». Les mêmes chiffres vivaient aux deux endroits, et
+// rien n'obligeait le budget à suivre quand le dessin changeait — c'est cette
+// divergence-là qui avait coupé « Ça se joue bientôt ».
+import { GEO } from '../../lib/homeLayout';
 
 export function HomeTournamentsBanner({ enabled, count, onPress }: {
   /**
@@ -43,7 +49,7 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
         // pas une hauteur — sinon il sort de la repartition.
         flex: 1,
         backgroundColor: '#0A0A0A', borderRadius: 20,
-        paddingVertical: 14, paddingHorizontal: 16,
+        paddingVertical: GEO.tournois.padV, paddingHorizontal: 16,
         flexDirection: 'row', alignItems: 'center', gap: 14,
         overflow: 'hidden',
       }}
@@ -79,30 +85,55 @@ export function HomeTournamentsBanner({ enabled, count, onPress }: {
       </View>
 
       <View style={{
-        width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,193,26,0.16)',
+        width: GEO.tournois.pastille, height: GEO.tournois.pastille,
+        borderRadius: 14, backgroundColor: 'rgba(255,193,26,0.16)',
         alignItems: 'center', justifyContent: 'center',
       }}>
         <Icon name="calendar" size={22} color={Colors.brand} stroke={2.2} />
       </View>
 
-      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <Text {...texteUI} numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: 25, color: Colors.textOnDark, paddingRight: 6 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: GEO.tournois.gapTexte }}>
+        <Text {...texteUI} numberOfLines={1} style={{ fontFamily: Fonts.welcome, fontSize: 21, lineHeight: GEO.tournois.titreLigne, color: Colors.textOnDark, paddingRight: 6 }}>
           Tournois <Text style={{ color: Colors.brand }}>&amp; événements</Text>
         </Text>
-        <Text {...texteUI} numberOfLines={2} style={{ fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.6)' }}>
-          {ouvrable
-            ? `${count} événement${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''} · touche pour voir`
-            : 'Ne manque rien dans ta région'}
-        </Text>
-        {/* La pastille dit « bientôt », pas « combien » : elle disparaît dès
-            que les tournois sont ouverts, la phrase prend le relais. Sur sa
-            PROPRE ligne — collée au texte, elle se lisait comme sa fin. */}
-        {!ouvrable && (
-          <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 3 }}>
-            <Icon name="calendar" size={11} color={Colors.primary} stroke={2.4} />
-            <Text {...texteUI} style={{ fontFamily: Fonts.uiBlack, fontSize: 11, color: Colors.primary }}>À venir</Text>
-          </View>
-        )}
+
+        {/* La phrase et la pastille PARTAGENT une ligne : la pastille en avait
+            une à elle, et sur un accueil qui ne défile pas cette ligne coûtait
+            une vingtaine de points aux blocs voisins.
+            Elle reste lisible comme un statut et non comme la fin de la phrase
+            — c'était l'objection quand elle avait été collée au texte — parce
+            qu'elle est à l'autre bout de la ligne, pas à sa suite.
+            Le titre n'est pas touché : en `Fonts.welcome` 21 pt sur une seule
+            ligne, il n'a pas la place de partager la sienne. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* UNE ligne tant que la pastille est là, et c'est ce que le budget
+              compte. Deux lignes, c'est ce qui se produirait sur un écran
+              étroit maintenant que la pastille prend sa place : le bandeau
+              réclamerait huit points de plus que ceux qu'on lui accorde, et le
+              bas de la phrase serait coupé. Ce n'est pas un seuil de largeur —
+              c'est la même condition que la pastille elle-même. Sans elle
+              (tournois ouverts), la phrase est plus longue et retrouve ses
+              deux lignes. */}
+          <Text {...texteUI} numberOfLines={ouvrable ? 2 : 1} style={{ flexShrink: 1, fontFamily: Fonts.uiSemi, fontSize: 12, lineHeight: GEO.tournois.phraseLigne, color: 'rgba(255,255,255,0.6)' }}>
+            {ouvrable
+              ? `${count} événement${count > 1 ? 's' : ''} disponible${count > 1 ? 's' : ''} · touche pour voir`
+              : 'Ne manque rien dans ta région'}
+          </Text>
+          {/* La pastille dit « bientôt », pas « combien » : elle disparaît dès
+              que les tournois sont ouverts, la phrase prend le relais.
+              Sa hauteur est POSÉE, pas subie : c'est le chiffre que le budget
+              compte pour cette rangée (la plus haute des deux l'emporte). */}
+          {!ouvrable && (
+            <View style={{
+              marginLeft: 'auto', height: GEO.tournois.pastilleAvenir,
+              flexDirection: 'row', alignItems: 'center', gap: 4,
+              backgroundColor: Colors.brand, borderRadius: 999, paddingHorizontal: 8,
+            }}>
+              <Icon name="calendar" size={10} color={Colors.primary} stroke={2.4} />
+              <Text {...texteUI} style={{ fontFamily: Fonts.uiBlack, fontSize: 10, color: Colors.primary }}>À venir</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Pas de flèche quand rien ne s'ouvre : elle promettrait une

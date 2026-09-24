@@ -48,6 +48,15 @@
 // resteraient des suppositions — et on retomberait dans la boucle des seuils
 // ajustés téléphone par téléphone.
 
+// ── ET CE QUI LES REND IMPOSSIBLES ─────────────────────────────────────────
+//
+// Un bloc dont le contenu appartient à un AUTRE écran ne peut pas être
+// décomposé ici. « Ça se joue bientôt » dessine la carte du lobby : sa hauteur
+// dépend du match affiché, de la largeur et de la taille de police système —
+// que lib/uiText ne couvre pas pour les textes de contenu. Son chiffre arrive
+// donc mesuré, par `openGamesHeight`. C'était le seul bloc dont les nombres
+// n'étaient pas une addition, et c'est exactement celui qui s'est coupé.
+
 /**
  * La composition réelle de chaque bloc, en points.
  *
@@ -67,12 +76,21 @@ export const GEO = {
     /** Marges horizontales de la colonne, plus l'espace entre les deux. */
     margeH: 40, entreTuiles: 10,
   },
-  /** Le bandeau « Tournois & événements » — une rangée. */
-  tournois: { padV: 14, pastille: 44, titreLigne: 25, phraseLigne: 16, pastilleAvenir: 24 },
+  /**
+   * Le bandeau « Tournois & événements » — une rangée.
+   *
+   * Le composant LIT ces valeurs (padV, pastille, interlignes, hauteur de la
+   * pastille « À venir ») : changer un chiffre ici change le dessin ET le
+   * budget, ensemble. Ils étaient écrits aux deux endroits, sans rien pour les
+   * tenir synchrones.
+   */
+  // `pastilleAvenir` : 18 et non 24 — à l'échelle des pastilles des cartes
+  // (~17), qui sont la grammaire du reste de l'app. À 24 elle piétinait la
+  // phrase avec qui elle partage la ligne, et comme c'est la plus haute des
+  // deux qui compte, elle coûtait aussi 6 points au bandeau.
+  tournois: { padV: 14, pastille: 44, titreLigne: 25, phraseLigne: 16, pastilleAvenir: 18, gapTexte: 3 },
   /** La carte « Prochain match ». */
   match: { padV: 12, entete: 22, club: 20, avatarPlein: 52, avatarReduit: 40, nom: 13, niveau: 12, gapInterne: 10 },
-  /** « Ça se joue bientôt », quand il n'y a ni match ni tournoi. */
-  parties: { entete: 21, gap: 10, carte: 120, carteReduite: 84 },
   /**
    * « Ça bouge chez les PAGUISTES ».
    *
@@ -122,9 +140,13 @@ export const CTA_MIN =
 
 /** Le bandeau Tournois, sans puis avec sa phrase et sa pastille. */
 export const TOURNOIS_MIN = GEO.tournois.padV * 2 + GEO.tournois.pastille;
+// La pastille « À venir » PARTAGE la ligne de la phrase, poussée à droite :
+// cette rangée vaut donc la plus haute des deux, pas leur somme. Elle avait sa
+// propre ligne, et c'est cette ligne-là qui est récupérée.
 export const TOURNOIS_IDEAL =
   GEO.tournois.padV * 2
-  + GEO.tournois.titreLigne + GEO.tournois.phraseLigne + GEO.tournois.pastilleAvenir + 6;
+  + GEO.tournois.titreLigne + GEO.tournois.gapTexte
+  + Math.max(GEO.tournois.phraseLigne, GEO.tournois.pastilleAvenir);
 
 /** « Prochain match », avatars réduits puis pleins. */
 export const MATCH_MIN =
@@ -148,9 +170,8 @@ export const PULSE_MIN = PULSE_CADRE + GEO.pulse.enteteCarteMin;
 export const PULSE_IDEAL =
   PULSE_CADRE + GEO.pulse.enteteCarteIdeal + GEO.pulse.gapHaut + GEO.pulse.photos;
 
-/** « Ça se joue bientôt ». */
-export const PARTIES_MIN = GEO.parties.entete + GEO.parties.gap + GEO.parties.carteReduite;
-export const PARTIES_IDEAL = GEO.parties.entete + GEO.parties.gap + GEO.parties.carte;
+// « Ça se joue bientôt » n'a PAS de constante ici, et ne doit jamais en
+// reprendre une : sa hauteur arrive mesurée (voir `openGamesHeight`).
 
 // ── Le calculateur ─────────────────────────────────────────────────────────
 
@@ -183,8 +204,28 @@ export interface HomeLayoutInput {
   hasLiveBanner?: boolean;
   hasTournaments: boolean;
   hasNextMatch: boolean;
-  /** Nombre de parties proposées quand il n'y a ni match ni tournoi. */
-  openGames?: number;
+  /**
+   * La hauteur MESURÉE du bloc « Ça se joue bientôt », ou null/0 tant qu'elle
+   * n'est pas connue.
+   *
+   * Ce bloc dessine la carte du lobby (`GameCard`), qui ne nous appartient
+   * pas : sa hauteur dépend du match affiché (un compétitif porte une ligne
+   * d'enjeu de plus qu'un amical), de la largeur, et de la taille de police du
+   * téléphone — les textes d'une carte sont du CONTENU, ils suivent le réglage
+   * système que lib/uiText ne couvre volontairement pas. Aucune constante
+   * écrite ici ne peut être vraie pour les trois à la fois.
+   *
+   * C'est pour l'avoir oublié que l'écran s'est cassé : `GEO.parties` accordait
+   * 120 points à une carte qui en dessine près du double. Le bloc recevait
+   * donc exactement ce qu'il demandait, se faisait couper, et le compte qui
+   * manquait restait en blanc sous « Ça bouge ». Le blanc et la coupure
+   * étaient le même nombre, vu deux fois.
+   *
+   * Une SEULE valeur, donc pas de forme compacte : la carte compacte
+   * n'économisait que 8 %, quand l'effacement de « Ça bouge » en libère dix
+   * fois plus. La hiérarchie de compression suffit.
+   */
+  openGamesHeight?: number | null;
   hasPulse?: boolean;
 }
 
@@ -225,8 +266,16 @@ export function homeSections(i: HomeLayoutInput): HomeSection[] {
   if (i.hasNextMatch) {
     out.push({ key: 'nextMatch', min: MATCH_MIN, ideal: MATCH_IDEAL, weight: 1.7 });
   }
-  if (suggere) {
-    out.push({ key: 'openGames', min: PARTIES_MIN, ideal: PARTIES_IDEAL, weight: 1.6 });
+  // Mesuré, ou absent. Pas de valeur de repli : une estimation de secours
+  // redeviendrait la constante magique, simplement plus discrète. Tant que
+  // l'écran n'a pas mesuré le bloc, il ne réserve rien — comme `hasPulse`, qui
+  // démarre à faux et attend que le bloc annonce qu'il a quelque chose à dire.
+  const mesure = i.openGamesHeight ?? 0;
+  if (suggere && mesure > 0) {
+    // min ET ideal valent la mesure : le bloc a UNE taille juste. Il ne peut
+    // donc ni grossir (le surplus reste du blanc) ni se contenter de moins,
+    // sauf dans le cas 3 où tout le monde rétrécit ensemble.
+    out.push({ key: 'openGames', min: mesure, ideal: mesure, weight: 1.6 });
   }
   if (i.hasPulse) {
     out.push({ key: 'pulse', min: PULSE_MIN, ideal: PULSE_IDEAL, weight: 2.2, yields: true });

@@ -20,11 +20,38 @@ import { PULSE_IDEAL, PULSE_MIN } from '../homeLayout';
 
 const SRC = readFileSync(join(__dirname, '..', '..', 'components', 'home', 'HomePulse.tsx'), 'utf8');
 /** La racine du composant : la première View rendue. */
-const RACINE = SRC.slice(SRC.indexOf('<View style={{ gap: 10'), SRC.indexOf('<View style={{ gap: 10') + 120);
+const RACINE = SRC.slice(SRC.indexOf('<View style={{ gap: GAP_RACINE'), SRC.indexOf('<View style={{ gap: GAP_RACINE') + 120);
 
 describe('HomePulse ne dépasse jamais sa taille idéale', () => {
   it('sa racine porte une borne haute', () => {
-    expect(RACINE).toContain('maxHeight: PULSE_IDEAL');
+    // Deux plafonds, pas un : l'idéal reste la limite absolue, et la variante
+    // RENDUE la limite du moment. Sans la seconde, un bloc à qui on accorde
+    // 165 points pour une forme qui en dessine 133 absorbe les 32 autres en
+    // blanc entre son titre et ses boutons (vu sur Android le 2026-09-24).
+    expect(RACINE).toContain('maxHeight: Math.min(PULSE_IDEAL, necessaire)');
+  });
+
+  it('cette borne est MESURÉE, pas une addition de constantes', () => {
+    // Le composant ne sait pas quelle variante il vient de rendre — c'est la
+    // zone haute qui choisit, d'après la place reçue. Il mesure donc ce
+    // qu'elle a dessiné, au lieu de décrire chaque variante une deuxième fois
+    // ici. Une description, ça diverge ; une mesure, non.
+    expect(SRC).toContain('onContenu?: (h: number) => void');
+    expect(SRC).toContain('Math.ceil(Math.max(...mesures))');
+    // Le bouton et le titre de section sont mesurés eux aussi.
+    expect(SRC).toContain('onLayout={mesurerBouton}');
+    expect(SRC).toContain('mesurerTitre(e.nativeEvent.layout.height)');
+  });
+
+  it('la zone haute mesure toujours la place REÇUE : la variante ne change pas de règle', () => {
+    // La boîte garde son `flex: 1` et son `onLayout` : c'est ce qu'elle
+    // mesure qui choisit la variante, et cette logique-là n'a pas bougé. Le
+    // contenu, lui, vit dans une enveloppe séparée qui dit la place OCCUPÉE.
+    const haut = SRC.slice(SRC.indexOf('function Haut('), SRC.indexOf('const BOUTON'));
+    expect(haut).toContain("style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}");
+    expect(haut).toContain('h >= 96');
+    expect(haut).toContain('h >= 74');
+    expect(haut).toContain('h >= 50');
   });
 
   it('elle garde son `flex: 1` : les cartes doivent utiliser la place réelle', () => {

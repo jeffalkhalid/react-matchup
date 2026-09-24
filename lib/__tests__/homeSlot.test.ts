@@ -313,7 +313,10 @@ describe('la decision et le budget de hauteur disent la MEME chose', () => {
           const slot = homeSlot({ hasNextMatch, hasTournaments, suggestions });
           const cles = homeSections({
             availableHeight: 680, availableWidth: 393,
-            hasTournaments, hasNextMatch, openGames: nb,
+            // La hauteur du bloc arrive MESURÉE (sonde de OpenGamesSlot) : on
+            // se place ici après la mesure, sinon le budget ne réserve rien —
+            // c'est le cas du premier rendu, vérifié juste en dessous.
+            hasTournaments, hasNextMatch, openGamesHeight: 232,
           }).map(x => x.key);
           const contexte = `tournois=${hasTournaments} match=${hasNextMatch} parties=${nb}`;
           expect(cles.includes('nextMatch'), contexte).toBe(slot.kind === 'nextMatch');
@@ -322,5 +325,19 @@ describe('la decision et le budget de hauteur disent la MEME chose', () => {
         }
       }
     }
+  });
+
+  it('avant la mesure, le bloc est decide mais ne reserve rien', () => {
+    // Le seul ecart admis entre les deux lectures, et il est voulu :
+    // homeSlot sait DEJA qu'il faut afficher les parties ouvertes, le budget
+    // attend encore que la sonde ait mesure leur hauteur. Le bloc apparait
+    // donc a la passe suivante, plutot que de reserver une place devinee.
+    const slot = homeSlot({ hasNextMatch: false, hasTournaments: false, suggestions: [G({ id: 'g0' }), G({ id: 'g1' })] });
+    expect(slot.kind).toBe('openGames');
+    const cles = homeSections({
+      availableHeight: 680, availableWidth: 393,
+      hasTournaments: false, hasNextMatch: false,
+    }).map(x => x.key);
+    expect(cles).not.toContain('openGames');
   });
 });
