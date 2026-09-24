@@ -45,14 +45,14 @@ import {
   getTournamentsEnabled, isFeatureDisabled, resultMessage,
   fetchTournaments, fetchTournament, fetchRegistrations, fetchTeams, fetchRoundMatches, fetchRoundMovements,
   fetchMatchEntries, fetchStandings, fetchTournamentMatches, fetchTournamentResults, createTournament,
-  autopairTournament, startTournament, generateTournamentRound, generateFinalTournamentRound,
+  autopairTournament, startTournament, generateTournamentRound,
   fetchFinalStakes, cancelTournament, reopenTournamentRegistrations, removeTournamentRegistration,
   resolveTournamentDispute, forfeitTournamentTeam, reopenTournamentMatch, closeTournament,
   validateTournament, openCheckIn, markNoShow, canOpenCheckIn, acceptsCheckIn,
   seatsLabel, seatsTaken, seatCount, waitlistCount, soloRegistrations, seatedTeams,
   statusLabel, statusTone, levelRangeLabel, priceLabel, formatTournamentDate, formatLabel, ROUND_MINUTES,
   nextTournamentAction,
-  nextRoundIsFinal, missingMatchLabel, countLaterRoundMatches, stakeLabel, groupResultsByTeam,
+  missingMatchLabel, countLaterRoundMatches, stakeLabel, groupResultsByTeam,
   validateTournamentScore, matchLiveStatus, pointsScaleValid,
   defaultPointsScale, resizePointsScale, teamCount,
 } from '../../lib/tournaments';
@@ -2875,9 +2875,14 @@ function AdminMatchCard({
         stakeText={stakeText}
       />
 
-      {isOrganizer && teamB && status === 'disputed' && (
+      {/* L'arbitrage — RENOMMÉ « Saisir le score à leur place » (Tâche 8) :
+          il ne tranche plus seulement un désaccord, il fonctionne aussi
+          quand personne n'a rien saisi du tout (terrain muet, Tâche 2) —
+          donc sur tout match non confirmé (`disputed` ET `awaiting`), pas
+          uniquement `disputed` comme avant. */}
+      {isOrganizer && teamB && (status === 'disputed' || status === 'awaiting') && (
         <View style={{ gap: 8 }}>
-          <Text style={sty.fieldLabel}>Trancher le litige (score de {teamA.names.join(' · ')} en premier)</Text>
+          <Text style={sty.fieldLabel}>Saisir le score à leur place (score de {teamA.names.join(' · ')} en premier)</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary }}>
               {teamA.names.join(' · ')}
@@ -2901,7 +2906,7 @@ function AdminMatchCard({
             style={[sty.btnValidate, { opacity: canResolve ? 1 : 0.4 }]}
           >
             <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 12, fontFamily: Fonts.uiBlack }}>
-              Trancher
+              Saisir le score à leur place
             </Text>
           </TouchableOpacity>
         </View>
@@ -3092,29 +3097,43 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
     return `Binôme(s) formé(s) : ${created}.` + (alone.length > 0 ? ' Un joueur reste seul — renvoyé en tête de liste d’attente.' : '');
   });
 
+  // Le lancement tire DÉSORMAIS lui-même le tour 1 (Tâche 3) : il n'y a plus
+  // de second geste « je pointe puis je tire ». `res.round` porte le résultat
+  // de ce tirage — un objet `{ matches, byes, round, court_count }`, ou
+  // `{ ok:false, reason }` quand le moteur n'a pas pu tirer (pas assez de
+  // binômes assis à cet instant). Il faut le dire tel quel : le tournoi est
+  // démarré (statut EN_COURS), mais la soirée, elle, n'a pas vraiment
+  // commencé tant qu'aucun match n'existe.
   const handleStart = () => Alert.alert(
     'Démarrer le tournoi ?',
-    'Cela fige la composition des binômes et le nombre de terrains réellement en jeu. Le pointage n’est pas exigé : cela sert de « lancer quand même ». Le premier tour se tire ensuite séparément.',
+    'Cela fige les binômes, attribue les terrains et lance la première rotation. Le pointage n’est pas exigé : un binôme absent joue quand même.',
     [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Démarrer', style: 'destructive', onPress: () => runAction('start', () => startTournament(t.id)) },
+      {
+        text: 'Démarrer', style: 'destructive',
+        onPress: () => runAction('start', () => startTournament(t.id), (res) => {
+          const round = res.round as
+            { ok?: boolean; reason?: string; matches?: number; byes?: number } | undefined;
+          if (round && round.ok === false) {
+            return `Tournoi démarré, mais le premier tour n’a PAS pu être tiré : ${resultMessage(round as TournamentResult)}. ` +
+              'La soirée n’a pas vraiment commencé — utilise « Tirer le tour 1 » une fois le problème réglé.';
+          }
+          return `Tournoi démarré : ${round?.matches ?? 0} match(s) tirés pour la première rotation, ${round?.byes ?? 0} repos.`;
+        }),
+      },
     ],
   );
 
-  const handleGenerateRound = () => {
-    const isFinal = nextRoundIsFinal(t.current_round, t.round_count);
-    runAction(
-      'round',
-      () => isFinal ? generateFinalTournamentRound(t.id) : generateTournamentRound(t.id),
-      (res) => isFinal
-        ? `Rotation de classement lancée (tour ${res.round}). L’enjeu de chaque terrain est affiché ci-dessous — dis-le aux joueurs, il reste visible même si tu quittes cet écran.`
-        : `Rotation ${res.round} lancée : ${res.matches} match(s), ${res.byes} repos.`,
-      // Plus besoin de capturer `stakes` depuis CETTE réponse (Task 13) :
-      // `runAction` appelle `load()` juste après, qui relit désormais l'enjeu
-      // de façon DURABLE (`fetchFinalStakes`) — même chemin qu'un
-      // rechargement d'écran ou qu'un autre joueur qui consulterait la fiche.
-    );
-  };
+  // SEULE porte de secours qui reste ici (Tâche 8) : le serveur tire chaque
+  // rotation tout seul dès le dernier score de la précédente, donc plus aucun
+  // bouton « tour suivant ». Mais si le lancement n'a pas réussi à tirer le
+  // tour 1 (`current_round` resté à 0), rien d'autre ne peut le retirer —
+  // sans ce geste, la seule sortie de l'organisateur serait d'annuler tout le
+  // tournoi. Toujours le tour 1, jamais la rotation de classement : à
+  // `current_round === 0`, on est loin de la dernière rotation.
+  const handleDrawFirstRound = () =>
+    runAction('round', () => generateTournamentRound(t.id), (res) =>
+      `Rotation 1 lancée : ${res.matches} match(s), ${res.byes} repos.`);
 
   const handleResolveDispute = (matchId: string, gamesA: number, gamesB: number) =>
     runAction(`resolve-${matchId}`, () => resolveTournamentDispute(matchId, gamesA, gamesB));
@@ -3215,6 +3234,29 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
     arr.push(e);
     entriesByMatch.set(e.match_id, arr);
   }
+
+  // Ce qui bloque la soirée MAINTENANT que le serveur tire chaque rotation
+  // tout seul (Tâche 8) : un terrain de la rotation COURANTE où personne n'a
+  // encore rien saisi. Sans cette liste en tête de carte, l'organisateur
+  // devait ouvrir chaque match un par un pour trouver le terrain muet.
+  // Un bye (`!m.team_b`) n'attend aucun score, on ne le liste pas ; un match
+  // déjà confirmé ou forfaité non plus.
+  const blockedCourts = t.status === 'EN_COURS'
+    ? roundMatches
+        .filter(m => m.team_b != null && m.confirmed_at == null && m.forfeited_team == null
+          && (entriesByMatch.get(m.id) ?? []).length === 0)
+        .map(m => {
+          const teamAInfo = teamById.get(m.team_a);
+          const teamBInfo = m.team_b ? teamById.get(m.team_b) : null;
+          if (!teamAInfo || !teamBInfo) return null;
+          return {
+            id: m.id,
+            label: `Terrain ${m.court_no} — ${namesOf(teamAInfo.player1_id, teamAInfo.player2_id).join(' & ')} vs `
+              + `${namesOf(teamBInfo.player1_id, teamBInfo.player2_id).join(' & ')} : pas de score`,
+          };
+        })
+        .filter((c): c is { id: string; label: string } => c != null)
+    : [];
 
   const standingRows: StandingRowData[] = standings.map(s => ({
     standing: s,
@@ -3436,6 +3478,19 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
         <View style={sty.orgCard}>
           <Text style={sty.orgCardTitle}>Conduire — tour {t.current_round || '–'} / {t.round_count}</Text>
 
+          {/* Ce qui bloque MAINTENANT : la rotation suivante part toute
+              seule dès que ces terrains-là ont un score — l'organisateur n'a
+              plus qu'à débloquer, pas à rythmer. */}
+          {blockedCourts.length > 0 && (
+            <View style={{ gap: 4 }}>
+              {blockedCourts.map(c => (
+                <Text key={c.id} style={[sty.orgCardDesc, { color: Colors.danger, fontWeight: '700' }]}>
+                  {c.label}
+                </Text>
+              ))}
+            </View>
+          )}
+
           {t.current_round === 0 ? (
             <Text style={sty.orgCardDesc}>Aucune rotation tirée pour l’instant.</Text>
           ) : roundMatches.length === 0 ? (
@@ -3472,18 +3527,20 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
 
           {isOrganizer && (
             <View style={{ gap: 8, marginTop: 6 }}>
-              {t.current_round < t.round_count ? (
-                <TouchableOpacity onPress={handleGenerateRound} disabled={busy === 'round'} style={sty.btnValidate}>
+              {/* Plus de bouton « tour suivant » : le serveur tire chaque
+                  rotation tout seul dès le dernier score de la précédente
+                  (Tâche 8). Seul reste ce recours, pour l'unique cas où le
+                  lancement n'a pas réussi à tirer le tour 1. */}
+              {t.current_round === 0 && (
+                <TouchableOpacity onPress={handleDrawFirstRound} disabled={busy === 'round'} style={sty.btnValidate}>
                   {busy === 'round'
                     ? <ActivityIndicator color={Colors.textOnDark} size="small" />
                     : (
                       <Text style={{ color: Colors.textOnDark, fontWeight: '900', fontSize: 13, fontFamily: Fonts.uiBlack }}>
-                        {nextRoundIsFinal(t.current_round, t.round_count) ? 'Lancer la rotation de classement' : 'Générer la rotation suivante'}
+                        Tirer le tour 1
                       </Text>
                     )}
                 </TouchableOpacity>
-              ) : (
-                <Text style={sty.orgCardDesc}>Toutes les rotations ont été tirées.</Text>
               )}
               <TouchableOpacity onPress={handleClose} disabled={busy === 'close' || t.current_round < 1} style={[sty.btnCancel, { opacity: t.current_round < 1 ? 0.4 : 1 }]}>
                 <Text style={{ color: Colors.danger, fontWeight: '700', fontSize: 13 }}>Clôturer le tournoi</Text>

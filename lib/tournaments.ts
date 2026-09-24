@@ -1951,11 +1951,16 @@ export function nextTournamentAction(t: Tournament, seatedTeams: number): {
     case 'PRET':
       return { label: 'Démarrer le tournoi', tone: 'brand', subtitle: format };
     case 'EN_COURS':
+      // Le serveur tire chaque rotation tout seul dès le dernier score de la
+      // précédente : il n'y a plus de bouton à proposer ici. Seule exception,
+      // current_round === 0 : le lancement n'a pas réussi à tirer le tour 1
+      // (pas assez de binômes assis), et sans porte de secours la seule
+      // sortie de l'organisateur serait d'annuler le tournoi.
       return t.current_round === 0
-        ? { label: 'Générer le tour 1', tone: 'brand', subtitle: format }
+        ? { label: 'Tirer le tour 1', tone: 'brand', subtitle: format }
         : {
-            label: `Générer le tour ${t.current_round + 1}`, tone: 'brand',
-            subtitle: `Rotation ${t.current_round} sur ${t.round_count} jouée`,
+            label: null,
+            subtitle: `Rotation ${t.current_round} sur ${t.round_count} — la suivante part toute seule`,
           };
     case 'TERMINE':
       return { label: 'Valider le classement', tone: 'brand', subtitle: 'Classement figé, points en attente.' };

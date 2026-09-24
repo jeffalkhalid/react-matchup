@@ -14,11 +14,20 @@ describe("l'action du moment sur un tournoi", () => {
     expect(nextTournamentAction(t('TERMINE'), 8).label).toBe('Valider le classement');
   });
 
-  it('compte le tour SUIVANT, jamais celui qui vient d etre joue', () => {
-    // Le piege : afficher « Generer le tour 3 » quand le 3 est deja joue
-    // enverrait l organisateur refaire ce qui est fait.
-    expect(nextTournamentAction(t('EN_COURS', 0), 8).label).toBe('Générer le tour 1');
-    expect(nextTournamentAction(t('EN_COURS', 3), 8).label).toBe('Générer le tour 4');
+  it('ne propose plus AUCUNE action pendant une rotation en cours (le serveur tire tout seul)', () => {
+    // Le piege : proposer un bouton "Generer le tour N" enverrait
+    // l organisateur tirer une rotation que le serveur tire deja tout seul
+    // des le dernier score de la precedente.
+    const a = nextTournamentAction(t('EN_COURS', 3), 8);
+    expect(a.label).toBeNull();
+    expect((a as any).tone).toBeUndefined();
+  });
+
+  it('garde une porte de secours si le lancement n a pas reussi a tirer le tour 1', () => {
+    // Seule exception : current_round === 0 en EN_COURS veut dire que le
+    // moteur n a pas pu tirer la premiere rotation au lancement. Sans ce
+    // bouton, la seule sortie de l organisateur serait d annuler le tournoi.
+    expect(nextTournamentAction(t('EN_COURS', 0), 8).label).toBe('Tirer le tour 1');
   });
 
   it('un tournoi annule ne propose AUCUNE action', () => {
@@ -36,6 +45,7 @@ describe("l'action du moment sur un tournoi", () => {
   it('le sous-titre dit toujours POURQUOI l action est proposee', () => {
     expect(nextTournamentAction(t('INSCRIPTIONS_OUVERTES'), 5).subtitle).toContain('5 binômes sur 8');
     expect(nextTournamentAction(t('EN_COURS', 3), 8).subtitle).toContain('Rotation 3 sur 6');
+    expect(nextTournamentAction(t('EN_COURS', 3), 8).subtitle).toContain('part toute seule');
     expect(nextTournamentAction(t('TERMINE'), 8).subtitle).toContain('en attente');
   });
 
