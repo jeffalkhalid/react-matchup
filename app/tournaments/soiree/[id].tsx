@@ -40,7 +40,7 @@ import {
 import { displayName } from '../../../lib/players';
 import {
   eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, inTeam,
-  formatCountdown, shouldTickClock,
+  formatCountdown, shouldTickClock, shouldSyncAlarms,
   type CourtView, type CourtState,
 } from '../../../lib/tournamentEvening';
 import { syncCourtAlarms, expoAlarmPort, type AlarmPort } from '../../../lib/courtAlarm';
@@ -183,8 +183,19 @@ export default function SoireeScreen() {
   // de match ou d'état, JAMAIS à chaque tic du chrono : la mémoire empêche déjà
   // les doublons, un appel par seconde ne ferait que noyer le journal et
   // multiplier les écritures de stockage pour rien.
+  //
+  // `shouldSyncAlarms` (et non un simple `alarmesPretes`) : au montage, la
+  // mémoire/porte des alarmes se charge vite (stockage local) alors que les
+  // données du tournoi arrivent par le réseau. Tant qu'elles ne sont pas là,
+  // `mien` est `null` — la même forme que « je ne joue pas » — et agir
+  // dessus annulerait puis effacerait du stockage la paire de sonneries
+  // qu'on vient tout juste de restaurer. Voir le commentaire de
+  // `shouldSyncAlarms` dans lib/tournamentEvening.ts.
+  const alarmesActionnables = shouldSyncAlarms({
+    alarmesPretes, loading, hasTournament: t != null, hasPlayer: player != null,
+  });
   useEffect(() => {
-    if (!alarmesPretes || !porteAlarmes.current) return;
+    if (!alarmesActionnables || !porteAlarmes.current) return;
     const etat = {
       matchId: mien?.matchId ?? null,
       courtNo: mien?.courtNo ?? 0,
@@ -201,7 +212,7 @@ export default function SoireeScreen() {
       await purgeAlarmMemory(etat.matchId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alarmesPretes, mien?.matchId, mien?.secondsLeft === null, mien?.gamesA]);
+  }, [alarmesActionnables, mien?.matchId, mien?.secondsLeft === null, mien?.gamesA]);
 
   if (loading || !player) {
     return (

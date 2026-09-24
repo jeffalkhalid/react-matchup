@@ -6,7 +6,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 
 import {
   courtState, eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, secondsLeft,
-  formatCountdown, shouldTickClock,
+  formatCountdown, shouldTickClock, shouldSyncAlarms,
 } from '../tournamentEvening';
 
 const M = (o: any = {}) => ({
@@ -251,5 +251,40 @@ describe('faut-il faire tourner l horloge', () => {
 
   it('non, aucun terrain', () => {
     expect(shouldTickClock([])).toBe(false);
+  });
+});
+
+describe('faut-il laisser l effet des sonneries agir', () => {
+  const PRET = { alarmesPretes: true, loading: false, hasTournament: true, hasPlayer: true };
+
+  it('faux au montage frais : la memoire restauree ne doit pas encore etre touchee', () => {
+    // Le cas precis du bug corrige : alarmesPretes est deja vrai (stockage +
+    // porte, tout en local) mais les donnees du tournoi n ont pas fini
+    // d arriver par le reseau — courts est vide, mien est null, et ca
+    // ressemble a « je ne joue pas », a tort.
+    expect(shouldSyncAlarms({ ...PRET, loading: true, hasTournament: false, hasPlayer: false }))
+      .toBe(false);
+  });
+
+  it('faux tant que la porte/memoire des alarmes n est pas prete, meme donnees chargees', () => {
+    expect(shouldSyncAlarms({ ...PRET, alarmesPretes: false })).toBe(false);
+  });
+
+  it('faux si le tournoi n est pas charge', () => {
+    expect(shouldSyncAlarms({ ...PRET, hasTournament: false })).toBe(false);
+  });
+
+  it('faux si le joueur n est pas charge', () => {
+    expect(shouldSyncAlarms({ ...PRET, hasPlayer: false })).toBe(false);
+  });
+
+  it('faux tant que le chargement n est pas termine, meme si tournoi et joueur sont deja la', () => {
+    // Chargement en cours mais anciennes valeurs de t/player encore en etat :
+    // le doute profite a « ne rien toucher ».
+    expect(shouldSyncAlarms({ ...PRET, loading: true })).toBe(false);
+  });
+
+  it('vrai seulement quand tout est reuni', () => {
+    expect(shouldSyncAlarms(PRET)).toBe(true);
   });
 });

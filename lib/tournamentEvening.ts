@@ -142,6 +142,38 @@ export function shouldTickClock(courts: CourtView[]): boolean {
   return courts.some(c => c.state === 'en_cours');
 }
 
+/**
+ * Faut-il laisser l'effet des sonneries AGIR sur l'état courant du terrain ?
+ *
+ * Le piège : au montage, la mémoire persistée et la porte vers les
+ * notifications se chargent vite (`AsyncStorage` + `expo-notifications`,
+ * tout en local), alors que les données du tournoi arrivent par le réseau —
+ * `load()` peut prendre un moment, ou échouer, ou traîner si le réseau du
+ * club est mauvais. Pendant cette fenêtre, `courts` est vide et `mien` est
+ * `null` : EXACTEMENT la même forme que « je ne joue pas cette rotation ».
+ * Si l'effet agit là-dessus, `syncCourtAlarms` traite la paire de sonneries
+ * qu'on vient de RESTAURER depuis le stockage comme obsolète (son match ne
+ * correspond plus à `matchId: null`), l'annule, et la persistance efface la
+ * ligne — alors que le match tourne toujours, sans personne pour le savoir.
+ * C'est précisément le scénario (mauvais réseau du club) pour lequel les
+ * sonneries locales existent : le coût d'une confusion ici est une soirée
+ * sans aucune sonnerie, pire que la duplication que la mémoire persistée
+ * était censée éviter.
+ *
+ * Ne rend vrai que lorsque TOUT est prêt : la mémoire/porte des alarmes,
+ * ET les données du tournoi (chargement terminé, tournoi et joueur bien
+ * présents) — jamais sur la seule foi d'un `courts` vide, qui peut aussi
+ * bien dire « pas encore chargé » que « je ne joue pas ».
+ */
+export function shouldSyncAlarms(o: {
+  alarmesPretes: boolean;
+  loading: boolean;
+  hasTournament: boolean;
+  hasPlayer: boolean;
+}): boolean {
+  return o.alarmesPretes && !o.loading && o.hasTournament && o.hasPlayer;
+}
+
 /** Les joueurs d'un binôme, tels quels — jamais « toi / l'adversaire ». */
 function teamOf(teams: TournamentTeam[], id: string | null): TournamentTeam | null {
   return id ? teams.find(t => t.id === id) ?? null : null;
