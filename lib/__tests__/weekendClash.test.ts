@@ -351,7 +351,7 @@ describe("oddsLine — l'enjeu, vu de mon camp", () => {
   });
 
   it("à cinquante-cinquante, personne n'a tranché", () => {
-    expect(oddsLine(avis(5, 5), 'A')).toMatch(/n'arrive pas à trancher/);
+    expect(oddsLine(avis(5, 5), 'A')).toBe("Ils n'arrivent pas à trancher. À vous de le faire.");
   });
 
   it("sans aucun avis, il n'y a rien à dire", () => {

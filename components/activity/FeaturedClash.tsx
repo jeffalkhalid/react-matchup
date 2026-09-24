@@ -1,26 +1,38 @@
 // components/activity/FeaturedClash.tsx — « Qui va gagner ? »
 //
-// Les parties à venir qu'on peut pronostiquer, et l'avis du reste du club. Un
-// pronostic n'engage rien : ni place, ni ELO, ni notification. C'est une
-// conversation, pas un pari.
+// Les parties qu'on peut pronostiquer, l'avis du reste du club, et — depuis
+// qu'on ferme la boucle — ce que ce pronostic est devenu une fois le match
+// joué. Un pronostic n'engage rien : ni place, ni ELO, ni notification. C'est
+// une conversation, pas un pari.
+//
+// Une carte a trois âges (lib/clashResult) :
+//   • à venir  — on vote, comme avant ;
+//   • en cours — les votes sont clos, la répartition se découvre ;
+//   • terminé  — le vainqueur, le score, et le verdict de MON pronostic.
+//
+// Avant, la carte disparaissait au coup d'envoi : on votait sans jamais
+// apprendre si on avait vu juste. Les lignes de `predictions` étaient écrites
+// puis plus jamais relues.
+//
+// L'ORDRE du rail suit ce que chaque carte me doit : ma récompense d'abord,
+// puis ce que je peux encore voter, puis l'attente, puis les nouvelles. Un
+// plafond sur le nombre de résultats ferait la même chose en pire — il
+// jetterait des cartes pour résoudre un problème d'ordre.
 //
 // Deux écarts assumés avec le handoff (§4c), tous deux vus sur téléphone :
 //  • il réservait le bloc au week-end et au dimanche — on ne voyait jamais
-//    rien. Il vaut pour toutes les parties à venir, tous les jours.
+//    rien. Il vaut pour toutes les parties, tous les jours.
 //  • il n'en montrait qu'UNE, « le choc ». Douze autres parties restaient
-//    sans personne pour en parler. Elles défilent maintenant toutes, la plus
-//    proche d'abord, et la plus serrée porte la pastille « LE CHOC ».
-//
-// Les cartes sont sombres et posées à même l'écran, sous un titre de section
-// comme les autres rails : enfermées dans un conteneur sombre, elles
-// formaient un pavé noir au milieu de l'onglet.
+//    sans personne pour en parler. Elles défilent maintenant toutes, et la
+//    plus serrée porte la pastille « LE CHOC ».
 //
 // On ne pronostique pas son propre match : l'issue dépend de nous, et
-// « 58 % pensent que tu vas perdre » n'est pas une conversation.
+// « 58 % pensent que tu vas perdre » n'est pas une conversation. Ces
+// parties-là vivent dans <MyOddsCard>.
 //
-// Données : table `predictions` (supabase/migrations/predictions.sql). Tant
-// qu'elle n'existe pas, les cartes s'affichent mais le vote répond qu'il
-// n'est pas encore ouvert.
+// Données : tables `predictions` (supabase/migrations/predictions.sql) et
+// `matches`. Tant que `predictions` n'existe pas, les cartes s'affichent mais
+// le vote répond qu'il n'est pas encore ouvert.
 import { useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -28,69 +40,94 @@ import { Colors, Fonts, formatPadelLevel } from '../../lib/theme';
 import { Icon } from '../community/icons';
 import { PlayerAvatar } from '../PlayerAvatar';
 import {
-  predictionWindow, fetchClashCandidates, fetchPredictionsForGames, castPrediction,
-  clashesToPredict, tightestClashId, withoutMyGames, countPredictions, predictionShare,
-  clashWhenLabel, clashStake, type Clash, type ClashPlayer, type PredictionCounts, type Team,
+  fetchClashCandidates, fetchPredictionsForGames, castPrediction,
+  clashesToPredict, clashesPlayed, tightestClashId, withoutMyGames,
+  countPredictions, predictionShare, clashWhenLabel, clashStake,
+  type Clash, type ClashPlayer, type PredictionCounts, type Team,
 } from '../../lib/weekendClash';
+import {
+  clashWindow, clashPhase, fetchResultsForGames, winnerTeam, myVerdict, crowdShare,
+  orderRail, scoreLabel, pairLabel,
+  type ClashPhase, type ClashResult,
+} from '../../lib/clashResult';
 import { StakeGriffe, StakePill } from './StakeMark';
+import { ClashOutcome, PhasePill, CrowdBar } from './ClashOutcome';
 
 const SOMBRE = '#0A0A0A';
 const TUILE = '#1A1A1C';
 const BLANC_60 = 'rgba(255,255,255,0.6)';
 const BLANC_45 = 'rgba(255,255,255,0.45)';
 const JAUNE_DOUX = 'rgba(255,193,26,0.16)';
+const VERT_DOUX = 'rgba(16,185,129,0.14)';
 
-/** Une paire, présentée comme sur la carte de match : photo, prénom, niveau. */
-function Cote({ players, choisi, part, onPress }: {
+/** Une carte du rail : une partie, son âge, et ce qu'on sait de son issue. */
+interface Carte extends Clash {
+  phase: ClashPhase;
+  result: ClashResult | null;
+  winner: Team | null;
+}
+
+/**
+ * Une paire, présentée comme sur la carte de match : photo, prénom, niveau.
+ *
+ * Tapable seulement tant qu'on peut voter. Passé le coup d'envoi, `onPress`
+ * est absent et la tuile devient un simple affichage — un bouton qui ne fait
+ * rien est pire qu'un bouton absent.
+ */
+function Cote({ players, choisi, gagnant, terne, onPress }: {
   players: ClashPlayer[];
+  /** Mon pronostic. */
   choisi: boolean;
-  /** Part des pronostics pour ce camp, une fois qu'on a voté. */
-  part: number | null;
-  onPress: () => void;
+  /** La paire qui a gagné : liseré vert et couronne. */
+  gagnant?: boolean;
+  /** La paire qui a perdu : on l'efface sans la cacher. */
+  terne?: boolean;
+  onPress?: () => void;
 }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      style={{
-        flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 6,
-        flexDirection: 'row', justifyContent: 'center', gap: 4,
-        backgroundColor: choisi ? JAUNE_DOUX : TUILE,
-        borderWidth: choisi ? 1.5 : 1,
-        borderColor: choisi ? Colors.brand : 'rgba(255,255,255,0.08)',
-      }}
-    >
-      <View style={{ flex: 1, minWidth: 0 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
-      {players.map(p => (
-        <View key={p.id} style={{ alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
-          <PlayerAvatar
-            name={p.name} path={p.avatarPath} size={50}
-            backgroundColor={Colors.brand} textColor={Colors.primary}
-            fontFamily={Fonts.uiBlack} fontSize={17} initialsMax={2}
-          />
-          <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: '#FFFFFF' }}>
-            {p.name.trim().split(/\s+/)[0]}
-          </Text>
-          {p.elo != null ? (
-            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: Colors.brand }}>
-              Niv {formatPadelLevel(p.elo)}
-            </Text>
-          ) : null}
-        </View>
-      ))}
-      </View>
-      {/* La part de chaque camp, sous sa paire — plus parlant qu'une jauge et
-          un « 58 % comme toi » qui ne disait pas de quel côté. */}
-      {part != null ? (
-        <Text style={{
-          fontFamily: Fonts.uiBlack, fontSize: 15, marginTop: 8, textAlign: 'center',
-          color: choisi ? Colors.brand : BLANC_60,
+  const bordure = gagnant ? Colors.success : choisi ? Colors.brand : 'rgba(255,255,255,0.08)';
+  const fond = gagnant ? VERT_DOUX : choisi ? JAUNE_DOUX : TUILE;
+  const contenu = (
+    <>
+      {gagnant ? (
+        <View style={{
+          position: 'absolute', top: -6, right: -2, zIndex: 2,
+          width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.brand,
+          alignItems: 'center', justifyContent: 'center',
         }}>
-          {`${part} %`}
-        </Text>
+          <Icon name="crown" size={11} color={Colors.primary} stroke={2.4} />
+        </View>
       ) : null}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, opacity: terne ? 0.45 : 1 }}>
+        {players.map(p => (
+          <View key={p.id} style={{ alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+            <PlayerAvatar
+              name={p.name} path={p.avatarPath} size={50}
+              backgroundColor={Colors.brand} textColor={Colors.primary}
+              fontFamily={Fonts.uiBlack} fontSize={17} initialsMax={2}
+            />
+            <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: '#FFFFFF' }}>
+              {p.name.trim().split(/\s+/)[0]}
+            </Text>
+            {p.elo != null ? (
+              <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 10, color: Colors.brand }}>
+                Niv {formatPadelLevel(p.elo)}
+              </Text>
+            ) : null}
+          </View>
+        ))}
       </View>
+    </>
+  );
+
+  const style = {
+    flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 6,
+    backgroundColor: fond, borderWidth: gagnant || choisi ? 1.5 : 1, borderColor: bordure,
+  } as const;
+
+  if (!onPress) return <View style={style}>{contenu}</View>;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={style}>
+      {contenu}
     </TouchableOpacity>
   );
 }
@@ -108,7 +145,7 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
 }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [clashes, setClashes] = useState<Clash[]>([]);
+  const [clashes, setClashes] = useState<Carte[]>([]);
   const [choc, setChoc] = useState<string | null>(null);
   const [counts, setCounts] = useState<Record<string, PredictionCounts>>({});
   const [mine, setMine] = useState<Record<string, Team>>({});
@@ -118,27 +155,47 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
   const load = useCallback(() => {
     let vivant = true;
     (async () => {
-      const { start, end } = predictionWindow();
+      const { start, end } = clashWindow();
       const parties = await fetchClashCandidates(start, end);
       // On ne pronostique pas son propre match : l'issue dépend de nous.
-      const liste = withoutMyGames(clashesToPredict(parties), myId);
-      const avis = await fetchPredictionsForGames(liste.map(c => c.gameId));
+      const aVenir = withoutMyGames(clashesToPredict(parties), myId);
+      const jouees = withoutMyGames(clashesPlayed(parties), myId);
+      const toutes = [...aVenir, ...jouees];
+
+      const [avis, resultats] = await Promise.all([
+        fetchPredictionsForGames(toutes.map(c => c.gameId)),
+        fetchResultsForGames(jouees.map(c => c.gameId)),
+      ]);
       if (!vivant) return;
+
       const c: Record<string, PredictionCounts> = {};
       const m: Record<string, Team> = {};
-      for (const clash of liste) {
+      const cartes: Carte[] = [];
+      for (const clash of toutes) {
+        const result = resultats.get(clash.gameId) ?? null;
+        const phase = clashPhase(clash.matchDate, result);
+        // `null` : joué il y a longtemps, aucun score jamais saisi. La carte
+        // n'a plus rien à dire, elle sort du rail.
+        if (!phase) continue;
+
         const rows = avis.get(clash.gameId) ?? [];
         c[clash.gameId] = countPredictions(rows);
         const mien = rows.find(r => r.playerId === myId)?.team;
         if (mien) m[clash.gameId] = mien;
+
+        cartes.push({ ...clash, phase, result, winner: result ? winnerTeam(clash, result.winnerIds) : null });
       }
-      // Le match demandé d'abord, le reste dans l'ordre du calendrier.
-      const ordonne = focusGameId
-        ? [...liste].sort((a, b) => (a.gameId === focusGameId ? -1 : b.gameId === focusGameId ? 1 : 0))
-        : liste;
-      setClashes(ordonne); setChoc(tightestClashId(liste));
+
+      const ordonnees = orderRail(cartes.map(x => ({ ...x, mien: m[x.gameId] ?? null })));
+      // Le match demandé depuis l'accueil passe devant tout le reste.
+      const finales = focusGameId
+        ? [...ordonnees].sort((a, b) => (a.gameId === focusGameId ? -1 : b.gameId === focusGameId ? 1 : 0))
+        : ordonnees;
+
+      setClashes(finales);
+      setChoc(tightestClashId(aVenir));
       setCounts(c); setMine(m); setCharge(true);
-      onContent?.(liste.length > 0);
+      onContent?.(finales.length > 0);
     })();
     return () => { vivant = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,7 +205,7 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
 
   if (!charge || clashes.length === 0) return null;
 
-  const voter = async (clash: Clash, team: Team) => {
+  const voter = async (clash: Carte, team: Team) => {
     const avant = mine[clash.gameId] ?? null;
     setErreur(null);
     setMine(m => ({ ...m, [clash.gameId]: team }));
@@ -171,23 +228,30 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
   // Une carte par partie, presque pleine largeur : on en voit une, on devine
   // la suivante, et on fait défiler.
   const LARGEUR = Math.min(width - 56, 320);
-  const votes = clashes.filter(c => mine[c.gameId]).length;
+  const votables = clashes.filter(c => c.phase === 'a_venir');
+  const votes = votables.filter(c => mine[c.gameId]).length;
+  // Plus rien à voter : le rail ne parle que du passé, le titre le dit.
+  const titre = votables.length > 0 ? 'Qui va gagner ?' : 'Résultat du match';
 
   return (
     <View style={{ marginTop: 18 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <Icon name="swords" size={15} color={Colors.textPrimary} stroke={2} />
+        <Icon name={votables.length > 0 ? 'swords' : 'trophy'} size={15} color={Colors.textPrimary} stroke={2} />
         <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.welcome, fontSize: 16, lineHeight: 21, color: Colors.textPrimary, paddingRight: 6 }}>
-          Qui va gagner ?
+          {titre}
         </Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}>
-          <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.textSecondary }}>
-            {`${votes}/${clashes.length} pronostiqué${votes > 1 ? 's' : ''}`}
-          </Text>
-        </TouchableOpacity>
+        {votables.length > 0 ? (
+          <TouchableOpacity onPress={() => router.push('/(tabs)/lobby' as any)} hitSlop={8}>
+            <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11.5, color: Colors.textSecondary }}>
+              {`${votes}/${votables.length} pronostiqué${votes > 1 ? 's' : ''}`}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
       <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11.5, lineHeight: 16, color: Colors.textSecondary, marginTop: 2, marginBottom: 10 }}>
-        Tape la paire que tu vois gagner. Ça n'engage rien.
+        {votables.length > 0
+          ? "Tape la paire que tu vois gagner. Ça n'engage rien."
+          : 'Ce que tu avais vu, et ce qui s’est passé.'}
       </Text>
 
       <ScrollView
@@ -203,6 +267,21 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
           const mien = mine[clash.gameId] ?? null;
           const estLeChoc = clash.gameId === choc;
           const mise = clashStake(clash);
+          const aVenir = clash.phase === 'a_venir';
+          const termine = clash.phase === 'termine';
+          const gagnant = termine ? clash.winner : null;
+          const verdict = termine ? myVerdict(mien, clash.winner) : null;
+          // Avant le vote on ne montre pas la répartition : elle influencerait
+          // le choix. Une fois voté — ou les votes clos — plus rien à protéger.
+          const montrerBarre = c.total > 0 && (!aVenir || !!mien);
+
+          const phrase =
+            verdict === 'juste' ? 'Ton prono était correct.'
+            : verdict === 'rate' && mien ? `Pas cette fois. Tu avais pronostiqué : ${pairLabel(mien === 'A' ? clash.teamA : clash.teamB)}.`
+            : verdict === 'sans_prono' ? "Tu n'avais pas pronostiqué ce match."
+            : verdict === 'indecidable' ? 'La composition a changé : pas de verdict sur ce match.'
+            : null;
+
           return (
             <View key={clash.gameId} style={{ width: LARGEUR, borderRadius: 18, backgroundColor: SOMBRE, overflow: 'hidden' }}>
               {/* La griffe d'un défi : sa couleur dit le niveau de mise. */}
@@ -218,18 +297,73 @@ export function FeaturedClash({ myId, onContent, focusGameId }: {
                 <Text numberOfLines={1} style={{ flex: 1, fontFamily: Fonts.uiBold, fontSize: 11, color: BLANC_60 }}>
                   {clashWhenLabel(clash)}
                 </Text>
+                <PhasePill phase={clash.phase} />
               </View>
 
+              {/* Les tuiles ne sont plus tapables : le prono se rappelle en
+                  toutes lettres, le liseré seul deviendrait une énigme. */}
+              {clash.phase === 'en_cours' && mien ? (
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  backgroundColor: JAUNE_DOUX, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10, marginBottom: 10,
+                }}>
+                  <Icon name="check" size={11} color={Colors.brand} stroke={2.6} />
+                  <Text numberOfLines={1} style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: Colors.brand }}>
+                    {`Ton prono : ${pairLabel(mien === 'A' ? clash.teamA : clash.teamB)}`}
+                  </Text>
+                </View>
+              ) : null}
+
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Cote players={clash.teamA} choisi={mien === 'A'} part={mien ? predictionShare(c, 'A') : null} onPress={() => voter(clash, 'A')} />
+                <Cote
+                  players={clash.teamA}
+                  choisi={!termine && mien === 'A'}
+                  gagnant={gagnant === 'A'}
+                  terne={!!gagnant && gagnant !== 'A'}
+                  onPress={aVenir ? () => voter(clash, 'A') : undefined}
+                />
                 <Text style={{ fontFamily: Fonts.uiExtraBold, fontSize: 11, color: BLANC_45 }}>VS</Text>
-                <Cote players={clash.teamB} choisi={mien === 'B'} part={mien ? predictionShare(c, 'B') : null} onPress={() => voter(clash, 'B')} />
+                <Cote
+                  players={clash.teamB}
+                  choisi={!termine && mien === 'B'}
+                  gagnant={gagnant === 'B'}
+                  terne={!!gagnant && gagnant !== 'B'}
+                  onPress={aVenir ? () => voter(clash, 'B') : undefined}
+                />
               </View>
+
+              {termine ? (
+                <ClashOutcome
+                  winnerLabel={gagnant ? pairLabel(gagnant === 'A' ? clash.teamA : clash.teamB) : null}
+                  scoreText={scoreLabel(clash.result?.scoreText)}
+                  message={phrase}
+                  tone={verdict === 'juste' ? 'juste' : verdict === 'rate' ? 'rate' : 'neutre'}
+                  crowd={crowdShare(c, clash.winner)}
+                />
+              ) : null}
+
+              {clash.phase === 'en_cours' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+                  <Icon name="lock" size={12} color={BLANC_45} stroke={2.2} />
+                  <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45 }}>
+                    Les votes sont clos
+                  </Text>
+                </View>
+              ) : null}
+
+              {montrerBarre ? (
+                <CrowdBar
+                  labelA={pairLabel(clash.teamA)}
+                  labelB={pairLabel(clash.teamB)}
+                  shareA={predictionShare(c, 'A')}
+                  highlight={termine ? clash.winner : mien}
+                />
+              ) : null}
 
               <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 11, color: BLANC_45, marginTop: 10, textAlign: 'center' }}>
                 {c.total > 0
-                  ? `${c.total} avis${mien ? '' : " pour l'instant"}`
-                  : "Personne ne s'est encore prononcé"}
+                  ? `${c.total} pronostic${c.total > 1 ? 's' : ''}${aVenir && !mien ? " pour l'instant" : ''}`
+                  : "Personne ne s'est prononcé"}
               </Text>
               </View>
             </View>

@@ -112,26 +112,59 @@ export function teamLevel(players: ClashPlayer[]): number | null {
  * N'en montrer qu'UNE (le « choc ») laissait douze autres parties sans
  * personne pour en parler.
  */
-export function clashesToPredict(games: ClashGame[], now: Date = new Date(), limit = 8): Clash[] {
+export function clashesToPredict(games: ClashGame[], now: Date = new Date(), limit = 12): Clash[] {
   const out: Clash[] = [];
   for (const g of games) {
     const debut = Date.parse(g.matchDate);
     if (Number.isNaN(debut) || debut <= now.getTime()) continue;
-    // Un amical ne compte nulle part : rien a pronostiquer.
-    if (!isPredictable(g)) continue;
-
-    const teamA = g.players.filter(p => p.team === 'A');
-    const teamB = g.players.filter(p => p.team === 'B');
-    if (teamA.length !== 2 || teamB.length !== 2) continue;
-
-    const na = teamLevel(teamA);
-    const nb = teamLevel(teamB);
-    if (na == null || nb == null) continue;
-
-    out.push({ ...g, teamA, teamB, gap: Math.round(Math.abs(na - nb) * 100) / 100 });
+    const clash = toClash(g);
+    if (clash) out.push(clash);
   }
   return out
     .sort((a, b) => Date.parse(a.matchDate) - Date.parse(b.matchDate))
+    .slice(0, limit);
+}
+
+/**
+ * Une partie pronostiquable, sans regarder l'heure : 2 contre 2, les niveaux
+ * connus des deux cotes, et pas un amical.
+ *
+ * Sorti de `clashesToPredict` pour que le RESULTAT d'une partie deja jouee
+ * passe par exactement les memes conditions que son pronostic. Ces conditions
+ * ecrites a deux endroits, c'est une carte qu'on peut voter sans jamais en
+ * voir le resultat — ou l'inverse.
+ */
+export function toClash(g: ClashGame): Clash | null {
+  // Un amical ne compte nulle part : rien a pronostiquer.
+  if (!isPredictable(g)) return null;
+
+  const teamA = g.players.filter(p => p.team === 'A');
+  const teamB = g.players.filter(p => p.team === 'B');
+  if (teamA.length !== 2 || teamB.length !== 2) return null;
+
+  const na = teamLevel(teamA);
+  const nb = teamLevel(teamB);
+  if (na == null || nb == null) return null;
+
+  return { ...g, teamA, teamB, gap: Math.round(Math.abs(na - nb) * 100) / 100 };
+}
+
+/**
+ * Les parties DEJA commencees de la liste, la plus recente d'abord.
+ *
+ * Le pendant de `clashesToPredict` : meme definition d'un choc, l'autre cote
+ * du coup d'envoi.
+ */
+export function clashesPlayed(games: ClashGame[], now: Date = new Date(), limit = 12): Clash[] {
+  const out: Clash[] = [];
+  for (const g of games) {
+    const debut = Date.parse(g.matchDate);
+    if (Number.isNaN(debut) || debut > now.getTime()) continue;
+    const clash = toClash(g);
+    if (clash) out.push(clash);
+  }
+  return out
+    .sort((a, b) => Date.parse(b.matchDate) - Date.parse(a.matchDate))
     .slice(0, limit);
 }
 
@@ -172,7 +205,7 @@ export function oddsLine(counts: PredictionCounts, myTeam: Team | null): string 
   const part = predictionShare(counts, myTeam);
   if (part > 50) return `${part} % vous voient gagner. Confirmez.`;
   if (part < 50) return `${100 - part} % vous voient perdre. Donnez-leur tort.`;
-  return "Le club n'arrive pas à trancher. À vous de le faire.";
+  return "Ils n'arrivent pas à trancher. À vous de le faire.";
 }
 
 /** L'identifiant de la partie la plus serrée — elle porte la pastille « LE CHOC ». */
@@ -312,7 +345,7 @@ const MANQUE = isMissingRelation;
  * parties-là — elles s'affichaient « COMPLET » dans le Lobby et restaient
  * invisibles ici.
  */
-export async function fetchClashCandidates(start: Date, end: Date, limit = 40): Promise<ClashGame[]> {
+export async function fetchClashCandidates(start: Date, end: Date, limit = 80): Promise<ClashGame[]> {
   const { data, error } = await supabase
     .from('open_games')
     .select('id, match_date, location, status, game_format, is_challenge, stake_multiplier, creator_id, creator_side, creator:creator_id(id, name, elo_score, avatar_path, member_number), participants:game_participants(player_id, status, team_side, invite_expires_at, player:player_id(id, name, elo_score, avatar_path, member_number))')
