@@ -141,6 +141,13 @@ export function usePushNotifications() {
         case 'match':
           router.push('/(tabs)');
           break;
+        case 'availability':
+          // « Untel cherche a jouer » n'ouvrait RIEN : le switch n'avait pas
+          // de cas, donc on restait ou on etait. On ouvre le bloc des dispos
+          // de l'onglet Activite — l'endroit ou l'on voit qui est libre et ou
+          // l'on repond en se declarant a son tour.
+          router.push('/(tabs)/activite?focus=dispo' as any);
+          break;
         case 'message':
           if (data.gameId) router.push(`/chat/${data.gameId}` as any);
           else router.push('/(tabs)/chats');

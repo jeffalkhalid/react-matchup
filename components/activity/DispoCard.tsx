@@ -151,7 +151,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
       playerIds: friendIds,
       title: `${playerName} cherche à jouer`,
       body: alertBody(aPrevenir),
-      data: { type: 'availability' },
+      data: { type: 'availability', pid: playerId },
     });
     await markAlertSent(playerId, quand);
     setDernierEnvoi(quand); setMaintenant(Date.now()); setEnvoiEnCours(false);
