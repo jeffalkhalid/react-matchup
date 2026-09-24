@@ -20,7 +20,7 @@
 //
 // La logique (qui bloque, quel est mon terrain, ce qu'on annonce) vit dans
 // lib/tournamentEvening, avec ses tests. Ici, du rendu et des appels.
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextInput,
 } from 'react-native';
@@ -33,14 +33,18 @@ import {
   fetchTournament, fetchTournamentMatches, fetchTeams, fetchMatchEntries,
   fetchRegistrations, enterTournamentScore, validateTournamentScore,
   isFeatureDisabled, resultMessage, subscribeTournamentMatches, roundMinutesOf,
+  startCourtMatch, resetCourtStart, forfeitTournamentTeam,
   type Tournament, type TournamentMatch, type TournamentTeam,
   type TournamentMatchEntry, type TournamentRegistration,
 } from '../../../lib/tournaments';
 import { displayName } from '../../../lib/players';
 import {
-  eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel,
+  eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, inTeam,
+  formatCountdown, shouldTickClock,
   type CourtView, type CourtState,
 } from '../../../lib/tournamentEvening';
+import { syncCourtAlarms, expoAlarmPort, type AlarmPort } from '../../../lib/courtAlarm';
+import { loadAlarmMemory, persistAlarmMemory, purgeAlarmMemory } from '../../../lib/courtAlarmStorage';
 
 /** La couleur d'un état — la même partout sur l'écran.
  *  Les trois états sans score (Tâche 5) reprennent la teinte de l'ancien
@@ -75,8 +79,49 @@ export default function SoireeScreen() {
   const [regs, setRegs] = useState<TournamentRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [busyClock, setBusyClock] = useState(false);
+  const [busyForfeit, setBusyForfeit] = useState(false);
   const [a, setA] = useState('');
   const [b, setB] = useState('');
+
+  // L'heure affichée par le compte à rebours — rafraîchie chaque seconde,
+  // mais seulement pendant qu'un terrain décompte réellement (cf. l'effet plus
+  // bas, qui s'appuie sur `shouldTickClock`). Jamais un compteur qui avance
+  // tout seul : `eveningCourts` en refait le calcul à chaque tic, à partir de
+  // `started_at`, l'heure SERVEUR.
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+
+  // La mémoire des sonneries posées sur CE téléphone, et la porte vers
+  // expo-notifications — chargées UNE fois au montage. La mémoire est
+  // PERSISTÉE (lib/courtAlarmStorage, une clé par match) : un `useRef` seul
+  // survit à un changement d'écran mais pas à l'app tuée par l'OS entre le
+  // départ du chrono et la sonnerie, alors que les notifications déjà posées
+  // survivent, elles. Sans cette relecture au montage, revenir sur l'écran
+  // après un tue-et-relance poserait une DEUXIÈME paire de sonneries par-dessus
+  // la première déjà en attente.
+  const memoireAlarmes = useRef<Map<string, string[]>>(new Map());
+  const porteAlarmes = useRef<AlarmPort | null>(null);
+  const [alarmesPretes, setAlarmesPretes] = useState(false);
+
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      try {
+        const [memoire, porte] = await Promise.all([loadAlarmMemory(), expoAlarmPort()]);
+        if (annule) return;
+        memoireAlarmes.current = memoire;
+        porteAlarmes.current = porte;
+      } catch {
+        // Porte indisponible (permissions refusées, environnement sans
+        // notifications) : le compte à rebours affiché continue de marcher,
+        // aucune sonnerie ne se pose — la même dégradation que dans
+        // lib/courtAlarm.ts.
+      } finally {
+        if (!annule) setAlarmesPretes(true);
+      }
+    })();
+    return () => { annule = true; };
+  }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -110,6 +155,54 @@ export default function SoireeScreen() {
     return subscribeTournamentMatches(id, () => { load(); });
   }, [load, id]));
 
+  // `courts` et `mien` doivent exister AVANT tout retour anticipé : les deux
+  // effets qui suivent en dépendent, et les règles des Hooks interdisent de
+  // les appeler après un `if (...) return`. `roundMinutes` à 0 tant que `t`
+  // n'est pas chargé n'a pas d'effet observable : `eveningCourts` rend alors
+  // un tableau vide (aucun match), faute de tournoi ou de joueur.
+  const roundMinutes = t ? roundMinutesOf(t) : 0;
+  const courts = (t && player)
+    ? eveningCourts(matches, teams, entries, player.id, t.current_round, roundMinutes, maintenant)
+    : [];
+  const mien = myCourt(courts);
+
+  // Le chrono à l'écran ne tourne QUE pendant qu'un terrain décompte
+  // réellement (shouldTickClock) : un écran qui ne montre que des terrains à
+  // démarrer, acquis, forfait ou exempt n'a aucune raison de se redessiner
+  // chaque seconde.
+  useEffect(() => {
+    if (!shouldTickClock(courts)) return undefined;
+    const minuteur = setInterval(() => setMaintenant(Date.now()), 1000);
+    return () => clearInterval(minuteur);
+    // shouldTickClock(courts) est un booléen primitif : l'effet ne se
+    // redéclenche que lorsqu'il change de valeur, jamais à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldTickClock(courts)]);
+
+  // Les sonneries de MON terrain, mises à l'heure du serveur — au changement
+  // de match ou d'état, JAMAIS à chaque tic du chrono : la mémoire empêche déjà
+  // les doublons, un appel par seconde ne ferait que noyer le journal et
+  // multiplier les écritures de stockage pour rien.
+  useEffect(() => {
+    if (!alarmesPretes || !porteAlarmes.current) return;
+    const etat = {
+      matchId: mien?.matchId ?? null,
+      courtNo: mien?.courtNo ?? 0,
+      secondsLeft: mien?.secondsLeft ?? null,
+      hasScore: mien?.gamesA != null,
+    };
+    const avant = [...memoireAlarmes.current.keys()];
+    (async () => {
+      await syncCourtAlarms(etat, porteAlarmes.current!, memoireAlarmes.current);
+      // Écrit les changements (pose ou annulation) avant de purger, sinon une
+      // annulation qui vient d'avoir lieu en mémoire ne serait jamais reportée
+      // dans le stockage.
+      await persistAlarmMemory(avant, memoireAlarmes.current);
+      await purgeAlarmMemory(etat.matchId);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alarmesPretes, mien?.matchId, mien?.secondsLeft === null, mien?.gamesA]);
+
   if (loading || !player) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.heroBg, justifyContent: 'center' }}>
@@ -119,13 +212,6 @@ export default function SoireeScreen() {
   }
   if (!t) return null;
 
-  // roundMinutes et l'heure courante n'affinent ici que la couleur/pastille du
-  // terrain muet (Tâche 5) ; le compte à rebours affiché à l'écran est la
-  // Tâche 7.
-  const courts = eveningCourts(
-    matches, teams, entries, player.id, t.current_round, roundMinutesOf(t), Date.now(),
-  );
-  const mien = myCourt(courts);
   const blocage = blockingLabel(courts);
   const avancement = courtsDone(courts);
 
@@ -140,6 +226,13 @@ export default function SoireeScreen() {
   };
 
   const matchMien = mien ? matches.find(m => m.id === mien.matchId) ?? null : null;
+  // Le binôme auquel J'APPARTIENS sur ce match — pas « team_a » : côté A ou
+  // côté B selon le tirage, `forfeitTournamentTeam` veut l'id du binôme, pas
+  // un côté.
+  const monEquipe = matchMien
+    ? teams.find(tm => (tm.id === matchMien.team_a || tm.id === matchMien.team_b)
+        && inTeam(tm, player.id)) ?? null
+    : null;
 
   const envoyer = async () => {
     if (!matchMien) return;
@@ -170,6 +263,64 @@ export default function SoireeScreen() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // « ON COMMENCE » — n'importe lequel des quatre joueurs. Deux appuis dans la
+  // même seconde rendent tous les deux `ok:true` (le second reçoit l'heure du
+  // premier, jamais un refus) : rien de spécial à gérer ici.
+  const commencer = async () => {
+    if (!matchMien) return;
+    setBusyClock(true);
+    try {
+      const res = await startCourtMatch(matchMien.id);
+      if (!res.ok) { Alert.alert('Impossible', resultMessage(res)); return; }
+      await load();
+    } finally {
+      setBusyClock(false);
+    }
+  };
+
+  // « Remettre le chrono à zéro » — le serveur refuse dès qu'un score existe
+  // (`already_scored`) : on montre CE refus tel quel plutôt que de cacher le
+  // lien, pour que le joueur comprenne pourquoi ça ne marche plus.
+  const remettreAZero = async () => {
+    if (!matchMien) return;
+    setBusyClock(true);
+    try {
+      const res = await resetCourtStart(matchMien.id);
+      if (!res.ok) { Alert.alert('Impossible', resultMessage(res)); return; }
+      await load();
+    } finally {
+      setBusyClock(false);
+    }
+  };
+
+  // « Nous abandonnons » — IRRÉVERSIBLE : la confirmation dit exactement ce
+  // qui se passe, comme le forfait déclaré par l'organisateur (admin.tsx).
+  // Un seul des deux membres du binôme suffit désormais.
+  const abandonner = () => {
+    if (!matchMien || !monEquipe) return;
+    Alert.alert(
+      'Nous abandonnons ?',
+      'C’est définitif : votre adversaire remporte le match en cours, et la soirée continue sans vous.',
+      [
+        { text: 'Continuer à jouer', style: 'cancel' },
+        {
+          text: 'Nous abandonnons',
+          style: 'destructive',
+          onPress: async () => {
+            setBusyForfeit(true);
+            try {
+              const res = await forfeitTournamentTeam(t.id, monEquipe.id);
+              if (!res.ok) { Alert.alert('Impossible', resultMessage(res)); return; }
+              await load();
+            } finally {
+              setBusyForfeit(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -204,6 +355,64 @@ export default function SoireeScreen() {
             <Text style={{ fontSize: 52, fontFamily: Fonts.display, color: Colors.textPrimary, textAlign: 'center', lineHeight: 56 }}>
               {mien.courtNo}
             </Text>
+
+            {/* Le chrono de CE terrain — un geste différent pour chacun des
+                trois temps sans score : lancer, patienter, ou aller chercher
+                un score qui ne vient pas. */}
+            {mien.state === 'a_demarrer' && (
+              <View style={{ gap: 8, alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={commencer}
+                  disabled={busyClock}
+                  activeOpacity={0.85}
+                  style={{
+                    backgroundColor: Colors.primary, borderRadius: 14,
+                    paddingVertical: 14, paddingHorizontal: 32, opacity: busyClock ? 0.6 : 1,
+                  }}
+                >
+                  {busyClock
+                    ? <ActivityIndicator color={Colors.textOnDark} />
+                    : (
+                      <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                        ON COMMENCE
+                      </Text>
+                    )}
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textMuted, textAlign: 'center', lineHeight: 17 }}>
+                  Le chrono part pour {roundMinutes} minutes, pour les quatre joueurs.
+                </Text>
+              </View>
+            )}
+
+            {mien.state === 'en_cours' && mien.secondsLeft != null && (
+              <View style={{ gap: 6, alignItems: 'center' }}>
+                <Text style={{ fontSize: 44, fontFamily: Fonts.display, color: Colors.textPrimary, textAlign: 'center' }}>
+                  {formatCountdown(mien.secondsLeft)}
+                </Text>
+                <TouchableOpacity onPress={remettreAZero} disabled={busyClock} hitSlop={8}>
+                  <Text style={{
+                    fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted,
+                    textDecorationLine: 'underline', opacity: busyClock ? 0.5 : 1,
+                  }}>
+                    Remettre le chrono à zéro
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {mien.state === 'temps_ecoule' && (
+              <View style={{
+                backgroundColor: Colors.danger + '18', borderRadius: 14,
+                paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', gap: 2,
+              }}>
+                <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.danger, textAlign: 'center' }}>
+                  TEMPS ÉCOULÉ
+                </Text>
+                <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted, textAlign: 'center' }}>
+                  Entrez le score ci-dessous — la rotation suivante attend.
+                </Text>
+              </View>
+            )}
 
             <View style={{ gap: 6 }}>
               <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: Fonts.uiExtraBold, color: Colors.textPrimary, textAlign: 'center' }}>
@@ -260,6 +469,21 @@ export default function SoireeScreen() {
                     )}
                 </TouchableOpacity>
               </View>
+            )}
+
+            {/* « Nous abandonnons » — irréversible, à ne montrer que si l'on n'a
+                pas déjà quitté ce tournoi (forfait déjà déclaré). */}
+            {mien.state !== 'forfait' && monEquipe && (
+              <TouchableOpacity
+                onPress={abandonner}
+                disabled={busyForfeit}
+                hitSlop={8}
+                style={{ alignItems: 'center', paddingTop: 2, opacity: busyForfeit ? 0.5 : 1 }}
+              >
+                <Text style={{ fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.danger }}>
+                  Nous abandonnons
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
         ) : (

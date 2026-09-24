@@ -6,6 +6,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 
 import {
   courtState, eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, secondsLeft,
+  formatCountdown, shouldTickClock,
 } from '../tournamentEvening';
 
 const M = (o: any = {}) => ({
@@ -214,5 +215,41 @@ describe('le chrono d un terrain', () => {
     expect(blocks('en_cours')).toBe(true);
     expect(blocks('temps_ecoule')).toBe(true);
     expect(blocks('provisoire')).toBe(false);
+  });
+});
+
+describe('le compte a rebours affiche', () => {
+  it('formate en mm:ss', () => {
+    expect(formatCountdown(0)).toBe('00:00');
+    expect(formatCountdown(59)).toBe('00:59');
+    expect(formatCountdown(60)).toBe('01:00');
+    expect(formatCountdown(605)).toBe('10:05');
+  });
+
+  it('n affiche jamais un temps negatif — au-dela de zero c est temps_ecoule qui parle', () => {
+    expect(formatCountdown(-45)).toBe('00:00');
+  });
+
+  it('arrondit', () => {
+    expect(formatCountdown(59.6)).toBe('01:00');
+  });
+});
+
+describe('faut-il faire tourner l horloge', () => {
+  const vue = (courtNo: number, state: any) =>
+    ({ matchId: `m${courtNo}`, courtNo, state, mine: false, gamesA: null, gamesB: null,
+       secondsLeft: null });
+
+  it('oui, des qu un terrain decompte', () => {
+    expect(shouldTickClock([vue(1, 'a_demarrer'), vue(2, 'en_cours')])).toBe(true);
+  });
+
+  it('non, un ecran de terrains finis ou pas encore lances n a rien a redessiner chaque seconde', () => {
+    expect(shouldTickClock([vue(1, 'acquis'), vue(2, 'a_demarrer'), vue(3, 'temps_ecoule')]))
+      .toBe(false);
+  });
+
+  it('non, aucun terrain', () => {
+    expect(shouldTickClock([])).toBe(false);
   });
 });

@@ -119,6 +119,29 @@ export function courtState(
   return reste > 0 ? 'en_cours' : 'temps_ecoule';
 }
 
+/** Le compte à rebours affiché à l'écran, `mm:ss`. Jamais négatif : au-delà de
+ *  zéro c'est l'état `temps_ecoule` qui prend le relais, pas un décompte qui
+ *  continuerait sous zéro. */
+export function formatCountdown(seconds: number): string {
+  const reste = Math.max(0, Math.round(seconds));
+  const mm = Math.floor(reste / 60);
+  const ss = reste % 60;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+/**
+ * Faut-il faire tourner l'horloge d'affichage (un `setInterval` d'une
+ * seconde) ?
+ *
+ * Seulement si un terrain décompte réellement — un écran qui ne montre que
+ * des terrains à démarrer, acquis, forfait ou exempt n'a aucune raison de se
+ * redessiner chaque seconde : rien n'y change tant que quelqu'un n'a pas
+ * appuyé sur un bouton.
+ */
+export function shouldTickClock(courts: CourtView[]): boolean {
+  return courts.some(c => c.state === 'en_cours');
+}
+
 /** Les joueurs d'un binôme, tels quels — jamais « toi / l'adversaire ». */
 function teamOf(teams: TournamentTeam[], id: string | null): TournamentTeam | null {
   return id ? teams.find(t => t.id === id) ?? null : null;

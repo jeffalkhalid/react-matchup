@@ -161,6 +161,15 @@ export function usePushNotifications() {
           if (data.pid) router.push(`/player/${data.pid}?showcase=1` as any);
           else router.push('/(tabs)/matchmaking');
           break;
+        case 'tournament':
+          // Aujourd'hui un push de tournoi n'ouvrait RIEN : on restait où on
+          // était, et « tu vas au Terrain 2 » ne menait nulle part.
+          if (data.kind === 'round' && data.tournamentId) {
+            router.push(`/tournaments/soiree/${data.tournamentId}` as any);
+          } else if (data.tournamentId) {
+            router.push(`/tournaments/${data.tournamentId}` as any);
+          }
+          break;
       }
     });
     return () => sub.remove();
