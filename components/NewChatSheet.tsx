@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, Modal, ScrollView, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  Keyboard, Platform, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '../lib/theme';
@@ -106,6 +106,21 @@ export function NewChatSheet({ visible, onClose, startables, dejaOuvertes, myId,
   const insets = useSafeAreaInsets();
   const [choisi, setChoisi] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [kbHeight, setKbHeight] = useState(0);
+
+  // KeyboardAvoidingView ne marche pas dans un <Modal> Android : la fenêtre du
+  // Modal n'hérite pas du `adjustResize` de l'activité. La feuille étant
+  // ancrée en bas, le clavier recouvrait le champ. On suit donc la hauteur du
+  // clavier et on relève la feuille d'autant — c'est la solution déjà retenue
+  // pour <ApplicationNoteSheet>, et il ne doit y en avoir qu'une.
+  // iOS : événements « Will » (plus fluides). Android : « Did ».
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const sub = Keyboard.addListener(showEvt, e => setKbHeight(e.endCoordinates?.height ?? 0));
+    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { sub.remove(); hideSub.remove(); };
+  }, []);
 
   const game = useMemo(() => startables.find(g => g.id === choisi) ?? null, [startables, choisi]);
 
@@ -118,24 +133,35 @@ export function NewChatSheet({ visible, onClose, startables, dejaOuvertes, myId,
   const pret = !!game && message.trim().length > 0;
 
   const fermer = () => {
+    Keyboard.dismiss();
     setChoisi(null);
     setMessage('');
     onClose();
   };
 
+  // Une fois le message écrit, « Envoyer » suffit : ce qui est créé derrière
+  // est l'affaire de l'app, pas celle du joueur.
   const libelle = !game ? 'Choisis un match'
     : message.trim().length === 0 ? 'Écris un premier message'
-    : 'Envoyer et créer';
+    : 'Envoyer';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={fermer}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(10,10,10,0.45)', justifyContent: 'flex-end' }}>
+      <View style={{
+        flex: 1, justifyContent: 'flex-end',
+        backgroundColor: 'rgba(10,10,10,0.45)', paddingBottom: kbHeight,
+      }}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={fermer} />
 
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View>
           <View style={{
             backgroundColor: Colors.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            maxHeight: 700, paddingBottom: 28 + insets.bottom,
+            // Une hauteur RELATIVE : clavier ouvert, la place disponible fond,
+            // et une borne fixe de 700 aurait débordé par le bas.
+            maxHeight: '92%',
+            // L'encoche du bas est sous le clavier quand il est ouvert : la
+            // compter là ne ferait que gaspiller de la hauteur.
+            paddingBottom: 28 + (kbHeight > 0 ? 0 : insets.bottom),
           }}>
             <View style={{ alignItems: 'center', marginTop: 8 }}>
               <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: POINTILLES }} />
@@ -161,8 +187,11 @@ export function NewChatSheet({ visible, onClose, startables, dejaOuvertes, myId,
               </TouchableOpacity>
             </View>
 
+            {/* `flexShrink` : c'est la LISTE qui cede quand la place manque,
+                pas le pied de la feuille — le champ et le bouton restent
+                visibles quoi qu'il arrive. */}
             <ScrollView
-              style={{ paddingHorizontal: 16 }}
+              style={{ paddingHorizontal: 16, flexShrink: 1 }}
               contentContainerStyle={{ paddingBottom: 8 }}
               keyboardShouldPersistTaps="handled"
             >
@@ -295,7 +324,7 @@ export function NewChatSheet({ visible, onClose, startables, dejaOuvertes, myId,
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );
