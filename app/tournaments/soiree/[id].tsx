@@ -32,7 +32,7 @@ import { Icon } from '../../../components/community/icons';
 import {
   fetchTournament, fetchTournamentMatches, fetchTeams, fetchMatchEntries,
   fetchRegistrations, enterTournamentScore, validateTournamentScore,
-  isFeatureDisabled, resultMessage, subscribeTournamentMatches,
+  isFeatureDisabled, resultMessage, subscribeTournamentMatches, roundMinutesOf,
   type Tournament, type TournamentMatch, type TournamentTeam,
   type TournamentMatchEntry, type TournamentRegistration,
 } from '../../../lib/tournaments';
@@ -42,18 +42,24 @@ import {
   type CourtView, type CourtState,
 } from '../../../lib/tournamentEvening';
 
-/** La couleur d'un état — la même partout sur l'écran. */
+/** La couleur d'un état — la même partout sur l'écran.
+ *  Les trois états sans score (Tâche 5) reprennent la teinte de l'ancien
+ *  `vide` qu'ils remplacent : les distinguer visuellement est un choix
+ *  d'écran, laissé à la Tâche 7. */
 const TEINTE: Record<CourtState, string> = {
-  vide:       Colors.danger,
-  litige:     Colors.danger,
-  provisoire: Colors.brandDeep,
-  acquis:     Colors.success,
-  forfait:    Colors.textMuted,
-  exempt:     Colors.textMuted,
+  a_demarrer:   Colors.danger,
+  en_cours:     Colors.danger,
+  temps_ecoule: Colors.danger,
+  litige:       Colors.danger,
+  provisoire:   Colors.brandDeep,
+  acquis:       Colors.success,
+  forfait:      Colors.textMuted,
+  exempt:       Colors.textMuted,
 };
 
 const PASTILLE: Record<CourtState, string> = {
-  vide: '·', litige: '!', provisoire: '~', acquis: '✓', forfait: '—', exempt: '—',
+  a_demarrer: '·', en_cours: '·', temps_ecoule: '·',
+  litige: '!', provisoire: '~', acquis: '✓', forfait: '—', exempt: '—',
 };
 
 export default function SoireeScreen() {
@@ -113,7 +119,12 @@ export default function SoireeScreen() {
   }
   if (!t) return null;
 
-  const courts = eveningCourts(matches, teams, entries, player.id, t.current_round);
+  // roundMinutes et l'heure courante n'affinent ici que la couleur/pastille du
+  // terrain muet (Tâche 5) ; le compte à rebours affiché à l'écran est la
+  // Tâche 7.
+  const courts = eveningCourts(
+    matches, teams, entries, player.id, t.current_round, roundMinutesOf(t), Date.now(),
+  );
   const mien = myCourt(courts);
   const blocage = blockingLabel(courts);
   const avancement = courtsDone(courts);

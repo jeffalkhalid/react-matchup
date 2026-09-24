@@ -734,10 +734,11 @@ export interface TournamentMatch {
   games_b: number | null;
   forfeited_team: string | null;
   confirmed_at: string | null;
+  started_at: string | null;
 }
 
 const TOURNAMENT_MATCH_COLS =
-  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at';
+  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at, started_at';
 
 /** Les matchs d'UN TOUR, terrain par terrain — le tableau de la soirée.
  *  Triés Terrain 1 en premier : « du Terrain 1 en haut » se lit directement
@@ -1411,6 +1412,18 @@ export function resolveTournamentDispute(
  *  franchise que pour la réouverture. */
 export function forfeitTournamentTeam(tournamentId: string, teamId: string): Promise<TournamentResult> {
   return callTournamentRpc('tournament_forfeit', { p_tournament: tournamentId, p_team: teamId });
+}
+
+/** « On commence » — le chrono de CE terrain part. N'importe lequel des quatre
+ *  joueurs, et deux appuis simultanés rendent la même heure (`already:true`),
+ *  jamais un refus : c'est le cas normal, pas une erreur. */
+export function startCourtMatch(matchId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_start_match', { p_match: matchId });
+}
+
+/** Quelqu'un a appuyé trop tôt. Refusé dès qu'un score existe. */
+export function resetCourtStart(matchId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_reset_match_start', { p_match: matchId });
 }
 
 /** Rouvrir un score acquis — le SEUL chemin qui en défasse un. DÉTRUIT tous

@@ -5,13 +5,13 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../supabase', () => ({ supabase: {} }));
 
 import {
-  courtState, eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel,
+  courtState, eveningCourts, myCourt, blockingLabel, blocks, courtsDone, roundLabel, secondsLeft,
 } from '../tournamentEvening';
 
 const M = (o: any = {}) => ({
   id: 'm1', tournament_id: 't', round_no: 2, court_no: 3,
   team_a: 'A', team_b: 'B', games_a: null, games_b: null,
-  forfeited_team: null, confirmed_at: null, ...o,
+  forfeited_team: null, confirmed_at: null, started_at: null, ...o,
 });
 const T = (id: string, p1: string, p2: string) =>
   ({ id, tournament_id: 't', player1_id: p1, player2_id: p2, withdrawn: false });
@@ -20,12 +20,18 @@ const E = (matchId: string, player: string, a: number, b: number) => ({
   player_id: player, games_a: a, games_b: b, entered_at: '2026-09-11T20:20:00Z',
 });
 
+// Le chrono n'entre pas en jeu dans les tests qui suivent (sauf le dernier
+// describe, qui le teste explicitement) : round/now arbitraires, sans effet
+// puisque ces matchs se resolvent avant meme d'atteindre la branche chrono.
+const RM = 15;
+const N = 0;
+
 const EQUIPES = [T('A', 'mina', 'alamine'), T('B', 'admin', 'devq')];
 
 describe('l etat d un terrain', () => {
-  it('VIDE quand personne n a saisi — et ca bloque', () => {
-    expect(courtState(M(), [], [])).toBe('vide');
-    expect(blocks('vide')).toBe(true);
+  it('A DEMARRER quand personne n a lance le chrono — et ca bloque', () => {
+    expect(courtState(M(), [], [], RM, N)).toBe('a_demarrer');
+    expect(blocks('a_demarrer')).toBe(true);
   });
 
   it('PROVISOIRE quand un seul camp a saisi — et ca ne bloque PAS', () => {
@@ -33,13 +39,13 @@ describe('l etat d un terrain', () => {
     // dans les deux cas. Les confondre ferait afficher « en attente » sur un
     // terrain qui n'empeche rien, et paniquer a chaque rotation.
     const m = M({ games_a: 6, games_b: 4 });
-    expect(courtState(m, [E('m1', 'mina', 6, 4)], [])).toBe('provisoire');
+    expect(courtState(m, [E('m1', 'mina', 6, 4)], [], RM, N)).toBe('provisoire');
     expect(blocks('provisoire')).toBe(false);
   });
 
   it('ACQUIS quand les deux camps concordent', () => {
     const m = M({ games_a: 6, games_b: 4, confirmed_at: '2026-09-11T20:21:00Z' });
-    expect(courtState(m, [E('m1', 'mina', 6, 4)], [E('m1', 'admin', 6, 4)])).toBe('acquis');
+    expect(courtState(m, [E('m1', 'mina', 6, 4)], [E('m1', 'admin', 6, 4)], RM, N)).toBe('acquis');
   });
 
   it('LITIGE quand ils se contredisent — et ca bloque', () => {
@@ -47,13 +53,13 @@ describe('l etat d un terrain', () => {
     // l'autre monte, et la rotation suivante se joue contre les mauvais
     // adversaires. Ca ne se rattrape pas apres coup.
     const m = M({ games_a: 6, games_b: 4 });
-    expect(courtState(m, [E('m1', 'mina', 6, 4)], [E('m1', 'admin', 4, 6)])).toBe('litige');
+    expect(courtState(m, [E('m1', 'mina', 6, 4)], [E('m1', 'admin', 4, 6)], RM, N)).toBe('litige');
     expect(blocks('litige')).toBe(true);
   });
 
   it('EXEMPT sans adversaire, FORFAIT quand un camp a declare', () => {
-    expect(courtState(M({ team_b: null }), [], [])).toBe('exempt');
-    expect(courtState(M({ forfeited_team: 'B' }), [], [])).toBe('forfait');
+    expect(courtState(M({ team_b: null }), [], [], RM, N)).toBe('exempt');
+    expect(courtState(M({ forfeited_team: 'B' }), [], [], RM, N)).toBe('forfait');
   });
 });
 
@@ -69,7 +75,7 @@ describe('les terrains de la rotation', () => {
     T('E', 'e1', 'e2'), T('F', 'f1', 'f2')];
 
   it('ne garde que la rotation EN COURS', () => {
-    const c = eveningCourts(matches, teams, [], 'mina', 2);
+    const c = eveningCourts(matches, teams, [], 'mina', 2, RM, N);
     expect(c.map(x => x.courtNo)).toEqual([1, 2, 3]);
   });
 
@@ -77,23 +83,23 @@ describe('les terrains de la rotation', () => {
     // C'est l'ordre du gymnase, le seul que tout le monde partage. Trier par
     // etat ferait sauter les cartes d'une rotation a l'autre alors qu'on
     // cherche « le terrain 5 » avec les yeux.
-    const c = eveningCourts(matches, teams, [], 'mina', 2);
+    const c = eveningCourts(matches, teams, [], 'mina', 2, RM, N);
     expect(c.map(x => x.courtNo)).toEqual([1, 2, 3]);
   });
 
   it('marque MON terrain, et lui seul', () => {
-    const c = eveningCourts(matches, teams, [], 'mina', 2);
+    const c = eveningCourts(matches, teams, [], 'mina', 2, RM, N);
     expect(c.filter(x => x.mine).map(x => x.courtNo)).toEqual([3]);
     expect(myCourt(c)?.courtNo).toBe(3);
   });
 
   it('me trouve aussi quand je suis dans le camp B', () => {
-    const c = eveningCourts(matches, teams, [], 'devq', 2);
+    const c = eveningCourts(matches, teams, [], 'devq', 2, RM, N);
     expect(myCourt(c)?.courtNo).toBe(3);
   });
 
   it('rend null quand je ne joue pas cette rotation', () => {
-    expect(myCourt(eveningCourts(matches, teams, [], 'inconnu', 2))).toBe(null);
+    expect(myCourt(eveningCourts(matches, teams, [], 'inconnu', 2, RM, N))).toBe(null);
   });
 
   it('range les saisies du bon cote', () => {
@@ -102,42 +108,49 @@ describe('les terrains de la rotation', () => {
     const e = [E('m1', 'mina', 6, 4), E('m1', 'admin', 6, 4)];
     const m = matches.map(x => x.id === 'm1'
       ? M({ ...x, games_a: 6, games_b: 4, confirmed_at: 'x' }) : x);
-    const c = eveningCourts(m, teams, e, 'mina', 2);
+    const c = eveningCourts(m, teams, e, 'mina', 2, RM, N);
     expect(c.find(x => x.courtNo === 3)!.state).toBe('acquis');
   });
 });
 
 describe('ce qui bloque, dit a tout le monde', () => {
   const vue = (courtNo: number, state: any) =>
-    ({ matchId: `m${courtNo}`, courtNo, state, mine: false, gamesA: null, gamesB: null });
+    ({ matchId: `m${courtNo}`, courtNo, state, mine: false, gamesA: null, gamesB: null,
+       secondsLeft: null });
 
   it('ne dit rien quand rien ne bloque', () => {
     expect(blockingLabel([vue(1, 'acquis'), vue(2, 'provisoire')])).toBe(null);
   });
 
-  it('distingue « pas de score » de « desaccord »', () => {
-    // Deux manques differents, deux gestes differents : aller chercher quatre
-    // joueurs, ou demander a deux camps de se mettre d'accord.
-    const txt = blockingLabel([vue(5, 'vide'), vue(8, 'litige')])!;
-    expect(txt).toContain('Terrain 5 : pas de score rentré');
+  it('distingue les trois manques sans score, et le desaccord', () => {
+    // Trois manques differents, trois gestes differents : aller chercher
+    // quatre joueurs, attendre la fin du chrono, ou demander a deux camps de
+    // se mettre d'accord.
+    const txt = blockingLabel([
+      vue(5, 'a_demarrer'), vue(6, 'en_cours'), vue(9, 'temps_ecoule'), vue(8, 'litige'),
+    ])!;
+    expect(txt).toContain('Terrain 5 : pas encore commencé');
+    expect(txt).toContain('Terrain 6 : en cours');
+    expect(txt).toContain('Terrain 9 : temps écoulé — score attendu');
     expect(txt).toContain('Terrain 8 : les deux camps ne disent pas la même chose');
   });
 
   it('groupe les terrains de meme manque', () => {
-    expect(blockingLabel([vue(5, 'vide'), vue(7, 'vide')]))
-      .toBe('Terrains 5, 7 : pas de score rentré');
+    expect(blockingLabel([vue(5, 'a_demarrer'), vue(7, 'a_demarrer')]))
+      .toBe('Terrains 5, 7 : pas encore commencé');
   });
 });
 
 describe('la jauge de la soiree', () => {
   const vue = (courtNo: number, state: any) =>
-    ({ matchId: `m${courtNo}`, courtNo, state, mine: false, gamesA: null, gamesB: null });
+    ({ matchId: `m${courtNo}`, courtNo, state, mine: false, gamesA: null, gamesB: null,
+       secondsLeft: null });
 
   it('compte un terrain PROVISOIRE comme fini', () => {
     // Son score est effectif, il n'empeche rien. Ne compter que les acquis
     // afficherait un retard qui n'existe pas et pousserait a relancer des
     // gens qui ont deja fait leur part.
-    expect(courtsDone([vue(1, 'acquis'), vue(2, 'provisoire'), vue(3, 'vide')]))
+    expect(courtsDone([vue(1, 'acquis'), vue(2, 'provisoire'), vue(3, 'a_demarrer')]))
       .toEqual({ done: 2, total: 3 });
   });
 
@@ -154,5 +167,52 @@ describe('la jauge de la soiree', () => {
 describe('le libelle de rotation', () => {
   it('se lit sans calcul', () => {
     expect(roundLabel(2, 6)).toBe('Rotation 2 sur 6');
+  });
+});
+
+describe('le chrono d un terrain', () => {
+  const DEBUT = '2026-09-24T20:00:00.000Z';
+  const t = (iso: string) => new Date(iso).getTime();
+
+  it('rend le temps restant en secondes', () => {
+    expect(secondsLeft(DEBUT, 15, t('2026-09-24T20:05:00.000Z'))).toBe(600);
+  });
+
+  it('rend un nombre negatif quand le temps est depasse', () => {
+    expect(secondsLeft(DEBUT, 15, t('2026-09-24T20:17:00.000Z'))).toBe(-120);
+  });
+
+  it('rend null tant que le terrain n a pas demarre', () => {
+    expect(secondsLeft(null, 15, t(DEBUT))).toBeNull();
+  });
+
+  it('dit « a demarrer » tant que personne n a lance le chrono', () => {
+    const c = eveningCourts([M({ started_at: null })], EQUIPES, [], 'mina', 2, 15, t(DEBUT));
+    expect(c[0].state).toBe('a_demarrer');
+  });
+
+  it('dit « en cours » pendant les quinze minutes', () => {
+    const c = eveningCourts([M({ started_at: DEBUT })], EQUIPES, [], 'mina', 2, 15,
+      t('2026-09-24T20:05:00.000Z'));
+    expect(c[0].state).toBe('en_cours');
+  });
+
+  it('dit « temps ecoule » apres la fin, tant qu aucun score n est saisi', () => {
+    const c = eveningCourts([M({ started_at: DEBUT })], EQUIPES, [], 'mina', 2, 15,
+      t('2026-09-24T20:16:00.000Z'));
+    expect(c[0].state).toBe('temps_ecoule');
+  });
+
+  it('un score saisi l emporte sur le chrono', () => {
+    const c = eveningCourts([M({ started_at: DEBUT, games_a: 6, games_b: 3 })], EQUIPES,
+      [E('m1', 'mina', 6, 3)], 'mina', 2, 15, t('2026-09-24T20:05:00.000Z'));
+    expect(c[0].state).toBe('provisoire');
+  });
+
+  it('les trois etats sans score bloquent la rotation suivante', () => {
+    expect(blocks('a_demarrer')).toBe(true);
+    expect(blocks('en_cours')).toBe(true);
+    expect(blocks('temps_ecoule')).toBe(true);
+    expect(blocks('provisoire')).toBe(false);
   });
 });

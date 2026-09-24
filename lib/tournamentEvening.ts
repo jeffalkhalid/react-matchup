@@ -28,7 +28,10 @@ import { matchLiveStatus, type MatchLiveStatus, type TournamentMatch,
  * séparer, parce qu'elles n'appellent pas le même geste :
  *
  *   * personne n'a rien saisi — le tirage suivant est bloqué, il faut aller
- *     chercher les quatre joueurs ;
+ *     chercher les quatre joueurs ; ce manque se subdivise encore en trois,
+ *     selon le chrono du terrain (`a_demarrer` / `en_cours` / `temps_ecoule`),
+ *     parce que ces trois-là n'appellent pas non plus le même geste : lancer
+ *     le chrono, patienter, ou aller chercher un score qui ne vient pas ;
  *   * un camp a saisi, l'autre n'a pas encore répondu — le score compte déjà,
  *     la soirée n'attend personne, il n'y a rien à faire.
  *
@@ -36,8 +39,12 @@ import { matchLiveStatus, type MatchLiveStatus, type TournamentMatch,
  * rien, et paniquer pour rien à chaque rotation.
  */
 export type CourtState =
-  /** Aucune saisie. BLOQUE le tirage suivant. */
-  | 'vide'
+  /** Personne n'a lancé le chrono. BLOQUE le tirage suivant. */
+  | 'a_demarrer'
+  /** Le chrono tourne, personne n'a encore saisi. BLOQUE. */
+  | 'en_cours'
+  /** Le temps est écoulé, personne n'a saisi. BLOQUE. */
+  | 'temps_ecoule'
   /** Un camp a saisi, l'autre n'a pas répondu. Le score compte, rien ne bloque. */
   | 'provisoire'
   /** Les deux camps se contredisent. BLOQUE — on ne sait pas qui monte. */
@@ -58,11 +65,27 @@ export interface CourtView {
   /** Le score effectif, `null` tant que personne n'a saisi. */
   gamesA: number | null;
   gamesB: number | null;
+  /** Le temps restant sur CE terrain — voir `secondsLeft`. */
+  secondsLeft: number | null;
 }
 
-/** Les deux états qui empêchent de tirer la rotation suivante. */
+/** Les états qui empêchent de tirer la rotation suivante : les trois sans
+ *  score, plus le désaccord. `'provisoire'` n'en fait PAS partie — un score
+ *  compte dès qu'un camp l'a saisi, même si l'autre n'a pas encore répondu. */
 export function blocks(state: CourtState): boolean {
-  return state === 'vide' || state === 'litige';
+  return state === 'a_demarrer' || state === 'en_cours' || state === 'temps_ecoule'
+    || state === 'litige';
+}
+
+/** Le temps restant sur un terrain, en secondes — négatif une fois dépassé.
+ *  `null` tant que personne n'a lancé le chrono. Dérivé de l'heure SERVEUR :
+ *  aucun compteur local, donc aucune dérive entre les quatre téléphones. */
+export function secondsLeft(
+  startedAt: string | null, roundMinutes: number, now: number,
+): number | null {
+  if (!startedAt) return null;
+  const fin = new Date(startedAt).getTime() + roundMinutes * 60_000;
+  return Math.round((fin - now) / 1000);
 }
 
 /**
@@ -70,12 +93,16 @@ export function blocks(state: CourtState): boolean {
  *
  * On PART du prédicat existant plutôt que de recalculer : il porte un
  * invariant subtil sur la concordance des saisies, et une seconde lecture de
- * la même règle finirait par en diverger.
+ * la même règle finirait par en diverger. `roundMinutes` et `now` ne servent
+ * QUE pour départager les trois temps du terrain muet — ils ne changent rien
+ * dès qu'un score existe.
  */
 export function courtState(
-  m: Pick<TournamentMatch, 'team_b' | 'forfeited_team' | 'confirmed_at' | 'games_a'>,
+  m: Pick<TournamentMatch, 'team_b' | 'forfeited_team' | 'confirmed_at' | 'games_a' | 'started_at'>,
   teamAEntries: Pick<TournamentMatchEntry, 'games_a' | 'games_b'>[],
   teamBEntries: Pick<TournamentMatchEntry, 'games_a' | 'games_b'>[],
+  roundMinutes: number,
+  now: number,
 ): CourtState {
   const base: MatchLiveStatus = matchLiveStatus(
     m.team_b != null, m.forfeited_team, m.confirmed_at, teamAEntries, teamBEntries,
@@ -84,8 +111,12 @@ export function courtState(
   if (base === 'forfeited') return 'forfait';
   if (base === 'confirmed') return 'acquis';
   if (base === 'disputed') return 'litige';
-  // `awaiting` se dédouble : le score écrit dit qu'au moins un camp a saisi.
-  return m.games_a != null ? 'provisoire' : 'vide';
+  // `awaiting` se dédouble : un score écrit dit qu'au moins un camp a saisi ;
+  // sinon c'est le chrono qui tranche entre les trois temps du terrain muet.
+  if (m.games_a != null) return 'provisoire';
+  const reste = secondsLeft(m.started_at, roundMinutes, now);
+  if (reste == null) return 'a_demarrer';
+  return reste > 0 ? 'en_cours' : 'temps_ecoule';
 }
 
 /** Les joueurs d'un binôme, tels quels — jamais « toi / l'adversaire ». */
@@ -111,6 +142,8 @@ export function eveningCourts(
   entries: TournamentMatchEntry[],
   myId: string,
   currentRound: number,
+  roundMinutes: number,
+  now: number,
 ): CourtView[] {
   const parMatch = new Map<string, TournamentMatchEntry[]>();
   for (const e of entries) {
@@ -128,10 +161,11 @@ export function eveningCourts(
       return {
         matchId: m.id,
         courtNo: m.court_no,
-        state: courtState(m, mes.filter(dansA), mes.filter(e => !dansA(e))),
+        state: courtState(m, mes.filter(dansA), mes.filter(e => !dansA(e)), roundMinutes, now),
         mine: inTeam(ta, myId) || inTeam(tb, myId),
         gamesA: m.games_a,
         gamesB: m.games_b,
+        secondsLeft: secondsLeft(m.started_at, roundMinutes, now),
       };
     })
     .sort((a, b) => a.courtNo - b.courtNo);
@@ -145,19 +179,30 @@ export function myCourt(courts: CourtView[]): CourtView | null {
 /**
  * Ce qui empêche la rotation suivante, dit à tout le monde.
  *
- * Deux manques différents, deux phrases différentes — parce qu'ils appellent
- * deux gestes différents : aller chercher quatre joueurs, ou demander à deux
- * camps de se mettre d'accord.
+ * Quatre manques différents, quatre phrases différentes — parce qu'ils
+ * appellent quatre gestes différents : lancer le chrono, patienter, aller
+ * chercher un score qui ne vient pas, ou demander à deux camps de se mettre
+ * d'accord. Jamais « en attente » : ce mot dirait qu'un score provisoire
+ * bloque, alors qu'il compte déjà.
  */
 export function blockingLabel(courts: CourtView[]): string | null {
-  const vides = courts.filter(c => c.state === 'vide').map(c => c.courtNo);
+  const aDemarrer = courts.filter(c => c.state === 'a_demarrer').map(c => c.courtNo);
+  const enCours = courts.filter(c => c.state === 'en_cours').map(c => c.courtNo);
+  const tempsEcoule = courts.filter(c => c.state === 'temps_ecoule').map(c => c.courtNo);
   const litiges = courts.filter(c => c.state === 'litige').map(c => c.courtNo);
-  if (vides.length === 0 && litiges.length === 0) return null;
+  if (aDemarrer.length === 0 && enCours.length === 0 && tempsEcoule.length === 0
+    && litiges.length === 0) return null;
 
   const liste = (n: number[]) => n.length === 1 ? `Terrain ${n[0]}` : `Terrains ${n.join(', ')}`;
   const bouts: string[] = [];
-  if (vides.length > 0) {
-    bouts.push(`${liste(vides)} : pas de score rentré`);
+  if (aDemarrer.length > 0) {
+    bouts.push(`${liste(aDemarrer)} : pas encore commencé`);
+  }
+  if (enCours.length > 0) {
+    bouts.push(`${liste(enCours)} : en cours`);
+  }
+  if (tempsEcoule.length > 0) {
+    bouts.push(`${liste(tempsEcoule)} : temps écoulé — score attendu`);
   }
   if (litiges.length > 0) {
     bouts.push(`${liste(litiges)} : les deux camps ne disent pas la même chose`);
