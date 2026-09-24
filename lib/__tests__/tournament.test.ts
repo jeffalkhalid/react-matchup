@@ -613,3 +613,70 @@ describe('rotation de classement', () => {
     expect(r.some(x => x.teamId === 'c' || x.teamId === 'd')).toBe(false);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// LE SCORE COMPTE DES LA PREMIERE SAISIE.
+//
+// Miroir de `tournament_score_effective.sql`. La regle serveur : un score fait
+// autorite des qu'il est SAISI par un camp et qu'il n'est pas CONTESTE --
+// `confirmed` (les deux camps d'accord, ou un arbitrage, ou un forfait) n'est
+// plus la condition du mouvement, seulement l'un des chemins qui y menent.
+// ────────────────────────────────────────────────────────────────────────────
+describe('score acquis sans reponse de l adversaire', () => {
+  const unSeulCamp = (over: Partial<Match> = {}): Match => ({
+    round: 1, court: 2, teamA: 'x', teamB: 'y', gamesA: 6, gamesB: 3,
+    confirmed: false, scored: true, ...over,
+  });
+  const surLeTerrain2 = () => new Map([['x', 2], ['y', 2]]);
+
+  it('fait monter le gagnant et descendre le perdant sur un match saisi par un seul camp', () => {
+    const apres = nextCourts(surLeTerrain2(), [unSeulCamp()], 4);
+    expect(apres.get('x')).toBe(1);
+    expect(apres.get('y')).toBe(3);
+  });
+
+  it('ne bouge personne tant que les deux camps se contredisent', () => {
+    const apres = nextCourts(surLeTerrain2(), [unSeulCamp({ disputed: true })], 4);
+    expect(apres.get('x')).toBe(2);
+    expect(apres.get('y')).toBe(2);
+  });
+
+  it('ne bouge personne quand personne n a saisi', () => {
+    const apres = nextCourts(surLeTerrain2(),
+      [unSeulCamp({ scored: false, gamesA: 0, gamesB: 0 })], 4);
+    expect(apres.get('x')).toBe(2);
+    expect(apres.get('y')).toBe(2);
+  });
+
+  it('tient le tour pour termine quand chaque match a un score acquis', () => {
+    expect(lastCompleteRound([unSeulCamp()])).toBe(1);
+  });
+
+  it('laisse le tour inacheve tant qu un match est conteste', () => {
+    expect(lastCompleteRound([unSeulCamp({ disputed: true })])).toBe(0);
+  });
+
+  it('compte le match a une seule saisie dans le classement', () => {
+    const st = standings([T('x', 5), T('y', 4)], [unSeulCamp()]);
+    const x = st.find(s => s.teamId === 'x')!;
+    expect(x.played).toBe(1);
+    expect(x.wins).toBe(1);
+    expect(x.gamesWon).toBe(6);
+  });
+
+  it('exclut du classement un match conteste', () => {
+    const st = standings([T('x', 5), T('y', 4)], [unSeulCamp({ disputed: true })]);
+    expect(st.find(s => s.teamId === 'x')!.played).toBe(0);
+  });
+
+  it('attribue les places du dernier tour sur un score acquis', () => {
+    const dernier: Match[] = [
+      { round: 4, court: 1, teamA: 'a', teamB: 'b', gamesA: 6, gamesB: 2,
+        confirmed: false, scored: true },
+    ];
+    expect(finalRanking(dernier, 4)).toEqual([
+      { rank: 1, teamId: 'a' },
+      { rank: 2, teamId: 'b' },
+    ]);
+  });
+});

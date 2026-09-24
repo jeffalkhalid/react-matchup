@@ -22,7 +22,31 @@ export type Match = {
    *  ordinaire ne le porte pas, et tout le code existant continue de
    *  compiler. */
   forfeitedTeam?: string | null;
+  /** Un camp au moins a saisi le score. Miroir de `games_a IS NOT NULL`, que
+   *  `tournament_enter_score` ecrit des la PREMIERE saisie. Absent = inconnu,
+   *  et seul `confirmed` fait alors foi -- ce qui garde vrai tout corpus
+   *  ecrit avant `tournament_score_effective.sql`. */
+  scored?: boolean;
+  /** Les deux camps se contredisent. Miroir de `fn_tournament_match_dispute`.
+   *  Un desaccord ne fait bouger personne : la montante est chemin-dependante,
+   *  un faux placement ne se rattrape pas. */
+  disputed?: boolean;
 };
+
+/** LE SCORE FAIT-IL AUTORITE ? Miroir exact de `fn_tournament_score_acquis`
+ *  (tournament_score_effective.sql) : saisi par un camp au moins, et pas
+ *  conteste. `confirmed` -- accord des deux camps, arbitrage ou forfait --
+ *  reste l un des chemins qui y menent, il n en est plus la condition.
+ *
+ *  C EST LA REGLE QUI DECIDE DU MOUVEMENT, du classement, du tour complet et
+ *  des places du dernier tour : les quatre lecteurs passent par ici, comme les
+ *  quatre fonctions serveur passent par la sienne. Deux lectures de la meme
+ *  regle finissent toujours par diverger -- c est exactement ce qui a produit
+ *  le bug que cette fonction corrige. */
+export function scoreAcquis(m: Match): boolean {
+  if (m.confirmed) return true;
+  return m.scored === true && m.disputed !== true;
+}
 
 /** QUI A GAGNE — l unique endroit ou le vainqueur se decide, exactement comme
  *  `fn_tournament_a_won(forfeited_team, team_a, games_a, games_b)` cote SQL.
@@ -134,11 +158,12 @@ export function nextCourts(
   const out = new Map(courts);
   for (const m of matches) {
     if (m.teamA == null || m.teamB == null) continue;      // bye : sur place
-    // Match non confirme : l equipe RESTE ou elle est. C est ce que fait
-    // `fn_tournament_ladder` (`confirmed_at IS NOT NULL`) ; sans ce garde,
-    // le defaut `0-0` d un match pas encore joue vaudrait « B gagne » et
-    // ferait descendre une equipe sur un match que personne n a joue.
-    if (!m.confirmed) continue;
+    // Score pas encore acquis -- rien de saisi, ou un desaccord : l equipe
+    // RESTE ou elle est. C est ce que fait `fn_tournament_ladder`
+    // (`fn_tournament_score_acquis`) ; sans ce garde, le defaut `0-0` d un
+    // match pas encore joue vaudrait « B gagne » et ferait descendre une
+    // equipe sur un match que personne n a joue.
+    if (!scoreAcquis(m)) continue;
     // Un match de padel ne peut pas etre nul. gamesA === gamesB est un etat
     // qui ne devrait jamais arriver (valide en amont, pas ici) ; si il
     // survenait quand meme, `aWon` le traite comme une victoire de B —
@@ -162,7 +187,7 @@ export function nextCourts(
  *  cote serveur, en prenant le PREMIER tour incomplet moins un. */
 export function lastCompleteRound(matches: Match[]): number {
   const reels = matches.filter(m => m.teamA != null && m.teamB != null);
-  const inacheves = reels.filter(m => !m.confirmed).map(m => m.round);
+  const inacheves = reels.filter(m => !scoreAcquis(m)).map(m => m.round);
   if (inacheves.length > 0) return Math.min(...inacheves) - 1;
   return reels.reduce((acc, m) => Math.max(acc, m.round), 0);
 }
@@ -219,7 +244,7 @@ export function standings(
     });
   }
   const joues = matches.filter(m =>
-    m.confirmed && m.teamA != null && m.teamB != null &&
+    scoreAcquis(m) && m.teamA != null && m.teamB != null &&
     (maxRound === undefined || m.round <= maxRound));
   for (const m of joues) {
     const aGagne = aWon(m);
@@ -356,7 +381,7 @@ export function finalRanking(
     if (!m) continue;
     const base = (court - 1) * 2;
     if (m.teamB != null) {
-      const a = m.confirmed ? aWon(m) : null;
+      const a = scoreAcquis(m) ? aWon(m) : null;
       garde({ slot: base + 1, teamId: a === null ? null : (a ? m.teamA : m.teamB) });
       garde({ slot: base + 2, teamId: a === null ? null : (a ? m.teamB : m.teamA) });
       // `engages` porte sur le TABLEAU du tour, pas sur le resultat : un
