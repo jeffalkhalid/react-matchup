@@ -182,7 +182,14 @@ export interface StakeGame extends ClashCreator {
 }
 
 export interface StakeSides {
-  partner: StakePlayer;
+  /**
+   * Mon coéquipier, ou `null` quand mon camp ne compte que moi.
+   *
+   * C'est le cas courant d'un défi reçu : on est invité seul, le binôme reste
+   * à trouver. Refuser de rendre les camps dans ce cas privait la carte du
+   * seul chiffre qui aide à décider s'il faut relever — celui de l'enjeu.
+   */
+  partner: StakePlayer | null;
   opponents: StakePlayer[];
 }
 
@@ -218,10 +225,8 @@ export function stakeSides(game: StakeGame, myId: string): StakeSides | null {
   const moi = tous.find(p => p.id === myId);
   if (!moi) return null;
   const binome = tous.find(p => p.id !== myId && p.team === moi.team);
-  const partner = binome ? toStake(binome) : null;
-  if (!partner) return null;
   return {
-    partner,
+    partner: binome ? toStake(binome) : null,
     opponents: tous.filter(p => p.team !== moi.team).map(toStake).filter((p): p is StakePlayer => !!p),
   };
 }
@@ -253,6 +258,22 @@ export function stakeOutcomeForGame(game: StakeGame, me: StakePlayer): StakeProj
   const camps = stakeSides(game, me.id);
   if (!camps) return null;
   const mise = game.stake_multiplier ?? 1;
+
+  // Mon binôme n'est pas encore là : défi reçu, ou je suis le premier de mon
+  // camp. Les adversaires, eux, sont connus — il n'y a que MON camp à
+  // projeter, sur la bande admissible du binôme. Sans ce cas, une carte
+  // « défi reçu » n'affichait aucun enjeu : exactement le moment où le
+  // chiffre sert le plus, puisqu'il faut décider de relever ou non.
+  if (!camps.partner) {
+    if (camps.opponents.length !== 2) return null;
+    const bande = partnerEloRange(me.elo_score, game.min_elo, game.max_elo);
+    if (!bande) return null;
+    const o = enveloppe(
+      stakeOutcome(me, suppose('_bin_bas', bande[0]), camps.opponents, mise),
+      stakeOutcome(me, suppose('_bin_haut', bande[1]), camps.opponents, mise),
+    );
+    return o ? { outcome: o, exact: false } : null;
+  }
 
   if (camps.opponents.length === 2) {
     const o = stakeOutcome(me, camps.partner, camps.opponents, mise);

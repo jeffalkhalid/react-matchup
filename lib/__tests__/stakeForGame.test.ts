@@ -39,7 +39,7 @@ const partie = (o: Partial<any> = {}) => ({
 describe('retrouver mon camp et celui d en face', () => {
   it('je suis le créateur : mon binôme est mon coéquipier, pas un adversaire', () => {
     const s = stakeSides(partie(), 'a');
-    expect(s?.partner.id).toBe('b');
+    expect(s?.partner?.id).toBe('b');
     expect(s?.opponents.map(p => p.id).sort()).toEqual(['c', 'd']);
   });
 
@@ -55,7 +55,7 @@ describe('retrouver mon camp et celui d en face', () => {
       ],
     });
     const s = stakeSides(g, 'c');
-    expect(s?.partner.id).toBe('d');
+    expect(s?.partner?.id).toBe('d');
     expect(s?.opponents.map(p => p.id).sort()).toEqual(['a', 'b']);
   });
 
@@ -67,7 +67,7 @@ describe('retrouver mon camp et celui d en face', () => {
         { player_id: 'd', status: 'accepted', team_side: 'B_DRO', player: fiche(5) },
       ],
     });
-    expect(stakeSides(g, 'a')?.partner.id).toBe('b');
+    expect(stakeSides(g, 'a')?.partner?.id).toBe('b');
   });
 
   it('je ne suis pas dans la partie : rien à dire', () => {
@@ -117,9 +117,15 @@ describe('le chiffre que je vois', () => {
     expect(stakeOutcomeForGame(partie({ game_format: 'friendly' }), moi)).toBeNull();
   });
 
-  it('sans binôme, on ne dit rien', () => {
+  it('sans binôme, la bande prend le relais — comme pour le camp d en face', () => {
+    // Cette règle disait l'inverse : camp adverse incomplet → on projette sur
+    // la bande (test suivant), mon camp incomplet → silence. Deux situations
+    // identiques, deux réponses différentes. Le silence tombait pile sur le
+    // défi reçu, au moment où le chiffre sert le plus.
     const g = partie({ participants: partie().participants.filter((p: any) => p.team_side !== 'A_DRO') });
-    expect(stakeOutcomeForGame(g, moi)).toBeNull();
+    const e = stakeOutcomeForGame(g, moi);
+    expect(e).not.toBeNull();
+    expect(e?.exact).toBe(false);
   });
 
   it('camp adverse incomplet : la bande du défi prend le relais', () => {
@@ -187,5 +193,60 @@ describe('la bande admissible du binôme', () => {
 
   it('sans bande, on ne borne rien', () => {
     expect(partnerEloRange(1500, null, null)).toBeNull();
+  });
+});
+
+describe('un défi reçu, avant d avoir trouvé son binôme', () => {
+  // Le cas vu sur téléphone : on est invité seul face à une paire connue, et
+  // la carte n'affichait AUCUN enjeu — au moment précis où le chiffre sert le
+  // plus, puisqu'il faut décider de relever ou non.
+  const defiRecu = (o: Partial<any> = {}) => partie({
+    participants: [
+      { player_id: 'b', status: 'accepted', team_side: 'A_DRO', player: { name: 'B', ...fiche(4.4) } },
+      { player_id: 'moi', status: 'invited', team_side: 'B_GAU', player: { name: 'Moi', ...fiche(4.9) } },
+    ],
+    ...o,
+  });
+
+  it('rend quand même les camps, avec un binôme absent', () => {
+    const s = stakeSides(defiRecu(), 'moi');
+    expect(s).not.toBeNull();
+    expect(s?.partner).toBeNull();
+    expect(s?.opponents.map(p => p.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('projette un enjeu, annoncé comme une fourchette', () => {
+    const e = stakeOutcomeForGame(defiRecu(), joueur('moi', 4.9));
+    expect(e).not.toBeNull();
+    expect(e?.exact).toBe(false);
+    // Un gain se compte en positif, une perte en négatif : c'est la carte qui
+    // met la couleur, pas le signe.
+    expect(bestGain(e!.outcome)).toBeGreaterThan(0);
+    expect(worstLoss(e!.outcome)).toBeLessThan(0);
+  });
+
+  it('se tait sans bande : inventer un binôme serait inventer un chiffre', () => {
+    const e = stakeOutcomeForGame(defiRecu({ min_elo: null, max_elo: null }), joueur('moi', 4.9));
+    expect(e).toBeNull();
+  });
+
+  it('se tait quand le camp d en face est lui aussi incomplet', () => {
+    const e = stakeOutcomeForGame(
+      defiRecu({ participants: [{ player_id: 'moi', status: 'invited', team_side: 'B_GAU', player: { name: 'Moi', ...fiche(4.9) } }] }),
+      joueur('moi', 4.9),
+    );
+    expect(e).toBeNull();
+  });
+
+  it('une fois le binôme arrivé, le chiffre devient exact', () => {
+    const complet = defiRecu({
+      participants: [
+        { player_id: 'b', status: 'accepted', team_side: 'A_DRO', player: { name: 'B', ...fiche(4.4) } },
+        { player_id: 'moi', status: 'accepted', team_side: 'B_GAU', player: { name: 'Moi', ...fiche(4.9) } },
+        { player_id: 'bin', status: 'accepted', team_side: 'B_DRO', player: { name: 'Bin', ...fiche(4.6) } },
+      ],
+    });
+    const e = stakeOutcomeForGame(complet, joueur('moi', 4.9));
+    expect(e?.exact).toBe(true);
   });
 });

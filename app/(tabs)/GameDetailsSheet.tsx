@@ -1044,6 +1044,9 @@ function GameDetailsSheetContenu({
                       const camps = stakeSides(game as any, playerId);
                       const quoi = game.is_challenge ? 'du défi' : 'de la partie';
                       if (!camps) return `La partie n’est pas complète : l’estimation part de sa fourchette de niveau.`;
+                      if (!camps.partner) {
+                        return `Ton binôme n’est pas encore là : l’estimation part de la fourchette de niveau ${quoi}.`;
+                      }
                       if (camps.opponents.length === 0) {
                         return `Tes adversaires ne sont pas encore connus : l’estimation part de la fourchette de niveau ${quoi}.`;
                       }
