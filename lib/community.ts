@@ -6,7 +6,6 @@ import { supabase } from './supabase';
 import { isBadgeVisible } from './badges';
 import { getLeague, eloToLevel, formatPadelLevel } from './theme';
 import { formatStake } from './defis';
-import { notifyPlayers } from './notify';
 import type {
   Player, SocialPlayer, ActivityEvent, GameAlert, ReferralStats, League, ActivityComment,
 } from '../types';
@@ -229,13 +228,13 @@ export async function searchPlayers(myId: string, q: string): Promise<SocialPlay
 /**
  * Suivre / ne plus suivre.
  *
- * La notification part D'ICI et pas des quatre écrans qui appellent cette
- * fonction : un seul de ces écrans oublié, et suivre quelqu'un depuis le
- * classement ne le préviendrait pas — alors que depuis son profil, si.
+ * La notification « X te suit » ne part plus d'ici : elle est émise par le
+ * SERVEUR à l'écriture de la ligne (trg_notify_new_follower). Le raisonnement
+ * qui la faisait vivre ici vaut toujours, en mieux — aucun des quatre écrans
+ * qui appellent cette fonction ne peut l'oublier, puisqu'aucun ne l'envoie.
  *
- * Elle ne part qu'au PREMIER suivi : `upsert` est idempotent, et on ne veut
- * pas qu'un double tap prévienne deux fois. On ne prévient pas non plus quand
- * on se désabonne — ça ne regarde que soi.
+ * Elle ne part qu'au PREMIER suivi, et on ne prévient pas au désabonnement :
+ * ça ne regarde que soi.
  */
 export async function setFollow(myId: string, targetId: string, follow: boolean): Promise<void> {
   if (!follow) {
@@ -244,24 +243,21 @@ export async function setFollow(myId: string, targetId: string, follow: boolean)
     return;
   }
 
-  const { data: deja } = await supabase
-    .from('follows').select('follower_id')
-    .eq('follower_id', myId).eq('following_id', targetId).maybeSingle();
-
   await supabase.from('follows').upsert(
     { follower_id: myId, following_id: targetId },
     { onConflict: 'follower_id,following_id' },
   );
-  if (deja) return;
-
-  const { data: moi } = await supabase.from('players').select('name').eq('id', myId).maybeSingle();
-  const nom = (moi as { name?: string } | null)?.name?.trim().split(/\s+/)[0] ?? 'Un joueur';
-  await notifyPlayers({
-    playerIds: [targetId],
-    title: `${nom} te suit`,
-    body: 'Tu recevras ses dispos. Suis-le en retour pour qu\'il reçoive les tiennes.',
-    data: { type: 'follow', pid: myId },
-  });
+  // La notification « X te suit » part du SERVEUR (trg_notify_new_follower).
+  //
+  // Elle ne peut pas partir d'ici : le serveur n'autorise à notifier que des
+  // joueurs qui vous ont donné un lien — et au moment où l'on suit quelqu'un,
+  // il ne vous suit pas encore. L'autoriser reviendrait à dire « suivez
+  // quelqu'un et vous gagnez le droit de lui écrire », c'est-à-dire à rouvrir
+  // l'envoi de masse par une autre porte.
+  //
+  // Le garde-fou « seulement au premier suivi » est conservé : l'upsert
+  // n'insère rien quand la ligne existe déjà, et un déclencheur AFTER INSERT
+  // ne se réveille pas sur une insertion qui n'a rien inséré.
 }
 
 // ─── Fil d'activité ──────────────────────────────────────────
