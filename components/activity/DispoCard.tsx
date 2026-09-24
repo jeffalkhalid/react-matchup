@@ -24,14 +24,23 @@ const CARD = { backgroundColor: Colors.bgCard, borderRadius: 18, borderWidth: 1,
 /** Trois places à pourvoir à côté de la mienne. */
 const MAX_SELECTION = 3;
 
-export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, playerIsAmbassador, friendIds, mine, onToggleSlot }: {
+export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, playerIsAmbassador, friendIds, followerIds, mine, onToggleSlot }: {
   playerId: string;
   playerName: string;
   /** Mon niveau — ma carte porte la même pastille que les autres. */
   playerElo?: number | null;
   playerAvatarPath?: string | null;
   playerIsAmbassador?: boolean;
+  /** Ceux que JE suis : leurs dispos s'affichent dans mon rail. */
   friendIds: string[];
+  /**
+   * Ceux qui ME suivent : ce sont eux que l'alerte prévient.
+   *
+   * Les deux listes ne se recouvrent pas. Prévenir ceux que je suis, c'était
+   * pousser une notification à des gens qui n'avaient rien demandé, et rester
+   * muet pour ceux qui avaient justement choisi de m'entendre.
+   */
+  followerIds: string[];
   /** Mes propres dispos (chargées par l'écran, pour les chips du header). */
   mine: Pick<AvailabilityRow, 'slot_start' | 'slot_end'>[];
   /** Coche/décoche un créneau — même geste que les chips du header. */
@@ -140,7 +149,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
 
   const aPrevenir = useMemo(() => announcedSlots(availabilitySlots(), mine), [mine]);
 
-  const sansCercle = friendIds.length === 0;
+  const sansCercle = followerIds.length === 0;
   const peutPrevenir = !sansCercle && aPrevenir.length > 0 && attente <= 0 && !envoiEnCours;
 
   const prevenirCercle = async () => {
@@ -148,7 +157,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
     setEnvoiEnCours(true);
     const quand = Date.now();
     await notifyPlayers({
-      playerIds: friendIds,
+      playerIds: followerIds,
       title: `${playerName} cherche à jouer`,
       body: alertBody(aPrevenir),
       data: { type: 'availability', pid: playerId },
@@ -189,7 +198,7 @@ export function DispoCard({ playerId, playerName, playerElo, playerAvatarPath, p
             Personne ne s'est encore déclaré
           </Text>
           <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginTop: 4, lineHeight: 17 }}>
-            Dis quand tu es libre : tes amis le voient tout de suite. C'est comme ça que les parties se montent.
+            Dis quand tu es libre : tes abonnés le voient tout de suite. C'est comme ça que les parties se montent.
           </Text>
           <ScrollView
             horizontal

@@ -7,7 +7,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts } from '../../lib/theme';
 import { HeaderActions } from '../../components/HeaderActions';
 import { FriendsBar, FeedList } from '../../components/community/ActivityFeed';
-import { getFriends, getActivityFeed, toggleReaction, getSuggestions, setFollow } from '../../lib/community';
+import { getFriends, getFollowerIds, getActivityFeed, toggleReaction, getSuggestions, setFollow } from '../../lib/community';
 import { getHiddenPlayerIds, reportContent } from '../../lib/moderation';
 import { isAmbassador } from '../../lib/ambassador';
 import {
@@ -81,6 +81,9 @@ export default function ActiviteTab() {
   }, [focus]);
 
   const [friends, setFriends] = useState<SocialPlayer[]>([]);
+  // Mes ABONNES, distincts de mes abonnements : ce sont eux qui voient ma
+  // dispo et que l'alerte previent.
+  const [followerIds, setFollowerIds] = useState<string[]>([]);
   const [feed, setFeed] = useState<ActivityEvent[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [sel, setSel] = useState<string | null>(null);
@@ -111,15 +114,16 @@ export default function ActiviteTab() {
     setLoading(true);
     (async () => {
       const monClub = player?.clubs?.[0] ?? '';
-      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months, cb, ct] = await Promise.all([
+      const [fr, fd, hidden, w, av, mc, gc, sugg, og, months, cb, ct, fol] = await Promise.all([
         getFriends(myId), getActivityFeed(myId, 50, true), getHiddenPlayerIds(myId),
         getWeekStats(myId), fetchMyAvailability(myId),
         getMyMatchCount(myId), getMyGameCount(myId),
         player ? getSuggestions(player, 8) : Promise.resolve([] as SocialPlayer[]),
         getOpenGames(myId, 8), getRecapMonths(myId), fetchCircleBilans(myId, 12),
         monClub ? fetchClubCity(monClub) : Promise.resolve(null),
+        getFollowerIds(myId),
       ]);
-      setFriends(fr); setFeed(fd); setHiddenIds(hidden);
+      setFriends(fr); setFeed(fd); setHiddenIds(hidden); setFollowerIds(fol);
       setWeek(w); setMyAvailability(av);
       setTotalMatches(mc); setTotalGames(gc);
       setSuggestions(sugg); setOpenGames(og); setCircleBilans(cb); setCity(ct);
@@ -302,7 +306,7 @@ export default function ActiviteTab() {
               })}
             </ScrollView>
             <Text style={{ fontFamily: Fonts.uiSemi, fontSize: 12, color: Colors.textSecondary, marginTop: 10, textAlign: 'center' }}>
-              {circleVisibilityLabel(friends.length)}
+              {circleVisibilityLabel(followerIds.length)}
             </Text>
           </View>
         ) : null}
@@ -383,6 +387,7 @@ export default function ActiviteTab() {
                 playerAvatarPath={player.avatar_path}
                 playerIsAmbassador={isAmbassador(player)}
                 friendIds={friends.map(f => f.id)}
+                followerIds={followerIds}
                 mine={myAvailability}
                 onToggleSlot={toggleSlot}
               />

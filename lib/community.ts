@@ -6,6 +6,7 @@ import { supabase } from './supabase';
 import { isBadgeVisible } from './badges';
 import { getLeague, eloToLevel, formatPadelLevel } from './theme';
 import { formatStake } from './defis';
+import { notifyPlayers } from './notify';
 import type {
   Player, SocialPlayer, ActivityEvent, GameAlert, ReferralStats, League, ActivityComment,
 } from '../types';
@@ -44,6 +45,38 @@ export async function getFollowingIds(myId: string): Promise<string[]> {
     .select('following_id')
     .eq('follower_id', myId);
   return (data ?? []).map((r: any) => r.following_id);
+}
+
+/**
+ * Ids des joueurs qui ME suivent.
+ *
+ * C'est l'autre sens de `getFollowingIds`, et les deux ne se valent pas :
+ * je REÇOIS de ceux que je suis (mon fil, les dispos de mon rail), et je
+ * DIFFUSE vers ceux qui me suivent (mon alerte de dispo). Les confondre, c'est
+ * prévenir des gens qui n'ont rien demandé — et rester muet pour ceux qui ont
+ * justement choisi de m'entendre.
+ */
+export async function getFollowerIds(myId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('follows')
+    .select('follower_id')
+    .eq('following_id', myId);
+  return (data ?? []).map((r: any) => r.follower_id);
+}
+
+/**
+ * Mes abonnés, avec l'information qui manquait le plus : est-ce que je les
+ * suis en retour ? Sans elle, on ne peut pas proposer de rendre la pareille.
+ */
+export async function getFollowers(myId: string): Promise<SocialPlayer[]> {
+  const ids = await getFollowerIds(myId);
+  if (ids.length === 0) return [];
+  const [{ data: players }, mesSuivis] = await Promise.all([
+    supabase.from('players').select('*').in('id', ids),
+    getFollowingIds(myId),
+  ]);
+  const suivis = new Set(mesSuivis);
+  return (players ?? []).map((p: any) => toSocial(p, suivis.has(p.id)));
 }
 
 // Compte d'amis en commun pour une liste de candidats (1 requête).
@@ -193,17 +226,42 @@ export async function searchPlayers(myId: string, q: string): Promise<SocialPlay
   return (players ?? []).map((p: any) => toSocial(p, followingSet.has(p.id)));
 }
 
-// Suivre / ne plus suivre.
+/**
+ * Suivre / ne plus suivre.
+ *
+ * La notification part D'ICI et pas des quatre écrans qui appellent cette
+ * fonction : un seul de ces écrans oublié, et suivre quelqu'un depuis le
+ * classement ne le préviendrait pas — alors que depuis son profil, si.
+ *
+ * Elle ne part qu'au PREMIER suivi : `upsert` est idempotent, et on ne veut
+ * pas qu'un double tap prévienne deux fois. On ne prévient pas non plus quand
+ * on se désabonne — ça ne regarde que soi.
+ */
 export async function setFollow(myId: string, targetId: string, follow: boolean): Promise<void> {
-  if (follow) {
-    await supabase.from('follows').upsert(
-      { follower_id: myId, following_id: targetId },
-      { onConflict: 'follower_id,following_id' },
-    );
-  } else {
+  if (!follow) {
     await supabase.from('follows').delete()
       .eq('follower_id', myId).eq('following_id', targetId);
+    return;
   }
+
+  const { data: deja } = await supabase
+    .from('follows').select('follower_id')
+    .eq('follower_id', myId).eq('following_id', targetId).maybeSingle();
+
+  await supabase.from('follows').upsert(
+    { follower_id: myId, following_id: targetId },
+    { onConflict: 'follower_id,following_id' },
+  );
+  if (deja) return;
+
+  const { data: moi } = await supabase.from('players').select('name').eq('id', myId).maybeSingle();
+  const nom = (moi as { name?: string } | null)?.name?.trim().split(/\s+/)[0] ?? 'Un joueur';
+  await notifyPlayers({
+    playerIds: [targetId],
+    title: `${nom} te suit`,
+    body: 'Tu recevras ses dispos. Suis-le en retour pour qu\'il reçoive les tiennes.',
+    data: { type: 'follow', pid: myId },
+  });
 }
 
 // ─── Fil d'activité ──────────────────────────────────────────

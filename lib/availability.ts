@@ -189,10 +189,18 @@ export function missingPlayers(othersDispoCount: number): number {
 }
 
 /** La phrase sous les chips de dispo : qui voit ma dispo dès que je la déclare. */
-export function circleVisibilityLabel(friendsCount: number): string {
-  if (friendsCount <= 0) return 'Suis des joueurs pour qu\'ils voient tes dispos.';
-  if (friendsCount === 1) return 'Ton ami le voit tout de suite.';
-  return `Tes ${friendsCount} amis le voient tout de suite.`;
+/**
+ * Qui voit ma disponibilité, et combien ils sont.
+ *
+ * Ce compte portait sur les joueurs que JE suis — le mauvais groupe. Ceux qui
+ * voient ma dispo sont ceux qui me SUIVENT : leur rail affiche les dispos des
+ * joueurs qu'ils suivent, donc les miennes. Et suivre quelqu'un ne lui montre
+ * rien de moi, contrairement à ce que conseillait l'ancienne phrase.
+ */
+export function circleVisibilityLabel(followerCount: number): string {
+  if (followerCount <= 0) return 'Personne ne te suit encore : invite des joueurs pour que tes dispos se voient.';
+  if (followerCount === 1) return 'Ton abonné le voit tout de suite.';
+  return `Tes ${followerCount} abonnés le voient tout de suite.`;
 }
 
 // ─── Base de données ──────────────────────────────────────────────────────

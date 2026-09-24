@@ -141,6 +141,9 @@ export function usePushNotifications() {
         case 'match':
           router.push('/(tabs)');
           break;
+        case 'follow':
+          if (data.pid) router.push(`/player/${data.pid}` as any);
+          break;
         case 'availability':
           // « Untel cherche a jouer » n'ouvrait RIEN : le switch n'avait pas
           // de cas, donc on restait ou on etait. On ouvre le bloc des dispos

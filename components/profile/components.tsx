@@ -522,6 +522,14 @@ export function ProfileHeader(props: {
   avatarPath?: string | null;
   /** Sur SON profil : changer ou retirer la photo. */
   onPressAvatar?: () => void;
+  /**
+   * Sur SON profil : ouvrir la liste derrière les deux chiffres.
+   *
+   * Ils s'affichaient depuis toujours sans rien derrière : on savait que trois
+   * joueurs nous suivaient, sans jamais pouvoir savoir qui — donc sans pouvoir
+   * les suivre en retour.
+   */
+  onPressFollows?: (tab: 'followers' | 'following') => void;
 }) {
   const { name, level, leagueLabel, leagueColor, followers, following, isSelf, isFollowing, ambassador } = props;
   const iconBtn = { width: 36, height: 36, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' as const, justifyContent: 'center' as const };
@@ -621,9 +629,25 @@ export function ProfileHeader(props: {
               </View>
             )}
           </View>
-          <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)', marginTop: 7 }}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>{followers}</Text> abonnés · <Text style={{ color: '#fff', fontWeight: '700' }}>{following}</Text> abonnements
-          </Text>
+          {props.onPressFollows ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 7 }}>
+              <TouchableOpacity onPress={() => props.onPressFollows?.('followers')} hitSlop={8} activeOpacity={0.7}>
+                <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)' }}>
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>{followers}</Text> abonnés
+                </Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)' }}>{'  ·  '}</Text>
+              <TouchableOpacity onPress={() => props.onPressFollows?.('following')} hitSlop={8} activeOpacity={0.7}>
+                <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)' }}>
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>{following}</Text> abonnements
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.62)', marginTop: 7 }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>{followers}</Text> abonnés · <Text style={{ color: '#fff', fontWeight: '700' }}>{following}</Text> abonnements
+            </Text>
+          )}
         </View>
       </View>
 

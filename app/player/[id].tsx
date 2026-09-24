@@ -1423,6 +1423,11 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         frmt={formatFrmtRanking(profile)}
         followers={followerCount}
         following={followingCount}
+        // Seulement sur MON profil : savoir qui me suit sert a suivre en
+        // retour, ce qui n'a pas de sens sur la fiche d'un autre.
+        onPressFollows={self?.id === id
+          ? tab => router.push(`/community/follows?tab=${tab}` as any)
+          : undefined}
         isSelf={isSelf}
         isFollowing={isFollowing}
         onToggleFollow={toggleFollow}

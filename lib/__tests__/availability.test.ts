@@ -144,12 +144,15 @@ describe('missingPlayers — combien il en manque pour jouer', () => {
 });
 
 describe('circleVisibilityLabel — qui voit ma dispo', () => {
-  it('sans ami, invite à en suivre', () => {
-    expect(circleVisibilityLabel(0)).toMatch(/Suis des joueurs/);
+  it('sans abonné, la phrase le dit et propose d inviter', () => {
+    expect(circleVisibilityLabel(0)).toMatch(/Personne ne te suit/);
   });
   it('au singulier comme au pluriel', () => {
-    expect(circleVisibilityLabel(1)).toBe('Ton ami le voit tout de suite.');
-    expect(circleVisibilityLabel(6)).toBe('Tes 6 amis le voient tout de suite.');
+    // Le compte porte sur mes ABONNES : ce sont eux qui voient ma dispo, pas
+    // ceux que je suis. Suivre quelqu'un ne lui montre rien de moi.
+    expect(circleVisibilityLabel(1)).toBe('Ton abonné le voit tout de suite.');
+    expect(circleVisibilityLabel(6)).toBe('Tes 6 abonnés le voient tout de suite.');
+    expect(circleVisibilityLabel(0)).toMatch(/Personne ne te suit/);
   });
 });
 
