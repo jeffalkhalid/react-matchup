@@ -68,7 +68,14 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   not_a_participant:             'Tu ne joues pas ce match.',
   not_a_player:                  'Le chrono de ce terrain n’appartient qu’à ses quatre joueurs : eux seuls peuvent le lancer ou le remettre à zéro.',
   not_authenticated:             'Reconnecte-toi pour continuer.',
-  not_confirmed:                 'Ce score n’est pas encore confirmé par les deux camps.',
+  // REFORMULÉ (Tâche 8bis, 2026-09-24) : ce refus ne veut plus dire « pas
+  // confirmé par les deux camps » -- depuis `tournament_score_no_wait.sql`
+  // (« une saisie suffit »), un score jamais confirmé est l'état NORMAL d'un
+  // match clos. `tournament_reopen_acquis.sql` ne refuse plus que l'ABSENCE
+  // de score acquis (`fn_tournament_score_acquis` faux) : rien saisi, ou un
+  // désaccord jamais tranché. Le NOM du refus ne change pas (déjà lu par
+  // l'écran), seul ce libellé change.
+  not_confirmed:                 'Ce match n’a pas de score acquis : il n’y a rien à rouvrir.',
   not_enough_teams:              'Il n’y a pas assez de binômes pour lancer le tournoi.',
   not_in_team:                   'Tu n’as pas encore de binôme sur ce tournoi.',
   not_open_to_join:              'Ta demande est déjà partie : il faut son accord.',

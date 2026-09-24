@@ -2927,7 +2927,21 @@ function AdminMatchCard({
           ou avant même le premier tirage (aucun match encore affiché) doit
           pouvoir être forfaité tout autant qu'un binôme qui joue ce tour-ci.
           Le geste vit dans la liste des binômes, plus bas dans `TournamentManage`. */}
-      {isOrganizer && teamB && status === 'confirmed' && (
+      {/* ÉLARGI (Tâche 8bis, 2026-09-24) : `status === 'confirmed'` seul
+          laissait le bouton invisible sur EXACTEMENT les matchs qui en ont
+          maintenant besoin. Depuis `tournament_score_no_wait.sql`, « une
+          saisie suffit » : le cas NORMAL du dernier tour d'un tournoi clos
+          est `awaiting` (un seul camp a saisi, jamais confirmé), pas
+          `confirmed` — et le serveur (`tournament_reopen_acquis.sql`)
+          accepte desormais de rouvrir tout match ACQUIS (`games_a` posé),
+          confirmé ou non. `match.games_a != null` est le miroir client exact
+          de ce que `fn_tournament_score_acquis` lit côté serveur : sans lui,
+          un `awaiting` SANS AUCUNE saisie (mute, personne n'a encore rien
+          tapé) afficherait un bouton qui échoue toujours (`not_confirmed`).
+          Un `disputed` reste hors de portée : un désaccord non tranché n'a
+          rien d'acquis, `tournament_resolve_dispute` est le bon geste. */}
+      {isOrganizer && teamB
+        && (status === 'confirmed' || (status === 'awaiting' && match.games_a != null)) && (
         <TouchableOpacity onPress={() => onReopen(match, laterCount)} disabled={busy} style={[sty.btnOutline, { alignSelf: 'flex-start' }]}>
           <Text style={sty.btnOutlineText}>↺ Rouvrir</Text>
         </TouchableOpacity>
@@ -3613,14 +3627,17 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
 
       {/* ── Rouvrir après clôture ── Le serveur accepte `tournament_reopen_match`
           en TERMINE (en-tête : refuse seulement CLASSEMENT_VALIDE et les
-          matchs non confirmés/forfait) ; le dialogue de validation, plus bas,
-          PROMET en toutes lettres « il faudra rouvrir un match puis
-          re-clôturer ». Avant cette correction, le client ne l'offrait qu'en
-          EN_COURS : un score faux découvert après la clôture n'avait AUCUN
-          chemin de réparation (défaut n°5 de la relecture). Les matchs du
-          DERNIER tour joué (`roundMatches`, déjà chargés par `load()`) sont
-          les seuls concernés : les tours antérieurs ne sont jamais montrés
-          ici, comme en EN_COURS. */}
+          matchs SANS SCORE ACQUIS (`not_confirmed`, Tâche 8bis) ou forfaités) ;
+          le dialogue de validation, plus bas, PROMET en toutes lettres « il
+          faudra rouvrir un match puis re-clôturer ». Avant cette correction,
+          le client ne l'offrait qu'en EN_COURS : un score faux découvert
+          après la clôture n'avait AUCUN chemin de réparation (défaut n°5 de
+          la relecture). Les matchs du DERNIER tour joué (`roundMatches`,
+          déjà chargés par `load()`) sont les seuls concernés : les tours
+          antérieurs ne sont jamais montrés ici, comme en EN_COURS. Le bouton
+          par match (`AdminMatchCard`, ci-dessus) décide seul QUELS matchs de
+          cette liste l'offrent — cette carte ne filtre pas `roundMatches`
+          elle-même, donc élargir l'un sans l'autre les aurait fait diverger. */}
       {t.status === 'TERMINE' && roundMatches.length > 0 && (
         <View style={sty.orgCard}>
           <Text style={sty.orgCardTitle}>Corriger un score — tour {t.current_round}</Text>
