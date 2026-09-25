@@ -39,6 +39,7 @@ import { openInMaps, hasMapTarget } from '../../lib/maps';
 import {
   fetchTournament, fetchRegistrations, fetchTeams, fetchMyJoinRequests,
   getTournamentsEnabled, registerToTournament, joinTournamentPlayer, fetchPendingPairs,
+  inviteOutsiderToTournament,
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder, autoValidateLabel, suggestPartner,
@@ -69,6 +70,7 @@ import {
 import { LiveHero, ResultHero, RoundBanner, RegistrationCard, StickyActionBar } from '../../components/tournaments/FicheHeros';
 import { RegisteredStrip } from '../../components/tournaments/RegisteredStrip';
 import { ReportSheet } from '../../components/tournaments/ReportSheet';
+import { InvitePartnerSheet } from '../../components/InvitePartnerSheet';
 import {
   canReportNow, reportScore, fetchTournamentReports, type TournamentReport,
 } from '../../lib/tournamentReports';
@@ -540,6 +542,7 @@ export default function TournamentDetailScreen() {
   // La fenêtre est étroite et c'est voulu : entre la fin de la soirée et la
   // validation. Avant, le désaccord a son propre chemin (l'état `litige`, qui
   // bloque la rotation) ; après, les points sont crédités et l'ELO a bougé.
+  const [inviteOuvert, setInviteOuvert] = useState(false);
   const [reportOuvert, setReportOuvert] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
   const [mesSignalements, setMesSignalements] = useState<TournamentReport[]>([]);
@@ -1496,6 +1499,34 @@ export default function TournamentDetailScreen() {
           );
         })()}
 
+        {/* ── Inviter quelqu'un d'extérieur ──
+            Le trou que ça bouche : tu t'inscris le lundi en te disant que
+            Karim s'inscrira aussi. Il ne le fait pas. Avant, la fiche ne te
+            proposait que des gens DÉJÀ inscrits — il t'aurait fallu te
+            désinscrire et te réinscrire en le nommant, ce que personne ne
+            devine. Sa place n'est pas retenue pendant qu'il répond : il
+            s'inscrit en acceptant. */}
+        {me.registration && !me.team && acceptsRegistrations(t.status) && (
+          <TouchableOpacity
+            onPress={() => setInviteOuvert(true)}
+            activeOpacity={0.8}
+            style={[cs.card, {
+              padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10,
+              borderStyle: 'dashed',
+            }]}
+          >
+            <Icon name="plus" size={18} color={Colors.textSecondary} stroke={2.2} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                Quelqu’un en tête qui n’est pas inscrit ?
+              </Text>
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>
+                Invite-le : il s’inscrit en acceptant.
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* ── Les joueurs seuls ── */}
         <View style={{ gap: 10 }}>
           <SectionTitle icon="users">Joueurs sans binôme ({solos.length})</SectionTitle>
@@ -1685,6 +1716,28 @@ export default function TournamentDetailScreen() {
           />
         );
       })()}
+
+      {/* Les inscrits sont écartés de la recherche : pour eux, le chemin est
+          la liste « Joueurs sans binôme », et le serveur refuserait cette
+          porte-ci (`partner_already_registered`). */}
+      <InvitePartnerSheet
+        visible={inviteOuvert}
+        excludeIds={regs.map(r => r.player_id)}
+        busyId={busy?.startsWith('invite-') ? busy.slice('invite-'.length) : null}
+        subtitle="Il n’est pas encore inscrit : il le sera en acceptant, et vous serez binôme."
+        onClose={() => setInviteOuvert(false)}
+        onPick={(p) => run(
+          `invite-${p.id}`,
+          async () => {
+            const res = await inviteOutsiderToTournament(t.id, p.id);
+            // La feuille se referme sur un succès seulement : après un refus,
+            // on veut pouvoir en choisir un autre sans tout rouvrir.
+            if (res.ok) setInviteOuvert(false);
+            return res;
+          },
+          'Invitation envoyée. Il s’inscrit en acceptant.',
+        )}
+      />
 
       {monDernierMatch && (() => {
         const ta = teamById.get(monDernierMatch.team_a!);

@@ -662,6 +662,23 @@ export function joinTournamentPlayer(tournamentId: string, playerId: string): Pr
   return callTournamentRpc('tournament_join', { p_tournament: tournamentId, p_player: playerId });
 }
 
+/**
+ * Inviter quelqu'un qui N'EST PAS encore inscrit, quand on est déjà inscrit
+ * et seul.
+ *
+ * ⚠️ À ne pas confondre avec `joinTournamentPlayer`, qui rejoint un DÉJÀ
+ * inscrit : le serveur renvoie `partner_already_registered` si on se trompe
+ * de porte. Ici, l'invité n'est inscrit qu'au moment où il accepte — sa place
+ * n'est pas retenue pendant qu'il réfléchit, sans quoi des sièges se
+ * perdraient sur des invitations sans réponse.
+ */
+export function inviteOutsiderToTournament(
+  tournamentId: string, playerId: string,
+): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_invite_outsider',
+    { p_tournament: tournamentId, p_player: playerId });
+}
+
 /** Répondre à une demande reçue. Accepter forme le binôme ET refuse
  *  automatiquement les autres demandes vivantes. */
 export function respondJoinRequest(requestId: string, accept: boolean): Promise<TournamentResult> {
