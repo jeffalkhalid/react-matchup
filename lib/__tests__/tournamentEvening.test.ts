@@ -7,7 +7,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   courtState, eveningCourts, myCourt, blockingLabel, blocks, needsHuman, courtsDone,
   roundLabel, secondsLeft, formatCountdown, shouldTickClock, shouldSyncAlarms,
-  tournamentEveningIsLive, courtTone, bumpGames, courtRowLabel, courtProgress, endsAt,
+  tournamentEveningIsLive, courtTone, bumpGames, courtRowLabel, courtProgress, endsAt, courtMovement,
   type CourtState, type CourtView,
 } from '../tournamentEvening';
 
@@ -457,5 +457,20 @@ describe('l heure a laquelle le chrono d un terrain tombe a zero', () => {
     // Chrono jamais lance : annoncer une heure de fin serait une invention.
     expect(endsAt(null, 15)).toBe(null);
     expect(endsAt('pas une date', 15)).toBe(null);
+  });
+});
+
+describe('ce que la rotation precedente a change pour moi', () => {
+  it('lit la montee et la descente dans le SENS de l echelle', () => {
+    // Le Terrain 1 est le plus fort : monter, c est voir son numero BAISSER.
+    // Le sens inverse est l erreur naturelle, et elle annoncerait a chacun
+    // l exact contraire de ce qu il vient de faire.
+    expect(courtMovement(3, 2)).toBe('monte');
+    expect(courtMovement(2, 3)).toBe('descend');
+    expect(courtMovement(2, 2)).toBe('reste');
+  });
+
+  it('n annonce rien quand il n y a pas de rotation precedente', () => {
+    expect(courtMovement(null, 1)).toBe(null);
   });
 });

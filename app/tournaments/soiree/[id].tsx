@@ -22,7 +22,7 @@
 // lib/tournamentEvening, avec ses tests. Ici, du rendu et des appels.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
+  View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Animated,
   AppState,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -36,15 +36,15 @@ import {
   isFeatureDisabled, resultMessage, subscribeTournamentMatches, roundMinutesOf,
   startCourtMatch, resetCourtStart, forfeitTournamentTeam, sideLabel,
   type Tournament, type TournamentMatch, type TournamentTeam,
-  type TournamentMatchEntry, type TournamentRegistration,
+  type TournamentMatchEntry, type TournamentRegistration, type TournamentSide,
 } from '../../../lib/tournaments';
 import { displayName } from '../../../lib/players';
 import { PlayerAvatar } from '../../../components/PlayerAvatar';
 import {
   eveningCourts, myCourt, blockingLabel, needsHuman, courtsDone, roundLabel, inTeam,
-  courtTone, bumpGames, courtRowLabel, courtProgress, endsAt,
+  courtTone, bumpGames, courtRowLabel, courtProgress, endsAt, courtMovement,
   formatCountdown, shouldTickClock, shouldSyncAlarms,
-  type CourtView, type CourtState, type CourtTone,
+  type CourtView, type CourtState, type CourtTone, type CourtMovement,
 } from '../../../lib/tournamentEvening';
 import { syncCourtAlarms, expoAlarmPort, type AlarmPort } from '../../../lib/courtAlarm';
 import { loadAlarmMemory, persistAlarmMemory, purgeAlarmMemory } from '../../../lib/courtAlarmStorage';
@@ -103,6 +103,13 @@ export default function SoireeScreen() {
   const memoireAlarmes = useRef<Map<string, string[]>>(new Map());
   const porteAlarmes = useRef<AlarmPort | null>(null);
   const [alarmesPretes, setAlarmesPretes] = useState(false);
+
+  // Les deux calques plein écran se ferment d'un geste, et ne reviennent pas
+  // tant que la situation n'a pas changé : on retient CE qui a été vu (le
+  // match qui a sonné, la rotation annoncée), pas un simple booléen — sinon
+  // le calque suivant serait avalé par la fermeture du précédent.
+  const [sonnerieVue, setSonnerieVue] = useState<string | null>(null);
+  const [rotationVue, setRotationVue] = useState<number | null>(null);
 
   useEffect(() => {
     let annule = false;
@@ -357,6 +364,16 @@ export default function SoireeScreen() {
   const monBinome = monEquipe ? membresDe(monEquipe.id) : [];
   const finDuChrono = endsAt(matchMien?.started_at ?? null, roundMinutes);
 
+  // Le terrain d'où je viens — lu dans les matchs de la rotation précédente,
+  // que `fetchTournamentMatches` rapporte déjà tous. Pas besoin de
+  // `tournament_movements` pour dire « tu montes » : le numéro de terrain de
+  // la rotation d'avant le dit.
+  const terrainPrecedent = monEquipe && t.current_round > 1
+    ? matches.find(m => m.round_no === t.current_round - 1
+        && (m.team_a === monEquipe.id || m.team_b === monEquipe.id))?.court_no ?? null
+    : null;
+  const mouvement = mien ? courtMovement(terrainPrecedent, mien.courtNo) : null;
+
   const envoyer = async () => {
     if (!matchMien) return;
     const gA = a.trim() === '' ? null : Number(a);
@@ -452,17 +469,55 @@ export default function SoireeScreen() {
         paddingTop: insets.top + 10, paddingHorizontal: 18,
         paddingBottom: insets.bottom + 24, gap: 16,
       }}>
-        {/* En-tête : le strict nécessaire, et la sortie vers la fiche. */}
+        {/* En-tête : où on est, où en est la soirée, et SOUS QUEL COMPTE.
+            Ce dernier point n'est pas décoratif : deux joueurs partagent
+            souvent un téléphone, et un score saisi sous le mauvais compte ne
+            se rattrape pas d'un geste. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TouchableOpacity onPress={() => router.back()} hitSlop={10}>
             <Icon name="chevronLeft" size={22} color={Colors.textOnDark} />
           </TouchableOpacity>
-          <View style={{ flex: 1, minWidth: 0 }}>
+
+          <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
             <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
-              {t.name}
+              {t.name}{t.club?.name ? ` · ${t.club.name}` : ''}
             </Text>
-            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.brand }}>
-              {roundLabel(t.current_round, t.round_count)}
+
+            {/* Les rotations en segments : « 3 sur 6 » se lit sans chiffre, et
+                une soirée qui commence ne ressemble pas à une qui s'achève.
+                Segments en `flex` plutôt qu'en largeur fixe — le format
+                autorise jusqu'à vingt rotations. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flex: 1, flexDirection: 'row', gap: 3 }}>
+                {Array.from({ length: Math.max(1, t.round_count) }, (_, i) => (
+                  <View key={i} style={{
+                    flex: 1, height: 3, borderRadius: 999,
+                    backgroundColor: i < t.current_round ? Colors.brand : 'rgba(255,255,255,0.22)',
+                  }} />
+                ))}
+              </View>
+              <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.brand }}>
+                {roundLabel(t.current_round, t.round_count)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 999,
+            paddingLeft: 3, paddingRight: 10, paddingVertical: 3,
+          }}>
+            <PlayerAvatar
+              name={displayName(player, 'player')}
+              path={(player as any)?.avatar_path ?? null}
+              size={20}
+              backgroundColor={Colors.brand} textColor={Colors.primary}
+              fontFamily={Fonts.uiBlack} fontSize={9} initialsMax={1}
+            />
+            <Text numberOfLines={1} style={{
+              fontSize: 11, fontFamily: Fonts.uiBlack, color: Colors.textOnDark, maxWidth: 76,
+            }}>
+              {displayName(player, 'player').split(' ')[0]}
             </Text>
           </View>
         </View>
@@ -750,6 +805,206 @@ export default function SoireeScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* LES DEUX CALQUES — « une seule action évidente à la fois ». Ils
+          couvrent l'écran parce qu'ils arrivent quand on ne regarde PAS le
+          téléphone : il sonne dans la poche, ou il vibre entre deux points.
+          Ce qu'on doit lire alors tient en trois mots et un bouton. */}
+      {mien && mien.state === 'a_demarrer' && rotationVue !== t.current_round && (
+        <CalqueRotation
+          rotation={t.current_round}
+          total={t.round_count}
+          terrain={mien.courtNo}
+          mouvement={mouvement}
+          adversaires={equipeAdverse ? nomsDe(equipeAdverse) : null}
+          partenaire={monBinome.find(m => m.id !== player.id)?.nom ?? null}
+          monCote={monBinome.find(m => m.id === player.id)?.side ?? null}
+          onVas={() => setRotationVue(t.current_round)}
+        />
+      )}
+
+      {mien && mien.state === 'temps_ecoule' && sonnerieVue !== mien.matchId && (
+        <CalqueSonnerie
+          terrain={mien.courtNo}
+          rotationTexte={roundLabel(t.current_round, t.round_count)}
+          onRentrerLeScore={() => setSonnerieVue(mien.matchId)}
+        />
+      )}
+    </View>
+  );
+}
+
+/**
+ * Le plein écran de la rotation suivante — jaune, pour qu'on sache avant
+ * même de lire que quelque chose a changé.
+ *
+ * Il répond à la seule question qu'on se pose en sortant du terrain : où je
+ * vais, et contre qui. Le sens de l'échelle est dit en toutes lettres (« Tu
+ * montes ») parce qu'un numéro de terrain qui baisse ne se lit pas comme une
+ * victoire tant qu'on n'a pas intégré que le Terrain 1 est le plus fort.
+ */
+function CalqueRotation({
+  rotation, total, terrain, mouvement, adversaires, partenaire, monCote, onVas,
+}: {
+  rotation: number; total: number; terrain: number;
+  mouvement: CourtMovement | null;
+  adversaires: string | null; partenaire: string | null;
+  monCote: TournamentSide | null;
+  onVas: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const titre = mouvement === 'monte' ? 'Tu montes'
+    : mouvement === 'descend' ? 'Tu descends'
+    : mouvement === 'reste' ? 'Tu restes'
+    : 'C’est parti';
+
+  return (
+    <View style={{
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: Colors.brand,
+      paddingTop: insets.top + 40, paddingBottom: insets.bottom + 20, paddingHorizontal: 26,
+      justifyContent: 'space-between',
+    }}>
+      <View style={{ gap: 6 }}>
+        <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, letterSpacing: 1.2, color: Colors.primary }}>
+          ROTATION {rotation} SUR {total} · C’EST PARTI
+        </Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+            // Barlow Condensed Italic se fait rogner ses dernières lettres sur
+            // Android dès qu'il déborde : il rétrécit plutôt, et garde une
+            // marge à droite pour l'inclinaison de l'italique.
+            style={{
+              flexShrink: 1, fontSize: 34, fontFamily: Fonts.welcome,
+              color: Colors.primary, paddingRight: 4,
+            }}
+          >
+            {titre}
+          </Text>
+          {mouvement === 'monte' && <Icon name="arrowRight" size={20} rotate={-90} color={Colors.primary} stroke={2.6} />}
+          {mouvement === 'descend' && <Icon name="arrowRight" size={20} rotate={90} color={Colors.primary} stroke={2.6} />}
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginTop: 4 }}>
+          <Text style={{ fontSize: 118, lineHeight: 122, fontFamily: Fonts.display, color: Colors.primary }}>
+            {terrain}
+          </Text>
+          <View style={{ paddingBottom: 18 }}>
+            <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.primary }}>
+              TERRAIN {terrain}
+            </Text>
+            {terrain === 1 && (
+              <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: 'rgba(10,10,10,0.6)' }}>
+                le plus fort
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {adversaires && (
+          <Text style={{ fontSize: 17, fontFamily: Fonts.uiBlack, color: Colors.primary, marginTop: 10 }}>
+            contre {adversaires}
+          </Text>
+        )}
+        {partenaire && (
+          <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBold, color: 'rgba(10,10,10,0.6)' }}>
+            avec {partenaire}{monCote ? ` · tu restes à ${sideLabel(monCote).toLowerCase()}` : ''}
+          </Text>
+        )}
+      </View>
+
+      <View style={{ gap: 10 }}>
+        <TouchableOpacity
+          onPress={onVas}
+          activeOpacity={0.85}
+          style={{ backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 17, alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.textOnDark }}>
+            J’Y VAIS
+          </Text>
+        </TouchableOpacity>
+        <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: 'rgba(10,10,10,0.55)', textAlign: 'center' }}>
+          Le chrono part au premier « On commence ».
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Le plein écran de la sonnerie — noir, cloche jaune, trois mots.
+ *
+ * Il arrive quand le téléphone est dans une poche ou sur un banc : ce n'est
+ * pas un écran qu'on consulte, c'est un écran qu'on découvre en le sortant.
+ * D'où le « TEMPS ! » qui se lit à bout de bras, et l'unique bouton.
+ */
+function CalqueSonnerie({ terrain, rotationTexte, onRentrerLeScore }: {
+  terrain: number; rotationTexte: string; onRentrerLeScore: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const pouls = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const boucle = Animated.loop(Animated.sequence([
+      Animated.timing(pouls, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(pouls, { toValue: 0, duration: 700, useNativeDriver: true }),
+    ]));
+    boucle.start();
+    return () => boucle.stop();
+  }, [pouls]);
+
+  return (
+    <View style={{
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: Colors.heroBg,
+      paddingTop: insets.top, paddingBottom: insets.bottom + 20, paddingHorizontal: 26,
+      alignItems: 'center', justifyContent: 'center', gap: 18,
+    }}>
+      <View style={{ width: 168, height: 168, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 84, backgroundColor: Colors.brand,
+          opacity: pouls.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.12] }),
+          transform: [{ scale: pouls.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }],
+        }} />
+        <View style={{
+          width: 116, height: 116, borderRadius: 58, backgroundColor: Colors.brand,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon name="bellRing" size={52} color={Colors.primary} stroke={2.2} />
+        </View>
+      </View>
+
+      <Text style={{ fontSize: 56, lineHeight: 60, fontFamily: Fonts.display, color: Colors.textOnDark }}>
+        TEMPS !
+      </Text>
+      <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.brand }}>
+        Terrain {terrain} · {rotationTexte}
+      </Text>
+      <Text style={{
+        fontSize: 12.5, fontFamily: Fonts.ui, color: 'rgba(255,255,255,0.6)',
+        textAlign: 'center', lineHeight: 18,
+      }}>
+        Finis le point, puis rentre le score. Un seul de vous quatre suffit.
+      </Text>
+
+      <TouchableOpacity
+        onPress={onRentrerLeScore}
+        activeOpacity={0.85}
+        style={{
+          backgroundColor: Colors.brand, borderRadius: 16,
+          paddingVertical: 17, paddingHorizontal: 40, alignSelf: 'stretch', alignItems: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 14, fontFamily: Fonts.uiBlack, letterSpacing: 0.8, color: Colors.primary }}>
+          RENTRER LE SCORE
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
+        Personne n’a saisi dans 3 min ? On relance les quatre.
+      </Text>
     </View>
   );
 }

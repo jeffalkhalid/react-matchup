@@ -158,6 +158,26 @@ export function courtRowLabel(c: CourtView): string {
   }
 }
 
+/** Ce que la rotation précédente a changé pour un binôme. */
+export type CourtMovement = 'monte' | 'descend' | 'reste';
+
+/**
+ * Monté, descendu ou resté — d'un terrain à l'autre entre deux rotations.
+ *
+ * ⚠️ Le sens : le **Terrain 1 est le plus fort**, et on monte VERS lui.
+ * Monter, c'est donc voir son numéro BAISSER. L'inverse est l'erreur
+ * naturelle (un numéro qui grandit ressemble à une progression), et elle
+ * annoncerait à chaque binôme l'exact contraire de ce qu'il vient de faire.
+ *
+ * `null` à la première rotation : il n'y a rien à annoncer avant d'avoir
+ * joué, et « Tu restes » y serait faux.
+ */
+export function courtMovement(from: number | null, to: number): CourtMovement | null {
+  if (from == null) return null;
+  if (from === to) return 'reste';
+  return to < from ? 'monte' : 'descend';
+}
+
 /**
  * L'heure à laquelle le chrono d'un terrain tombera à zéro.
  *
