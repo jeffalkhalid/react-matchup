@@ -1248,6 +1248,30 @@ export function pointsLadder(
     .sort((a, b) => a.rank - b.rank);
 }
 
+/**
+ * La hauteur relative (0 à 1) de chaque barre de « Mon parcours ».
+ *
+ * ⚠️ Le sens, encore : un rang qui BAISSE est un meilleur résultat. Tracer
+ * la hauteur sur le rang tel quel dessinerait la courbe à l'envers — la
+ * soirée où l'on a fini dernier deviendrait le sommet du graphique.
+ *
+ * L'échelle est relative aux soirées affichées, pas à un nombre de binômes
+ * fixe : on ne sait pas combien d'équipes comptait chaque tournoi passé, et
+ * comparer un 4e sur 8 à un 4e sur 4 demanderait une donnée qu'on n'a pas.
+ * Une seule soirée, ou plusieurs au même rang, occupent donc la hauteur
+ * pleine — il n'y a rien à quoi les comparer, et les écraser au huitième
+ * raconterait un échec qui n'a pas eu lieu.
+ */
+export function rankBarHeights(ranks: number[]): number[] {
+  if (ranks.length === 0) return [];
+  const pire = Math.max(...ranks);
+  const meilleur = Math.min(...ranks);
+  if (pire === meilleur) return ranks.map(() => 1);
+  // Le pire rang garde un quart de hauteur : une barre nulle se lirait comme
+  // une soirée non jouée.
+  return ranks.map(r => 0.25 + 0.75 * ((pire - r) / (pire - meilleur)));
+}
+
 /** Miroir de la CHECK de `tournaments.points_scale` : aucune valeur négative
  *  (« un tournoi ne punit pas, il classe »). Pure, pour valider CÔTÉ ÉCRAN
  *  avant l'appel, comme `validateTournamentScore`. */

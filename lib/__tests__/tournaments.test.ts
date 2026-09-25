@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder,
+  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights,
   groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   waitExplanation, registerNotice, partnerIntentNotice, myLiveTournament,
@@ -1335,5 +1335,25 @@ describe('le bareme, tel qu il se lit sur la fiche', () => {
   it('ecarte ce qui n est pas un nombre plutot que de l afficher', () => {
     const t = { points_scale: { '1': 100, '2': 'abc', '3': 65 } } as any;
     expect(pointsLadder(t).map(r => r.rank)).toEqual([1, 3]);
+  });
+});
+
+describe('la hauteur des barres de « Mon parcours »', () => {
+  it('donne la plus haute au MEILLEUR rang, pas au plus grand nombre', () => {
+    // Finir 2e est mieux que finir 6e : la barre doit monter quand le rang
+    // BAISSE. Prendre le rang tel quel dessinerait la courbe a l'envers.
+    const h = rankBarHeights([6, 4, 2, 3]);
+    expect(h[2]).toBeGreaterThan(h[1]);   // 2e plus haut que 4e
+    expect(h[1]).toBeGreaterThan(h[0]);   // 4e plus haut que 6e
+    expect(Math.max(...h)).toBeLessThanOrEqual(1);
+    expect(Math.min(...h)).toBeGreaterThan(0);
+  });
+
+  it('tient debout avec une seule soiree ou des rangs identiques', () => {
+    // Une seule barre n a rien a quoi se comparer : elle occupe sa hauteur
+    // pleine plutot que de s ecraser a un huitieme.
+    expect(rankBarHeights([3])).toEqual([1]);
+    expect(rankBarHeights([5, 5])).toEqual([1, 1]);
+    expect(rankBarHeights([])).toEqual([]);
   });
 });

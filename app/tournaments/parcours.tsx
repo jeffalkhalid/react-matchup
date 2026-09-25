@@ -46,7 +46,7 @@ import { usePlayer } from '../../hooks/usePlayer';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../../components/community/icons';
 import {
-  fetchMyTournamentResults, computeCareerTotals, getTournamentsEnabled,
+  fetchMyTournamentResults, computeCareerTotals, getTournamentsEnabled, rankBarHeights,
   formatTournamentDate,
   type TournamentResultRow, type TournamentCareerTotals,
 } from '../../lib/tournaments';
@@ -174,6 +174,69 @@ function EmptyCareer({ onBrowse }: { onBrowse: () => void }) {
         style={{ marginTop: 4, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, backgroundColor: Colors.primary }}>
         <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>Voir les tournois</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+/**
+ * La courbe des rangs, soirée après soirée.
+ *
+ * L'historique était une liste plate : on y lisait chaque soirée, jamais la
+ * trajectoire. Or en montante, la seule question qu'on se pose est « est-ce
+ * que je monte ? » — et elle ne se répond qu'en voyant les soirées les unes
+ * À CÔTÉ des autres.
+ *
+ * Les barres se lisent de gauche (la plus ancienne) à droite (la dernière) :
+ * `fetchMyTournamentResults` rend l'inverse, donc on retourne. Le meilleur
+ * rang est en jaune — c'est le seul repère qu'on cherche.
+ */
+function HistogrammeRangs({ rows }: { rows: TournamentResultRow[] }) {
+  // Les douze dernières suffisent : au-delà, les barres deviennent des traits
+  // et la trajectoire cesse de se lire.
+  const anciennes = [...rows].reverse().slice(-12);
+  const hauteurs = rankBarHeights(anciennes.map(r => r.final_rank));
+  const meilleur = anciennes.length ? Math.min(...anciennes.map(r => r.final_rank)) : null;
+
+  return (
+    <View style={[cs.card, { padding: 14, gap: 10 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 128 }}>
+        {anciennes.map((r, i) => {
+          const best = r.final_rank === meilleur;
+          return (
+            <View key={r.tournament_id} style={{ flex: 1, alignItems: 'center', gap: 4 }}>
+              <Text style={{
+                fontSize: 10, fontFamily: Fonts.uiBlack,
+                color: best ? Colors.brandDeep : Colors.textMuted,
+              }}>
+                {r.final_rank}e
+              </Text>
+              <View style={{
+                width: '100%', height: Math.round(hauteurs[i] * 92), borderRadius: 8,
+                backgroundColor: best ? Colors.brand : Colors.bgCardAlt,
+              }} />
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {anciennes.map(r => (
+          <Text
+            key={r.tournament_id}
+            numberOfLines={1}
+            style={{ flex: 1, textAlign: 'center', fontSize: 9, fontFamily: Fonts.uiBold, color: Colors.textMuted }}
+          >
+            {new Date(r.tournament.starts_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+          </Text>
+        ))}
+      </View>
+
+      {meilleur != null && (
+        <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary, textAlign: 'center' }}>
+          Ton meilleur rang : <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>{meilleur}e</Text>
+          {anciennes.length > 1 ? ` sur ${anciennes.length} soirées` : ''}
+        </Text>
+      )}
     </View>
   );
 }
@@ -369,6 +432,15 @@ export default function CareerScreen() {
           {/* Un rafraîchissement en échec garde l'historique déjà connu à
               l'écran, avec ce bandeau au-dessus plutôt qu'à sa place. */}
           {loadError && <ErrorNotice message={loadError} />}
+
+          {/* La courbe AVANT les cumuls : elle raconte la seule chose qui
+              compte en montante — jusqu'où on est monté, soirée après
+              soirée. Les cumuls repondent a « combien », la courbe a
+              « est-ce que je progresse ». */}
+          <View>
+            <SectionTitle>Soirée après soirée</SectionTitle>
+            <HistogrammeRangs rows={rows} />
+          </View>
 
           <View>
             <SectionTitle>Mes cumuls</SectionTitle>
