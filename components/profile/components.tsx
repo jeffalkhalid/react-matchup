@@ -508,6 +508,9 @@ const VISIBLE_TABS = TABS.filter(t => !HIDDEN_TABS.includes(t));
 
 export function ProfileHeader(props: {
   name: string; level: number; leagueLabel: string; leagueColor: string;
+  /** Vrai nom, sous le pseudo. Vient de lib/frmt-match.realNameLine : le
+   *  classement fédéral pour un joueur lié, sa saisie sinon. null = rien. */
+  realName?: string | null;
   frmt?: { text: string; verified: boolean } | null;
   followers: number; following: number;
   isSelf: boolean; isFollowing: boolean;
@@ -612,6 +615,13 @@ export function ProfileHeader(props: {
             <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', letterSpacing: 0.3, paddingRight: 8 }}>{name.toUpperCase()}</Text>
             {ambassador != null && <AmbassadorPill number={ambassador} />}
           </View>
+          {props.realName ? (
+            <Text numberOfLines={1} style={{
+              fontSize: 13.5, color: 'rgba(255,255,255,0.62)', marginTop: 1, paddingRight: 8,
+            }}>
+              {props.realName}
+            </Text>
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: ACCENT }}>{level.toFixed(2)}</Text>

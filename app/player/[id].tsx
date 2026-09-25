@@ -11,7 +11,7 @@ import { Glyph } from '../../components/profile/glyphs';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
-import { formatFrmtRanking, profileIdentity } from '../../lib/frmt-match';
+import { formatFrmtRanking, profileIdentity, realNameLine } from '../../lib/frmt-match';
 import { totalsFromMatches } from '../../lib/playerStats';
 import { pickAvatarFromLibrary, takeAvatarWithCamera, pendingAvatarPick, uploadAvatar, removeAvatar, reportAvatar, type PickedImage } from '../../lib/avatars';
 import { getFiabilityDecayed } from '../../lib/elo';
@@ -521,6 +521,10 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const insets           = useSafeAreaInsets();
 
   const [profile,    setProfile]    = useState<Player | null>(null);
+  // Nom tel que la FÉDÉRATION l'écrit, pour un joueur lié au classement
+  // (frmt_rankings). Jamais saisi par le joueur : c'est ce qui rend un vol de
+  // classement visible.
+  const [frmtName,   setFrmtName]   = useState<string | null>(null);
   const [matches,    setMatches]    = useState<MatchRow[]>([]);
   const [eloHistory, setEloHistory] = useState<EloHistory[]>([]);
   const [reputation, setReputation] = useState<{ badge_type: string }[]>([]);
@@ -534,7 +538,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [editOpen,   setEditOpen]   = useState(false);
   const [editSaving, setEditSaving] = useState(false);
-  const [editForm,   setEditForm]   = useState({ name: '', first_name: '', last_name: '', court_side: '', playing_days: [] as string[], frmt_full_name: '', birth_year: '', preferred_court: '', frmt_link: false });
+  const [editForm,   setEditForm]   = useState({ name: '', first_name: '', last_name: '', show_real_name: true, court_side: '', playing_days: [] as string[], frmt_full_name: '', birth_year: '', preferred_court: '', frmt_link: false });
   const [editFrmtTaken, setEditFrmtTaken] = useState(false);
   const [genderReqOpen, setGenderReqOpen] = useState(false);
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
@@ -756,7 +760,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     setProfile(profileData);
 
     // Phase 2 — everything else in parallel
-    const [matchesRes, historyRes, repRes, favRes, rankRes, ambRes] = await Promise.all([
+    const [matchesRes, historyRes, repRes, favRes, rankRes, ambRes, frmtRes] = await Promise.all([
       supabase
         .from('matches')
         .select(`id, score_text, created_at, game_format, match_type, is_challenge, stake_multiplier, scored_live, status, game_id,
@@ -776,6 +780,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         ? supabase.from('players').select('id', { count: 'exact', head: true }).is('deleted_at', null).gt('elo_score', profileData.elo_score)
         : Promise.resolve({ count: 0 }),
       fetchAmbassadorsCount(),
+      supabase.from('frmt_rankings').select('frmt_name').eq('player_id', id).maybeSingle(),
     ]);
 
     // Supabase renvoie les relations FK comme tableaux ; cast via unknown (forme runtime ≠ MatchRow).
@@ -786,6 +791,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     setIsFav(!!favRes.data);
     setRankPos((rankRes.count ?? 0) + 1);
     setAmbCount(ambRes);
+    setFrmtName(((frmtRes as any)?.data?.frmt_name as string | undefined) ?? null);
     getPlayerActivity(id).then(setActivity);
     getPlayerAchievements(id).then(setAchievements);
     loadBinomes();
@@ -1108,16 +1114,22 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const showPrefs = !!profile.court_side || playingDays.length > 0 || !!profile.frmt_rank || !!profile.preferred_court;
   const showPalm  = sortedKarma.length > 0 || achvBadges.length > 0;
 
-  // Identité affichée ET verrou (lib/frmt-match) : « vérifié FRMT » et « un nom
-  // est disponible » sont DEUX questions. Les confondre verrouillait des champs
-  // vides pour un joueur vérifié dont le nom ne vit que dans frmt_rankings.
-  const identity = profileIdentity(profile);
+  // Section « Prénom et nom » : nom de la fédération (non modifiable) pour un
+  // joueur lié au classement, saisie libre pour tout le monde d'autre.
+  const identity = profileIdentity(profile, frmtName);
+  const CHAMP_IDENTITE = {
+    flex: 1, backgroundColor: Colors.bg, borderWidth: 1,
+    borderColor: editFrmtTaken ? Colors.danger : Colors.border,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, fontWeight: '700' as const, color: Colors.textPrimary,
+  };
 
   const openEdit = () => {
     setEditForm({
       name:            profile.name,
-      first_name:      identity.first,
-      last_name:       identity.last,
+      first_name:      identity.mode === 'free' ? identity.first : '',
+      last_name:       identity.mode === 'free' ? identity.last : '',
+      show_real_name:  profile.show_real_name !== false,
       court_side:      profile.court_side ?? '',
       playing_days:    Array.isArray(profile.playing_days) ? [...profile.playing_days] : [],
       frmt_full_name:  profile.frmt_full_name ?? '',
@@ -1160,7 +1172,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     // identité ni à son nom FRMT (le changer casserait la liaison).
     const first = editForm.first_name.trim();
     const last = editForm.last_name.trim();
-    const identityLocked = identity.locked;
+    const identityLocked = identity.mode === 'frmt';
     // Accord donné mais identité incomplète (nom FRMT hérité d'un seul mot) :
     // on garde la valeur stockée. Sinon on effacerait une déclaration FRMT
     // sans que le joueur ait rien demandé. Décocher, ça, c'est explicite.
@@ -1187,7 +1199,11 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       name:            editForm.name.trim(),
       // Identité : écrite seulement quand elle est modifiable ici — pour un
       // joueur vérifié on n'invente pas un découpage qu'il ne peut pas corriger.
-      ...(identityLocked ? {} : { first_name: first || null, last_name: last || null }),
+      ...(identityLocked ? {} : {
+        first_name: first || null,
+        last_name: last || null,
+        show_real_name: editForm.show_real_name,
+      }),
       court_side:      editForm.court_side || null,
       playing_days:    editForm.playing_days.length > 0 ? editForm.playing_days : null,
       frmt_full_name:  newFrmt || null,
@@ -1453,6 +1469,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
         leagueLabel={getLeagueLabel(league)}
         leagueColor={leagueColor}
         frmt={formatFrmtRanking(profile)}
+        realName={realNameLine(profile, frmtName)}
         followers={followerCount}
         following={followingCount}
         // Seulement sur MON profil : savoir qui me suit sert a suivre en
@@ -1581,36 +1598,70 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                   />
                 </View>
 
-                {/* Identité — facultative, jamais affichée aux autres joueurs.
-                    Écrit players.first_name / last_name. Joueur FRMT vérifié :
-                    grisée, son nom est celui du classement officiel. */}
+                {/* Prénom et nom, affichés sous le pseudo sur la fiche.
+                    Joueur lié au classement : le nom vient de la FÉDÉRATION, en un
+                    seul bloc non modifiable — le découper en prénom/nom
+                    inverserait les deux (la FRMT écrit « NOM PRÉNOM »), et le
+                    laisser saisir permettrait de se lier sous le nom d'un classé
+                    puis d'afficher le sien. Tout le monde d'autre : saisie libre,
+                    affichée ou non. */}
                 <View>
                   <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Prénom et nom</Text>
-                  <View style={{ flexDirection: 'row', gap: 10, opacity: identity.locked ? 0.6 : 1 }}>
-                    <TextInput
-                      value={editForm.first_name}
-                      onChangeText={v => { setEditForm(f => ({ ...f, first_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
-                      editable={!identity.locked}
-                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: identity.locked ? Colors.textMuted : Colors.textPrimary }}
-                      placeholder="Prénom"
-                      placeholderTextColor={Colors.textMuted}
-                      autoCapitalize="words"
-                    />
-                    <TextInput
-                      value={editForm.last_name}
-                      onChangeText={v => { setEditForm(f => ({ ...f, last_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
-                      editable={!identity.locked}
-                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: identity.locked ? Colors.textMuted : Colors.textPrimary }}
-                      placeholder="Nom"
-                      placeholderTextColor={Colors.textMuted}
-                      autoCapitalize="words"
-                    />
-                  </View>
-                  <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
-                    {identity.locked
-                      ? 'Nom du classement FRMT, vérifié — non modifiable ici.'
-                      : 'Facultatif. Jamais affiché aux autres joueurs : ils ne voient que ton pseudo.'}
-                  </Text>
+                  {identity.mode === 'frmt' ? (
+                    <>
+                      <View style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, opacity: 0.7 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.textMuted }} numberOfLines={1}>
+                          {identity.full}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
+                        Ton nom au classement FRMT. Il s'affiche sous ton pseudo et n'est pas modifiable.
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TextInput
+                          value={editForm.first_name}
+                          onChangeText={v => { setEditForm(f => ({ ...f, first_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
+                          style={CHAMP_IDENTITE}
+                          placeholder="Prénom"
+                          placeholderTextColor={Colors.textMuted}
+                          autoCapitalize="words"
+                        />
+                        <TextInput
+                          value={editForm.last_name}
+                          onChangeText={v => { setEditForm(f => ({ ...f, last_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
+                          style={CHAMP_IDENTITE}
+                          placeholder="Nom"
+                          placeholderTextColor={Colors.textMuted}
+                          autoCapitalize="words"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setEditForm(f => ({ ...f, show_real_name: !f.show_real_name }))}
+                        activeOpacity={0.7}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}
+                      >
+                        <View style={{
+                          width: 22, height: 22, borderRadius: 6, borderWidth: 1.5,
+                          borderColor: editForm.show_real_name ? Colors.brand : Colors.border,
+                          backgroundColor: editForm.show_real_name ? Colors.brand : 'transparent',
+                          alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {editForm.show_real_name && (
+                            <Text style={{ color: Colors.textOnBrand, fontSize: 13, fontFamily: Fonts.uiBlack }}>✓</Text>
+                          )}
+                        </View>
+                        <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
+                          Afficher mon nom sous mon pseudo
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
+                        Facultatif. Décoché, ton nom n'apparaît nulle part dans l'app.
+                      </Text>
+                    </>
+                  )}
                 </View>
 
                 {/* Genre — admin-gated via request */}

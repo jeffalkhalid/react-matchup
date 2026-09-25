@@ -36,24 +36,70 @@ export function splitFullName(full?: string | null): { first: string; last: stri
 }
 
 /**
- * Identité à afficher dans « Modifier le profil », et faut-il la verrouiller.
- *
- * `locked` NE dépend PAS du seul `frmt_verified` : un joueur peut être vérifié
- * SANS aucun nom dans `players` — son nom fédéral vit alors dans `frmt_rankings`,
- * et la FRMT l'écrit « NOM PRÉNOM », l'inverse d'ici : impossible de le découper
- * à l'aveugle. Verrouiller dans ce cas donnait deux champs vides ET grisés :
- * rien à lire, rien à saisir. On ne verrouille donc que si les DEUX champs ont
- * quelque chose à montrer ; sinon le joueur écrit son nom lui-même.
+ * « IRROU ALAMINE » → « Irrou Alamine ». On adoucit la CASSE, rien d'autre : les
+ * mots et leur ordre restent ceux de la fédération. Réordonner serait deviner,
+ * et la FRMT écrit « NOM PRÉNOM », l'inverse de l'app.
  */
-export function profileIdentity(p: {
-  first_name?: string | null;
-  last_name?: string | null;
-  frmt_full_name?: string | null;
-  frmt_verified?: boolean | null;
-}): { first: string; last: string; locked: boolean } {
+export function prettyFrmtName(frmtName?: string | null): string {
+  return (frmtName ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map(mot => mot.split('-')
+      .map(p => (p ? p.charAt(0).toUpperCase() + p.slice(1) : p))
+      .join('-'))
+    .join(' ');
+}
+
+/**
+ * Ce que montre la section « Prénom et nom » de « Modifier le profil ».
+ *
+ * `frmt` : joueur lié au classement — son nom vient de `frmt_rankings`, en UN
+ * seul bloc non modifiable. On ne le découpe pas en prénom/nom : l'ordre fédéral
+ * est l'inverse du nôtre, tout découpage inverserait les deux.
+ * `free` : tout le monde d'autre — deux champs saisis par le joueur, pré-remplis
+ * à défaut avec le nom FRMT déclaré à l'inscription.
+ */
+export function profileIdentity(
+  p: {
+    first_name?: string | null;
+    last_name?: string | null;
+    frmt_full_name?: string | null;
+    frmt_verified?: boolean | null;
+  },
+  frmtName?: string | null,
+): { mode: 'frmt'; full: string } | { mode: 'free'; first: string; last: string } {
+  const federal = prettyFrmtName(frmtName);
+  if (p.frmt_verified && federal) return { mode: 'frmt', full: federal };
   const fromFrmt = splitFullName(p.frmt_full_name);
   // `||` et non `??` : une chaîne vide en base vaut une absence de nom.
-  const first = (p.first_name ?? '').trim() || fromFrmt.first;
-  const last = (p.last_name ?? '').trim() || fromFrmt.last;
-  return { first, last, locked: !!p.frmt_verified && !!first && !!last };
+  return {
+    mode: 'free',
+    first: (p.first_name ?? '').trim() || fromFrmt.first,
+    last: (p.last_name ?? '').trim() || fromFrmt.last,
+  };
+}
+
+/**
+ * Le vrai nom affiché SOUS le pseudo sur la fiche joueur, ou null.
+ *
+ * Joueur lié au classement : le nom vient de la FÉDÉRATION, jamais de sa saisie,
+ * et le réglage ne s'y applique pas. Sinon on pourrait se lier sous le nom d'un
+ * classé puis afficher le sien : le vol de classement deviendrait invisible.
+ *
+ * Tout le monde d'autre : ce qu'il a renseigné, s'il l'a laissé visible
+ * (`show_real_name`, vrai par défaut — colonne absente = visible).
+ */
+export function realNameLine(
+  p: {
+    first_name?: string | null;
+    last_name?: string | null;
+    frmt_verified?: boolean | null;
+    show_real_name?: boolean | null;
+  },
+  frmtName?: string | null,
+): string | null {
+  if (p.frmt_verified) return prettyFrmtName(frmtName) || null;
+  if (p.show_real_name === false) return null;
+  const nom = [(p.first_name ?? '').trim(), (p.last_name ?? '').trim()].filter(Boolean).join(' ');
+  return nom || null;
 }

@@ -33,9 +33,12 @@ export default function ConfidentialiteScreen() {
           'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
         ]} />
         <P>
-          Vos <B>nom et prénom</B> sont demandés à l'inscription. Ils servent à identifier le
-          titulaire du compte et, le cas échéant, à vous associer à votre classement fédéral.
-          Ils ne sont <B>jamais affichés</B> aux autres joueurs, qui ne voient que votre pseudo.
+          Vos <B>nom et prénom</B> sont demandés à l'inscription. Ils apparaissent
+          <B>sous votre pseudo</B> sur votre fiche joueur, et vous pouvez les masquer à tout
+          moment depuis « Modifier le profil ». Si votre compte est lié au{' '}
+          <B>classement officiel FRMT</B>, c'est le nom publié par la fédération qui
+          s'affiche : il ne peut pas être masqué, votre classement vous identifiant déjà
+          publiquement.
         </P>
         <P>
           Si vous demandez la liaison à votre <B>classement officiel FRMT</B>, nous collectons en

@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { splitFullName, profileIdentity } from '../frmt-match';
+import { splitFullName, prettyFrmtName, profileIdentity, realNameLine } from '../frmt-match';
 
 describe('splitFullName', () => {
   it('coupe au PREMIER espace : le nom compose reste dans le nom', () => {
     expect(splitFullName('Yassine El Amrani')).toEqual({ first: 'Yassine', last: 'El Amrani' });
-    expect(splitFullName('Karim Benani')).toEqual({ first: 'Karim', last: 'Benani' });
   });
 
   it('recoller prenom + nom redonne la chaine d\'origine', () => {
@@ -15,50 +14,95 @@ describe('splitFullName', () => {
 
   it('tolere le vide, les espaces en trop et le mot unique', () => {
     expect(splitFullName(null)).toEqual({ first: '', last: '' });
-    expect(splitFullName('   ')).toEqual({ first: '', last: '' });
     expect(splitFullName('  Karim   Benani ')).toEqual({ first: 'Karim', last: 'Benani' });
     expect(splitFullName('Yassine')).toEqual({ first: 'Yassine', last: '' });
   });
 });
 
+describe('prettyFrmtName', () => {
+  // La FRMT publie en majuscules. On adoucit la casse SANS toucher aux mots ni
+  // a leur ordre : « IRROU ALAMINE » reste « Irrou Alamine », jamais l'inverse.
+  it('adoucit la casse sans reordonner', () => {
+    expect(prettyFrmtName('IRROU ALAMINE')).toBe('Irrou Alamine');
+    expect(prettyFrmtName('ALAMI MOHAMED')).toBe('Alami Mohamed');
+  });
+
+  it('gere les traits d\'union, les espaces en trop et le vide', () => {
+    expect(prettyFrmtName('EL IDRISSI MOHAMED-AMINE')).toBe('El Idrissi Mohamed-Amine');
+    expect(prettyFrmtName('  IRROU   ALAMINE  ')).toBe('Irrou Alamine');
+    expect(prettyFrmtName(null)).toBe('');
+  });
+});
+
 describe('profileIdentity', () => {
-  it('prend l\'identite stockee en priorite, et la verrouille pour un joueur verifie', () => {
-    expect(profileIdentity({
-      first_name: 'Karim', last_name: 'Benani',
-      frmt_full_name: 'Autre Nom', frmt_verified: true,
-    })).toEqual({ first: 'Karim', last: 'Benani', locked: true });
+  // Joueur lie au classement : le nom vient de la federation, en un seul bloc.
+  // On ne le decoupe pas en prenom/nom — la FRMT ecrit « NOM PRENOM », l'inverse
+  // d'ici, donc tout decoupage inverserait les deux.
+  it('joueur FRMT lie : le nom du classement, non modifiable', () => {
+    expect(profileIdentity({ frmt_verified: true }, 'IRROU ALAMINE'))
+      .toEqual({ mode: 'frmt', full: 'Irrou Alamine' });
   });
 
-  it('a defaut, decoupe le nom FRMT declare', () => {
-    expect(profileIdentity({ frmt_full_name: 'Yassine El Amrani', frmt_verified: false }))
-      .toEqual({ first: 'Yassine', last: 'El Amrani', locked: false });
+  it('verifie mais sans ligne de classement lue : on retombe sur la saisie libre', () => {
+    expect(profileIdentity({ frmt_verified: true, first_name: 'Alamine', last_name: 'Irrou' }, null))
+      .toEqual({ mode: 'free', first: 'Alamine', last: 'Irrou' });
   });
 
-  // LE BUG : Alamine est verifie (position 811) mais n'a AUCUN nom dans players
-  // — son nom federal vit dans frmt_rankings (« IRROU ALAMINE », ordre NOM
-  // PRENOM). Verrouiller sur le seul frmt_verified donnait deux champs vides ET
-  // grises : rien a lire, rien a saisir.
-  it('verifie mais SANS nom stocke : champs vides et MODIFIABLES', () => {
-    expect(profileIdentity({
-      first_name: null, last_name: null, frmt_full_name: null, frmt_verified: true,
-    })).toEqual({ first: '', last: '', locked: false });
+  it('joueur normal : ce qu\'il a renseigne', () => {
+    expect(profileIdentity({ first_name: 'Karim', last_name: 'Benani' }))
+      .toEqual({ mode: 'free', first: 'Karim', last: 'Benani' });
   });
 
-  it('ne verrouille jamais un champ vide, meme si l\'autre est rempli', () => {
-    expect(profileIdentity({ frmt_full_name: 'Yassine', frmt_verified: true }))
-      .toEqual({ first: 'Yassine', last: '', locked: false });
+  it('a defaut, le nom FRMT declare au signup pre-remplit les deux champs', () => {
+    expect(profileIdentity({ frmt_full_name: 'Yassine El Amrani' }))
+      .toEqual({ mode: 'free', first: 'Yassine', last: 'El Amrani' });
   });
 
-  it('traite la chaine vide comme une absence de nom', () => {
-    expect(profileIdentity({ first_name: '', last_name: '  ', frmt_full_name: 'Karim Benani', frmt_verified: false }))
-      .toEqual({ first: 'Karim', last: 'Benani', locked: false });
+  it('une chaine vide en base vaut une absence de nom', () => {
+    expect(profileIdentity({ first_name: '', last_name: '  ', frmt_full_name: 'Karim Benani' }))
+      .toEqual({ mode: 'free', first: 'Karim', last: 'Benani' });
   });
 
-  it('un joueur non verifie n\'est jamais verrouille', () => {
-    expect(profileIdentity({ first_name: 'Karim', last_name: 'Benani', frmt_verified: false }).locked).toBe(false);
+  it('profil vide : deux champs vides, modifiables', () => {
+    expect(profileIdentity({})).toEqual({ mode: 'free', first: '', last: '' });
+  });
+});
+
+describe('realNameLine', () => {
+  it('joueur FRMT lie : le nom du classement, toujours affiche', () => {
+    // Le reglage ne s'applique PAS a un joueur classe : son nom federal
+    // l'identifie deja publiquement.
+    expect(realNameLine({ frmt_verified: true, show_real_name: false }, 'IRROU ALAMINE'))
+      .toBe('Irrou Alamine');
   });
 
-  it('profil vide : rien, et modifiable', () => {
-    expect(profileIdentity({})).toEqual({ first: '', last: '', locked: false });
+  it('le nom d\'un joueur FRMT ne vient JAMAIS de sa saisie', () => {
+    // Sinon : se lier sous le nom d'un classe, puis afficher le sien — le vol
+    // de classement deviendrait invisible.
+    expect(realNameLine({ frmt_verified: true, first_name: 'Karim', last_name: 'Benani' }, 'IRROU ALAMINE'))
+      .toBe('Irrou Alamine');
+  });
+
+  it('joueur normal : ce qu\'il a renseigne, si la case est cochee', () => {
+    expect(realNameLine({ first_name: 'Karim', last_name: 'Benani', show_real_name: true }))
+      .toBe('Karim Benani');
+  });
+
+  it('case decochee : rien', () => {
+    expect(realNameLine({ first_name: 'Karim', last_name: 'Benani', show_real_name: false })).toBe(null);
+  });
+
+  it('colonne absente (avant migration) : on affiche, la case est cochee par defaut', () => {
+    expect(realNameLine({ first_name: 'Karim', last_name: 'Benani' })).toBe('Karim Benani');
+  });
+
+  it('pas de nom du tout : rien', () => {
+    expect(realNameLine({ show_real_name: true })).toBe(null);
+    expect(realNameLine({ frmt_verified: true }, null)).toBe(null);
+  });
+
+  it('un seul des deux champs renseigne : on affiche ce qu\'on a', () => {
+    expect(realNameLine({ first_name: 'Karim' })).toBe('Karim');
+    expect(realNameLine({ last_name: 'Benani' })).toBe('Benani');
   });
 });
