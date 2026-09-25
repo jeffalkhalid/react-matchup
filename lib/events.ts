@@ -97,6 +97,51 @@ export function eventRsvpState(mine: Pick<EventRsvp, 'notify_on_free'> | null | 
   return mine.notify_on_free ? 'me_prevenir' : 'jy_serai';
 }
 
+export interface EventRow {
+  event: ClubEvent;
+  /** Ceux qui viennent — les « Me prévenir » ne sont pas comptés. */
+  attending: number;
+  mine: EventRsvpState;
+}
+
+export interface EventsBoard {
+  /** Le prochain, mis en avant en grande carte. `null` s'il n'y a rien à venir. */
+  next: EventRow | null;
+  others: EventRow[];
+}
+
+/**
+ * Ce que montre l'onglet Événements : le prochain en grand, le reste en lignes.
+ *
+ * ⚠️ Un événement ANNULÉ n'est jamais mis en avant, mais n'est pas caché non
+ * plus : « la soirée du 3 est annulée » est précisément ce qu'on vient
+ * vérifier, et le faire disparaître passerait pour un bug de l'app. Il
+ * redescend simplement dans la liste.
+ *
+ * Pure : c'est ce qui permet de vérifier ces règles ici plutôt qu'à l'œil sur
+ * un téléphone.
+ */
+export function buildEventsBoard(
+  events: ClubEvent[], rsvps: Pick<EventRsvp, 'event_id' | 'player_id' | 'notify_on_free'>[], myId: string | null,
+): EventsBoard {
+  const parEvent = new Map<string, { attending: number; mine: EventRsvpState }>();
+  for (const e of events) parEvent.set(e.id, { attending: 0, mine: 'aucun' });
+  for (const r of rsvps) {
+    const agg = parEvent.get(r.event_id);
+    if (!agg) continue;
+    if (!r.notify_on_free) agg.attending += 1;
+    if (myId && r.player_id === myId) agg.mine = r.notify_on_free ? 'me_prevenir' : 'jy_serai';
+  }
+
+  const lignes: EventRow[] = [...events]
+    .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+    .map(e => ({ event: e, ...(parEvent.get(e.id) ?? { attending: 0, mine: 'aucun' as EventRsvpState }) }));
+
+  const i = lignes.findIndex(r => r.event.status === 'PUBLIE');
+  if (i < 0) return { next: null, others: lignes };
+  return { next: lignes[i], others: lignes.filter((_, j) => j !== i) };
+}
+
 // ── La lecture et l'écriture ────────────────────────────────────────────────
 
 const EVENT_COLS =
@@ -115,6 +160,25 @@ export async function fetchUpcomingEvents(): Promise<ClubEvent[]> {
     .order('starts_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as ClubEvent[];
+}
+
+/**
+ * Tout ce qu'il faut à l'onglet Événements, en DEUX requêtes.
+ *
+ * Les réponses de tous les événements sont ramenées d'un coup plutôt qu'une
+ * requête par carte : à notre échelle la liste est courte, mais le N+1 se
+ * paie au premier club actif, et il se paie sur le réseau du joueur.
+ */
+export async function fetchEventsBoard(playerId: string | null): Promise<EventsBoard> {
+  const events = await fetchUpcomingEvents();
+  if (events.length === 0) return { next: null, others: [] };
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('event_rsvps')
+    .select('event_id, player_id, notify_on_free')
+    .in('event_id', events.map(e => e.id));
+  if (error) throw error;
+  return buildEventsBoard(events, (data ?? []) as any, playerId);
 }
 
 export async function fetchEvent(id: string): Promise<ClubEvent | null> {

@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Image,
+  View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Image, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,6 +32,11 @@ import {
   FilterBar, FilterCounter, FilterDeadEnd, GroupHeader, type FilterChip,
 } from '../../components/tournaments/ListFilters';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
+import { EventsPane } from '../../components/events/EventsPane';
+import {
+  fetchEventsBoard, rsvpEvent, eventIsFull,
+  type EventsBoard, type EventRow,
+} from '../../lib/events';
 
 type TabKey = Extract<TournamentPhase, 'upcoming' | 'live' | 'past'>;
 
@@ -96,6 +101,18 @@ export default function TournamentsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // ── Les deux moitiés de cette entrée ──
+  // Un tournoi se joue et se classe ; un événement se vit. Deux onglets, un
+  // seul écran — c'est la structure du handoff, et elle évite une deuxième
+  // entrée de menu pour trois rendez-vous par mois.
+  const [section, setSection] = useState<'tournois' | 'evenements'>('tournois');
+  const [board, setBoard] = useState<EventsBoard>({ next: null, others: [] });
+  // Tenu SÉPARÉ de `loadError` : tant que `events.sql` n'est pas appliquée,
+  // la lecture des événements échoue — et elle ne doit pas emporter avec elle
+  // la liste des tournois, qui n'a rien à voir.
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [busyEventId, setBusyEventId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const on = await getTournamentsEnabled();
     setEnabled(on);
@@ -121,7 +138,32 @@ export default function TournamentsScreen() {
     }
   }, []);
 
+  const loadEvents = useCallback(async () => {
+    try {
+      setBoard(await fetchEventsBoard(player?.id ?? null));
+      setEventsError(null);
+    } catch (e) {
+      console.warn('[événements] liste indisponible', e);
+      setEventsError(GENERIC_REASON);
+    }
+  }, [player?.id]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  /** « J'y serai » depuis la liste : la réponse la plus fréquente ne doit pas
+   *  coûter l'ouverture d'une fiche. Le refus (complet, annulé, passé) vient
+   *  du serveur ; on le montre et on recharge. */
+  const repondreDepuisLaListe = useCallback(async (row: EventRow) => {
+    if (!player?.id) return;
+    const complet = eventIsFull(row.event.capacity, row.attending);
+    setBusyEventId(row.event.id);
+    try {
+      const res = await rsvpEvent(row.event.id, player.id, complet);
+      if (!res.ok) Alert.alert('Impossible', res.reason ?? GENERIC_REASON);
+      await loadEvents();
+    } finally { setBusyEventId(null); }
+  }, [player?.id, loadEvents]);
 
   // Éteint : on repart d'où l'on vient, sans un mot. L'entrée du menu est déjà
   // masquée ; ce chemin ne sert qu'à un lien direct ou à une extinction en
@@ -247,15 +289,45 @@ export default function TournamentsScreen() {
 
         <View style={{ alignItems: 'center', marginBottom: 14 }}>
           <Text numberOfLines={2}
-            style={{ fontSize: 26, lineHeight: 34, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
-            Les <Text style={{ color: Colors.brand }}>Tournois</Text>
+            style={{ fontSize: 24, lineHeight: 32, fontFamily: Fonts.welcome, color: Colors.textOnDark, includeFontPadding: false, textAlign: 'center', paddingRight: 5 }}>
+            Tournois & <Text style={{ color: Colors.brand }}>Événements</Text>
           </Text>
           <Text style={{ fontSize: 12, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, marginTop: 2, textAlign: 'center' }}>
-            Montante / descente · 8 binômes, 6 rotations
+            {section === 'tournois'
+              ? 'Montante / descente · 8 binômes, 6 rotations'
+              : 'Ce qui se passe au club, hors compétition'}
           </Text>
         </View>
 
-        {/* Onglets — pastilles du Lobby */}
+        {/* Les deux moitiés, en pastilles. */}
+        <View style={{
+          flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)',
+          borderRadius: 18, padding: 4, gap: 3, marginBottom: section === 'tournois' ? 8 : 0,
+        }}>
+          {([['tournois', 'Tournois'], ['evenements', 'Événements']] as const).map(([id, label]) => {
+            const active = section === id;
+            return (
+              <TouchableOpacity key={id} onPress={() => setSection(id)} activeOpacity={0.7}
+                style={{
+                  flex: 1, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: active ? Colors.bgCard : 'transparent',
+                  borderRadius: 14, paddingVertical: 9,
+                }}>
+                <Text style={{
+                  color: active ? Colors.textPrimary : 'rgba(255,255,255,0.55)',
+                  fontSize: 11, fontFamily: Fonts.uiBlack, textTransform: 'uppercase', letterSpacing: 0.3,
+                }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Les phases (à venir / en cours / passés) n'ont de sens que sur les
+            tournois : un événement est un rendez-vous, pas une compétition
+            qui traverse des états. */}
+        {section === 'tournois' && (
         <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
           {TABS.map(t => {
             const active = tab === t.id;
@@ -279,9 +351,18 @@ export default function TournamentsScreen() {
             );
           })}
         </View>
+        )}
       </View>
 
-      {(loading || playerLoading) ? (
+      {section === 'evenements' ? (
+        <ScrollView
+          contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 28, gap: 10 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        >
+          {eventsError && <ErrorNotice message={eventsError} />}
+          <EventsPane board={board} busyId={busyEventId} onJySerai={repondreDepuisLaListe} />
+        </ScrollView>
+      ) : (loading || playerLoading) ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={Colors.primary} size="large" />
         </View>

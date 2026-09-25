@@ -2,7 +2,7 @@
 // réseau, et c'est ce qui permet de les exécuter ici plutôt que de les relire.
 import { describe, it, expect } from 'vitest';
 import {
-  eventKindLabel, eventIsFull, eventSpotsLabel, eventPriceLabel, eventRsvpState,
+  eventKindLabel, eventIsFull, eventSpotsLabel, eventPriceLabel, eventRsvpState, buildEventsBoard,
 } from '../events';
 
 describe('la nature d un evenement', () => {
@@ -56,5 +56,51 @@ describe('ou j en suis avec cet evenement', () => {
     expect(eventRsvpState(null)).toBe('aucun');
     expect(eventRsvpState({ notify_on_free: false } as any)).toBe('jy_serai');
     expect(eventRsvpState({ notify_on_free: true } as any)).toBe('me_prevenir');
+  });
+});
+
+describe('le tableau des evenements a venir', () => {
+  const E = (o: any = {}) => ({
+    id: 'e1', kind: 'stage', title: 'Stage', club_id: null,
+    starts_at: '2026-10-01T18:00:00.000Z', ends_at: null, capacity: null,
+    price_mad: 0, description: null, external_url: null, status: 'PUBLIE',
+    cancel_reason: null, created_by: 'orga', created_at: '2026-09-01T10:00:00.000Z', ...o,
+  });
+  const R = (event_id: string, player_id: string, notify_on_free = false) =>
+    ({ event_id, player_id, notify_on_free, created_at: '2026-09-02T10:00:00.000Z' } as any);
+
+  it('met le plus proche en avant, et garde les autres en dessous', () => {
+    const b = buildEventsBoard(
+      [E({ id: 'tard', starts_at: '2026-10-20T18:00:00.000Z' }),
+       E({ id: 'tot', starts_at: '2026-10-02T18:00:00.000Z' })],
+      [], 'moi');
+    expect(b.next?.event.id).toBe('tot');
+    expect(b.others.map(r => r.event.id)).toEqual(['tard']);
+  });
+
+  it('ne met JAMAIS un evenement annule en avant, mais ne le cache pas', () => {
+    // « La soiree du 3 est annulee » est precisement ce qu on vient verifier :
+    // le faire disparaitre passerait pour un bug de l app.
+    const b = buildEventsBoard(
+      [E({ id: 'annule', starts_at: '2026-10-02T18:00:00.000Z', status: 'ANNULE' }),
+       E({ id: 'vivant', starts_at: '2026-10-09T18:00:00.000Z' })],
+      [], 'moi');
+    expect(b.next?.event.id).toBe('vivant');
+    expect(b.others.map(r => r.event.id)).toEqual(['annule']);
+  });
+
+  it('compte les venants sans compter les « Me prevenir », et dit ou j en suis', () => {
+    const b = buildEventsBoard(
+      [E({ id: 'e1', capacity: 4 })],
+      [R('e1', 'amine'), R('e1', 'karim'), R('e1', 'moi', true)],
+      'moi');
+    expect(b.next?.attending).toBe(2);
+    expect(b.next?.mine).toBe('me_prevenir');
+  });
+
+  it('rend un tableau vide sans rien inventer', () => {
+    const b = buildEventsBoard([], [], 'moi');
+    expect(b.next).toBe(null);
+    expect(b.others).toEqual([]);
   });
 });
