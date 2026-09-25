@@ -11,7 +11,7 @@ import { Glyph } from '../../components/profile/glyphs';
 import { usePlayer } from '../../hooks/usePlayer';
 import { supabase } from '../../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, eloToLevel, formatPadelLevel, Fonts } from '../../lib/theme';
-import { formatFrmtRanking } from '../../lib/frmt-match';
+import { formatFrmtRanking, profileIdentity } from '../../lib/frmt-match';
 import { totalsFromMatches } from '../../lib/playerStats';
 import { pickAvatarFromLibrary, takeAvatarWithCamera, pendingAvatarPick, uploadAvatar, removeAvatar, reportAvatar, type PickedImage } from '../../lib/avatars';
 import { getFiabilityDecayed } from '../../lib/elo';
@@ -1108,18 +1108,16 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const showPrefs = !!profile.court_side || playingDays.length > 0 || !!profile.frmt_rank || !!profile.preferred_court;
   const showPalm  = sortedKarma.length > 0 || achvBadges.length > 0;
 
+  // Identité affichée ET verrou (lib/frmt-match) : « vérifié FRMT » et « un nom
+  // est disponible » sont DEUX questions. Les confondre verrouillait des champs
+  // vides pour un joueur vérifié dont le nom ne vit que dans frmt_rankings.
+  const identity = profileIdentity(profile);
+
   const openEdit = () => {
-    // Pré-remplissage de l'identité : un joueur inscrit AVANT l'ajout des
-    // colonnes n'a que frmt_full_name — on le coupe au premier espace pour ne
-    // pas le faire retaper. Un découpage de travers (« El Amrani Yassine »)
-    // est SANS CONSÉQUENCE : en recollant « prénom + nom » on retombe sur la
-    // chaîne d'origine, donc aucune liaison FRMT n'est cassée ; le joueur
-    // corrige s'il le souhaite.
-    const fromFrmt = splitFullName(profile.frmt_full_name);
     setEditForm({
       name:            profile.name,
-      first_name:      profile.first_name ?? fromFrmt.first,
-      last_name:       profile.last_name ?? fromFrmt.last,
+      first_name:      identity.first,
+      last_name:       identity.last,
       court_side:      profile.court_side ?? '',
       playing_days:    Array.isArray(profile.playing_days) ? [...profile.playing_days] : [],
       frmt_full_name:  profile.frmt_full_name ?? '',
@@ -1143,15 +1141,6 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       .split(/[^a-z0-9]+/).filter(Boolean).sort().join(' ');
   };
 
-  // « Prénom Nom » → deux champs. Coupe au PREMIER espace : le prénom est
-  // rarement composé, le nom souvent (« El Amrani », « Ben Ali »).
-  const splitFullName = (full?: string | null) => {
-    const s = (full ?? '').trim().replace(/\s+/g, ' ');
-    if (!s) return { first: '', last: '' };
-    const i = s.indexOf(' ');
-    return i < 0 ? { first: s, last: '' } : { first: s.slice(0, i), last: s.slice(i + 1) };
-  };
-
   const handleEditSave = async () => {
     if (!editForm.name.trim()) return;
     // Année de naissance (liaison FRMT) : optionnelle, mais si renseignée
@@ -1171,7 +1160,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     // identité ni à son nom FRMT (le changer casserait la liaison).
     const first = editForm.first_name.trim();
     const last = editForm.last_name.trim();
-    const identityLocked = !!profile.frmt_verified;
+    const identityLocked = identity.locked;
     // Accord donné mais identité incomplète (nom FRMT hérité d'un seul mot) :
     // on garde la valeur stockée. Sinon on effacerait une déclaration FRMT
     // sans que le joueur ait rien demandé. Décocher, ça, c'est explicite.
@@ -1597,12 +1586,12 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                     grisée, son nom est celui du classement officiel. */}
                 <View>
                   <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Prénom et nom</Text>
-                  <View style={{ flexDirection: 'row', gap: 10, opacity: profile.frmt_verified ? 0.6 : 1 }}>
+                  <View style={{ flexDirection: 'row', gap: 10, opacity: identity.locked ? 0.6 : 1 }}>
                     <TextInput
                       value={editForm.first_name}
                       onChangeText={v => { setEditForm(f => ({ ...f, first_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
-                      editable={!profile.frmt_verified}
-                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: profile.frmt_verified ? Colors.textMuted : Colors.textPrimary }}
+                      editable={!identity.locked}
+                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: identity.locked ? Colors.textMuted : Colors.textPrimary }}
                       placeholder="Prénom"
                       placeholderTextColor={Colors.textMuted}
                       autoCapitalize="words"
@@ -1610,15 +1599,15 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                     <TextInput
                       value={editForm.last_name}
                       onChangeText={v => { setEditForm(f => ({ ...f, last_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
-                      editable={!profile.frmt_verified}
-                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: profile.frmt_verified ? Colors.textMuted : Colors.textPrimary }}
+                      editable={!identity.locked}
+                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: identity.locked ? Colors.textMuted : Colors.textPrimary }}
                       placeholder="Nom"
                       placeholderTextColor={Colors.textMuted}
                       autoCapitalize="words"
                     />
                   </View>
                   <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
-                    {profile.frmt_verified
+                    {identity.locked
                       ? 'Nom du classement FRMT, vérifié — non modifiable ici.'
                       : 'Facultatif. Jamais affiché aux autres joueurs : ils ne voient que ton pseudo.'}
                   </Text>
