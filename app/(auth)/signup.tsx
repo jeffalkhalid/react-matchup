@@ -40,6 +40,9 @@ interface FormData {
   estimatedLevel: string; frequency: string; tournaments: string;
   hasFrmtRank: '' | 'yes' | 'no'; frmtFirstName: string; frmtLastName: string;
   frmtBirthYear: string;
+  /** Identité civile saisie à l'étape 5. Pour un joueur FRMT ces deux champs
+   *  restent VIDES : la saisie de l'étape 3 fait foi (cf. frmtIdentity). */
+  firstName: string; lastName: string;
   techniques: string[]; name: string; email: string; password: string;
 }
 const INITIAL: FormData = {
@@ -47,6 +50,7 @@ const INITIAL: FormData = {
   estimatedLevel: '', frequency: '', tournaments: '',
   hasFrmtRank: '', frmtFirstName: '', frmtLastName: '',
   frmtBirthYear: '',
+  firstName: '', lastName: '',
   techniques: [], name: '', email: '', password: '',
 };
 
@@ -158,7 +162,7 @@ function Lockup() {
 function FieldInput({
   label, value, onChangeText, placeholder, icon, focused, onFocus, onBlur,
   secureTextEntry, rightElement, keyboardType, autoComplete, autoCapitalize,
-  error, errorMessage, tokens,
+  error, errorMessage, locked, tokens,
 }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder: string; icon?: React.ReactNode; focused: boolean;
@@ -166,10 +170,13 @@ function FieldInput({
   rightElement?: React.ReactNode; keyboardType?: any; autoComplete?: any;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   error?: boolean; errorMessage?: string;
+  /** Champ grisé et non modifiable : la valeur vient d'ailleurs dans le
+   *  formulaire (identité FRMT de l'étape 3). Cadenas affiché à droite. */
+  locked?: boolean;
   tokens: AuthThemeTokens;
 }) {
-  const borderColor = error ? AUTH_ERROR_BORDER : focused ? AUTH_BRAND : tokens.fieldBorder;
-  const bg = focused ? tokens.fieldFocusBg : tokens.fieldBg;
+  const borderColor = error ? AUTH_ERROR_BORDER : (focused && !locked) ? AUTH_BRAND : tokens.fieldBorder;
+  const bg = (focused && !locked) ? tokens.fieldFocusBg : tokens.fieldBg;
 
   return (
     <View>
@@ -189,6 +196,7 @@ function FieldInput({
         borderColor,
         paddingHorizontal: 14,
         height: 52,
+        opacity: locked ? 0.6 : 1,
       }}>
         {icon ? <View style={{ marginRight: 10 }}>{icon}</View> : null}
         <TextInput
@@ -198,17 +206,18 @@ function FieldInput({
           placeholderTextColor={tokens.placeholder}
           onFocus={onFocus}
           onBlur={onBlur}
+          editable={!locked}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           autoComplete={autoComplete}
           autoCapitalize={autoCapitalize ?? 'none'}
           style={{
-            flex: 1, color: tokens.textPrimary, fontSize: 15,
+            flex: 1, color: locked ? tokens.label : tokens.textPrimary, fontSize: 15,
             fontFamily: Fonts.ui,
             paddingVertical: 0,
           }}
         />
-        {rightElement}
+        {rightElement ?? (locked ? <IconLock size={16} color={tokens.fieldIcon} /> : null)}
       </View>
       {error && errorMessage && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
@@ -334,6 +343,8 @@ export default function SignupScreen() {
   const [formData, setFormData] = useState<FormData>(INITIAL);
 
   // Focus flags for step 5 fields
+  const [firstNameFocused, setFirstNameFocused] = useState(false);
+  const [lastNameFocused, setLastNameFocused] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [pwFocused, setPwFocused] = useState(false);
@@ -374,6 +385,17 @@ export default function SignupScreen() {
   // « Jamais » de tournoi fédéral → pas de classement possible : l'étape 3 est
   // sautée (hasFrmtRank forcé à 'no' au passage 2→4).
   const skipFrmtStep = formData.tournaments === 'Jamais';
+
+  // Identité civile retenue — SOURCE UNIQUE. Un joueur FRMT a déjà donné son
+  // nom et son prénom à l'étape 3 : l'étape 5 les LIT (champs grisés), elle ne
+  // les recopie pas. Une copie serait figée : revenir à l'étape 3 corriger une
+  // faute laisserait un nom à l'écran et un autre dans frmt_full_name.
+  // frmtTaken (homonyme) ne change rien : ce nom reste le sien.
+  const frmtIdentity = COLLECT_FRMT_IDENTITY && formData.hasFrmtRank === 'yes'
+    && !!formData.frmtFirstName.trim() && !!formData.frmtLastName.trim();
+  const firstName = frmtIdentity ? formData.frmtFirstName : formData.firstName;
+  const lastName = frmtIdentity ? formData.frmtLastName : formData.lastName;
+  const identityFilled = !!firstName.trim() && !!lastName.trim();
 
   const toggleTechnique = (label: string) =>
     setFormData(prev => ({
@@ -506,7 +528,7 @@ export default function SignupScreen() {
   const handleCreateAccount = async () => {
     // Garde de sécurité (défense en profondeur, en plus du bouton désactivé) :
     // âge confirmé + captcha + champs requis avant toute création de compte.
-    if ((CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || !isPasswordValid(formData.password)) return;
+    if ((CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !identityFilled || !formData.name.trim() || !formData.email || !isPasswordValid(formData.password)) return;
     setIsSubmitting(true);
     try {
       const { count: nameCount, error: nameErr } = await supabase
@@ -521,6 +543,10 @@ export default function SignupScreen() {
       // un insert client serait bloqué par la RLS (rôle anon).
       const meta: Record<string, unknown> = {
         name: formData.name.trim(),
+        // Identité civile : jamais affichée aux autres joueurs (comme
+        // frmt_full_name). Recopiée dans players par handle_new_user.
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         elo_score: calculateInitialScore(), fiability_pct: 10,
         handedness: formData.handedness || null,
         court_side: formData.preferredSide || null,
@@ -684,7 +710,7 @@ export default function SignupScreen() {
       </View>
     );
     if (step === 5) {
-      const finalDisabled = isSubmitting || (CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !formData.name.trim() || !formData.email || !isPasswordValid(formData.password);
+      const finalDisabled = isSubmitting || (CAPTCHA_ENABLED && !captchaToken) || !ageConfirmed || !identityFilled || !formData.name.trim() || !formData.email || !isPasswordValid(formData.password);
       return (
         <View style={{ gap: 12 }}>
           {/* Confirmation d'âge (obligatoire) — exigence légale (loi 09-08 / stores). */}
@@ -1132,6 +1158,47 @@ export default function SignupScreen() {
                       </View>
                     )}
                   </View>
+
+                  {/* Identité civile. Pour un joueur FRMT : repris de l'étape 3,
+                      grisé et non modifiable (une seule vérité dans le formulaire). */}
+                  <Row>
+                    <View style={{ flex: 1 }}>
+                      <FieldInput
+                        label="Prénom"
+                        value={firstName}
+                        onChangeText={v => set('firstName', v)}
+                        placeholder="Prénom"
+                        focused={firstNameFocused}
+                        onFocus={() => setFirstNameFocused(true)}
+                        onBlur={() => setFirstNameFocused(false)}
+                        autoCapitalize="words"
+                        locked={frmtIdentity}
+                        tokens={tokens}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <FieldInput
+                        label="Nom"
+                        value={lastName}
+                        onChangeText={v => set('lastName', v)}
+                        placeholder="Nom"
+                        focused={lastNameFocused}
+                        onFocus={() => setLastNameFocused(true)}
+                        onBlur={() => setLastNameFocused(false)}
+                        autoCapitalize="words"
+                        locked={frmtIdentity}
+                        tokens={tokens}
+                      />
+                    </View>
+                  </Row>
+                  <Text style={{
+                    color: tokens.textSecondary, fontSize: 11.5, lineHeight: 16,
+                    fontFamily: Fonts.ui, marginTop: -4,
+                  }}>
+                    {frmtIdentity
+                      ? 'Repris de ta vérification FRMT. Pour le corriger, reviens à l\'étape Compétition.'
+                      : 'Ton vrai nom, jamais affiché aux autres joueurs : ils ne voient que ton pseudo.'}
+                  </Text>
 
                   <FieldInput
                     label="Pseudo"

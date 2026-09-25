@@ -30,6 +30,8 @@ export interface Player {
   level?: number;
   frmt_rank?: string;        // rang auto-déclaré au signup (joueur non lié/non vérifié)
   frmt_full_name?: string | null; // nom+prénom pour la liaison FRMT auto (jamais affiché)
+  first_name?: string | null;  // identité civile saisie à l'inscription, jamais affichée
+  last_name?: string | null;   // idem — les autres joueurs ne voient que `name` (pseudo)
   frmt_verified?: boolean;
   frmt_position?: number | null; // vraie position au classement FRMT (joueur lié)
   frmt_points?: number | null;   // vrais points FRMT (joueur lié)

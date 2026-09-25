@@ -29,14 +29,19 @@ export default function ConfidentialiteScreen() {
       <Section n={2} icon="🗂️" title="Ce que nous collectons">
         <P>Uniquement ce qui sert à faire fonctionner le jeu et la communauté :</P>
         <Tags items={[
-          'E-mail', 'Pseudo / nom', 'Photo de profil', 'Zone de jeu (facultative)', 'Niveau & ELO', 'Historique de matchs',
+          'E-mail', 'Pseudo', 'Nom et prénom', 'Photo de profil', 'Zone de jeu (facultative)', 'Niveau & ELO', 'Historique de matchs',
           'Messages & réactions', 'Activités', 'Jeton de notification', 'Données techniques',
         ]} />
         <P>
-          Si vous demandez la liaison à votre <B>classement officiel FRMT</B>, nous collectons aussi
-          votre nom, prénom et votre année de naissance. Ces données servent{' '}
-          <B>uniquement</B> à vous associer à la bonne entrée du classement (l'année permet de
-          distinguer les homonymes) et ne sont jamais affichées publiquement.
+          Vos <B>nom et prénom</B> sont demandés à l'inscription. Ils servent à identifier le
+          titulaire du compte et, le cas échéant, à vous associer à votre classement fédéral.
+          Ils ne sont <B>jamais affichés</B> aux autres joueurs, qui ne voient que votre pseudo.
+        </P>
+        <P>
+          Si vous demandez la liaison à votre <B>classement officiel FRMT</B>, nous collectons en
+          plus votre <B>année de naissance</B>. Elle sert{' '}
+          <B>uniquement</B> à vous associer à la bonne entrée du classement (elle permet de
+          distinguer les homonymes) et n'est jamais affichée publiquement.
         </P>
         <P>
           La <B>photo de profil</B> est facultative. Si vous en ajoutez une, elle est stockée sur nos
