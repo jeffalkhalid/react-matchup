@@ -534,7 +534,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [editOpen,   setEditOpen]   = useState(false);
   const [editSaving, setEditSaving] = useState(false);
-  const [editForm,   setEditForm]   = useState({ name: '', court_side: '', playing_days: [] as string[], frmt_full_name: '', birth_year: '', preferred_court: '' });
+  const [editForm,   setEditForm]   = useState({ name: '', first_name: '', last_name: '', court_side: '', playing_days: [] as string[], frmt_full_name: '', birth_year: '', preferred_court: '', frmt_link: false });
   const [editFrmtTaken, setEditFrmtTaken] = useState(false);
   const [genderReqOpen, setGenderReqOpen] = useState(false);
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
@@ -1109,13 +1109,25 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
   const showPalm  = sortedKarma.length > 0 || achvBadges.length > 0;
 
   const openEdit = () => {
+    // Pré-remplissage de l'identité : un joueur inscrit AVANT l'ajout des
+    // colonnes n'a que frmt_full_name — on le coupe au premier espace pour ne
+    // pas le faire retaper. Un découpage de travers (« El Amrani Yassine »)
+    // est SANS CONSÉQUENCE : en recollant « prénom + nom » on retombe sur la
+    // chaîne d'origine, donc aucune liaison FRMT n'est cassée ; le joueur
+    // corrige s'il le souhaite.
+    const fromFrmt = splitFullName(profile.frmt_full_name);
     setEditForm({
       name:            profile.name,
+      first_name:      profile.first_name ?? fromFrmt.first,
+      last_name:       profile.last_name ?? fromFrmt.last,
       court_side:      profile.court_side ?? '',
       playing_days:    Array.isArray(profile.playing_days) ? [...profile.playing_days] : [],
       frmt_full_name:  profile.frmt_full_name ?? '',
       birth_year:      profile.birth_year != null ? String(profile.birth_year) : '',
       preferred_court: profile.preferred_court ?? '',
+      // L'accord de liaison remplace le champ nom de la case FRMT : il est
+      // déjà donné par qui avait déclaré une identité FRMT.
+      frmt_link:       !!(profile.frmt_full_name ?? '').trim(),
     });
     setEditFrmtTaken(false);
     setEditOpen(true);
@@ -1131,6 +1143,15 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       .split(/[^a-z0-9]+/).filter(Boolean).sort().join(' ');
   };
 
+  // « Prénom Nom » → deux champs. Coupe au PREMIER espace : le prénom est
+  // rarement composé, le nom souvent (« El Amrani », « Ben Ali »).
+  const splitFullName = (full?: string | null) => {
+    const s = (full ?? '').trim().replace(/\s+/g, ' ');
+    if (!s) return { first: '', last: '' };
+    const i = s.indexOf(' ');
+    return i < 0 ? { first: s, last: '' } : { first: s.slice(0, i), last: s.slice(i + 1) };
+  };
+
   const handleEditSave = async () => {
     if (!editForm.name.trim()) return;
     // Année de naissance (liaison FRMT) : optionnelle, mais si renseignée
@@ -1143,7 +1164,22 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     // part de players.frmt_full_name. Même garde anti-doublon qu'au signup,
     // seulement si le nom normalisé change réellement (ou si l'année vient
     // d'être renseignée : elle peut débloquer un homonyme).
-    const newFrmt = editForm.frmt_full_name.trim();
+    // Identité civile = SOURCE UNIQUE du vrai nom. Le nom FRMT en est DÉRIVÉ
+    // (« Prénom Nom ») quand le joueur demande la liaison : sans ça, cet écran
+    // et le formulaire d'inscription pourraient stocker deux noms différents
+    // pour la même personne. Joueur déjà vérifié : on ne touche ni à son
+    // identité ni à son nom FRMT (le changer casserait la liaison).
+    const first = editForm.first_name.trim();
+    const last = editForm.last_name.trim();
+    const identityLocked = !!profile.frmt_verified;
+    // Accord donné mais identité incomplète (nom FRMT hérité d'un seul mot) :
+    // on garde la valeur stockée. Sinon on effacerait une déclaration FRMT
+    // sans que le joueur ait rien demandé. Décocher, ça, c'est explicite.
+    const newFrmt = identityLocked
+      ? (profile.frmt_full_name ?? '')
+      : !editForm.frmt_link ? ''
+      : (first && last) ? first + ' ' + last
+      : (profile.frmt_full_name ?? '');
     const oldFrmt = profile.frmt_full_name ?? '';
     const frmtChanged = frmtNormalizeLocal(newFrmt) !== frmtNormalizeLocal(oldFrmt);
     if (frmtChanged && newFrmt) {
@@ -1158,8 +1194,11 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
     // birth_* AVANT frmt_full_name dans le même UPDATE : le trigger de liaison
     // (AFTER UPDATE OF frmt_full_name) lit players.birth_year de la MÊME ligne
     // mise à jour → l'année est bien prise en compte au matching immédiat.
-    await supabase.from('players').update({
+    const { error: saveErr } = await supabase.from('players').update({
       name:            editForm.name.trim(),
+      // Identité : écrite seulement quand elle est modifiable ici — pour un
+      // joueur vérifié on n'invente pas un découpage qu'il ne peut pas corriger.
+      ...(identityLocked ? {} : { first_name: first || null, last_name: last || null }),
       court_side:      editForm.court_side || null,
       playing_days:    editForm.playing_days.length > 0 ? editForm.playing_days : null,
       frmt_full_name:  newFrmt || null,
@@ -1167,6 +1206,10 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
       preferred_court: editForm.preferred_court || null,
     }).eq('id', profile.id);
     setEditSaving(false);
+    // Une erreur passait ici en SILENCE : la fenêtre se fermait comme si tout
+    // était enregistré (ex. colonne absente, migration pas encore appliquée).
+    // On la montre et on garde la fenêtre ouverte.
+    if (saveErr) { Alert.alert('Enregistrement impossible', saveErr.message); return; }
     setEditOpen(false);
     onRefresh();
   };
@@ -1549,6 +1592,38 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                   />
                 </View>
 
+                {/* Identité — facultative, jamais affichée aux autres joueurs.
+                    Écrit players.first_name / last_name. Joueur FRMT vérifié :
+                    grisée, son nom est celui du classement officiel. */}
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Prénom et nom</Text>
+                  <View style={{ flexDirection: 'row', gap: 10, opacity: profile.frmt_verified ? 0.6 : 1 }}>
+                    <TextInput
+                      value={editForm.first_name}
+                      onChangeText={v => { setEditForm(f => ({ ...f, first_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
+                      editable={!profile.frmt_verified}
+                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: profile.frmt_verified ? Colors.textMuted : Colors.textPrimary }}
+                      placeholder="Prénom"
+                      placeholderTextColor={Colors.textMuted}
+                      autoCapitalize="words"
+                    />
+                    <TextInput
+                      value={editForm.last_name}
+                      onChangeText={v => { setEditForm(f => ({ ...f, last_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
+                      editable={!profile.frmt_verified}
+                      style={{ flex: 1, backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: profile.frmt_verified ? Colors.textMuted : Colors.textPrimary }}
+                      placeholder="Nom"
+                      placeholderTextColor={Colors.textMuted}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                  <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
+                    {profile.frmt_verified
+                      ? 'Nom du classement FRMT, vérifié — non modifiable ici.'
+                      : 'Facultatif. Jamais affiché aux autres joueurs : ils ne voient que ton pseudo.'}
+                  </Text>
+                </View>
+
                 {/* Genre — admin-gated via request */}
                 <View>
                   <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 }}>Genre</Text>
@@ -1652,23 +1727,55 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                     </View>
                   ) : (
                     <>
-                      <TextInput
-                        value={editForm.frmt_full_name}
-                        onChangeText={v => { setEditForm(f => ({ ...f, frmt_full_name: v })); if (editFrmtTaken) setEditFrmtTaken(false); }}
-                        style={{ backgroundColor: Colors.bg, borderWidth: 1, borderColor: editFrmtTaken ? Colors.danger : Colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary }}
-                        placeholder="Nom et prénom (ex : Yassine El Amrani)"
-                        placeholderTextColor={Colors.textMuted}
-                        autoCapitalize="words"
-                      />
-                      {editFrmtTaken ? (
-                        <Text style={{ fontSize: 11, color: Colors.danger, marginTop: 4 }}>
-                          Ce nom et prénom sont déjà associés à un autre compte. Si c'est bien toi, contacte-nous.
-                        </Text>
-                      ) : (
-                        <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
-                          Tels qu'ils apparaissent sur le classement FRMT — la vérification est automatique. Jamais affichés publiquement.
-                        </Text>
-                      )}
+                      {/* L'accord explicite a REMPLACÉ la saisie du nom ici : le
+                          nom vient de la section Identité, saisi une seule fois.
+                          Sans cet accord, tout joueur qui renseigne son nom
+                          deviendrait candidat à la liaison — un homonyme d'un
+                          classé hériterait de son bonus sans l'avoir demandé. */}
+                      {(() => {
+                        const identityReady = !!editForm.first_name.trim() && !!editForm.last_name.trim();
+                        return (
+                          <>
+                            <TouchableOpacity
+                              onPress={() => {
+                                // Bloquer l'ACTIVATION sans nom, jamais la désactivation :
+                                // une case cochée qu'on ne peut pas décocher est un piège.
+                                if (!editForm.frmt_link && !identityReady) return;
+                                setEditForm(f => ({ ...f, frmt_link: !f.frmt_link }));
+                                if (editFrmtTaken) setEditFrmtTaken(false);
+                              }}
+                              activeOpacity={(editForm.frmt_link || identityReady) ? 0.7 : 1}
+                              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, opacity: (editForm.frmt_link || identityReady) ? 1 : 0.5 }}
+                            >
+                              <View style={{
+                                width: 22, height: 22, borderRadius: 6, borderWidth: 1.5,
+                                borderColor: editForm.frmt_link ? Colors.brand : Colors.border,
+                                backgroundColor: editForm.frmt_link ? Colors.brand : 'transparent',
+                                alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {editForm.frmt_link && (
+                                  <Text style={{ color: Colors.textOnBrand, fontSize: 13, fontFamily: Fonts.uiBlack }}>✓</Text>
+                                )}
+                              </View>
+                              <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBold, color: Colors.textPrimary }}>
+                                Je joue les tournois FRMT — lier mon classement
+                              </Text>
+                            </TouchableOpacity>
+                            {editFrmtTaken ? (
+                              <Text style={{ fontSize: 11, color: Colors.danger, marginTop: 4 }}>
+                                Ce nom et prénom sont déjà associés à un autre compte. Si c'est bien toi, contacte-nous.
+                              </Text>
+                            ) : (
+                              <Text style={{ fontSize: 11, color: Colors.textMuted, marginTop: 4 }}>
+                                {identityReady
+                                  ? 'On utilise ton prénom et ton nom ci-dessus, tels qu\'ils apparaissent sur le classement FRMT. La vérification est automatique.'
+                                  : 'Renseigne ton prénom et ton nom ci-dessus pour pouvoir lier ton classement.'}
+                              </Text>
+                            )}
+                          </>
+                        );
+                      })()}
+                      {editForm.frmt_link && (<>
                       <TextInput
                         value={editForm.birth_year}
                         onChangeText={v => { setEditForm(f => ({ ...f, birth_year: v.replace(/[^0-9]/g, '').slice(0, 4) })); if (editFrmtTaken) setEditFrmtTaken(false); }}
@@ -1681,6 +1788,7 @@ export function PlayerProfile({ id, showcase }: { id: string; showcase?: string 
                         Année de naissance — sert uniquement à la liaison
                         (elle distingue les homonymes du classement).
                       </Text>
+                      </>)}
                     </>
                   )}
                 </View>
