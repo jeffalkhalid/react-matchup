@@ -41,7 +41,7 @@ import {
   getTournamentsEnabled, registerToTournament, joinTournamentPlayer, fetchPendingPairs,
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
-  myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder, autoValidateLabel,
+  myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder, autoValidateLabel, suggestPartner,
   groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL, partnerIntentNotice,
   isExpiredUnstarted,
   waitlistCount, freePlaces, waitExplanation, registerNotice,
@@ -656,6 +656,23 @@ export default function TournamentDetailScreen() {
   const canRegister = acceptsRegistrations(t.status) && !me.registration && !isExpiredUnstarted(t);
   const canPair = acceptsPairing(t.status);
   const mySide = me.registration?.side ?? null;
+
+  // La suggestion n'a de sens que pour quelqu'un d'INSCRIT et SEUL : en
+  // binôme, elle proposerait de défaire ce qui est fait ; non inscrit, elle
+  // promettrait un geste que le serveur refuse (« on ne s'apparie pas depuis
+  // l'extérieur »).
+  const partenaireSuggere = useMemo(() => {
+    if (!player?.id || !me.registration || me.team) return null;
+    return suggestPartner(
+      { player_id: player.id, side: mySide, elo: player.elo_score ?? null },
+      solos
+        .filter(r => r.player_id !== player.id)
+        // Même file : un joueur assis et un joueur en attente formeraient une
+        // équipe dont une moitié seulement a sa place (`waitlist_mismatch`).
+        .filter(r => (r.waitlist_position == null) === (me.registration!.waitlist_position == null))
+        .map(r => ({ player_id: r.player_id, side: r.side, elo: r.player?.elo_score ?? null })),
+    );
+  }, [player?.id, player?.elo_score, me.registration, me.team, mySide, solos]);
   const partnerReg = me.partnerId ? byId.get(me.partnerId) : null;
   const pairWarning = sameSideWarning(mySide, partnerReg?.side ?? null);
   // Le côté n'est plus modifiable une fois le premier tirage fait
@@ -1430,6 +1447,54 @@ export default function TournamentDetailScreen() {
             </View>
           </View>
         )}
+
+        {/* ── Le partenaire que l'app propose ──
+            Un joueur seul pouvait déjà inviter quelqu'un ; encore fallait-il
+            qu'il sache QUI, dans une liste de prénoms où rien ne dit lequel
+            lui convient. `suggestPartner` choisit à sa place — côté opposé
+            d'abord, niveau le plus proche ensuite — et le met en avant plutôt
+            que de le noyer dans la liste, qui reste en dessous. */}
+        {partenaireSuggere && (() => {
+          const r = solos.find(x => x.player_id === partenaireSuggere.player_id);
+          if (!r) return null;
+          const asked = me.outgoing.some(o => o.to_player === r.player_id);
+          return (
+            <View style={[cs.card, { padding: 14, gap: 10, borderColor: Colors.brand, borderWidth: 1.5 }]}>
+              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 1.1, color: Colors.brandDeep }}>
+                ON TE PROPOSE
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push(`/player/${r.player_id}` as any)}
+                activeOpacity={0.7}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+              >
+                <Avatar name={displayName(r.player, 'player')} path={(r.player as any)?.avatar_path} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                    {displayName(r.player, 'player')}
+                  </Text>
+                  <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>
+                    {r.player?.elo_score != null && !isDeleted(r.player)
+                      ? `Niv. ${eloToLevel(r.player.elo_score).toFixed(1)} · ` : ''}
+                    {sideLabel(r.side).toLowerCase()}
+                    {mySide && r.side && !sameSideWarning(mySide, r.side) ? ' — vous êtes complémentaires' : ''}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {asked ? (
+                <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+                  Demande envoyée · en attente de sa réponse
+                </Text>
+              ) : (
+                <PrimaryButton
+                  busy={busy === `join-${r.player_id}`}
+                  label={r.open_to_join ? 'Faire binôme' : 'Demander à faire binôme'}
+                  onPress={() => run(`join-${r.player_id}`, () => joinTournamentPlayer(t.id, r.player_id))}
+                />
+              )}
+            </View>
+          );
+        })()}
 
         {/* ── Les joueurs seuls ── */}
         <View style={{ gap: 10 }}>

@@ -316,6 +316,58 @@ export function sameSideWarning(
     : 'Vous jouez tous les deux à droite. C’est possible, mais l’un devra passer à gauche.';
 }
 
+export interface PartnerCandidate {
+  player_id: string;
+  side: TournamentSide | null | undefined;
+  elo: number | null | undefined;
+}
+
+/**
+ * À quel point deux côtés vont ensemble — 0 = idéal, 2 = à négocier.
+ *
+ * Un binôme gauche + droite se met en place tel quel. Deux gauchers jouent
+ * quand même, mais l'un devra passer à droite : c'est ce que dit déjà
+ * `sameSideWarning`, et c'est pour ça que le côté passe AVANT le niveau dans
+ * la suggestion.
+ */
+function ecartDeCote(a: TournamentSide | null | undefined, b: TournamentSide | null | undefined): number {
+  if (!a || !b || a === 'both' || b === 'both') return 1;
+  return a === b ? 2 : 0;
+}
+
+/**
+ * Le partenaire que l'app propose à un joueur seul.
+ *
+ * Un joueur seul entre en liste d'attente et n'en sort qu'apparié. Il pouvait
+ * déjà inviter quelqu'un lui-même ; encore fallait-il qu'il sache QUI, dans
+ * une liste de prénoms où rien ne dit lequel lui convient. Cette fonction
+ * choisit à sa place : côté opposé d'abord, niveau le plus proche ensuite.
+ *
+ * ⚠️ DÉTERMINISTE, y compris à égalité parfaite (départage par `player_id`).
+ * Une suggestion qui change à chaque rafraîchissement de la liste passe pour
+ * un bug, et on cesse de lui faire confiance.
+ *
+ * Ne propose RIEN quand il n'y a personne : pas de repli sur « n'importe qui ».
+ */
+export function suggestPartner(
+  me: PartnerCandidate, solos: PartnerCandidate[],
+): PartnerCandidate | null {
+  const autres = solos.filter(s => s.player_id !== me.player_id);
+  if (autres.length === 0) return null;
+
+  const score = (c: PartnerCandidate): [number, number, string] => [
+    ecartDeCote(me.side, c.side),
+    me.elo != null && c.elo != null ? Math.abs(me.elo - c.elo) : Number.MAX_SAFE_INTEGER,
+    c.player_id,
+  ];
+
+  return [...autres].sort((x, y) => {
+    const [sx, ex, ix] = score(x);
+    const [sy, ey, iy] = score(y);
+    return sx - sy || ex - ey || ix.localeCompare(iy);
+  })[0];
+}
+
 /** « Niveau 3 à 5 », « Niveau 4 et plus », « Tous niveaux ». */
 export function levelRangeLabel(min: number | null, max: number | null): string {
   const f = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));

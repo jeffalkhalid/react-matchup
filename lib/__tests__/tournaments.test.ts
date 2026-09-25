@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights, autoValidateLabel,
+  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights, autoValidateLabel, suggestPartner,
   groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   waitExplanation, registerNotice, partnerIntentNotice, myLiveTournament,
@@ -1379,5 +1379,44 @@ describe('l echeance de validation automatique, dite au joueur', () => {
 
   it('ne dit rien quand il n y a pas d echeance', () => {
     expect(autoValidateLabel(null, NOW)).toBe(null);
+  });
+});
+
+describe('le partenaire que l app propose a un joueur seul', () => {
+  const C = (id: string, side: any, elo: number | null) => ({ player_id: id, side, elo });
+  const MOI = C('moi', 'left', 1000);
+
+  it('prefere un COTE OPPOSE, meme si le niveau est moins proche', () => {
+    // Un binome gauche+droite joue tel quel ; deux gauchers doivent negocier.
+    // Le cote passe donc avant le niveau, pas l inverse.
+    const choix = suggestPartner(MOI, [C('gaucher', 'left', 1005), C('droitier', 'right', 1080)]);
+    expect(choix?.player_id).toBe('droitier');
+  });
+
+  it('accepte « les deux cotes », mais apres un vrai oppose', () => {
+    expect(suggestPartner(MOI, [C('souple', 'both', 1200), C('droitier', 'right', 1400)])?.player_id)
+      .toBe('droitier');
+    expect(suggestPartner(MOI, [C('souple', 'both', 1200), C('gaucher', 'left', 1005)])?.player_id)
+      .toBe('souple');
+  });
+
+  it('a cote egal, prend le niveau le plus proche', () => {
+    const choix = suggestPartner(MOI, [C('loin', 'right', 1300), C('proche', 'right', 1020)]);
+    expect(choix?.player_id).toBe('proche');
+  });
+
+  it('ne se propose jamais soi-meme', () => {
+    expect(suggestPartner(MOI, [MOI])).toBe(null);
+  });
+
+  it('rend null quand il n y a personne', () => {
+    expect(suggestPartner(MOI, [])).toBe(null);
+  });
+
+  it('rend TOUJOURS le meme, quel que soit l ordre de la liste', () => {
+    // Une suggestion qui change a chaque rafraichissement passe pour un bug.
+    const a = C('a', 'right', 1000), b = C('b', 'right', 1000);
+    expect(suggestPartner(MOI, [a, b])?.player_id)
+      .toBe(suggestPartner(MOI, [b, a])?.player_id);
   });
 });
