@@ -61,6 +61,7 @@ import { bumpGames } from '../../lib/tournamentEvening';
 import {
   fetchTournamentReports, resolveReport, type TournamentReport,
 } from '../../lib/tournamentReports';
+import { nudgeTournamentCourt } from '../../lib/tournaments';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
 import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
@@ -2894,8 +2895,10 @@ const TOURNAMENT_AUTOPAIR_OK = ['COMPLET', 'CHECK_IN', 'PRET'];
 
 function AdminMatchCard({
   match, teamA, teamB, status, entriesCount, isOrganizer, busy, laterCount, forfeitGames, stakeText,
-  allowEmptyScore, onResolve, onReopen,
+  allowEmptyScore, onResolve, onReopen, onNudge,
 }: {
+  /** « Relancer les 4 » — absent quand le geste n'a pas de sens ici. */
+  onNudge?: (matchId: string) => void;
   match: TournamentMatch;
   teamA: CourtTeamInfo;
   teamB: CourtTeamInfo | null;
@@ -2946,6 +2949,32 @@ function AdminMatchCard({
           second cas à la carte EN_COURS : voir sa doc ci-dessus. */}
       {isOrganizer && teamB && (status === 'disputed' || (allowEmptyScore && status === 'awaiting')) && (
         <View style={{ gap: 8 }}>
+          {/* LEUR REDEMANDER, avant de décider à leur place. Entre « ne rien
+              faire » et « taper le score qu'on ne connaît pas », il manquait
+              ce geste-là — et c'est celui qui règle le cas le plus fréquent :
+              quatre joueurs qui ont oublié, pas quatre joueurs en désaccord. */}
+          {onNudge && (
+            <TouchableOpacity
+              onPress={() => onNudge(match.id)}
+              disabled={busy}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                backgroundColor: Colors.bgCardAlt, borderRadius: 12, paddingVertical: 12,
+                opacity: busy ? 0.5 : 1,
+              }}
+            >
+              <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                Relancer les 4
+              </Text>
+              {(match as any).nudge_count > 0 && (
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+                  · déjà {(match as any).nudge_count} fois
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+
           <Text style={sty.fieldLabel}>Saisir le score à leur place (score de {teamA.names.join(' · ')} en premier)</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary }}>
@@ -3246,6 +3275,18 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
       { text: 'Déclarer forfait', style: 'destructive', onPress: () => runAction('forfeit', () => forfeitTournamentTeam(t.id, teamId)) },
     ],
   );
+
+  /** « Relancer les 4 ». Pas de confirmation : renvoyer une notification est
+   *  réversible par nature — au pire, quatre joueurs la lisent deux fois. */
+  const handleNudge = async (matchId: string) => {
+    setBusy(`nudge-${matchId}`);
+    try {
+      const res = await nudgeTournamentCourt(matchId);
+      if (!res.ok) { Alert.alert('Impossible', resultMessage(res)); return; }
+      await load();
+      Alert.alert('C’est reparti', 'Les quatre joueurs du terrain viennent d’être prévenus.');
+    } finally { setBusy(null); }
+  };
 
   const handleReopen = (match: TournamentMatch, laterCount: number) => {
     // ⚠️ La borne haute annoncée est `t.current_round` (le DERNIER TOUR
@@ -3717,6 +3758,7 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                     // seul endroit où « débloquer un terrain muet » a un sens.
                     allowEmptyScore
                     onResolve={handleResolveDispute} onReopen={handleReopen}
+                    onNudge={handleNudge}
                   />
                 );
               })}

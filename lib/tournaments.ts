@@ -711,6 +711,18 @@ export function inviteOutsiderToTournament(
     { p_tournament: tournamentId, p_player: playerId });
 }
 
+/**
+ * « Relancer les 4 » : renvoyer une notification aux quatre joueurs d'un
+ * terrain qui ne rend pas son score.
+ *
+ * Réservé à l'organisateur, et seulement pendant la soirée. C'est le geste
+ * qui manquait entre « ne rien faire » et « taper le score à leur place » —
+ * lequel suppose qu'on connaisse le résultat.
+ */
+export function nudgeTournamentCourt(matchId: string): Promise<TournamentResult> {
+  return callTournamentRpc('tournament_nudge_court', { p_match: matchId });
+}
+
 /** Répondre à une demande reçue. Accepter forme le binôme ET refuse
  *  automatiquement les autres demandes vivantes. */
 export function respondJoinRequest(requestId: string, accept: boolean): Promise<TournamentResult> {
@@ -842,6 +854,9 @@ export interface TournamentMatch {
   games_b: number | null;
   forfeited_team: string | null;
   confirmed_at: string | null;
+  /** Combien de fois l'organisateur a déjà relancé les quatre joueurs.
+   *  Absent tant que `tournament_nudge_court.sql` n'est pas appliquée. */
+  nudge_count?: number | null;
   started_at: string | null;
   /** Quand la rotation a été tirée. Le seul repère temporel d'un terrain dont
    *  personne n'a lancé le chrono — voir `blockedCourts`. */
@@ -849,7 +864,7 @@ export interface TournamentMatch {
 }
 
 const TOURNAMENT_MATCH_COLS =
-  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at, started_at, created_at';
+  'id, tournament_id, round_no, court_no, team_a, team_b, games_a, games_b, forfeited_team, confirmed_at, started_at, nudge_count, created_at';
 
 /** Les matchs d'UN TOUR, terrain par terrain — le tableau de la soirée.
  *  Triés Terrain 1 en premier : « du Terrain 1 en haut » se lit directement
