@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  NO_EXPLORE_FILTERS, activeExploreFilterCount, matchesDatePreset, matchesTimeSlot,
+  NO_EXPLORE_FILTERS, DEFAULT_EXPLORE_FILTERS, activeExploreFilterCount, matchesDatePreset, matchesTimeSlot,
   gameType, exploreRefusal, filterExplore, bestExploreFilterToDrop, REASON_LABEL,
   canPlayerSee, visibleGames, allowedGenderFilters, countCompanions, selectionSummary,
   type ExploreFilters, type ExploreContext, type ExploreGame,
@@ -399,6 +399,27 @@ describe('remplissage — filtre rapide « Parties ouvertes » / « Complètes �
     expect(exploreRefusal(partie(), NO_EXPLORE_FILTERS, ctx({ freeSpots: () => 0 }))).toBe(null);
     expect(activeExploreFilterCount(NO_EXPLORE_FILTERS)).toBe(0);
     expect(activeExploreFilterCount(f({ fill: 'full' }))).toBe(1);
+  });
+
+  // L'Explorer s'ouvre sur « À compléter » : une partie complète ne se rejoint
+  // pas. Mais ce départ ne doit pas compter dans la pastille « Filtres », qui
+  // commande aussi l'affichage du bloc « Pour toi ».
+  it('l\'état de départ cache les parties complètes sans compter comme un filtre', () => {
+    expect(DEFAULT_EXPLORE_FILTERS.fill).toBe('open');
+    expect(activeExploreFilterCount(DEFAULT_EXPLORE_FILTERS)).toBe(0);
+    expect(exploreRefusal(partie(), DEFAULT_EXPLORE_FILTERS, ctx({ freeSpots: () => 0 }))).toBe('fill');
+    expect(exploreRefusal(partie(), DEFAULT_EXPLORE_FILTERS, ctx({ freeSpots: () => 2 }))).toBe(null);
+  });
+
+  it('à part le remplissage, l\'état de départ est l\'état neutre', () => {
+    expect({ ...DEFAULT_EXPLORE_FILTERS, fill: 'any' }).toEqual(NO_EXPLORE_FILTERS);
+  });
+
+  it('choisir « Complètes » ou « les deux » depuis le départ', () => {
+    // « Complètes » restreint autrement que le défaut : il compte.
+    expect(activeExploreFilterCount({ ...DEFAULT_EXPLORE_FILTERS, fill: 'full' })).toBe(1);
+    // « Les deux » élargit : rien n'est filtré, donc rien à compter.
+    expect(activeExploreFilterCount({ ...DEFAULT_EXPLORE_FILTERS, fill: 'any' })).toBe(0);
   });
   it('a son libellé pour la sortie « retire ce filtre »', () => {
     expect(REASON_LABEL.fill).toBe('À compléter / complètes');

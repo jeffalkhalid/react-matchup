@@ -55,6 +55,19 @@ export const NO_EXPLORE_FILTERS: ExploreFilters = {
   spots: null, fill: 'any', urgentOnly: false, players: [], knownOnly: false, search: '',
 };
 
+/**
+ * État de DÉPART de l'Explorer : l'état neutre + « À compléter ». Une partie
+ * complète ne se rejoint pas : l'afficher d'office fait chercher dans une liste
+ * où une carte sur deux ne sert à rien. C'est aussi l'état auquel ramène
+ * « Réinitialiser les filtres » — sinon le bouton mènerait à un état dans
+ * lequel l'app ne s'ouvre jamais.
+ *
+ * NO_EXPLORE_FILTERS reste l'état NEUTRE (aucune contrainte) et sert de base aux
+ * filtres enregistrés : un filtre créé avant ce changement ne doit pas gagner
+ * en silence une contrainte que son auteur n'a jamais demandée.
+ */
+export const DEFAULT_EXPLORE_FILTERS: ExploreFilters = { ...NO_EXPLORE_FILTERS, fill: 'open' };
+
 /** Combien de filtres sont actifs — le chiffre de la pastille « Filtres ». */
 export function activeExploreFilterCount(f: ExploreFilters): number {
   let n = 0;
@@ -67,7 +80,12 @@ export function activeExploreFilterCount(f: ExploreFilters): number {
   if (f.level !== 'all') n++;
   if (f.gender !== 'all') n++;
   if (f.spots !== null) n++;
-  if (f.fill !== 'any') n++;
+  // « À compléter » est l'état de départ : il ne compte pas, sinon la pastille
+  // annoncerait « Filtres (1) » dès l'ouverture et le bloc « Pour toi », masqué
+  // dès qu'un filtre est actif, ne s'afficherait plus jamais. « Les deux » (any)
+  // élargit au lieu de restreindre : il ne compte pas non plus. Seul
+  // « Complètes » restreint autrement que le défaut.
+  if (f.fill !== 'any' && f.fill !== DEFAULT_EXPLORE_FILTERS.fill) n++;
   if (f.urgentOnly) n++;
   if (f.players.length > 0) n++;
   if (f.knownOnly) n++;

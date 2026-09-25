@@ -25,7 +25,7 @@ import {
   alertCoverage, canAlert, suggestFilterName, alertNeedsZone, type SavedFilter,
 } from '../../lib/savedFilters';
 import {
-  NO_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates, allowedGenderFilters,
+  DEFAULT_EXPLORE_FILTERS, activeExploreFilterCount, weekendDates, allowedGenderFilters,
   selectionSummary,
   type ExploreFilters, type DatePreset, type TimeSlot,
   type TypeFilter, type LevelFilter, type GenderFilter, type PlayerGender,
@@ -384,7 +384,7 @@ export function ExploreFilterSheet({
             </View>
             {actifs > 0 && (
               <TouchableOpacity
-                onPress={() => setDraft(NO_EXPLORE_FILTERS)}
+                onPress={() => setDraft(DEFAULT_EXPLORE_FILTERS)}
                 activeOpacity={0.8}
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 6,

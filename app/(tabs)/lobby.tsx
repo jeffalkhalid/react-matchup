@@ -30,7 +30,7 @@ import { LiveDot } from '../../components/live/LiveDot';
 import { HeaderActions } from '../../components/HeaderActions';
 import {
   filterExplore, activeExploreFilterCount, bestExploreFilterToDrop,
-  NO_EXPLORE_FILTERS, REASON_LABEL, visibleGames, countCompanions,
+  NO_EXPLORE_FILTERS, DEFAULT_EXPLORE_FILTERS, REASON_LABEL, visibleGames, countCompanions,
   type ExploreFilters, type ExploreContext, type ExploreReason, type PlayerGender,
 } from '../../lib/exploreFilters';
 import type { DistanceOf } from '../../lib/geo';
@@ -2349,7 +2349,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
               {mainList.length} partie{mainList.length > 1 ? 's' : ''} {countLabel}
             </Text>
             {hasActiveFilter && (
-              <TouchableOpacity onPress={() => setFilters(NO_EXPLORE_FILTERS)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => setFilters(DEFAULT_EXPLORE_FILTERS)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Text style={{ fontSize: 11, fontFamily: Fonts.uiExtraBold, color: Colors.brandDeep }}>
                   Réinitialiser les filtres
                 </Text>
@@ -2370,7 +2370,7 @@ function ExploreTab({ games: allGames, myElo, filters, setFilters, clubs, saved,
                     <Text style={{ color: Colors.textMuted, fontWeight: '600', fontSize: 12, textAlign: 'center', marginTop: 4 }}>
                       {games.length} partie{games.length > 1 ? 's' : ''} disponible{games.length > 1 ? 's' : ''} au total
                     </Text>
-                    <TouchableOpacity onPress={() => setFilters(NO_EXPLORE_FILTERS)} activeOpacity={0.85}
+                    <TouchableOpacity onPress={() => setFilters(DEFAULT_EXPLORE_FILTERS)} activeOpacity={0.85}
                       style={{ marginTop: 14, backgroundColor: Colors.brand, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
                       <Text style={{ color: Colors.textOnBrand, fontFamily: Fonts.uiBlack, fontSize: 13 }}>Réinitialiser les filtres</Text>
                     </TouchableOpacity>
@@ -2708,7 +2708,7 @@ export default function LobbyScreen() {
   // compteur « Urgent » et le badge d'onglet lisent tous celui-la. Quatre
   // etats separes avaient deja produit trois copies divergentes de la meme
   // regle sans que rien ne le signale.
-  const [exploreFilters, setExploreFilters] = useState<ExploreFilters>(NO_EXPLORE_FILTERS);
+  const [exploreFilters, setExploreFilters] = useState<ExploreFilters>(DEFAULT_EXPLORE_FILTERS);
   // Explorer : liste ou carte. En mode carte, la page ne défile plus (la carte
   // prend les gestes) et on mesure la hauteur disponible pour la dimensionner.
   const [exploreView, setExploreView] = useState<'list' | 'map'>('list');
