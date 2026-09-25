@@ -7,7 +7,7 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   courtState, eveningCourts, myCourt, blockingLabel, blocks, needsHuman, courtsDone,
   roundLabel, secondsLeft, formatCountdown, shouldTickClock, shouldSyncAlarms,
-  tournamentEveningIsLive,
+  tournamentEveningIsLive, courtTone, bumpGames, type CourtState,
 } from '../tournamentEvening';
 
 const M = (o: any = {}) => ({
@@ -355,5 +355,50 @@ describe('un repos n est pas « mon terrain »', () => {
   it('un vrai match du même binôme reste bien le mien', () => {
     const c = eveningCourts([M()], EQUIPES, [], 'mina', 2, RM, N);
     expect(c[0].mine).toBe(true);
+  });
+});
+
+describe('le ton d un terrain', () => {
+  const TOUS: CourtState[] = [
+    'a_demarrer', 'en_cours', 'temps_ecoule', 'provisoire',
+    'litige', 'acquis', 'forfait', 'exempt',
+  ];
+
+  it('l alerte suit EXACTEMENT needsHuman, pour les huit etats', () => {
+    // Le lien est teste plutot que recopie : deux tables de correspondance
+    // separees auraient derive au premier etat ajoute, et c est precisement
+    // cette derive qui a mis quatre etats sur huit en rouge.
+    for (const s of TOUS) {
+      expect(courtTone(s) === 'alert').toBe(needsHuman(s));
+    }
+  });
+
+  it('jouer n est pas une alerte : un terrain tire ou en jeu n est jamais rouge', () => {
+    expect(courtTone('a_demarrer')).toBe('neutral');
+    expect(courtTone('en_cours')).toBe('live');
+  });
+
+  it('un score provisoire se distingue d un acquis, et le repos reste neutre', () => {
+    expect(courtTone('provisoire')).toBe('provisional');
+    expect(courtTone('acquis')).toBe('done');
+    expect(courtTone('forfait')).toBe('neutral');
+    expect(courtTone('exempt')).toBe('neutral');
+  });
+});
+
+describe('le pas d un compteur de jeux', () => {
+  it('part de rien, et ne descend jamais sous zero', () => {
+    // Rien de saisi, l ecran affiche « — » : le premier « + » doit donner 1,
+    // pas 0 — sinon il faut deux appuis pour annoncer un jeu.
+    expect(bumpGames('', 1)).toBe('1');
+    expect(bumpGames('', -1)).toBe('0');
+    expect(bumpGames('0', -1)).toBe('0');
+    expect(bumpGames('6', -1)).toBe('5');
+  });
+
+  it('ne depasse pas deux chiffres', () => {
+    // Le plafond du champ de saisie qu il remplace, conserve tel quel.
+    expect(bumpGames('99', 1)).toBe('99');
+    expect(bumpGames('9', 1)).toBe('10');
   });
 });

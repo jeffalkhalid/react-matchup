@@ -99,6 +99,57 @@ export function needsHuman(state: CourtState): boolean {
   return state === 'temps_ecoule' || state === 'litige';
 }
 
+/** Le registre visuel d'un état — un NOM, pas une couleur.
+ *
+ *  Même convention que `statusTone` (lib/tournaments.ts) : la logique dit le
+ *  ton, l'écran choisit la teinte. Ça garde ce fichier testable sans thème,
+ *  et ça permet à la fiche et au poste organisateur de peindre un état de
+ *  terrain comme le mode soirée le peint, sans recopier la règle.
+ */
+export type CourtTone = 'neutral' | 'live' | 'provisional' | 'alert' | 'done';
+
+/**
+ * Le ton d'un état de terrain.
+ *
+ * `'alert'` n'est pas décidé ici : il est DÉLÉGUÉ à `needsHuman`, qui porte
+ * déjà la règle (« ce terrain réclame-t-il que quelqu'un se lève ? »). Deux
+ * tables de correspondance séparées auraient divergé au premier état ajouté —
+ * et c'est exactement cette divergence qui laissait `a_demarrer` et `en_cours`
+ * en rouge alors que `needsHuman` les en excluait déjà.
+ */
+export function courtTone(state: CourtState): CourtTone {
+  if (needsHuman(state)) return 'alert';
+  switch (state) {
+    case 'en_cours':   return 'live';
+    case 'provisoire': return 'provisional';
+    case 'acquis':     return 'done';
+    // `a_demarrer` (rien à faire encore), `forfait` et `exempt` (soldés,
+    // personne n'est attendu) : rien à signaler.
+    default:           return 'neutral';
+  }
+}
+
+/** Le plafond d'un compteur de jeux — celui du champ de saisie qu'il remplace
+ *  (deux chiffres). Il n'a pas à coller au padel réel, seulement à exclure
+ *  l'absurde. */
+const JEUX_MAX = 99;
+
+/**
+ * Un pas de compteur, en chaîne : ce que devient la valeur affichée quand on
+ * appuie sur « − » ou « + ».
+ *
+ * La saisie se faisait au clavier numérique. Debout entre deux points, les
+ * mains moites, on rate une touche de clavier ; on ne rate pas un bouton de la
+ * taille du pouce. La valeur reste une chaîne parce que c'est ce que l'écran
+ * affiche — `''` étant « rien de saisi » (le « — » du champ), qu'un premier
+ * « + » doit porter à 1 et non à 0.
+ */
+export function bumpGames(value: string, delta: number): string {
+  const n = Number.parseInt(value, 10);
+  const depart = Number.isNaN(n) ? 0 : n;
+  return String(Math.min(JEUX_MAX, Math.max(0, depart + delta)));
+}
+
 /**
  * Ce push de tournoi annonce-t-il une soirée QUI TOURNE ?
  *

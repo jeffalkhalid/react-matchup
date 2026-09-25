@@ -22,7 +22,7 @@
 // lib/tournamentEvening, avec ses tests. Ici, du rendu et des appels.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextInput,
+  View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
   AppState,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -41,26 +41,29 @@ import {
 import { displayName } from '../../../lib/players';
 import {
   eveningCourts, myCourt, blockingLabel, needsHuman, courtsDone, roundLabel, inTeam,
+  courtTone, bumpGames,
   formatCountdown, shouldTickClock, shouldSyncAlarms,
-  type CourtView, type CourtState,
+  type CourtView, type CourtState, type CourtTone,
 } from '../../../lib/tournamentEvening';
 import { syncCourtAlarms, expoAlarmPort, type AlarmPort } from '../../../lib/courtAlarm';
 import { loadAlarmMemory, persistAlarmMemory, purgeAlarmMemory } from '../../../lib/courtAlarmStorage';
 
-/** La couleur d'un état — la même partout sur l'écran.
- *  Les trois états sans score (Tâche 5) reprennent la teinte de l'ancien
- *  `vide` qu'ils remplacent : les distinguer visuellement est un choix
- *  d'écran, laissé à la Tâche 7. */
-const TEINTE: Record<CourtState, string> = {
-  a_demarrer:   Colors.danger,
-  en_cours:     Colors.danger,
-  temps_ecoule: Colors.danger,
-  litige:       Colors.danger,
-  provisoire:   Colors.brandDeep,
-  acquis:       Colors.success,
-  forfait:      Colors.textMuted,
-  exempt:       Colors.textMuted,
+/** La teinte d'un TON — la même partout sur l'écran.
+ *
+ *  `courtTone` (lib/tournamentEvening) dit le registre d'un état, cette table
+ *  choisit la couleur : même convention que `statusTone` → `Pill`. La règle du
+ *  rouge n'est donc pas écrite ici, elle vit dans `needsHuman` — les quatre
+ *  états peints en rouge jusqu'ici (dont `en_cours`, soit l'essentiel de
+ *  chaque quart d'heure) venaient précisément d'une table tenue à part. */
+const TEINTE_TON: Record<CourtTone, string> = {
+  neutral:     Colors.textMuted,
+  live:        Colors.brand,
+  provisional: Colors.brandDeep,
+  alert:       Colors.danger,
+  done:        Colors.success,
 };
+
+const teinte = (state: CourtState) => TEINTE_TON[courtTone(state)];
 
 const PASTILLE: Record<CourtState, string> = {
   a_demarrer: '·', en_cours: '·', temps_ecoule: '·',
@@ -525,13 +528,13 @@ export default function SoireeScreen() {
             {/* Le score effectif, quand il y en a un — avec son état en clair. */}
             {mien.gamesA != null && (
               <View style={{
-                backgroundColor: TEINTE[mien.state] + '18', borderRadius: 14,
+                backgroundColor: teinte(mien.state) + '18', borderRadius: 14,
                 paddingVertical: 10, paddingHorizontal: 12, gap: 3,
               }}>
                 <Text style={{ fontSize: 18, fontFamily: Fonts.uiBlack, color: Colors.textPrimary, textAlign: 'center' }}>
                   {mien.gamesA} – {mien.gamesB}
                 </Text>
-                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: TEINTE[mien.state], textAlign: 'center' }}>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBold, color: teinte(mien.state), textAlign: 'center' }}>
                   {mien.state === 'acquis' ? 'Acquis : vous dites la même chose'
                     : mien.state === 'litige' ? 'Vos scores diffèrent — mettez-vous d’accord'
                     : 'Ce score compte déjà. L’autre camp peut le confirmer ou le corriger.'}
@@ -624,7 +627,7 @@ export default function SoireeScreen() {
                 <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: c.mine ? Colors.primary : Colors.textOnDark }}>
                   T{c.courtNo}
                 </Text>
-                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: c.mine ? Colors.primary : TEINTE[c.state] }}>
+                <Text style={{ fontSize: 11, fontFamily: Fonts.uiBlack, color: c.mine ? Colors.primary : teinte(c.state) }}>
                   {c.mine ? 'toi' : PASTILLE[c.state]}
                 </Text>
               </View>
@@ -658,22 +661,50 @@ export default function SoireeScreen() {
   );
 }
 
-/** Une case de score : grande, numérique, faite pour un pouce mouillé. */
-function Case({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** Un pas de compteur : large comme un pouce, et pas seulement au toucher —
+ *  la cible dessinée fait 44 px, celle qui répond au doigt un peu plus. */
+function Pas({ signe, onPress }: { signe: '−' | '+'; onPress: () => void }) {
   return (
-    <TextInput
-      value={value}
-      onChangeText={v => onChange(v.replace(/[^0-9]/g, '').slice(0, 2))}
-      keyboardType="number-pad"
-      maxLength={2}
-      placeholder="—"
-      placeholderTextColor={Colors.textMuted}
-      style={{
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+      accessibilityRole="button"
+      accessibilityLabel={signe === '+' ? 'Un jeu de plus' : 'Un jeu de moins'}
+      style={{ width: 44, paddingVertical: 15, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Text style={{ fontSize: 22, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>
+        {signe}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * Une case de score : deux boutons et un chiffre, faits pour un pouce mouillé.
+ *
+ * C'était un champ à clavier numérique. Debout entre deux points, on rate une
+ * touche de clavier — et le clavier recouvre la moitié de l'écran au moment
+ * précis où l'on veut relire l'adversaire et le terrain. Deux boutons ne se
+ * ratent pas et ne cachent rien. Le pas lui-même est dans `bumpGames`, avec
+ * ses bornes, parce que c'est une règle et que ça se teste.
+ */
+function Case({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const vide = value === '';
+  return (
+    <View style={{
+      flex: 1, flexDirection: 'row', alignItems: 'center',
+      backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
+      borderRadius: 14, overflow: 'hidden',
+    }}>
+      <Pas signe="−" onPress={() => onChange(bumpGames(value, -1))} />
+      <Text style={{
         flex: 1, textAlign: 'center',
-        backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border,
-        borderRadius: 14, paddingVertical: 14,
-        fontSize: 26, fontFamily: Fonts.uiBlack, color: Colors.textPrimary,
-      }}
-    />
+        fontSize: 26, fontFamily: Fonts.uiBlack,
+        color: vide ? Colors.textMuted : Colors.textPrimary,
+      }}>
+        {vide ? '—' : value}
+      </Text>
+      <Pas signe="+" onPress={() => onChange(bumpGames(value, 1))} />
+    </View>
   );
 }
