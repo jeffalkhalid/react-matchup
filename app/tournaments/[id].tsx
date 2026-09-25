@@ -43,6 +43,7 @@ import {
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
   myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder, autoValidateLabel, suggestPartner,
+  fetchMatchCorrections, type MatchCorrection,
   groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL, partnerIntentNotice,
   isExpiredUnstarted,
   waitlistCount, freePlaces, waitExplanation, registerNotice,
@@ -547,6 +548,15 @@ export default function TournamentDetailScreen() {
   const [reportBusy, setReportBusy] = useState(false);
   const [mesSignalements, setMesSignalements] = useState<TournamentReport[]>([]);
 
+  // Les corrections qui me concernent — la RLS ne rend que celles de mes
+  // terrains. Lecture à part : tant que la migration n'est pas appliquée,
+  // elle échoue, et la fiche doit se lire quand même.
+  const [corrections, setCorrections] = useState<MatchCorrection[]>([]);
+  useEffect(() => {
+    if (!id) return;
+    fetchMatchCorrections(id).then(setCorrections).catch(() => {});
+  }, [id]);
+
   const chargerSignalements = useCallback(async () => {
     if (!id) return;
     // Lecture indépendante du reste de la fiche : tant que
@@ -875,6 +885,32 @@ export default function TournamentDetailScreen() {
             score faux y déplace deux binômes. Jusqu'ici, le joueur qui le
             voyait n'avait aucun moyen de le dire dans l'app — il fallait
             trouver l'organisateur, ou laisser passer. */}
+        {/* POURQUOI MON RANG A CHANGÉ. En montante, un score corrigé déplace
+            deux binômes : finir 4e au lieu de 2e sans explication, c'est ce
+            qui fait qu'on n'y revient pas. Chaque correction est donc dite
+            avec ce qu'il y avait AVANT — et elle n'apparaît qu'aux quatre
+            joueurs du terrain, la RLS s'en charge. */}
+        {closed && corrections.length > 0 && corrections.map(c => {
+          const m = matches.find(x => x.id === c.match_id);
+          const qui = displayName(byId.get(c.corrected_by)?.player ?? null, 'player');
+          return (
+            <View key={c.id} style={[cs.card, { padding: 12, gap: 3 }]}>
+              <Text style={{ fontSize: 10, fontFamily: Fonts.uiBlack, letterSpacing: 1, color: Colors.brandDeep }}>
+                SCORE CORRIGÉ
+              </Text>
+              <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
+                {qui} a corrigé le Terrain {m?.court_no ?? '?'} :{' '}
+                <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                  {c.new_games_a} – {c.new_games_b}
+                </Text>
+                {c.old_games_a != null && c.old_games_b != null
+                  ? ` (avant : ${c.old_games_a} – ${c.old_games_b})`
+                  : ' — personne n’avait rentré de score.'}
+              </Text>
+            </View>
+          );
+        })}
+
         {/* L'échéance dite en clair : « points en attente » sans date laisse
             croire qu'ils attendent quelqu'un qui ne viendra peut-être jamais.
             Rien ne s'affiche si la migration n'est pas appliquée — la colonne

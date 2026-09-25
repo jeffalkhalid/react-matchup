@@ -711,6 +711,37 @@ export function inviteOutsiderToTournament(
     { p_tournament: tournamentId, p_player: playerId });
 }
 
+export interface MatchCorrection {
+  id: string;
+  tournament_id: string;
+  match_id: string;
+  corrected_by: string;
+  /** Le score d'AVANT. Nuls quand le terrain était muet : personne n'avait
+   *  rien saisi, et c'est une information — on n'a pas corrigé, on a tranché. */
+  old_games_a: number | null;
+  old_games_b: number | null;
+  new_games_a: number;
+  new_games_b: number;
+  created_at: string;
+}
+
+/**
+ * Les corrections de score de ce tournoi — ce que la RLS me laisse voir,
+ * c'est-à-dire celles de MES terrains (plus tout, si j'organise).
+ *
+ * L'écran n'a donc rien à filtrer : ce qui revient me concerne.
+ */
+export async function fetchMatchCorrections(tournamentId: string): Promise<MatchCorrection[]> {
+  const { supabase } = await import('./supabase');
+  const { data, error } = await supabase
+    .from('tournament_match_corrections')
+    .select('id, tournament_id, match_id, corrected_by, old_games_a, old_games_b, new_games_a, new_games_b, created_at')
+    .eq('tournament_id', tournamentId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as MatchCorrection[];
+}
+
 /**
  * « Relancer les 4 » : renvoyer une notification aux quatre joueurs d'un
  * terrain qui ne rend pas son score.
