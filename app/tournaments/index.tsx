@@ -23,6 +23,7 @@ import { TournamentCard } from '../../components/tournaments/TournamentCard';
 import { HiddenByFilters } from '../../components/tournaments/HiddenByFilters';
 import {
   fetchTournaments, fetchRegistrationsFor, getTournamentsEnabled,
+  fetchMyTournamentResults, type TournamentResultRow,
   tournamentPhase, freePlaces, dateBucket, isExpiredUnstarted,
   filterTournaments, bestFilterToDrop, activeFilterCount, filterLabel, isThisWeekend,
   NO_FILTERS, type TournamentFilters,
@@ -40,11 +41,6 @@ import {
 
 type TabKey = Extract<TournamentPhase, 'upcoming' | 'live' | 'past'>;
 
-const TABS: { id: TabKey; label: string }[] = [
-  { id: 'upcoming', label: 'À venir' },
-  { id: 'live',     label: 'En cours' },
-  { id: 'past',     label: 'Passés' },
-];
 
 const EMPTY: Record<TabKey, { text: string; sub: string }> = {
   upcoming: { text: 'Aucun tournoi annoncé', sub: 'Les prochaines soirées montante / descente apparaîtront ici.' },
@@ -92,7 +88,12 @@ export default function TournamentsScreen() {
   // `null` = on ne sait pas encore. On n'affiche RIEN tant qu'on ne sait pas :
   // un écran vide qui se referme serait déjà une entrée visible.
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [tab, setTab] = useState<TabKey>('upcoming');
+  // Les sous-onglets « A venir / En cours / Passes » ont disparu (handoff 02a) :
+  // a une soiree par semaine, trois onglets dont deux vides racontent une app
+  // morte. La colonne est unique et porte « a venir » ; la soiree EN COURS
+  // remonte en bandeau, et les PASSEES vivent dans « la derniere soiree » et
+  // dans Mon parcours, juste en dessous.
+  const tab: TabKey = 'upcoming';
   const [filters, setFilters] = useState<TournamentFilters>(NO_FILTERS);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [regs, setRegs] = useState<Map<string, TournamentRegistration[]>>(new Map());
@@ -112,6 +113,17 @@ export default function TournamentsScreen() {
   // la liste des tournois, qui n'a rien à voir.
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [busyEventId, setBusyEventId] = useState<string | null>(null);
+
+  // Mon dernier résultat : ce que remplace l'onglet « Passés ». Lecture à
+  // part, et un échec ne dit rien à l'écran — la colonne se lit très bien
+  // sans regarder derrière soi.
+  const [dernierResultat, setDernierResultat] = useState<TournamentResultRow | null>(null);
+  useEffect(() => {
+    if (!player?.id) return;
+    fetchMyTournamentResults(player.id)
+      .then(rows => setDernierResultat(rows[0] ?? null))
+      .catch(() => {});
+  }, [player?.id]);
 
   const load = useCallback(async () => {
     const on = await getTournamentsEnabled();
@@ -324,34 +336,6 @@ export default function TournamentsScreen() {
           })}
         </View>
 
-        {/* Les phases (à venir / en cours / passés) n'ont de sens que sur les
-            tournois : un événement est un rendez-vous, pas une compétition
-            qui traverse des états. */}
-        {section === 'tournois' && (
-        <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 4, gap: 3 }}>
-          {TABS.map(t => {
-            const active = tab === t.id;
-            const count = byPhase[t.id].length;
-            return (
-              <TouchableOpacity key={t.id} onPress={() => setTab(t.id)} activeOpacity={0.7}
-                style={{
-                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-                  backgroundColor: active ? Colors.bgCard : 'transparent',
-                  borderRadius: 14, paddingVertical: 9,
-                }}>
-                <Text style={{ color: active ? Colors.textPrimary : 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: Fonts.uiBlack, textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                  {t.label}
-                </Text>
-                {count > 0 && (
-                  <View style={{ backgroundColor: active ? Colors.bgCardAlt : 'rgba(255,255,255,0.2)', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1 }}>
-                    <Text style={{ color: active ? Colors.textSecondary : Colors.textOnDark, fontSize: 9, fontWeight: '900' }}>{count}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        )}
       </View>
 
       {section === 'evenements' ? (
@@ -375,6 +359,34 @@ export default function TournamentsScreen() {
               l'écran, avec ce bandeau au-dessus plutôt qu'à sa place. */}
           {loadError && <ErrorNotice message={loadError} />}
 
+          {/* UNE SOIRÉE TOURNE EN CE MOMENT — en tête, en jaune, et avant
+              tout le reste. C'est ce que remplace l'onglet « En cours » : un
+              onglet qu'il fallait aller ouvrir pour découvrir qu'une soirée
+              était en train de se jouer sans nous. */}
+          {byPhase.live.length > 0 && (
+            <TouchableOpacity
+              onPress={() => router.push(`/tournaments/${byPhase.live[0].id}` as any)}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                backgroundColor: Colors.brand, borderRadius: 16, padding: 14,
+              }}
+            >
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Text style={{ fontSize: 9.5, fontFamily: Fonts.uiBlack, letterSpacing: 1.1, color: 'rgba(10,10,10,0.6)' }}>
+                  EN DIRECT
+                </Text>
+                <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: Fonts.uiBlack, color: Colors.primary }}>
+                  {byPhase.live[0].name}
+                </Text>
+                <Text numberOfLines={1} style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: 'rgba(10,10,10,0.7)' }}>
+                  Ça se joue maintenant — voir où en sont les terrains.
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={Colors.primary} stroke={2.4} />
+            </TouchableOpacity>
+          )}
+
           {/* Les filtres n'ont de sens que sur « a venir » : sur les soirees
               en cours ou passees, il n'y a rien a arbitrer. */}
           {tab === 'upcoming' && entries.length > 0 && <FilterBar chips={chips} />}
@@ -385,33 +397,6 @@ export default function TournamentsScreen() {
               count={activeFilterCount(filters)}
               onClear={() => setFilters(NO_FILTERS)}
             />
-          )}
-
-          {/* « Passes » ouvre sur MON PARCOURS. L'ecran existait deja mais
-              n'etait atteignable que par le menu burger : personne ne va
-              chercher son historique de tournois dans un menu de reglages.
-              Il est ici, en tete de l'onglet ou l'on vient justement
-              regarder derriere soi. */}
-          {tab === 'past' && (
-            <TouchableOpacity
-              onPress={() => router.push('/tournaments/parcours' as any)}
-              activeOpacity={0.85}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                backgroundColor: Colors.primary, borderRadius: 16, padding: 15,
-              }}
-            >
-              <Icon name="trendingUp" size={19} color={Colors.brand} stroke={2.4} />
-              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                <Text style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
-                  Mon parcours
-                </Text>
-                <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textOnDark, opacity: 0.75 }}>
-                  Tes résultats, tes rangs et tes points, soirée par soirée.
-                </Text>
-              </View>
-              <Icon name="chevronRight" size={16} color={Colors.textOnDark} stroke={2.4} />
-            </TouchableOpacity>
           )}
 
           {entries.length === 0
@@ -458,6 +443,73 @@ export default function TournamentsScreen() {
               onPress={id => router.push(`/tournaments/${id}` as any)}
             />
           )}
+
+          {/* LA DERNIÈRE SOIRÉE — ce qui reste de l'onglet « Passés ».
+              À une soirée par semaine, l'historique se résume à « comment j'ai
+              fini la dernière fois » ; tout le reste vit dans Mon parcours,
+              juste en dessous. Une liste de soirées jouées n'apprenait rien
+              qu'on ne sache déjà. */}
+          {dernierResultat && (
+            <TouchableOpacity
+              onPress={() => router.push(`/tournaments/${dernierResultat.tournament.id}` as any)}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: Colors.bgCard, borderRadius: 16, borderWidth: 1,
+                borderColor: Colors.border, padding: 14, gap: 10, marginTop: 4,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                <Text style={{ flex: 1, fontSize: 17, fontFamily: Fonts.welcome, color: Colors.textPrimary, paddingRight: 6 }}>
+                  La dernière fois
+                </Text>
+                <Text style={{ fontSize: 10.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
+                  {new Date(dernierResultat.tournament.starts_at)
+                    .toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <Text style={{ fontSize: 34, lineHeight: 38, fontFamily: Fonts.display, color: Colors.brandDeep }}>
+                  {dernierResultat.final_rank}<Text style={{ fontSize: 16 }}>e</Text>
+                </Text>
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                  <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                    {dernierResultat.tournament.name}
+                  </Text>
+                  <Text numberOfLines={1} style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textSecondary }}>
+                    +{dernierResultat.points} pts · {dernierResultat.wins} victoire
+                    {dernierResultat.wins > 1 ? 's' : ''} sur {dernierResultat.played}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={16} color={Colors.textMuted} stroke={2.2} />
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* MON PARCOURS ferme la colonne. L'écran existait déjà mais n'était
+              atteignable que par le menu burger : personne ne va chercher son
+              historique de tournois dans un menu de réglages. Il était sous
+              l'onglet « Passés », qui n'existe plus — et c'est lui qui porte
+              désormais tout ce qu'on a joué avant. */}
+          <TouchableOpacity
+            onPress={() => router.push('/tournaments/parcours' as any)}
+            activeOpacity={0.85}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: Colors.primary, borderRadius: 16, padding: 15, marginTop: 4,
+            }}
+          >
+            <Icon name="trendingUp" size={19} color={Colors.brand} stroke={2.4} />
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                Mon parcours
+              </Text>
+              <Text style={{ fontSize: 11.5, fontFamily: Fonts.ui, color: Colors.textOnDark, opacity: 0.75 }}>
+                Tes résultats, tes rangs et tes points, soirée par soirée.
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={16} color={Colors.textOnDark} stroke={2.4} />
+          </TouchableOpacity>
         </ScrollView>
       )}
     </View>
