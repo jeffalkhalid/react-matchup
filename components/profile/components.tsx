@@ -10,7 +10,6 @@ import { Glyph } from './glyphs';
 import { Icon, type IconName } from '../community/icons';
 import { CreatorCrownBadge } from '../CreatorCrownBadge';
 import { formatStake } from '../../lib/defis';
-import { AmbassadorPill } from '../ambassador/primitives';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { AMB } from '../../lib/ambassador';
 
@@ -610,10 +609,11 @@ export function ProfileHeader(props: {
           )}
         </TouchableOpacity>
         <View style={{ flex: 1, minWidth: 0 }}>
-          {/* Nom + pill Ambassadeur sur la MÊME ligne (maquette) */}
+          {/* Pseudo seul. La pastille « Ambassadeur n°X » a été retirée d'ici : le
+              statut reste dit par l'anneau doré autour de la photo et par la
+              carte « Cercle des 100 » de l'onglet Stats. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: PFonts.barlow, fontSize: 27, lineHeight: 35, color: '#fff', letterSpacing: 0.3, paddingRight: 8 }}>{name.toUpperCase()}</Text>
-            {ambassador != null && <AmbassadorPill number={ambassador} />}
           </View>
           {props.realName ? (
             <Text numberOfLines={1} style={{
