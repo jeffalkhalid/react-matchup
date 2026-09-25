@@ -239,24 +239,87 @@ function ModePill({ active, onPress, icon, children }: {
 }
 
 // ─── TypeChip ─────────────────────────────────────────────────
+// Pastille de filtre. Elle prend sa part de la rangée (flex 1) : les quatre
+// types tiennent donc toujours sur UNE ligne, même sur Android 360 dp, sans
+// défilement horizontal. Le libellé se réduit seul quand la place manque
+// (numberOfLines + adjustsFontSizeToFit : pas de rognage côté Android).
 function TypeChip({ active, onPress, children }: {
   active: boolean; onPress: () => void; children: React.ReactNode;
 }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={{
-      paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999,
+      flex: 1, alignItems: 'center',
+      paddingHorizontal: 8, paddingVertical: 7, borderRadius: 999,
       backgroundColor: active ? 'rgba(255,193,26,0.14)' : Colors.bgCard,
       borderWidth: 1, borderColor: active ? Colors.brand : Colors.border,
     }}>
-      <Text style={{
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{
         color: active ? Colors.brandDeep : Colors.textSecondary,
         fontFamily: Fonts.uiExtraBold,
-        fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase',
+        fontSize: 11, letterSpacing: 0.2, textTransform: 'uppercase',
       }}>
         {children}
       </Text>
     </TouchableOpacity>
   );
+}
+
+// Rangée des types de match, partagée par « À venir » et « Historique » : une
+// seule définition des libellés, les deux onglets ne peuvent pas diverger.
+const TYPE_FILTERS: { v: TypeFilter; label: string }[] = [
+  { v: 'all', label: 'Tous' },
+  { v: 'competitive', label: 'Compétitif' },
+  { v: 'friendly', label: 'Amical' },
+  { v: 'challenge', label: 'Défi' },
+];
+
+function TypeFilterRow({ value, onChange }: {
+  value: TypeFilter; onChange: (v: TypeFilter) => void;
+}) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+      {TYPE_FILTERS.map(o => (
+        <TypeChip key={o.v} active={value === o.v} onPress={() => onChange(o.v)}>
+          {o.label}
+        </TypeChip>
+      ))}
+    </View>
+  );
+}
+
+// Barre de recherche des listes de parties (« À venir » + « Historique »).
+function FilterSearchBar({ value, onChange }: {
+  value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      marginBottom: 12, backgroundColor: Colors.bgCard, borderRadius: 12,
+      borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
+    }}>
+      <Icon name="search" size={16} color={Colors.textMuted} stroke={2.2} />
+      <TextInput
+        value={value} onChangeText={onChange}
+        placeholder="Rechercher un joueur, un lieu…"
+        placeholderTextColor={Colors.textMuted}
+        style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
+      />
+      {value.length > 0 && (
+        <TouchableOpacity onPress={() => onChange('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Icon name="x" size={14} color={Colors.textMuted} stroke={2.5} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+// Recherche libre sur une partie : nom d'un joueur (organisateur ou inscrit) ou
+// lieu. RÈGLE UNIQUE : « À venir » et « Historique » appellent cette fonction.
+function gameMatchesQuery(g: EnrichedGame, q: string) {
+  if (!q) return true;
+  const names = [(g.creator as any)?.name, ...(g.participants ?? []).map((p: any) => p.player?.name)];
+  return names.some((n: any) => (n ?? '').toLowerCase().includes(q))
+    || (g.location ?? '').toLowerCase().includes(q);
 }
 
 // ─── Contrôle segmenté pleine largeur (niveau + type de match) ─
@@ -2366,8 +2429,13 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
   onWithdrawApp: (app: DefiApplication) => void;
 }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [search, setSearch] = useState('');
 
   const byType = (g: EnrichedGame) => typeFilter === 'all' || getGameType(g) === typeFilter;
+
+  // Recherche libre (joueur ou lieu) : même règle que l'Historique.
+  const q = search.trim().toLowerCase();
+  const bySearch = (g: EnrichedGame) => gameMatchesQuery(g, q);
 
   // Tri par date croissante : le match le plus proche en premier. Les parties
   // sans date (rare) sont rejetées en fin de liste.
@@ -2377,11 +2445,19 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
     return ta - tb;
   };
 
-  const created = games.filter(g => g.is_creator).filter(byType);
-  const accepted = games.filter(g => !g.is_creator && g.my_status === 'accepted').filter(byType);
-  const invited  = games.filter(g => !g.is_creator && g.my_status === 'invited').filter(byType).sort(byDateAsc);
-  const pending  = games.filter(g => !g.is_creator && g.my_status === 'pending').filter(byType).sort(byDateAsc);
-  const waitlisted = games.filter(g => !g.is_creator && g.my_status === 'waitlist').filter(byType).sort(byDateAsc);
+  const created = games.filter(g => g.is_creator).filter(byType).filter(bySearch);
+  const accepted = games.filter(g => !g.is_creator && g.my_status === 'accepted').filter(byType).filter(bySearch);
+  const invited  = games.filter(g => !g.is_creator && g.my_status === 'invited').filter(byType).filter(bySearch).sort(byDateAsc);
+  const pending  = games.filter(g => !g.is_creator && g.my_status === 'pending').filter(byType).filter(bySearch).sort(byDateAsc);
+  const waitlisted = games.filter(g => !g.is_creator && g.my_status === 'waitlist').filter(byType).filter(bySearch).sort(byDateAsc);
+
+  // Les deux listes de défi passent par les mêmes filtres que les parties, sinon
+  // choisir « Amical » laisserait des cartes de défi à l'écran.
+  const binomeShown = binomeInvites.filter(a => !!a.game && byType(a.game as any) && bySearch(a.game as any));
+  const appsShown = myDefiApps.filter(a => {
+    const g = defiGameWithMyBinome(a);
+    return !!g && byType(g as any) && bySearch(g as any);
+  });
 
   // Liste plate « mes parties » : j'organise + je joue fusionnés (classification
   // de rôle retirée), triés par date croissante. Seules les invitations à
@@ -2392,8 +2468,12 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
 
   return (
     <View style={{ padding: 14, paddingBottom: 100 }}>
-      {/* Filtres masqués — à réactiver plus tard si besoin */}
-      {/*
+      {/* Mêmes filtres que l'Historique : recherche joueur/lieu + type de match. */}
+      <FilterSearchBar value={search} onChange={setSearch} />
+      <TypeFilterRow value={typeFilter} onChange={setTypeFilter} />
+
+      {/* Filtre de rôle masqué : le filtrage n'est plus branché depuis la fusion
+          « j'organise + je joue », il faudrait le recoder pour le rallumer.
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 8, marginBottom: 8 }}>
         {([
@@ -2407,21 +2487,13 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
           </TypeChip>
         ))}
       </ScrollView>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, marginBottom: 14 }}>
-        <TypeChip active={typeFilter === 'all'} onPress={() => setTypeFilter('all')}>Tous types</TypeChip>
-        <TypeChip active={typeFilter === 'competitive'} onPress={() => setTypeFilter('competitive')}>Compétitif</TypeChip>
-        <TypeChip active={typeFilter === 'friendly'} onPress={() => setTypeFilter('friendly')}>Amical</TypeChip>
-        <TypeChip active={typeFilter === 'challenge'} onPress={() => setTypeFilter('challenge')}>Défi</TypeChip>
-      </ScrollView>
       */}
 
       {/* Invitations binôme défi : j'ai été choisi comme partenaire pour relever
           un défi → carte COMPLÈTE du défi (adversaires / lieu / date) + accepter / refuser. */}
-      {binomeInvites.length > 0 && (
-        <Section title="Invitations binôme" count={binomeInvites.length} color={Colors.brand} icon={<Icon name="users" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
-          {binomeInvites.map(app => app.game ? (
+      {binomeShown.length > 0 && (
+        <Section title="Invitations binôme" count={binomeShown.length} color={Colors.brand} icon={<Icon name="users" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
+          {binomeShown.map(app => app.game ? (
             <View key={app.id} style={{ marginBottom: 10 }}>
               <GameCard
                 game={{ ...app.game, is_creator: false } as any}
@@ -2451,9 +2523,9 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
 
       {/* Mes candidatures à relever : mon binôme (moi + partenaire invité) en
           transparent sur Team B, tant que la place n'est pas verrouillée. */}
-      {myDefiApps.length > 0 && (
-        <Section title="Mes candidatures" count={myDefiApps.length} color={Colors.brand} icon={<Icon name="swords" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
-          {myDefiApps.map(a => {
+      {appsShown.length > 0 && (
+        <Section title="Mes candidatures" count={appsShown.length} color={Colors.brand} icon={<Icon name="swords" size={14} color={Colors.textOnBrand} stroke={2.2} />}>
+          {appsShown.map(a => {
             const g = defiGameWithMyBinome(a);
             if (!g) return null;
             const mate = a.initiator_id === playerId ? a.partner : a.initiator;
@@ -2516,8 +2588,12 @@ function UpcomingTab({ games, myElo, roleFilter, setRoleFilter, onOpenGame, play
           {waitlisted.map(g => <GameCard key={g.id} game={g} variant="upcoming" myElo={myElo} onPress={() => onOpenGame(g)} {...cardProps} />)}
         </Section>
       )}
-      {created.length + accepted.length + invited.length + pending.length + waitlisted.length + binomeInvites.length === 0 && (
-        <EmptyState text="Aucune partie à venir" sub={typeFilter !== 'all' ? 'Aucun match de ce type' : 'Explore le lobby ou crée la tienne'} />
+      {created.length + accepted.length + invited.length + pending.length + waitlisted.length + binomeShown.length + appsShown.length === 0 && (
+        <EmptyState
+          text={q || typeFilter !== 'all' ? 'Aucun résultat' : 'Aucune partie à venir'}
+          sub={q ? 'Aucune partie ne correspond à cette recherche'
+            : typeFilter !== 'all' ? 'Aucun match de ce type'
+            : 'Explore le lobby ou crée la tienne'} />
       )}
     </View>
   );
@@ -2550,12 +2626,7 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
     return names.some(n => (n ?? '').toLowerCase().includes(q))
       || (m.game?.location ?? '').toLowerCase().includes(q);
   };
-  const gameSearch = (g: EnrichedGame) => {
-    if (!q) return true;
-    const names = [(g.creator as any)?.name, ...(g.participants ?? []).map((p: any) => p.player?.name)];
-    return names.some((n: any) => (n ?? '').toLowerCase().includes(q))
-      || (g.location ?? '').toLowerCase().includes(q);
-  };
+  const gameSearch = (g: EnrichedGame) => gameMatchesQuery(g, q);
 
   const toScore = matches.filter(m => needsMyValidation(m, playerId)).filter(byType).filter(matchSearch);
   // Mon score saisi (par moi ou par mon binôme) : la partie a quitté « À venir »
@@ -2567,34 +2638,9 @@ function HistoryTab({ matches, playerId, onOpenMatch, pastCompleteGames, onOpenG
 
   return (
     <View style={{ padding: 14, paddingBottom: 100 }}>
-      {/* Search bar */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        marginBottom: 12, backgroundColor: Colors.bgCard, borderRadius: 12,
-        borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 9,
-      }}>
-        <Icon name="search" size={16} color={Colors.textMuted} stroke={2.2} />
-        <TextInput
-          value={search} onChangeText={setSearch}
-          placeholder="Rechercher un joueur, un lieu…"
-          placeholderTextColor={Colors.textMuted}
-          style={{ flex: 1, fontSize: 13, color: Colors.textPrimary }}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Icon name="x" size={14} color={Colors.textMuted} stroke={2.5} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Type chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, marginBottom: 14 }}>
-        <TypeChip active={typeFilter === 'all'} onPress={() => setTypeFilter('all')}>Tous types</TypeChip>
-        <TypeChip active={typeFilter === 'competitive'} onPress={() => setTypeFilter('competitive')}>Compétitif</TypeChip>
-        <TypeChip active={typeFilter === 'friendly'} onPress={() => setTypeFilter('friendly')}>Amical</TypeChip>
-        <TypeChip active={typeFilter === 'challenge'} onPress={() => setTypeFilter('challenge')}>Défi</TypeChip>
-      </ScrollView>
+      {/* Mêmes filtres que « À venir » : recherche joueur/lieu + type de match. */}
+      <FilterSearchBar value={search} onChange={setSearch} />
+      <TypeFilterRow value={typeFilter} onChange={setTypeFilter} />
 
       {pastGames.length > 0 && (
         <Section title="À scorer" count={pastGames.length} color={Colors.warning}>
