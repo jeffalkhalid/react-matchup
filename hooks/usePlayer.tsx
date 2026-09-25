@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { libererMonJeton } from '../lib/pushToken';
 import type { Player } from '../types';
 
 interface PlayerContextValue {
@@ -54,10 +55,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    // Libère le token push de ce compte (le token est par-appareil ; sans ça il
-    // reste collé à un compte délogué et provoque des notifs croisées).
+    // Libère le jeton push de CET appareil (le jeton est par-appareil ; sans ça
+    // il reste collé à un compte délogué et provoque des notifs croisées).
+    // On ne touche pas aux autres téléphones du joueur : voir libererMonJeton.
     if (player) {
-      await supabase.from('players').update({ push_token: null }).eq('id', player.id);
+      await libererMonJeton(player.id);
     }
     await supabase.auth.signOut();
     setPlayer(null);

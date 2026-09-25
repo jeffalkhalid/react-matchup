@@ -275,8 +275,11 @@ function DisputesTab({ matches, liveScores, pastDisputes, editedScores, setEdite
 }
 
 // ─── Players dashboard tab ────────────────────────────────────
-function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, onRemoveAvatar, onRefresh }: {
+function PlayersTab({ players, avecJeton, loading, actingId, onUnlink, onFraud, onUnblock, onRemoveAvatar, onRefresh }: {
   players: any[];
+  /** Qui a les notifications actives. Le jeton lui-même ne sort jamais du
+   *  serveur : l'écran n'a besoin que d'un oui/non. */
+  avecJeton: Set<string>;
   loading: boolean;
   actingId: string | null;
   onUnlink: (playerId: string, name: string) => void;
@@ -375,7 +378,7 @@ function PlayersTab({ players, loading, actingId, onUnlink, onFraud, onUnblock, 
             const lastMatchStr = p.last_match_at
               ? new Date(p.last_match_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
               : 'Jamais';
-            const pushOn = !!p.push_token;
+            const pushOn = avecJeton.has(p.id);
             const acting = actingId === p.id;
             return (
               <View key={p.id} style={[sty.frmtRow, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
@@ -872,6 +875,10 @@ export default function AdminScreen() {
 
   // Players dashboard
   const [playersList, setPlayersList] = useState<any[]>([]);
+  // Qui a les notifications actives. On lit la table des jetons mais JAMAIS
+  // les jetons eux-mêmes : seul `player_id` est demandé. L'écran n'a besoin
+  // que d'un oui/non, et un jeton qui ne sort pas du serveur ne fuit pas.
+  const [avecJeton, setAvecJeton] = useState<Set<string>>(new Set());
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playerActingId, setPlayerActingId] = useState<string | null>(null);
 
@@ -1151,7 +1158,7 @@ export default function AdminScreen() {
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from('players')
-        .select('id, name, created_at, gender, declared_elo, elo_score, frmt_verified, frmt_position, frmt_points, frmt_blocked, frmt_elo_bonus, frmt_full_name, last_match_at, push_token')
+        .select('id, name, created_at, gender, declared_elo, elo_score, frmt_verified, frmt_position, frmt_points, frmt_blocked, frmt_elo_bonus, frmt_full_name, last_match_at')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(from, from + PAGE - 1);
@@ -1160,6 +1167,12 @@ export default function AdminScreen() {
       if (data.length < PAGE) break;
     }
     setPlayersList(all);
+
+    const { data: jetons } = await supabase
+      .from('player_push_tokens')
+      .select('player_id');
+    setAvecJeton(new Set((jetons ?? []).map((r: any) => r.player_id)));
+
     setPlayersLoading(false);
   }, []);
 
@@ -1643,6 +1656,7 @@ export default function AdminScreen() {
         {tab === 'players' && (
           <PlayersTab
             players={playersList}
+            avecJeton={avecJeton}
             loading={playersLoading}
             actingId={playerActingId}
             onUnlink={handlePlayerUnlink}

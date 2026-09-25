@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { enregistrerMonJeton } from '../lib/pushToken';
 import Constants from 'expo-constants';
 import { Platform, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -69,11 +70,10 @@ export async function registerForPushAsync(
     const token = tokenData.data;
     console.log('[push] token obtenu =', token);
 
-    const { error } = await supabase
-      .from('players')
-      .update({ push_token: token })
-      .eq('id', playerId);
-    console.log('[push] save DB', error ? `ERREUR: ${error.message}` : 'OK');
+    // Le jeton ne vit plus dans la fiche joueur (lisible sans compte) mais
+    // dans `player_push_tokens` — voir lib/pushToken.ts pour le pourquoi.
+    const erreur = await enregistrerMonJeton(playerId, token);
+    console.log('[push] save DB', erreur ? `ERREUR: ${erreur}` : 'OK');
     return 'granted';
   } catch (e) {
     console.log('[push] EXCEPTION (FCM/Firebase pas dans le build ?):', String(e));
