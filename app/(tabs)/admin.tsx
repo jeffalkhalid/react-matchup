@@ -2530,6 +2530,37 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
           n'a plus a ouvrir chaque tournoi pour decouvrir qu'il n'y a rien a
           y faire, ou qu'un tour attend depuis une heure. */}
       <CreateTournamentCard onPress={() => router.push('/tournaments/create' as any)} />
+
+      {/* L'ÉVÉNEMENT, à côté de la soirée et PAS ailleurs.
+          Le handoff place ce bouton dans l'en-tête public « Tournois &
+          Événements », « réservé aux organisateurs » — mais il n'existe pas de
+          rôle organisateur dans cette app : le seul garde-fou réel est l'accès
+          à ce panneau. Le poser ici applique donc la règle du handoff avec ce
+          que la base sait faire, au lieu d'ouvrir la création à tout le monde. */}
+      <TouchableOpacity
+        onPress={() => router.push('/events/create' as any)}
+        activeOpacity={0.85}
+        style={{
+          backgroundColor: Colors.bgCard, borderRadius: 16, padding: 16, gap: 12,
+          borderWidth: 1, borderColor: Colors.border,
+        }}
+      >
+        <View style={{ gap: 4 }}>
+          <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+            Proposer un événement
+          </Text>
+          <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
+            Une matinée découverte, un stage, un afterwork. On y répond seul,
+            il n’y a ni binôme ni classement.
+          </Text>
+        </View>
+        <View style={{ backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+            NOUVEL ÉVÉNEMENT
+          </Text>
+        </View>
+      </TouchableOpacity>
+
       <TouchableOpacity onPress={() => setCreating(true)} activeOpacity={0.85} hitSlop={6} style={{ alignSelf: 'center' }}>
         <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>
           Ancien formulaire

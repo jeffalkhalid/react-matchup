@@ -2,7 +2,7 @@
 // réseau, et c'est ce qui permet de les exécuter ici plutôt que de les relire.
 import { describe, it, expect } from 'vitest';
 import {
-  eventKindLabel, eventIsFull, eventSpotsLabel, eventPriceLabel, eventRsvpState, buildEventsBoard,
+  eventKindLabel, eventIsFull, eventSpotsLabel, eventPriceLabel, eventRsvpState, buildEventsBoard, eventDraftIssue, eventStartsAt,
 } from '../events';
 
 describe('la nature d un evenement', () => {
@@ -102,5 +102,49 @@ describe('le tableau des evenements a venir', () => {
     const b = buildEventsBoard([], [], 'moi');
     expect(b.next).toBe(null);
     expect(b.others).toEqual([]);
+  });
+});
+
+describe('ce qui manque encore pour publier un evenement', () => {
+  const D = (o: any = {}) => ({
+    kind: 'stage' as any, title: 'Stage du samedi', clubId: null,
+    date: '2026-10-03', start: '18:00', end: null, limit: false, capacity: 12,
+    priceMad: 0, description: '', externalUrl: '', ...o,
+  });
+
+  it('reclame la nature avant tout', () => {
+    expect(eventDraftIssue(0, D({ kind: null }))).toMatch(/quoi|nature|choisis/i);
+    expect(eventDraftIssue(0, D())).toBe(null);
+  });
+
+  it('refuse un titre vide, et un titre trop long pour tenir sur une ligne', () => {
+    expect(eventDraftIssue(1, D({ title: '   ' }))).toMatch(/titre/i);
+    expect(eventDraftIssue(1, D({ title: 'x'.repeat(29) }))).toMatch(/28/);
+    expect(eventDraftIssue(1, D())).toBe(null);
+  });
+
+  it('refuse une fin AVANT le debut', () => {
+    // Une fin a 17:00 pour un debut a 18:00 passerait la CHECK serveur en
+    // erreur brute ; autant la nommer ici.
+    expect(eventDraftIssue(1, D({ end: '17:00' }))).toMatch(/fin/i);
+    expect(eventDraftIssue(1, D({ end: '20:00' }))).toBe(null);
+  });
+
+  it('exige le lien SEULEMENT sur un evenement externe', () => {
+    expect(eventDraftIssue(2, D({ kind: 'externe', externalUrl: '' }))).toMatch(/lien/i);
+    expect(eventDraftIssue(2, D({ kind: 'externe', externalUrl: 'pas-une-adresse' }))).toMatch(/lien|adresse/i);
+    expect(eventDraftIssue(2, D({ kind: 'externe', externalUrl: 'https://frmt.ma/t/9' }))).toBe(null);
+    expect(eventDraftIssue(2, D({ kind: 'stage' }))).toBe(null);
+  });
+});
+
+describe('l heure de depart d un brouillon', () => {
+  it('compose la date et l heure dans le fuseau du telephone', () => {
+    const d = eventStartsAt('2026-10-03', '18:30');
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(9);      // octobre
+    expect(d.getDate()).toBe(3);
+    expect(d.getHours()).toBe(18);
+    expect(d.getMinutes()).toBe(30);
   });
 });

@@ -87,6 +87,8 @@ function RootNavigator() {
         <Stack.Screen name="tournaments/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="tournaments/parcours" options={{ presentation: 'card' }} />
         <Stack.Screen name="tournaments/create" options={{ presentation: 'card' }} />
+        <Stack.Screen name="events/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="events/create" options={{ presentation: 'card' }} />
         <Stack.Screen name="community" />
         <Stack.Screen name="chat/[gameId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="dm/[conversationId]" options={{ presentation: 'card' }} />

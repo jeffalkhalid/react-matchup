@@ -142,6 +142,66 @@ export function buildEventsBoard(
   return { next: lignes[i], others: lignes.filter((_, j) => j !== i) };
 }
 
+// ── L'assistant de création ─────────────────────────────────────────────────
+
+export interface EventDraft {
+  kind: EventKind | null;
+  title: string;
+  clubId: string | null;
+  /** `YYYY-MM-DD`, comme `DateSheet`. */
+  date: string;
+  /** `HH:MM`, comme `TimeSheet`. */
+  start: string;
+  end: string | null;
+  limit: boolean;
+  capacity: number;
+  priceMad: number;
+  description: string;
+  externalUrl: string;
+}
+
+/** La date et l'heure composées dans le fuseau DU TÉLÉPHONE — un événement se
+ *  donne à l'heure du club, pas en UTC. */
+export function eventStartsAt(date: string, time: string): Date {
+  return new Date(`${date}T${time}:00`);
+}
+
+/**
+ * Ce qui manque encore à cette étape, en une phrase — ou `null` si on peut
+ * continuer.
+ *
+ * Une phrase plutôt qu'un booléen : un bouton grisé sans raison est une
+ * impasse, on ne sait pas quoi corriger. Chaque refus nomme ce qu'il attend.
+ *
+ * Les mêmes règles que les CHECK de `events.sql`, dites AVANT l'appel : sans
+ * ça, le serveur refuse avec une erreur brute (`violates check constraint
+ * events_title_check`) que personne ne peut lire.
+ */
+export function eventDraftIssue(step: number, d: EventDraft): string | null {
+  if (step === 0) {
+    return d.kind ? null : 'Choisis ce que c’est.';
+  }
+
+  if (step === 1) {
+    const titre = d.title.trim();
+    if (!titre) return 'Donne-lui un titre.';
+    // 28 caractères : au-delà, le titre se fait rogner sur Android.
+    if (titre.length > 28) return 'Le titre tient en 28 caractères.';
+    if (!d.date || !d.start) return 'Dis quand ça se passe.';
+    if (d.end && d.end <= d.start) return 'La fin doit venir après le début.';
+    return null;
+  }
+
+  if (step === 2 && d.kind === 'externe') {
+    const url = d.externalUrl.trim();
+    if (!url) return 'Un événement externe a besoin de son lien.';
+    if (!/^https?:\/\/\S+\.\S+/.test(url)) return 'Ce lien ne ressemble pas à une adresse web.';
+    return null;
+  }
+
+  return null;
+}
+
 // ── La lecture et l'écriture ────────────────────────────────────────────────
 
 const EVENT_COLS =
