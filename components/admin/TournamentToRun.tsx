@@ -126,13 +126,16 @@ export function CreateTournamentCard({ onPress }: { onPress: () => void }) {
       backgroundColor: Colors.bgCard, borderRadius: 16, padding: 16, gap: 12,
       borderWidth: 1, borderColor: Colors.border,
     }}>
+      {/* Ne nomme plus « tournoi » : ce bouton ouvre maintenant le choix entre
+          un tournoi et un événement, et annoncer l'un des deux ferait passer
+          l'autre pour absent. */}
       <View style={{ gap: 4 }}>
         <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
-          Créer une soirée
+          Organiser quelque chose
         </Text>
         <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
-          Huit binômes, quatre terrains, six rotations de {ROUND_MINUTES} minutes.
-          On monte vers le Terrain 1.
+          Une montante — huit binômes, quatre terrains, six rotations de{' '}
+          {ROUND_MINUTES} minutes — ou un rendez-vous au club, sans classement.
         </Text>
       </View>
       <TouchableOpacity
@@ -141,7 +144,7 @@ export function CreateTournamentCard({ onPress }: { onPress: () => void }) {
         style={{ backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}
       >
         <Text style={{ fontSize: 14.5, fontFamily: Fonts.uiBlack, color: Colors.primary }}>
-          +  Nouveau tournoi
+          +  Créer
         </Text>
       </TouchableOpacity>
     </View>

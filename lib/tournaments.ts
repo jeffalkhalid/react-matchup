@@ -316,6 +316,38 @@ export function sameSideWarning(
     : 'Vous jouez tous les deux à droite. C’est possible, mais l’un devra passer à gauche.';
 }
 
+/**
+ * « Refaire la montante de jeudi » : le créneau à proposer, d'après la soirée
+ * précédente.
+ *
+ * Même jour de la semaine, même heure — c'est tout l'intérêt d'un rendez-vous
+ * hebdomadaire : il ne se renégocie pas.
+ *
+ * ⚠️ JAMAIS le jour même, même s'il reste des heures devant. Le soir de la
+ * soirée qu'on refait, proposer « aujourd'hui » créerait un doublon de celle
+ * qui vient d'avoir lieu — et c'est précisément le moment où l'organisateur a
+ * le réflexe de préparer la suivante.
+ */
+export function repeatSlot(
+  previousStartsAt: string | null | undefined, now: Date = new Date(),
+): { date: string; time: string } | null {
+  if (!previousStartsAt) return null;
+  const p = new Date(previousStartsAt);
+  if (Number.isNaN(p.getTime())) return null;
+
+  const cible = p.getDay();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Au moins un jour d'écart : on part de demain, puis on avance jusqu'au bon
+  // jour de la semaine.
+  do { d.setDate(d.getDate() + 1); } while (d.getDay() !== cible);
+
+  const deuxChiffres = (n: number) => String(n).padStart(2, '0');
+  return {
+    date: isoDay(d.getFullYear(), d.getMonth(), d.getDate()),
+    time: `${deuxChiffres(p.getHours())}:${deuxChiffres(p.getMinutes())}`,
+  };
+}
+
 export interface PartnerCandidate {
   player_id: string;
   side: TournamentSide | null | undefined;

@@ -17,7 +17,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { usePlayer } from '../../hooks/usePlayer';
@@ -29,6 +29,7 @@ import {
   createTournament, teamCount, seatCount, ROUND_MINUTES,
   ROUND_MINUTES_CHOICES, totalDurationMinutes,
   defaultPointsScale, isoDay, priceLabel, levelRangeLabel,
+  fetchTournament, repeatSlot,
 } from '../../lib/tournaments';
 
 type Club = { id: string; name: string; city: string | null };
@@ -132,6 +133,34 @@ export default function CreateTournamentScreen() {
   const [levelMin, setLevelMin] = useState('');
   const [levelMax, setLevelMax] = useState('');
   const [price, setPrice] = useState('0');
+
+  // ── « Refaire la montante de jeudi » ──
+  // On arrive ici avec l'identifiant de la soirée à reconduire. Tout est
+  // repris tel quel SAUF la date : même jour de la semaine, même heure, la
+  // semaine prochaine (`repeatSlot`). L'assistant s'ouvre quand même à la
+  // première étape plutôt que d'aller droit au récapitulatif : reconduire
+  // sans relire est le meilleur moyen de republier l'erreur de la dernière
+  // fois.
+  const { repeat } = useLocalSearchParams<{ repeat?: string }>();
+  const [repeatFait, setRepeatFait] = useState(false);
+
+  useEffect(() => {
+    if (!repeat || repeatFait || !clubsLoaded) return;
+    setRepeatFait(true);
+    (async () => {
+      const t = await fetchTournament(repeat).catch(() => null);
+      if (!t) return;
+      setName(t.name);
+      const creneau = repeatSlot(t.starts_at);
+      if (creneau) { setDate(creneau.date); setTime(creneau.time); }
+      setClub(clubs.find(c => c.id === t.club_id) ?? null);
+      setCourts(t.court_count);
+      setRounds(t.round_count);
+      setLevelMin(t.level_min != null ? String(t.level_min) : '');
+      setLevelMax(t.level_max != null ? String(t.level_max) : '');
+      setPrice(String(t.price_mad ?? 0));
+    })();
+  }, [repeat, repeatFait, clubsLoaded, clubs]);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));

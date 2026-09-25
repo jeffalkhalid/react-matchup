@@ -69,6 +69,7 @@ import {
 } from '../../lib/refereeQueue';
 import { QueueCounters, QueueCard, QueueEmpty } from '../../components/admin/RefereeQueue';
 import { TournamentToRun, CreateTournamentCard } from '../../components/admin/TournamentToRun';
+import { CreateChoiceSheet } from '../../components/tournaments/CreateChoiceSheet';
 import { StandingsTable, type StandingRowData } from '../../components/tournaments/StandingsTable';
 import { FinalStandings, type FinalStandingRowData } from '../../components/tournaments/FinalStandings';
 import { Pill } from '../../components/Pill';
@@ -2481,6 +2482,16 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [choixOuvert, setChoixOuvert] = useState(false);
+
+  // La dernière soirée que J'AI créée — c'est elle que « refaire » reconduit.
+  // Celle d'un autre organisateur ne me regarde pas : je republierais ses
+  // réglages sous mon nom.
+  const derniereAMoi = useMemo(
+    () => list.filter(t => t.created_by === myPlayerId)
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())[0] ?? null,
+    [list, myPlayerId],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2532,37 +2543,29 @@ function TournamentsTab({ myPlayerId }: { myPlayerId: string }) {
           LA seule action du moment (handoff panel arbitre). L'organisateur
           n'a plus a ouvrir chaque tournoi pour decouvrir qu'il n'y a rien a
           y faire, ou qu'un tour attend depuis une heure. */}
-      <CreateTournamentCard onPress={() => router.push('/tournaments/create' as any)} />
+      {/* UN SEUL point d'entrée pour les deux, comme le handoff : la question
+          « tournoi ou événement ? » se pose une fois, dans la feuille, avec ce
+          que chacun veut dire. Deux cartes côte à côte obligeaient à connaître
+          la différence AVANT de choisir.
 
-      {/* L'ÉVÉNEMENT, à côté de la soirée et PAS ailleurs.
-          Le handoff place ce bouton dans l'en-tête public « Tournois &
-          Événements », « réservé aux organisateurs » — mais il n'existe pas de
-          rôle organisateur dans cette app : le seul garde-fou réel est l'accès
-          à ce panneau. Le poser ici applique donc la règle du handoff avec ce
-          que la base sait faire, au lieu d'ouvrir la création à tout le monde. */}
-      <TouchableOpacity
-        onPress={() => router.push('/events/create' as any)}
-        activeOpacity={0.85}
-        style={{
-          backgroundColor: Colors.bgCard, borderRadius: 16, padding: 16, gap: 12,
-          borderWidth: 1, borderColor: Colors.border,
-        }}
-      >
-        <View style={{ gap: 4 }}>
-          <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
-            Proposer un événement
-          </Text>
-          <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
-            Une matinée découverte, un stage, un afterwork. On y répond seul,
-            il n’y a ni binôme ni classement.
-          </Text>
-        </View>
-        <View style={{ backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}>
-          <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
-            NOUVEL ÉVÉNEMENT
-          </Text>
-        </View>
-      </TouchableOpacity>
+          Le garde-fou reste l'accès à ce panneau : le handoff parle
+          d'« organisateurs », rôle qui n'existe pas en base. C'est déjà par
+          ici que passe la création d'un tournoi. */}
+      <CreateTournamentCard onPress={() => setChoixOuvert(true)} />
+
+      <CreateChoiceSheet
+        visible={choixOuvert}
+        onClose={() => setChoixOuvert(false)}
+        onTournoi={() => { setChoixOuvert(false); router.push('/tournaments/create' as any); }}
+        onEvenement={() => { setChoixOuvert(false); router.push('/events/create' as any); }}
+        repeatLabel={derniereAMoi ? `Refaire « ${derniereAMoi.name} »` : null}
+        onRepeat={derniereAMoi
+          ? () => {
+              setChoixOuvert(false);
+              router.push(`/tournaments/create?repeat=${derniereAMoi.id}` as any);
+            }
+          : undefined}
+      />
 
       <TouchableOpacity onPress={() => setCreating(true)} activeOpacity={0.85} hitSlop={6} style={{ alignSelf: 'center' }}>
         <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted }}>

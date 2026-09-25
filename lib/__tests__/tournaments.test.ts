@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights, autoValidateLabel, suggestPartner,
+  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights, autoValidateLabel, suggestPartner, repeatSlot,
   groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   waitExplanation, registerNotice, partnerIntentNotice, myLiveTournament,
@@ -1418,5 +1418,34 @@ describe('le partenaire que l app propose a un joueur seul', () => {
     const a = C('a', 'right', 1000), b = C('b', 'right', 1000);
     expect(suggestPartner(MOI, [a, b])?.player_id)
       .toBe(suggestPartner(MOI, [b, a])?.player_id);
+  });
+});
+
+describe('« Refaire la montante de jeudi » — la date proposee', () => {
+  // Jeudi 24 sept. 2026, 20:00 heure locale.
+  const PRECEDENTE = new Date(2026, 8, 24, 20, 0).toISOString();
+
+  it('garde le jour de la semaine ET l heure', () => {
+    const r = repeatSlot(PRECEDENTE, new Date(2026, 8, 25, 9, 0));
+    expect(r?.time).toBe('20:00');
+    expect(new Date(`${r!.date}T12:00:00`).getDay()).toBe(4); // jeudi
+  });
+
+  it('propose le jeudi SUIVANT, jamais celui du jour meme', () => {
+    // Le soir meme de la soiree qu on refait : proposer « aujourd hui » ferait
+    // un doublon de celle qui vient d avoir lieu.
+    expect(repeatSlot(PRECEDENTE, new Date(2026, 8, 24, 22, 0))?.date).toBe('2026-10-01');
+    // Le lendemain.
+    expect(repeatSlot(PRECEDENTE, new Date(2026, 8, 25, 9, 0))?.date).toBe('2026-10-01');
+    // La veille du suivant.
+    expect(repeatSlot(PRECEDENTE, new Date(2026, 8, 30, 9, 0))?.date).toBe('2026-10-01');
+  });
+
+  it('saute a la semaine d apres quand le jour vient de passer', () => {
+    expect(repeatSlot(PRECEDENTE, new Date(2026, 9, 1, 23, 0))?.date).toBe('2026-10-08');
+  });
+
+  it('ne propose rien sans soiree precedente', () => {
+    expect(repeatSlot(null, new Date())).toBe(null);
   });
 });
