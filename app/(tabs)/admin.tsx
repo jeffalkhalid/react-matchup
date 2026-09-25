@@ -58,6 +58,9 @@ import {
   blockedCourts, blockedCourtLabel, roundMinutesOf,
 } from '../../lib/tournaments';
 import { bumpGames } from '../../lib/tournamentEvening';
+import {
+  fetchTournamentReports, resolveReport, type TournamentReport,
+} from '../../lib/tournamentReports';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
 import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
@@ -3008,6 +3011,11 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
   const [allMatches, setAllMatches] = useState<TournamentMatch[]>([]);
   const [movements, setMovements] = useState<TournamentMovement[]>([]);
   const [entries, setEntries] = useState<TournamentMatchEntry[]>([]);
+  // Les scores contestés par un joueur, entre la fin de la soirée et la
+  // validation. Sans cette liste, l'organisateur reçoit la notification et
+  // doit DEVINER quel terrain : le signalement ne sert alors à rien.
+  const [reports, setReports] = useState<TournamentReport[]>([]);
+  const [reportBusy, setReportBusy] = useState<string | null>(null);
   const [standings, setStandings] = useState<TournamentStanding[]>([]);
   // Distinct d'un classement provisoire simplement VIDE — même motif que
   // `standingsError` d'app/tournaments/[id].tsx : avant cette correction,
@@ -3075,6 +3083,11 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
           setMovements(mv);
           setAllMatches(allM);
           setEntries(await fetchMatchEntries(rm.map(m => m.id)));
+
+          // Isolé lui aussi : la RLS ne rend ces lignes qu'à l'organisateur
+          // du tournoi, et un échec ne doit pas emporter la conduite de la
+          // soirée, qui n'a rien à voir.
+          try { setReports(await fetchTournamentReports(tournament.id)); } catch { /* sans gravité */ }
 
           if (current.status === 'EN_COURS') {
             const stRes = await fetchStandings(tournament.id);
@@ -3580,6 +3593,78 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
                   {c.label}
                 </Text>
               ))}
+            </View>
+          )}
+
+          {/* ── LES SCORES CONTESTÉS, avant tout le reste ──
+              Un joueur a dit qu'un score est faux ; l'organisateur a reçu la
+              notification. Sans cette liste, il lui faudrait DEVINER quel
+              terrain — et le signalement ne servirait à rien. Elle passe
+              donc avant les terrains, parce que c'est la seule chose qui
+              attend une décision de sa part. */}
+          {reports.filter(r => r.status === 'ouvert').length > 0 && (
+            <View style={{ gap: 8, marginBottom: 12 }}>
+              {reports.filter(r => r.status === 'ouvert').map(r => {
+                const m = allMatches.find(x => x.id === r.match_id) ?? null;
+                const qui = displayName(
+                  regs.find(x => x.player_id === r.player_id)?.player ?? null, 'player');
+                return (
+                  <View key={r.id} style={{
+                    backgroundColor: 'rgba(245,158,11,0.10)', borderRadius: 14,
+                    borderWidth: 1, borderColor: 'rgba(245,158,11,0.45)', padding: 12, gap: 8,
+                  }}>
+                    <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, color: '#B45309' }}>
+                      Terrain {m?.court_no ?? '?'} · {qui} conteste le score
+                    </Text>
+                    <Text style={{ fontSize: 12, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 18 }}>
+                      Inscrit : {m?.games_a ?? '—'} – {m?.games_b ?? '—'}.
+                      {'  '}Il dit : <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                        {r.proposed_a} – {r.proposed_b}
+                      </Text>.
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        disabled={reportBusy === r.id}
+                        onPress={async () => {
+                          setReportBusy(r.id);
+                          try {
+                            await resolveReport(r.id, 'accepte', myPlayerId);
+                            setReports(await fetchTournamentReports(t.id));
+                            Alert.alert(
+                              'Signalement accepté',
+                              `Corrige maintenant le Terrain ${m?.court_no ?? ''} dans la liste ci-dessous : `
+                              + 'accepter ne change pas le score tout seul.',
+                            );
+                          } finally { setReportBusy(null); }
+                        }}
+                        style={{ flex: 1, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}
+                      >
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textOnDark }}>
+                          Il a raison
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        disabled={reportBusy === r.id}
+                        onPress={async () => {
+                          setReportBusy(r.id);
+                          try {
+                            await resolveReport(r.id, 'refuse', myPlayerId);
+                            setReports(await fetchTournamentReports(t.id));
+                          } finally { setReportBusy(null); }
+                        }}
+                        style={{
+                          flex: 1, backgroundColor: Colors.bgCard, borderRadius: 12, paddingVertical: 11,
+                          alignItems: 'center', borderWidth: 1, borderColor: Colors.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                          Le score est bon
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
 
