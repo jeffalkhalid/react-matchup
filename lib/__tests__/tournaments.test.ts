@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights,
+  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder, rankBarHeights, autoValidateLabel,
   groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   waitExplanation, registerNotice, partnerIntentNotice, myLiveTournament,
@@ -1355,5 +1355,29 @@ describe('la hauteur des barres de « Mon parcours »', () => {
     expect(rankBarHeights([3])).toEqual([1]);
     expect(rankBarHeights([5, 5])).toEqual([1, 1]);
     expect(rankBarHeights([])).toEqual([]);
+  });
+});
+
+describe('l echeance de validation automatique, dite au joueur', () => {
+  const NOW = new Date('2026-10-01T20:00:00+01:00');
+
+  it('dit « demain » plutot qu une date que personne ne compte', () => {
+    expect(autoValidateLabel('2026-10-02T11:00:00Z', NOW)).toMatch(/demain/i);
+  });
+
+  it('dit « aujourd hui » quand c est le jour meme', () => {
+    // 20:00Z tombe le 1er au soir en heure locale ; 22:30Z serait deja le 2.
+    // La comparaison porte sur le JOUR CIVIL local, pas sur un ecart d heures.
+    expect(autoValidateLabel('2026-10-01T20:00:00Z', NOW)).toMatch(/aujourd/i);
+  });
+
+  it('passe a la date au-dela de demain', () => {
+    const l = autoValidateLabel('2026-10-05T11:00:00Z', NOW);
+    expect(l).not.toMatch(/demain|aujourd/i);
+    expect(l).toMatch(/5/);
+  });
+
+  it('ne dit rien quand il n y a pas d echeance', () => {
+    expect(autoValidateLabel(null, NOW)).toBe(null);
   });
 });

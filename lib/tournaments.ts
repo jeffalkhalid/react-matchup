@@ -66,6 +66,10 @@ export interface Tournament {
   forfeit_games: number;
   status: TournamentStatus;
   current_round: number;
+  /** Quand le classement sera validé tout seul faute de décision. Posé au
+   *  passage en TERMINE ; absent tant que `tournament_auto_validate.sql`
+   *  n'est pas appliquée. */
+  auto_validate_at?: string | null;
   created_by: string;
   created_at: string;
   club?: TournamentClub | null;
@@ -430,7 +434,7 @@ export function resultMessage(res: TournamentResult): string {
 
 const TOURNAMENT_COLS =
   'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, round_minutes, points_scale, ' +
-  'price_mad, forfeit_games, status, current_round, created_by, created_at, club:club_id(id, name, city)';
+  'price_mad, forfeit_games, status, current_round, auto_validate_at, created_by, created_at, club:club_id(id, name, city)';
 
 /** Les tournois PUBLIÉS, du plus proche au plus lointain. Les brouillons sont
  *  écartés côté requête : ils n'appartiennent qu'à leur organisateur. */
@@ -1246,6 +1250,35 @@ export function pointsLadder(
     .map(([rang, pts]) => ({ rank: Number(rang), points: Number(pts) }))
     .filter(r => Number.isFinite(r.rank) && Number.isFinite(r.points))
     .sort((a, b) => a.rank - b.rank);
+}
+
+/**
+ * « Validé automatiquement demain à 12:00 » — l'échéance, dite comme on la
+ * compte.
+ *
+ * « Demain » plutôt qu'une date : entre la fin de la soirée et le lendemain
+ * midi, c'est le seul repère qu'un joueur utilise vraiment. Au-delà, la date
+ * redevient plus claire que « dans trois jours ».
+ *
+ * `null` quand il n'y a pas d'échéance : le tournoi n'est pas encore clos, ou
+ * il est déjà validé. Ne rien dire vaut mieux qu'annoncer une heure inventée.
+ */
+export function autoValidateLabel(
+  autoValidateAt: string | null | undefined, now: Date = new Date(),
+): string | null {
+  if (!autoValidateAt) return null;
+  const d = new Date(autoValidateAt);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const heure = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  // Comparaison sur le JOUR CIVIL local, pas sur un écart de 24 h : une
+  // échéance à midi est « demain » qu'on la lise à 20h ou à 23h59.
+  const jour = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const ecart = Math.round((jour(d) - jour(now)) / 86_400_000);
+
+  if (ecart <= 0) return `Validé automatiquement aujourd’hui à ${heure}`;
+  if (ecart === 1) return `Validé automatiquement demain à ${heure}`;
+  return `Validé automatiquement le ${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${heure}`;
 }
 
 /**

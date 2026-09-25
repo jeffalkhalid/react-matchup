@@ -38,6 +38,9 @@ export const TOURNAMENT_REASONS: Record<string, string> = {
   already_scored:                'Ce match a déjà un score : il n’y a plus de chrono à lancer ni à remettre à zéro.',
   already_started:               'Le tournoi a déjà commencé.',
   already_validated:             'Le classement de ce tournoi est déjà validé.',
+  // Dit ce qu'il FAUT FAIRE, pas seulement ce qui bloque : le refus tombe sur
+  // l'organisateur au moment précis où il croyait avoir fini.
+  open_report:                   'Un joueur conteste un score : tranche-le avant de valider le classement.',
   already_withdrawn:             'Ce binôme a déjà quitté le tournoi.',
   bye_match:                     'Ce tour est un repos : il n’y a pas de score à saisir.',
   club_not_found:                'Ce club est introuvable.',

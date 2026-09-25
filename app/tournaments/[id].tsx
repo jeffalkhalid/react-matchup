@@ -41,7 +41,7 @@ import {
   getTournamentsEnabled, registerToTournament, joinTournamentPlayer, fetchPendingPairs,
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
-  myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder,
+  myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder, autoValidateLabel,
   groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL, partnerIntentNotice,
   isExpiredUnstarted,
   waitlistCount, freePlaces, waitExplanation, registerNotice,
@@ -855,6 +855,16 @@ export default function TournamentDetailScreen() {
             score faux y déplace deux binômes. Jusqu'ici, le joueur qui le
             voyait n'avait aucun moyen de le dire dans l'app — il fallait
             trouver l'organisateur, ou laisser passer. */}
+        {/* L'échéance dite en clair : « points en attente » sans date laisse
+            croire qu'ils attendent quelqu'un qui ne viendra peut-être jamais.
+            Rien ne s'affiche si la migration n'est pas appliquée — la colonne
+            est alors absente, et `autoValidateLabel` rend null. */}
+        {t.status === 'TERMINE' && autoValidateLabel(t.auto_validate_at) && (
+          <Text style={{ fontSize: 11.5, fontFamily: Fonts.uiBold, color: Colors.textMuted, textAlign: 'center' }}>
+            {autoValidateLabel(t.auto_validate_at)}
+          </Text>
+        )}
+
         {closed && me.team && (peutSignaler || dejaSignale) && (
           dejaSignale ? (
             <View style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
