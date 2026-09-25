@@ -129,6 +129,72 @@ export function courtTone(state: CourtState): CourtTone {
   }
 }
 
+/**
+ * Ce qui se lit à DROITE d'une ligne de l'échelle — une ligne par terrain.
+ *
+ * L'échelle se lit debout, d'un coup d'œil, pour répondre à une seule
+ * question : « est-ce qu'on attend quelqu'un ? ». Chaque état dit donc son
+ * nom en toutes lettres, et les deux états qui portent un score le montrent
+ * plutôt que de le nommer — un « 6 – 3 · saisi » se vérifie d'un regard,
+ * un « score enregistré » oblige à ouvrir le terrain pour savoir lequel.
+ *
+ * Le mot « en attente » n'apparaît nulle part : un score saisi par un seul
+ * camp COMPTE déjà, et le dire autrement fait relancer un adversaire pour
+ * rien.
+ */
+export function courtRowLabel(c: CourtView): string {
+  const score = c.gamesA != null && c.gamesB != null ? `${c.gamesA} – ${c.gamesB}` : null;
+  switch (c.state) {
+    case 'a_demarrer':   return 'À démarrer';
+    case 'en_cours':     return c.secondsLeft != null
+                                ? `En jeu · ${formatCountdown(c.secondsLeft)}`
+                                : 'En jeu';
+    case 'temps_ecoule': return 'Temps écoulé';
+    case 'provisoire':   return score ? `${score} · saisi` : 'Score saisi';
+    case 'litige':       return 'Litige';
+    case 'acquis':       return score ? `${score} ✓` : 'Acquis';
+    case 'forfait':      return 'Forfait';
+    case 'exempt':       return 'Exempté';
+  }
+}
+
+/**
+ * L'heure à laquelle le chrono d'un terrain tombera à zéro.
+ *
+ * Écrite en clair sous le compte à rebours (« fin vers 21:29 ») parce qu'un
+ * décompte répond à « combien de temps » mais jamais à « est-ce que j'ai le
+ * temps de faire autre chose » — on regarde l'heure d'un terrain qui joue
+ * pour savoir quand revenir.
+ *
+ * `null` dès qu'il n'y a rien à annoncer : sans départ de chrono, une heure
+ * de fin serait une invention.
+ */
+export function endsAt(startedAt: string | null, roundMinutes: number): Date | null {
+  if (!startedAt) return null;
+  const depart = new Date(startedAt).getTime();
+  if (Number.isNaN(depart)) return null;
+  return new Date(depart + roundMinutes * 60_000);
+}
+
+/**
+ * La part de la rotation déjà écoulée sur un terrain, de 0 à 1 — la barre
+ * fine sous une ligne de l'échelle.
+ *
+ * Bornée des deux côtés parce que les deux dépassements arrivent pour de
+ * vrai : un reste SUPÉRIEUR à la durée quand l'organisateur raccourcit la
+ * rotation après l'avoir lancée, un reste NÉGATIF quand l'horloge du
+ * téléphone et celle du serveur ne sont pas d'accord. Une barre qui déborde
+ * de sa ligne se voit immédiatement, et pour rien.
+ *
+ * Chrono jamais lancé (`null`) : zéro, pas une barre pleine — il n'y a rien
+ * à montrer, et une barre pleine dirait le contraire de la vérité.
+ */
+export function courtProgress(secondsLeft: number | null, roundMinutes: number): number {
+  const total = roundMinutes * 60;
+  if (secondsLeft == null || total <= 0) return 0;
+  return Math.min(1, Math.max(0, (total - secondsLeft) / total));
+}
+
 /** Le plafond d'un compteur de jeux — celui du champ de saisie qu'il remplace
  *  (deux chiffres). Il n'a pas à coller au padel réel, seulement à exclure
  *  l'absurde. */

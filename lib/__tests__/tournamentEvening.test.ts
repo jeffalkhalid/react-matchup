@@ -7,7 +7,8 @@ vi.mock('../supabase', () => ({ supabase: {} }));
 import {
   courtState, eveningCourts, myCourt, blockingLabel, blocks, needsHuman, courtsDone,
   roundLabel, secondsLeft, formatCountdown, shouldTickClock, shouldSyncAlarms,
-  tournamentEveningIsLive, courtTone, bumpGames, type CourtState,
+  tournamentEveningIsLive, courtTone, bumpGames, courtRowLabel, courtProgress, endsAt,
+  type CourtState, type CourtView,
 } from '../tournamentEvening';
 
 const M = (o: any = {}) => ({
@@ -400,5 +401,61 @@ describe('le pas d un compteur de jeux', () => {
     // Le plafond du champ de saisie qu il remplace, conserve tel quel.
     expect(bumpGames('99', 1)).toBe('99');
     expect(bumpGames('9', 1)).toBe('10');
+  });
+});
+
+describe('ce qui se lit a droite d une ligne de l echelle', () => {
+  const C = (o: Partial<CourtView>): CourtView => ({
+    matchId: 'm', courtNo: 1, state: 'a_demarrer', mine: false,
+    gamesA: null, gamesB: null, secondsLeft: null, ...o,
+  });
+
+  it('dit l etat en toutes lettres, et le score des qu il y en a un', () => {
+    expect(courtRowLabel(C({ state: 'a_demarrer' }))).toBe('À démarrer');
+    expect(courtRowLabel(C({ state: 'en_cours', secondsLeft: 402 }))).toBe('En jeu · 06:42');
+    expect(courtRowLabel(C({ state: 'temps_ecoule' }))).toBe('Temps écoulé');
+    expect(courtRowLabel(C({ state: 'provisoire', gamesA: 6, gamesB: 3 }))).toBe('6 – 3 · saisi');
+    expect(courtRowLabel(C({ state: 'litige' }))).toBe('Litige');
+    expect(courtRowLabel(C({ state: 'acquis', gamesA: 6, gamesB: 4 }))).toBe('6 – 4 ✓');
+    expect(courtRowLabel(C({ state: 'forfait' }))).toBe('Forfait');
+    expect(courtRowLabel(C({ state: 'exempt' }))).toBe('Exempté');
+  });
+
+  it('ne casse pas quand le chrono ou le score manque', () => {
+    // `secondsLeft` est nul tant que personne n a lance le chrono ; une ligne
+    // amputee vaut mieux qu un « En jeu · NaN:NaN ».
+    expect(courtRowLabel(C({ state: 'en_cours', secondsLeft: null }))).toBe('En jeu');
+    expect(courtRowLabel(C({ state: 'acquis', gamesA: null, gamesB: null }))).toBe('Acquis');
+  });
+});
+
+describe('la barre d avancement d un terrain', () => {
+  it('va de 0 au depart a 1 a la fin du chrono', () => {
+    expect(courtProgress(900, 15)).toBe(0);      // rien de joue
+    expect(courtProgress(450, 15)).toBe(0.5);    // moitie
+    expect(courtProgress(0, 15)).toBe(1);        // chrono fini
+  });
+
+  it('reste dans ses bornes quand la donnee est absente ou aberrante', () => {
+    // Chrono jamais lance : pas de barre du tout, pas une barre pleine.
+    expect(courtProgress(null, 15)).toBe(0);
+    // Le serveur peut rendre un reste superieur a la duree (duree raccourcie
+    // apres coup) ou negatif (horloges desaccordees).
+    expect(courtProgress(1200, 15)).toBe(0);
+    expect(courtProgress(-60, 15)).toBe(1);
+    expect(courtProgress(300, 0)).toBe(0);
+  });
+});
+
+describe('l heure a laquelle le chrono d un terrain tombe a zero', () => {
+  it('ajoute la duree de la rotation au depart du chrono', () => {
+    const fin = endsAt('2026-09-25T19:14:00.000Z', 15);
+    expect(fin?.toISOString()).toBe('2026-09-25T19:29:00.000Z');
+  });
+
+  it('rend null quand il n y a rien a annoncer', () => {
+    // Chrono jamais lance : annoncer une heure de fin serait une invention.
+    expect(endsAt(null, 15)).toBe(null);
+    expect(endsAt('pas une date', 15)).toBe(null);
   });
 });
