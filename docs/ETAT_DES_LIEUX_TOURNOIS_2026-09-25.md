@@ -7,6 +7,18 @@ au code et au schéma réellement en place. Aucune ligne de code n'a été modif
 À lire avant de décider ce qui entre en V1 : la section Tournois est marquée **hors
 périmètre V1**, et ce handoff représente à lui seul dix écrans et une section nouvelle.
 
+> ⚠️ **Ce document est l'état d'AVANT travaux, et il a vieilli le jour même.**
+> Dans la journée du 25 septembre ont été livrés : l'habillage du mode soirée, le bloc
+> « Comment ça tourne » de la fiche, la courbe de Mon parcours, **toute la section
+> Événements** (tables, fiche, onglet, création, notifications), le signalement d'un
+> score faux, la validation automatique du classement, la relance d'invitation,
+> l'invitation d'un joueur non inscrit, la suggestion de partenaire, la feuille
+> « Tu organises quoi ? » et la colonne Tournois unique.
+>
+> Ce qui reste : la clôture automatique des inscriptions, « Relancer les 4 »,
+> l'historique des corrections, le bandeau hors ligne. Les trois premiers demandent
+> d'ouvrir en deux un RPC de production, comme l'a été `tournament_validate`.
+
 ---
 
 ## 1. Le verdict en trois phrases
