@@ -68,6 +68,10 @@ import {
 } from '../../lib/tournamentShare';
 import { LiveHero, ResultHero, RoundBanner, RegistrationCard, StickyActionBar } from '../../components/tournaments/FicheHeros';
 import { RegisteredStrip } from '../../components/tournaments/RegisteredStrip';
+import { ReportSheet } from '../../components/tournaments/ReportSheet';
+import {
+  canReportNow, reportScore, fetchTournamentReports, type TournamentReport,
+} from '../../lib/tournamentReports';
 import { ScoreSheet, type ScoreSheetTeam } from '../../components/tournaments/ScoreSheet';
 
 // ─── Briques d'affichage (conventions du dépôt) ──────────────────────────────
@@ -532,6 +536,24 @@ export default function TournamentDetailScreen() {
     displayName(byId.get(player2Id)?.player, 'player'),
   ], [byId]);
 
+  // ── « Un score est faux ? » ──
+  // La fenêtre est étroite et c'est voulu : entre la fin de la soirée et la
+  // validation. Avant, le désaccord a son propre chemin (l'état `litige`, qui
+  // bloque la rotation) ; après, les points sont crédités et l'ELO a bougé.
+  const [reportOuvert, setReportOuvert] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [mesSignalements, setMesSignalements] = useState<TournamentReport[]>([]);
+
+  const chargerSignalements = useCallback(async () => {
+    if (!id) return;
+    // Lecture indépendante du reste de la fiche : tant que
+    // `tournament_reports.sql` n'est pas appliquée, elle échoue — et elle ne
+    // doit pas emporter avec elle le classement, qui n'a rien à voir.
+    try { setMesSignalements(await fetchTournamentReports(id)); } catch { /* sans gravité */ }
+  }, [id]);
+
+  useEffect(() => { chargerSignalements(); }, [chargerSignalements]);
+
   // « Depuis la rotation précédente » — tournament_movements du tour EN
   // COURS, jamais une comparaison de rangs recalculée ici.
   const movementByTeam = useMemo(() => {
@@ -658,6 +680,20 @@ export default function TournamentDetailScreen() {
     mine: me.team?.id === r.team_id,
   }));
   const myFinalResult = me.team ? finalStandingRows.find(r => r.team_id === me.team!.id) ?? null : null;
+
+  // Mon match de la DERNIÈRE rotation : c'est lui qui fixe le classement
+  // d'une montante, donc le seul dont un score faux déplace vraiment des
+  // places. Le serveur accepte tout match du tournoi ; l'écran ne propose
+  // que celui-là, parce que c'est celui qui compte.
+  const dernierTour = matches.length ? Math.max(...matches.map(m => m.round_no)) : 0;
+  const monDernierMatch = me.team
+    ? matches.find(m => m.round_no === dernierTour && m.team_b
+        && (m.team_a === me.team!.id || m.team_b === me.team!.id)) ?? null
+    : null;
+  const dejaSignale = monDernierMatch
+    ? mesSignalements.some(r => r.match_id === monDernierMatch.id)
+    : false;
+  const peutSignaler = canReportNow(t.status) && !!monDernierMatch && !dejaSignale;
 
   // La rotation affichée est ENTIÈREMENT jouée (tous les matchs
   // confirmés/bye/forfait) mais le tournoi n'a pas encore avancé : il n'y a
@@ -813,6 +849,34 @@ export default function TournamentDetailScreen() {
             diff={myFinalResult.games_won - myFinalResult.games_lost}
             onShare={() => setLiveTab('classement')}
           />
+        )}
+
+        {/* Le classement d'une montante se lit sur la DERNIÈRE rotation : un
+            score faux y déplace deux binômes. Jusqu'ici, le joueur qui le
+            voyait n'avait aucun moyen de le dire dans l'app — il fallait
+            trouver l'organisateur, ou laisser passer. */}
+        {closed && me.team && (peutSignaler || dejaSignale) && (
+          dejaSignale ? (
+            <View style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+              <Icon name="clock" size={16} color={Colors.brandDeep} stroke={2.2} />
+              <Text style={{ flex: 1, fontSize: 12, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+                Tu as signalé le Terrain {monDernierMatch?.court_no}. L’organisateur tranchera avant de valider.
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setReportOuvert(true)}
+              activeOpacity={0.8}
+              style={[cs.card, { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }]}
+            >
+              <Text style={{ flex: 1, fontSize: 12.5, fontFamily: Fonts.uiBold, color: Colors.textSecondary }}>
+                Un score est faux ?
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>
+                Le signaler
+              </Text>
+            </TouchableOpacity>
+          )
         )}
         {closed && me.team && !myFinalResult && (
           <View style={[cs.card, { padding: 14, gap: 4 }]}>
@@ -1543,6 +1607,38 @@ export default function TournamentDetailScreen() {
             busy={scoreBusy}
             onSubmit={(gA, gB) => submitScore(m.id, gA, gB)}
             onClose={() => setScoreSheetMatchId(null)}
+          />
+        );
+      })()}
+
+      {monDernierMatch && (() => {
+        const ta = teamById.get(monDernierMatch.team_a!);
+        const tb = monDernierMatch.team_b ? teamById.get(monDernierMatch.team_b) : null;
+        if (!ta || !tb) return null;
+        return (
+          <ReportSheet
+            visible={reportOuvert}
+            courtNo={monDernierMatch.court_no}
+            teamALabel={namesOf(ta.player1_id, ta.player2_id).join(' · ')}
+            teamBLabel={namesOf(tb.player1_id, tb.player2_id).join(' · ')}
+            currentA={monDernierMatch.games_a}
+            currentB={monDernierMatch.games_b}
+            busy={reportBusy}
+            onClose={() => setReportOuvert(false)}
+            onSubmit={async (pa, pb) => {
+              if (!player?.id) return;
+              setReportBusy(true);
+              try {
+                const res = await reportScore(t.id, monDernierMatch.id, player.id, pa, pb);
+                if (!res.ok) { Alert.alert('Impossible', res.reason ?? ''); return; }
+                setReportOuvert(false);
+                await chargerSignalements();
+                Alert.alert(
+                  'C’est envoyé',
+                  'L’organisateur est prévenu. Il tranchera avant de valider le classement.',
+                );
+              } finally { setReportBusy(false); }
+            }}
           />
         );
       })()}
