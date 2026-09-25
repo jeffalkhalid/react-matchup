@@ -41,7 +41,7 @@ import {
   getTournamentsEnabled, registerToTournament, joinTournamentPlayer, fetchPendingPairs,
   respondJoinRequest, leaveTournamentTeam, withdrawFromTournament,
   checkInToTournament, setOpenToJoin, setSide, isFeatureDisabled, resultMessage,
-  myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount,
+  myTournamentState, soloRegistrations, seatsLabel, seatsTaken, seatCount, pointsLadder,
   groupRegistrations, partnerPath, registerCtaLabel, PARTNER_PATH_LABEL, partnerIntentNotice,
   isExpiredUnstarted,
   waitlistCount, freePlaces, waitExplanation, registerNotice,
@@ -1318,6 +1318,43 @@ export default function TournamentDetailScreen() {
               setSheetOpen(true);
             }}
           />
+        )}
+
+        {/* ── Comment ça tourne ──
+            La montante/descente n'est evidente que pour qui l'a deja jouee.
+            Avant cette carte, la fiche disait le prix, l'heure et le niveau,
+            mais jamais la REGLE — et surtout jamais ce qu'on gagne a finir
+            premier plutot que quatrieme. Un bareme qui ne s'affiche nulle
+            part ne motive personne. */}
+        {!started && (
+          <View style={[cs.card, { padding: 16, gap: 10 }]}>
+            <Text style={{ fontSize: 19, fontFamily: Fonts.welcome, color: Colors.textPrimary, paddingRight: 6 }}>
+              Comment ça tourne
+            </Text>
+            <Text style={{ fontSize: 12.5, fontFamily: Fonts.ui, color: Colors.textSecondary, lineHeight: 19 }}>
+              Tu gagnes, tu montes d’un terrain. Tu perds, tu descends. Le{' '}
+              <Text style={{ fontFamily: Fonts.uiBlack, color: Colors.textPrimary }}>Terrain 1</Text>
+              {' '}est le plus fort. La {t.round_count}e rotation fixe le classement.
+            </Text>
+
+            {/* Le bareme, du premier au dernier. La premiere pastille est
+                pleine : c'est le seul chiffre qu'on vient chercher. */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {pointsLadder(t).map((r, i) => (
+                <View key={r.rank} style={{
+                  paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999,
+                  backgroundColor: i === 0 ? Colors.brand : Colors.bgCardAlt,
+                }}>
+                  <Text style={{
+                    fontSize: 11.5, fontFamily: Fonts.uiBlack,
+                    color: i === 0 ? Colors.primary : Colors.textSecondary,
+                  }}>
+                    {r.points}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
         )}
 
         {/* ── Les joueurs seuls ── */}

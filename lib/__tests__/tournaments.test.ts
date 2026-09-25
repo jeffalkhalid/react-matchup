@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel,
+  roundMinutesOf, totalDurationMinutes, ROUND_MINUTES, formatLabel, pointsLadder,
   groupRegistrations, pairsCountLabel, partnerPath, registerCtaLabel,
   seatCount, teamCount, seatsTaken, waitlistCount, freePlaces, seatsLabel,
   waitExplanation, registerNotice, partnerIntentNotice, myLiveTournament,
@@ -1314,5 +1314,26 @@ describe('blockedCourts — la même règle que le serveur, pas une seconde lect
     expect(blockedCourtLabel('litige')).toBe('les deux camps ne disent pas la même chose');
     expect(blockedCourtLabel('sans_chrono')).toBe('chrono jamais lancé, pas de score');
     expect(blockedCourtLabel('muet')).toBe('pas de score');
+  });
+});
+
+describe('le bareme, tel qu il se lit sur la fiche', () => {
+  it('range les rangs par NUMERO, pas par chaine de caracteres', () => {
+    // Les cles de `points_scale` sont des chaines JSON. Un tri naif mettrait
+    // « 10 » entre « 1 » et « 2 », et la fiche annoncerait un bareme faux.
+    const t = { points_scale: { '1': 100, '10': 5, '2': 80 } } as any;
+    expect(pointsLadder(t).map(r => r.rank)).toEqual([1, 2, 10]);
+  });
+
+  it('retombe sur le bareme par defaut quand la colonne manque', () => {
+    // `points_scale` n est pas dans les colonnes lues par la fiche sur les
+    // installations anciennes : mieux vaut le bareme du schema que rien.
+    expect(pointsLadder({} as any)[0]).toEqual({ rank: 1, points: 100 });
+    expect(pointsLadder(null)).toHaveLength(8);
+  });
+
+  it('ecarte ce qui n est pas un nombre plutot que de l afficher', () => {
+    const t = { points_scale: { '1': 100, '2': 'abc', '3': 65 } } as any;
+    expect(pointsLadder(t).map(r => r.rank)).toEqual([1, 3]);
   });
 });

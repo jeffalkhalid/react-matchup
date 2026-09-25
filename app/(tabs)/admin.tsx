@@ -57,6 +57,7 @@ import {
   defaultPointsScale, resizePointsScale, teamCount,
   blockedCourts, blockedCourtLabel, roundMinutesOf,
 } from '../../lib/tournaments';
+import { bumpGames } from '../../lib/tournamentEvening';
 import { GENERIC_REASON } from '../../lib/tournamentReasons';
 import { CourtRow, type CourtTeamInfo } from '../../components/tournaments/CourtRow';
 import { DateSheet, TimeSheet } from '../../components/tournaments/DateTimeSheets';
@@ -2899,15 +2900,13 @@ function AdminMatchCard({
             <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary }}>
               {teamA.names.join(' · ')}
             </Text>
-            <TextInput value={inputA} onChangeText={t => setInputA(t.replace(/[^0-9]/g, '').slice(0, 2))}
-              keyboardType="number-pad" style={sty.smallScoreInput} />
+            <CompteurScore value={inputA} onChange={setInputA} />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary }}>
               {teamB.names.join(' · ')}
             </Text>
-            <TextInput value={inputB} onChangeText={t => setInputB(t.replace(/[^0-9]/g, '').slice(0, 2))}
-              keyboardType="number-pad" style={sty.smallScoreInput} />
+            <CompteurScore value={inputB} onChange={setInputB} />
           </View>
           {error && parsedA != null && parsedB != null && (
             <Text style={{ fontSize: 11, color: Colors.danger, fontWeight: '700' }}>{error}</Text>
@@ -3770,6 +3769,50 @@ function TournamentManage({ tournament, myPlayerId, onBack, onChanged }: {
         </View>
       )}
     </ScrollView>
+  );
+}
+
+/**
+ * Le compteur de jeux de l'organisateur — même geste que dans le mode soirée.
+ *
+ * Il saisit debout au bord du terrain, dans les mêmes conditions que les
+ * joueurs : un clavier numérique se rate, et il recouvre la carte du match
+ * qu'on est justement en train de lire pour savoir quel score taper. Le pas
+ * et ses bornes viennent de `bumpGames`, la même fonction que l'écran de
+ * soirée — un seul endroit où la règle du compteur est écrite.
+ */
+function CompteurScore({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const vide = value === '';
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+    }}>
+      <TouchableOpacity
+        onPress={() => onChange(bumpGames(value, -1))}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        accessibilityRole="button" accessibilityLabel="Un jeu de moins"
+        style={{ width: 34, paddingVertical: 8, alignItems: 'center' }}
+      >
+        <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>−</Text>
+      </TouchableOpacity>
+
+      <Text style={{
+        width: 34, textAlign: 'center', fontSize: 16, fontFamily: Fonts.uiBlack,
+        color: vide ? Colors.textMuted : Colors.textPrimary,
+      }}>
+        {vide ? '—' : value}
+      </Text>
+
+      <TouchableOpacity
+        onPress={() => onChange(bumpGames(value, 1))}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        accessibilityRole="button" accessibilityLabel="Un jeu de plus"
+        style={{ width: 34, paddingVertical: 8, alignItems: 'center' }}
+      >
+        <Text style={{ fontSize: 16, fontFamily: Fonts.uiBlack, color: Colors.textSecondary }}>+</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 

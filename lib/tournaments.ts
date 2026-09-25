@@ -55,6 +55,9 @@ export interface Tournament {
   /** Durée d'une rotation, en minutes. Absent tant que
    *  `tournament_round_minutes.sql` n'est pas appliqué — cf. roundMinutesOf. */
   round_minutes?: number | null;
+  /** Le barème des points, rang par rang (clés = rangs, en chaînes).
+   *  Optionnel côté client : `pointsLadder` retombe sur le défaut du schéma. */
+  points_scale?: Record<string, number> | null;
   price_mad: number;
   /** Score crédité À CHAQUE camp sur un match soldé par un forfait (0 par
    *  défaut) — c'est `forfeited_team`, jamais ce nombre, qui dit qui a gagné.
@@ -426,7 +429,7 @@ export function resultMessage(res: TournamentResult): string {
 // ─── Lectures ────────────────────────────────────────────────────────────────
 
 const TOURNAMENT_COLS =
-  'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, round_minutes, ' +
+  'id, name, club_id, starts_at, ends_at, level_min, level_max, court_count, round_count, round_minutes, points_scale, ' +
   'price_mad, forfeit_games, status, current_round, created_by, created_at, club:club_id(id, name, city)';
 
 /** Les tournois PUBLIÉS, du plus proche au plus lointain. Les brouillons sont
@@ -1221,6 +1224,29 @@ export function groupResultsByTeam(
 export const DEFAULT_POINTS_SCALE: Record<string, number> = {
   '1': 100, '2': 80, '3': 65, '4': 55, '5': 45, '6': 35, '7': 25, '8': 15,
 };
+
+/**
+ * Le barème tel qu'il se lit sur la fiche : rang par rang, du premier au
+ * dernier.
+ *
+ * ⚠️ Les clés de `points_scale` sont des CHAÎNES (c'est du jsonb). Un tri
+ * naïf rangerait « 10 » entre « 1 » et « 2 » et la fiche annoncerait un
+ * barème faux — d'où le tri numérique explicite.
+ *
+ * Retombe sur le défaut du schéma quand la colonne n'est pas lue : mieux
+ * vaut le barème que la base écrirait d'elle-même qu'un bloc vide. Et ce qui
+ * n'est pas un nombre est écarté plutôt qu'affiché — même raisonnement que la
+ * CHECK côté serveur, qui refuse une valeur non numérique.
+ */
+export function pointsLadder(
+  t: { points_scale?: Record<string, unknown> | null } | null | undefined,
+): { rank: number; points: number }[] {
+  const brut = t?.points_scale ?? DEFAULT_POINTS_SCALE;
+  return Object.entries(brut)
+    .map(([rang, pts]) => ({ rank: Number(rang), points: Number(pts) }))
+    .filter(r => Number.isFinite(r.rank) && Number.isFinite(r.points))
+    .sort((a, b) => a.rank - b.rank);
+}
 
 /** Miroir de la CHECK de `tournaments.points_scale` : aucune valeur négative
  *  (« un tournoi ne punit pas, il classe »). Pure, pour valider CÔTÉ ÉCRAN
