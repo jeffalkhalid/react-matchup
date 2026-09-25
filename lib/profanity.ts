@@ -19,6 +19,10 @@ export function normalize(text: string): string {
     // accents -> base (caractères précomposés, sûrs sur Hermes)
     .replace(/[áàâäã]/g, 'a').replace(/[éèêë]/g, 'e').replace(/[íìîï]/g, 'i')
     .replace(/[óòôöõ]/g, 'o').replace(/[úùûü]/g, 'u').replace(/ç/g, 'c')
+    // Ponctuation de FIN de mot d'abord : sans ça « connard! » devient
+    // « connardi » (le ! est lu comme un i leetspeak) et n'est plus reconnu.
+    // Lookahead seulement, pas de lookbehind : sûr sur Hermes.
+    .replace(/[!|]+(?=\s|$)/g, ' ')
     .replace(/[0@]/g, 'o')
     .replace(/[1!|]/g, 'i')
     .replace(/3/g, 'e')
@@ -33,14 +37,35 @@ export function normalize(text: string): string {
     .trim();
 }
 
-// true si le texte contient un terme banni (match sur mots normalisés).
+// Lettres répétées écrasées à UNE seule : « salopeee » → « salope ».
+// (normalize() n'en compacte que trois ou plus, et laisse donc « salopee ».)
+const squeeze = (mot: string) => mot.replace(/(.)\1+/g, '$1');
+
+/**
+ * true si le texte contient une insulte.
+ *
+ * ⚠ On ne cherche PLUS un terme banni n'importe où dans le texte : « pute »
+ * est contenu dans « disputé », « réputé », « amputé », et « Bravo ! Match très
+ * disputé » était refusé. Un faux refus coûte plus cher qu'une insulte ratée :
+ * ce filtre est CÔTÉ CLIENT (contournable de toute façon) et le signalement
+ * prend le relais.
+ *
+ * La recherche accolée est donc réservée aux termes d'au moins 6 lettres, trop
+ * longs pour apparaître par hasard dans un mot français.
+ */
 export function containsProfanity(text: string): boolean {
   const norm = normalize(text);
   if (!norm) return false;
-  const words = new Set(norm.split(' '));
+  const mots = norm.split(' ').filter(Boolean);
   return BANNED.some((bad) => {
     const nb = normalize(bad);
-    // mot isolé OU sous-chaîne accolée (ex: "vasympute")
-    return words.has(nb) || norm.includes(nb);
+    if (!nb) return false;
+    // Mot isolé, pluriel simple, ou lettres étirées (« puuuute »).
+    if (mots.some(m =>
+      m === nb || m === nb + 's' || m === nb + 'es' || m === nb + 'x'
+      || squeeze(m) === squeeze(nb)
+    )) return true;
+    // Accolé à un autre mot (« vasyconnard ») — termes longs uniquement.
+    return nb.length >= 6 && norm.includes(nb);
   });
 }
