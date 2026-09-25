@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -11,6 +12,10 @@ import { tournamentEveningIsLive } from '../lib/tournamentEvening';
 
 // Push tokens don't work in Expo Go since SDK 53 — only in dev/prod builds
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
+
+// Identifiant du dernier tap de notification déjà suivi. Retenu sur le
+// téléphone pour qu'une ouverture ordinaire ne rejoue pas l'ancien tap.
+const CLE_DERNIER_TAP = 'notif:dernier-tap';
 
 // Foreground: show banner + sound even when app is open
 Notifications.setNotificationHandler({
@@ -129,8 +134,33 @@ export function usePushNotifications() {
   }, [player?.id]);
 
   // ── Navigate on notification tap ─────────────────────────────
-  useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+  //
+  // DEUX CHEMINS, ET IL EN MANQUAIT UN (constaté le 2026-09-25) :
+  //  • l'app est ouverte ou en arrière-plan → l'écouteur suffit ;
+  //  • l'app est FERMÉE → le tap la démarre, et l'écouteur n'est posé qu'une
+  //    fois l'app lancée : la demande de navigation partait dans le vide et on
+  //    atterrissait sur l'accueil. C'est le cas le plus fréquent en vrai — on
+  //    tape une notification justement parce qu'on n'était pas dans l'app.
+  //    `getLastNotificationResponseAsync` relit le tap qui a lancé l'app.
+  //
+  // Ce tap reste lisible tant que le système le garde : sans garde-fou, chaque
+  // ouverture ordinaire rejouerait la DERNIÈRE notification tapée et vous
+  // enverrait sur un écran que vous n'avez pas demandé. D'où l'identifiant
+  // retenu sur le téléphone : un tap n'est suivi qu'une fois, pour de bon.
+  const traite = async (response: Notifications.NotificationResponse, froid: boolean) => {
+    const id = response.notification.request.identifier;
+    if (froid) {
+      try {
+        if (id && (await AsyncStorage.getItem(CLE_DERNIER_TAP)) === id) return;
+        if (id) await AsyncStorage.setItem(CLE_DERNIER_TAP, id);
+      } catch { /* stockage indisponible : on ouvre, quitte à ouvrir deux fois */ }
+    } else if (id) {
+      try { await AsyncStorage.setItem(CLE_DERNIER_TAP, id); } catch { /* sans gravité */ }
+    }
+    ouvrir(response);
+  };
+
+  const ouvrir = (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data as Record<string, string> | undefined;
       if (!data) return;
 
@@ -198,7 +228,19 @@ export function usePushNotifications() {
           }
           break;
       }
-    });
-    return () => sub.remove();
+  };
+
+  useEffect(() => {
+    let vivant = true;
+
+    // App fermée : relire le tap qui vient de la démarrer.
+    Notifications.getLastNotificationResponseAsync()
+      .then(r => { if (vivant && r) traite(r, true); })
+      .catch(() => { /* rien à relire */ });
+
+    // App ouverte ou en arrière-plan.
+    const sub = Notifications.addNotificationResponseReceivedListener(r => { traite(r, false); });
+
+    return () => { vivant = false; sub.remove(); };
   }, []);
 }
