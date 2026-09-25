@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { enregistrerMonJeton } from '../lib/pushToken';
@@ -122,6 +122,9 @@ export function usePushNotifications() {
   const { player } = usePlayer();
   const router     = useRouter();
 
+  // Le tap reçu, en attente que la session soit chargée (voir plus bas).
+  const [tapEnAttente, setTapEnAttente] = useState<Notifications.NotificationResponse | null>(null);
+
   // ── Register token ────────────────────────────────────────────
   // Au montage on ne PROMPTE jamais : on rafraîchit le token uniquement si la
   // permission est déjà accordée. La demande de permission est faite à un moment
@@ -135,18 +138,24 @@ export function usePushNotifications() {
 
   // ── Navigate on notification tap ─────────────────────────────
   //
-  // DEUX CHEMINS, ET IL EN MANQUAIT UN (constaté le 2026-09-25) :
-  //  • l'app est ouverte ou en arrière-plan → l'écouteur suffit ;
-  //  • l'app est FERMÉE → le tap la démarre, et l'écouteur n'est posé qu'une
-  //    fois l'app lancée : la demande de navigation partait dans le vide et on
-  //    atterrissait sur l'accueil. C'est le cas le plus fréquent en vrai — on
-  //    tape une notification justement parce qu'on n'était pas dans l'app.
-  //    `getLastNotificationResponseAsync` relit le tap qui a lancé l'app.
+  // APP FERMÉE, LE TAP N'OUVRAIT RIEN. Deux causes, et il a fallu les deux
+  // corrections (la première seule ne suffisait pas — constaté le 2026-09-26) :
   //
-  // Ce tap reste lisible tant que le système le garde : sans garde-fou, chaque
-  // ouverture ordinaire rejouerait la DERNIÈRE notification tapée et vous
-  // enverrait sur un écran que vous n'avez pas demandé. D'où l'identifiant
-  // retenu sur le téléphone : un tap n'est suivi qu'une fois, pour de bon.
+  //  1. L'app n'écoutait que les taps reçus PENDANT qu'elle tourne. Fermée, le
+  //     tap la démarre et l'écouteur n'est posé qu'après : la demande partait
+  //     dans le vide. `getLastNotificationResponseAsync` relit le tap qui a
+  //     lancé l'app.
+  //
+  //  2. ⚠️ Même relu, l'écran visé N'EXISTAIT PAS ENCORE. Les écrans (chat,
+  //     lobby, profil…) sont derrière `<Stack.Protected guard={!!player}>` :
+  //     tant que la session n'est pas revenue du téléphone, ils ne sont pas
+  //     montés, et naviguer vers eux ne fait rien. D'où la file d'attente
+  //     ci-dessous : on retient le tap et on l'ouvre quand la session est là.
+  //
+  // Le tap qui a lancé l'app reste lisible tant que le système le garde : sans
+  // garde-fou, chaque ouverture ordinaire rejouerait la DERNIÈRE notification
+  // tapée et vous enverrait sur un écran que vous n'avez pas demandé. D'où
+  // l'identifiant retenu sur le téléphone : un tap n'est suivi qu'une fois.
   const traite = async (response: Notifications.NotificationResponse, froid: boolean) => {
     const id = response.notification.request.identifier;
     if (froid) {
@@ -157,7 +166,7 @@ export function usePushNotifications() {
     } else if (id) {
       try { await AsyncStorage.setItem(CLE_DERNIER_TAP, id); } catch { /* sans gravité */ }
     }
-    ouvrir(response);
+    setTapEnAttente(response);
   };
 
   const ouvrir = (response: Notifications.NotificationResponse) => {
@@ -243,4 +252,12 @@ export function usePushNotifications() {
 
     return () => { vivant = false; sub.remove(); };
   }, []);
+
+  // Le tap attend la session. Sans elle, les écrans visés ne sont pas montés
+  // et `router.push` ne fait rien — c'était la seconde cause.
+  useEffect(() => {
+    if (!tapEnAttente || !player) return;
+    ouvrir(tapEnAttente);
+    setTapEnAttente(null);
+  }, [tapEnAttente, player?.id]);
 }
