@@ -954,67 +954,60 @@ function GameDetailsSheetContenu({
                   (lib/games.courtBooking), en version longue : ici la place
                   ne manque pas. */}
               {(() => {
-                // ETAT et ACTION sont SEPARES.
+                // ETAT et ACTION dans le MEME objet : un interrupteur.
                 //
-                // Une seule pastille portait les deux : elle affichait
-                // « Terrain à réserver · c'est reserve », et se touchait pour
-                // basculer. On y lisait deux etats contradictoires cote a
-                // cote sans savoir lequel etait le vrai — et « · annuler »
-                // colle a « Terrain reserve » se lisait comme un statut, pas
-                // comme un bouton.
+                // Les separer ne suffisait pas : la pastille d'etat et le
+                // bouton d'action portaient la meme forme, deux lozenges cote
+                // a cote dont l'un decrivait et l'autre agissait. Depuis que
+                // le wizard pose ses deux boutons de cette facon, cette forme
+                // veut dire « choisis-en un » — la fiche disait autre chose
+                // avec la meme image.
                 //
-                // Desormais la pastille DIT ou en est le terrain, et rien
-                // d'autre. Le bouton, a cote, dit ce qu'on peut FAIRE, avec
-                // un verbe a la premiere personne — « J'ai reserve » ne peut
-                // pas se confondre avec un etat.
+                // Un interrupteur dit les deux d'un coup : sa position EST
+                // l'etat, et on le pousse pour en changer. Grise pour qui
+                // n'est pas createur : le serveur refuse l'ecriture aux
+                // autres (lobby.setReservation), autant que ca se voie avant
+                // le tap plutot qu'apres, dans une alerte de refus.
                 const b = courtBooking(game as any);
                 const modifiable = isCreator && !!onSetReservation
                   && (game as any).status !== 'closed' && (game as any).status !== 'cancelled';
                 if (!b && !modifiable) return null;
                 const booked = !!b?.booked;
                 // A moins de trois heures sans terrain, la pastille passe au
-                // rouge : la discretion ne sert plus a rien.
+                // rouge : la discretion ne sert plus a rien. C'est le seul
+                // endroit ou l'urgence peut se lire, l'interrupteur n'ayant
+                // que deux positions pour trois situations.
                 const alerte = courtNeedsAttention(game as any);
                 const teinte = alerte ? '#FCA5A5' : booked ? Colors.brand : 'rgba(255,255,255,0.8)';
+                // Un interrupteur qu'on ne peut pas pousser ne doit pas
+                // ressembler a un interrupteur qu'on peut pousser.
+                const piste = !modifiable ? 'rgba(255,255,255,0.18)'
+                  : booked ? Colors.brand
+                  : alerte ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.32)';
+                const bouton = modifiable ? Colors.bgCard : 'rgba(255,255,255,0.45)';
                 return (
-                  <>
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999,
-                      paddingHorizontal: 10, paddingVertical: 4,
+                  <TouchableOpacity
+                    disabled={!modifiable}
+                    onPress={() => onSetReservation!(game.id, !booked)}
+                    activeOpacity={0.8}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: booked, disabled: !modifiable }}
+                    accessibilityLabel={booked ? 'Terrain réservé' : 'Sans réservation'}
+                    accessibilityHint={modifiable ? 'Change l’état de la réservation du terrain' : undefined}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 999,
+                      paddingLeft: 10, paddingRight: 5, paddingVertical: 4,
                       backgroundColor: alerte ? 'rgba(239,68,68,0.22)' : booked ? 'rgba(255,193,26,0.18)' : 'rgba(255,255,255,0.1)',
                       borderWidth: alerte ? 1 : 0,
                       borderColor: 'rgba(239,68,68,0.7)',
                     }}>
-                      <Icon name={booked ? 'check' : alerte ? 'x' : 'clock'} size={12}
-                        color={teinte} stroke={booked ? 3 : 2.6} />
-                      <Text style={{ color: teinte, fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
-                        {alerte ? 'Toujours pas de terrain' : (b?.long ?? 'Terrain à réserver')}
-                      </Text>
+                    <Text style={{ color: teinte, fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900' }}>
+                      {booked ? 'Terrain réservé' : 'Sans réservation'}
+                    </Text>
+                    <View style={{ width: 30, height: 18, borderRadius: 999, backgroundColor: piste, justifyContent: 'center', paddingHorizontal: 2.5 }}>
+                      <View style={{ width: 13, height: 13, borderRadius: 999, backgroundColor: bouton, alignSelf: booked ? 'flex-end' : 'flex-start' }} />
                     </View>
-                    {modifiable && (
-                      <TouchableOpacity
-                        onPress={() => onSetReservation!(game.id, !booked)}
-                        activeOpacity={0.8}
-                        accessibilityRole="button"
-                        accessibilityLabel={booked ? 'Indiquer que le terrain n’est plus réservé' : 'Indiquer que j’ai réservé le terrain'}
-                        style={{
-                          flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999,
-                          paddingHorizontal: 10, paddingVertical: 4,
-                          backgroundColor: booked ? 'transparent' : Colors.brand,
-                          borderWidth: 1,
-                          borderColor: booked ? 'rgba(255,255,255,0.45)' : Colors.brand,
-                        }}>
-                        <Icon name={booked ? 'x' : 'check'} size={11}
-                          color={booked ? 'rgba(255,255,255,0.9)' : Colors.textOnBrand} stroke={2.8} />
-                        <Text style={{
-                          color: booked ? 'rgba(255,255,255,0.9)' : Colors.textOnBrand,
-                          fontFamily: Fonts.uiBlack, fontSize: 10, fontWeight: '900',
-                        }}>
-                          {booked ? 'Plus de réservation' : 'J’ai réservé'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </>
+                  </TouchableOpacity>
                 );
               })()}
             </View>
