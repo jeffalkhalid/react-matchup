@@ -178,7 +178,16 @@ export function usePushNotifications() {
           router.push((data.tab ? `/(tabs)/matchmaking?tab=${data.tab}` : '/(tabs)/matchmaking') as any);
           break;
         case 'match':
-          router.push('/(tabs)');
+          // « Score à valider », « Score contesté », « Score accepté » : le
+          // geste attendu est dans l'historique du lobby, pas sur l'accueil —
+          // où ce tap atterrissait, laissant le joueur chercher tout seul.
+          //
+          // MÊME DESTINATION QUE LA CLOCHE (lib/notifications.ts) : les deux
+          // annoncent la même chose, elles doivent mener au même endroit.
+          // `openValidation=1` ouvre la feuille de validation une fois les
+          // matchs chargés — le mécanisme existait déjà côté lobby, il n'était
+          // simplement jamais appelé depuis une notification.
+          router.push('/(tabs)/lobby?tab=history&openValidation=1' as any);
           break;
         case 'follow':
           if (data.pid) router.push(`/player/${data.pid}` as any);
