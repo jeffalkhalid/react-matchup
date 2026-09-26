@@ -300,7 +300,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     day:            QUICK_DAYS[1]?.val ?? '',
     time:           '19:00',
     location:       '',
-    hasReservation: false,
+    hasReservation: true,
     gameType:       'Compétitif' as GameType,
     genre:          'mixed' as Genre,
     minLevel:       defaultBand.min,
@@ -362,7 +362,7 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
     const band = defaultLevelBand(gameType, lv);
     setFormState({
       day: initialDay || QUICK_DAYS[1]?.val || '', time: initialTime || '19:00', location: '',
-      hasReservation: false, gameType, genre: defaultGenre,
+      hasReservation: true, gameType, genre: defaultGenre,
       minLevel: band.min, maxLevel: band.max, stakeMultiplier: DEFAULT_DEFI_STAKE, mySlot: 'A0', invites,
     });
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -736,22 +736,41 @@ export default function CreateWizard({ visible, onClose, onPublishedDone, onPubl
       .sort((a, b) => favRank(a) - favRank(b) || a.localeCompare(b));
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Venue */}
-        <Text style={sty.sectionLabel}>Terrain</Text>
-        {/* Reservation toggle */}
-        <TouchableOpacity onPress={() => set('hasReservation', !form.hasReservation)}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12,
-            backgroundColor: form.hasReservation ? 'rgba(255,193,26,0.14)' : Colors.bg,
-            borderWidth: 1.5, borderColor: form.hasReservation ? 'rgba(255,193,26,0.55)' : Colors.border, marginBottom: 10,
-          }}>
-          <Icon name="calendar" size={15} color={form.hasReservation ? Colors.brandDeep : Colors.textSecondary} stroke={2} />
-          <Text style={{ flex: 1, fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: form.hasReservation ? Colors.brandDeep : Colors.textSecondary }}>
-            J'ai une réservation
-          </Text>
-          <View style={{ width: 42, height: 24, borderRadius: 99, backgroundColor: form.hasReservation ? Colors.brand : Colors.border, justifyContent: 'center', paddingHorizontal: 3 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: Colors.bgCard, alignSelf: form.hasReservation ? 'flex-end' : 'flex-start', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 }} />
-          </View>
-        </TouchableOpacity>
+        {/* Terrain : réservation déjà en poche ou pas encore.
+            Deux boutons explicites plutôt qu'une bascule — on ne peut pas
+            « oublier » de répondre, et la réponse pilote l'alerte « Terrain à
+            réserver » + le rappel poussé 3 h avant (lib/games.ts). */}
+        <Text style={{ fontSize: 14, fontWeight: '900', color: Colors.textSecondary, marginBottom: 10 }}>
+          As-tu déjà réservé ton terrain ?
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          {([
+            { val: true,  label: "Oui j'ai une réservation", grow: 1.35 },
+            { val: false, label: 'Non pas encore',           grow: 1 },
+          ] as const).map(opt => {
+            const active = form.hasReservation === opt.val;
+            return (
+              <TouchableOpacity key={String(opt.val)} onPress={() => set('hasReservation', opt.val)}
+                style={{ flex: opt.grow, flexDirection: 'row', alignItems: 'center', gap: 8,
+                  paddingVertical: 14, paddingHorizontal: 12, borderRadius: 14,
+                  backgroundColor: active ? Colors.primary : Colors.bgCard,
+                  borderWidth: 1.5, borderColor: active ? Colors.primary : Colors.border,
+                }}>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+                  style={{ flex: 1, textAlign: 'center', fontSize: 14, fontFamily: Fonts.uiBlack, fontWeight: '900',
+                    color: active ? Colors.textOnDark : Colors.textPrimary }}>
+                  {opt.label}
+                </Text>
+                {active && (
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: Colors.brand,
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="check" size={12} color={Colors.textOnBrand} stroke={3} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* Clubs favoris : sélection en 1 tap + lien vers l'écran de gestion */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
