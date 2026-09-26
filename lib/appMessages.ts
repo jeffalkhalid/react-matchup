@@ -20,6 +20,23 @@
 
 export type AppMessageLevel = 'info' | 'feature' | 'update';
 
+/**
+ * 'card'   — l'image (s'il y en a une) en haut, puis le titre, le texte, le bouton.
+ * 'poster' — l'affiche occupe la fenêtre et devient tapable, le bouton dessous.
+ *
+ * Le titre et le texte existent TOUJOURS, même en mode affiche : une image qui
+ * ne charge pas ne doit pas laisser une fenêtre vide, et c'est ce que lit un
+ * lecteur d'écran. L'app retombe alors sur 'card'.
+ */
+export type AppMessageLayout = 'card' | 'poster';
+
+/** 3:2 — la proportion la moins surprenante quand on ne sait rien de l'image. */
+export const RATIO_PAR_DEFAUT = 1.5;
+
+/** Bornes de bon sens : ni un timbre-poste, ni cinq écrans de haut. */
+const RATIO_MIN = 0.5;
+const RATIO_MAX = 2;
+
 export interface AppMessage {
   id: string;
   level: AppMessageLevel;
@@ -35,6 +52,12 @@ export interface AppMessage {
   min_app_version: string | null;
   /** Visible jusqu'à cette version de l'app, celle-ci comprise. */
   max_app_version: string | null;
+  /** Adresse publique de l'affiche (bucket `app-media`), ou rien. */
+  image_url: string | null;
+  /** Largeur ÷ hauteur, mesurée à l'envoi. Sert à réserver la place AVANT que
+   *  l'image arrive — sinon la carte grandit d'un coup sous le doigt. */
+  image_ratio: number | null;
+  layout: AppMessageLayout;
   active: boolean;
   priority: number;
   created_at: string;
@@ -62,6 +85,29 @@ export function compareVersions(a: string, b: string): number {
     if (x !== y) return x < y ? -1 : 1;
   }
   return 0;
+}
+
+/**
+ * La place à réserver pour l'affiche, en largeur ÷ hauteur.
+ *
+ * Bornée : une image de 1000 × 5000 remplirait cinq écrans et le bouton
+ * partirait hors de vue. Une mesure absente ou absurde vaut la proportion par
+ * défaut — jamais zéro, qui ferait disparaître l'image sans rien dire.
+ */
+export function imageRatio(m: Pick<AppMessage, 'image_ratio'>): number {
+  const r = Number(m?.image_ratio);
+  if (!Number.isFinite(r) || r <= 0) return RATIO_PAR_DEFAUT;
+  return Math.min(RATIO_MAX, Math.max(RATIO_MIN, r));
+}
+
+/**
+ * Affiche-t-on ce message en mode affiche ?
+ *
+ * Non sans image : le mode affiche n'a rien à montrer, et on retombe sur la
+ * carte plutôt que d'ouvrir une fenêtre vide.
+ */
+export function showsPoster(m: Pick<AppMessage, 'layout' | 'image_url'>): boolean {
+  return m?.layout === 'poster' && !!m?.image_url;
 }
 
 /** Une mise à jour obligatoire ne se ferme pas. Les deux autres, si. */

@@ -10,9 +10,11 @@
 // avec le serveur. C'est le seul écran d'où l'on peut le déclencher, d'où
 // l'avertissement en rouge avant d'enregistrer.
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { supabase } from '../../lib/supabase';
-import { type AppMessage, type AppMessageLevel } from '../../lib/appMessages';
+import { imageRatio, type AppMessage, type AppMessageLayout, type AppMessageLevel } from '../../lib/appMessages';
 import { Colors, Fonts } from '../../lib/theme';
 import { Icon } from '../community/icons';
 
@@ -35,12 +37,21 @@ type Brouillon = {
   ends_on: string;
   priority: string;
   active: boolean;
+  image_url: string;
+  image_ratio: number | null;
+  layout: AppMessageLayout;
 };
 
 const VIDE: Brouillon = {
   id: null, level: 'info', title: '', body: '', cta_label: '', cta_url: '',
   min_app_version: '', max_app_version: '', starts_on: '', ends_on: '', priority: '0', active: true,
+  image_url: '', image_ratio: null, layout: 'card',
 };
+
+const BUCKET = 'app-media';
+/** Même plafond que le bucket : au-delà, la fenêtre resterait vide plusieurs
+ *  secondes sur un réseau moyen — et le serveur refuserait le fichier. */
+const POIDS_MAX = 2 * 1024 * 1024;
 
 /** « AAAA-MM-JJ » → début ou fin de cette journée, ou null si le champ est vide. */
 function jourVersIso(jour: string, bout: 'debut' | 'fin'): string | null {
@@ -74,6 +85,7 @@ export default function MessagesTab() {
   const [messages, setMessages] = useState<AppMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [envoiImage, setEnvoiImage] = useState(false);
   const [form, setForm] = useState<Brouillon>(VIDE);
 
   const set = <K extends keyof Brouillon>(k: K, v: Brouillon[K]) => setForm(f => ({ ...f, [k]: v }));
@@ -82,7 +94,7 @@ export default function MessagesTab() {
     setLoading(true);
     const { data, error } = await supabase
       .from('app_messages')
-      .select('id, level, title, body, cta_label, cta_url, starts_at, ends_at, min_app_version, max_app_version, active, priority, created_at')
+      .select('id, level, title, body, cta_label, cta_url, starts_at, ends_at, min_app_version, max_app_version, image_url, image_ratio, layout, active, priority, created_at')
       .order('created_at', { ascending: false });
     setLoading(false);
     if (error) { Alert.alert('Erreur', error.message); return; }
@@ -97,7 +109,55 @@ export default function MessagesTab() {
       min_app_version: m.min_app_version ?? '', max_app_version: m.max_app_version ?? '',
       starts_on: isoVersJour(m.starts_at), ends_on: isoVersJour(m.ends_at),
       priority: String(m.priority ?? 0), active: m.active,
+      image_url: m.image_url ?? '', image_ratio: m.image_ratio ?? null, layout: m.layout ?? 'card',
     });
+  };
+
+  /**
+   * Choisir une affiche et l'envoyer.
+   *
+   * La proportion est mesurée ICI, à l'envoi, et enregistrée : c'est elle qui
+   * permettra à la fenêtre de réserver la bonne place avant que l'image arrive.
+   *
+   * On ne redimensionne pas : ça demanderait un module natif, donc un nouveau
+   * passage par les stores — tout ce qu'on cherche à éviter. On compresse à la
+   * prise, et on refuse poliment ce qui reste trop lourd.
+   */
+  const choisirImage = async () => {
+    let res: ImagePicker.ImagePickerResult;
+    try {
+      res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    } catch {
+      Alert.alert('Accès aux photos', "L'app n'a pas pu ouvrir tes photos. Vérifie l'autorisation dans les réglages du téléphone.");
+      return;
+    }
+    const a = res.canceled ? null : res.assets?.[0];
+    if (!a) return;
+
+    setEnvoiImage(true);
+    try {
+      const bytes = await new File(a.uri).arrayBuffer();
+      if (bytes.byteLength > POIDS_MAX) {
+        const mo = Math.round((bytes.byteLength / 1024 / 1024) * 10) / 10;
+        Alert.alert('Affiche trop lourde', `Elle pèse ${mo} Mo, le maximum est 2 Mo. Réduis-la avant de l'envoyer — sinon la fenêtre resterait vide plusieurs secondes.`);
+        return;
+      }
+      const mime = a.mimeType ?? 'image/jpeg';
+      const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+      const path = `messages/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, { contentType: mime, upsert: false });
+      if (error) { Alert.alert('Envoi impossible', error.message); return; }
+      const url = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+      setForm(f => ({
+        ...f,
+        image_url: url,
+        image_ratio: a.width && a.height ? a.width / a.height : null,
+      }));
+    } catch (e: any) {
+      Alert.alert('Envoi impossible', String(e?.message ?? e));
+    } finally {
+      setEnvoiImage(false);
+    }
   };
 
   const enregistrer = async () => {
@@ -124,6 +184,11 @@ export default function MessagesTab() {
       ends_at: jourVersIso(form.ends_on, 'fin'),
       priority: parseInt(form.priority, 10) || 0,
       active: form.active,
+      image_url: form.image_url.trim() || null,
+      image_ratio: form.image_ratio,
+      // Une mise en page « affiche » sans image retomberait sur la carte côté
+      // joueur : on la range tout de suite pour que la liste ne mente pas.
+      layout: form.layout === 'poster' && form.image_url.trim() ? 'poster' : 'card',
     };
 
     setSaving(true);
@@ -207,6 +272,70 @@ export default function MessagesTab() {
           placeholder="Libellé — ex. « Voir les tournois »" placeholderTextColor={Colors.textMuted} />
         <TextInput value={form.cta_url} onChangeText={t => set('cta_url', t)} autoCapitalize="none" style={champ}
           placeholder="Lien — /tournaments/index ou https://…" placeholderTextColor={Colors.textMuted} />
+
+        <Text style={etiquette}>Affiche (facultatif)</Text>
+        {form.image_url ? (
+          <View style={{ gap: 8 }}>
+            <Image
+              source={{ uri: form.image_url }}
+              resizeMode="cover"
+              style={{ width: '100%', aspectRatio: imageRatio(form), borderRadius: 12, backgroundColor: Colors.bg }}
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={choisirImage} disabled={envoiImage}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border, opacity: envoiImage ? 0.6 : 1 }}>
+                <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textSecondary }}>Remplacer</Text>
+              </TouchableOpacity>
+              {/* Le fichier reste dans le stockage : une affiche retirée d'un
+                  message peut resservir, et un fichier orphelin ne casse rien. */}
+              <TouchableOpacity onPress={() => setForm(f => ({ ...f, image_url: '', image_ratio: null, layout: 'card' }))}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12, borderWidth: 1.5, borderColor: 'rgba(239,68,68,0.45)' }}>
+                <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.danger }}>Retirer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={choisirImage} disabled={envoiImage}
+            style={{ alignItems: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: Colors.border, backgroundColor: Colors.bg }}>
+            {envoiImage
+              ? <ActivityIndicator size="small" color={Colors.primary} />
+              : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Icon name="image" size={15} color={Colors.textSecondary} stroke={2.2} />
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textSecondary }}>Choisir une image</Text>
+                </View>
+              )}
+          </TouchableOpacity>
+        )}
+        <Text style={{ fontSize: 11.5, color: Colors.textMuted, lineHeight: 16 }}>
+          2 Mo maximum. Le titre et le texte restent obligatoires : si l'affiche ne charge pas, c'est eux que le joueur verra.
+        </Text>
+
+        {form.image_url ? (
+          <>
+            <Text style={etiquette}>Mise en page</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {([
+                { key: 'card' as const, label: 'Carte', aide: 'Image en haut, puis le texte' },
+                { key: 'poster' as const, label: 'Affiche', aide: 'L’image occupe tout, et se tape' },
+              ]).map(o => {
+                const actif = form.layout === o.key;
+                return (
+                  <TouchableOpacity key={o.key} onPress={() => set('layout', o.key)}
+                    style={{
+                      flex: 1, paddingVertical: 10, paddingHorizontal: 8, borderRadius: 12, alignItems: 'center', gap: 2,
+                      backgroundColor: actif ? Colors.primary : Colors.bg,
+                      borderWidth: 1.5, borderColor: actif ? Colors.primary : Colors.border,
+                    }}>
+                    <Text style={{ fontSize: 12.5, fontFamily: Fonts.uiBlack, fontWeight: '900', color: actif ? Colors.textOnDark : Colors.textPrimary }}>{o.label}</Text>
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}
+                      style={{ fontSize: 10, color: actif ? 'rgba(255,255,255,0.75)' : Colors.textMuted }}>{o.aide}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
 
         <Text style={etiquette}>Versions de l'app visées (facultatif)</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -296,6 +425,7 @@ export default function MessagesTab() {
                   ? `versions ${m.min_app_version || '…'} → ${m.max_app_version || '…'}`
                   : 'toutes versions',
                 m.starts_at || m.ends_at ? `du ${isoVersJour(m.starts_at) || '…'} au ${isoVersJour(m.ends_at) || '…'}` : null,
+                m.image_url ? (m.layout === 'poster' ? 'affiche' : 'avec image') : null,
                 `priorité ${m.priority}`,
               ].filter(Boolean).join(' · ')}
             </Text>

@@ -33,7 +33,7 @@ export function useAppMessage() {
       try {
         const { data: messages, error } = await supabase
           .from('app_messages')
-          .select('id, level, title, body, cta_label, cta_url, starts_at, ends_at, min_app_version, max_app_version, active, priority, created_at')
+          .select('id, level, title, body, cta_label, cta_url, starts_at, ends_at, min_app_version, max_app_version, image_url, image_ratio, layout, active, priority, created_at')
           .eq('active', true);
         if (error || !messages || annule) return;
 

@@ -4,7 +4,11 @@
 // une version comparée comme du texte ('1.10' < '1.9'), un message déjà vu qui
 // revient, et un message bloquant qu'un « déjà vu » ferait disparaître.
 import { describe, it, expect } from 'vitest';
-import { compareVersions, isVisibleFor, pickMessage, isBlocking, type AppMessage } from '../appMessages';
+import {
+  compareVersions, isVisibleFor, pickMessage, isBlocking,
+  imageRatio, showsPoster, RATIO_PAR_DEFAUT,
+  type AppMessage,
+} from '../appMessages';
 
 const MAINTENANT = new Date(2026, 8, 26, 12, 0, 0);
 
@@ -14,6 +18,7 @@ function msg(over: Partial<AppMessage> = {}): AppMessage {
     cta_label: null, cta_url: null,
     starts_at: null, ends_at: null,
     min_app_version: null, max_app_version: null,
+    image_url: null, image_ratio: null, layout: 'card',
     active: true, priority: 0, created_at: '2026-09-01T10:00:00.000Z',
     ...over,
   };
@@ -123,6 +128,46 @@ describe('choisir le message à montrer', () => {
   it('un message bloquant hors de sa plage de versions ne bloque personne', () => {
     const choisi = pickMessage([msg({ id: 'maj', level: 'update', max_app_version: '0.9.0' })], ctx);
     expect(choisi).toBeNull();
+  });
+});
+
+describe('la place réservée à l’affiche', () => {
+  it('sans mesure : une proportion raisonnable par défaut', () => {
+    // Sans elle, la carte grandirait d'un coup quand l'image se pose.
+    expect(imageRatio(msg())).toBe(RATIO_PAR_DEFAUT);
+  });
+
+  it('une mesure normale est respectée', () => {
+    expect(imageRatio(msg({ image_ratio: 0.8 }))).toBeCloseTo(0.8);
+  });
+
+  it('une image démesurément haute est ramenée dans les clous', () => {
+    // Une affiche 1000 × 5000 occuperait cinq écrans : on la borne.
+    expect(imageRatio(msg({ image_ratio: 0.2 }))).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('une image démesurément large aussi', () => {
+    expect(imageRatio(msg({ image_ratio: 9 }))).toBeLessThanOrEqual(2);
+  });
+
+  it('une mesure absurde vaut une absence de mesure', () => {
+    expect(imageRatio(msg({ image_ratio: 0 }))).toBe(RATIO_PAR_DEFAUT);
+    expect(imageRatio(msg({ image_ratio: Number.NaN }))).toBe(RATIO_PAR_DEFAUT);
+  });
+});
+
+describe('afficher en mode affiche', () => {
+  it('mise en page affiche AVEC image : oui', () => {
+    expect(showsPoster(msg({ layout: 'poster', image_url: 'https://x/a.jpg' }))).toBe(true);
+  });
+
+  it('mise en page affiche SANS image : non, on retombe sur la carte', () => {
+    // Le titre et le texte sont toujours là : la fenêtre ne peut pas être vide.
+    expect(showsPoster(msg({ layout: 'poster', image_url: null }))).toBe(false);
+  });
+
+  it('mise en page carte avec une image : ce n’est pas une affiche', () => {
+    expect(showsPoster(msg({ layout: 'card', image_url: 'https://x/a.jpg' }))).toBe(false);
   });
 });
 

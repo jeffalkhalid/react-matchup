@@ -14,10 +14,10 @@
 //   • pendant la première seconde, le temps qu'un tap sur une notification
 //     ait emmené le joueur là où il voulait aller.
 import { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Linking, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, BackHandler, Image, Linking, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useAppMessage } from '../hooks/useAppMessage';
-import { isBlocking, type AppMessageLevel } from '../lib/appMessages';
+import { isBlocking, showsPoster, imageRatio, type AppMessageLevel } from '../lib/appMessages';
 import { useTourInfo } from '../lib/tourAnchors';
 import { Icon, type IconName } from './community/icons';
 import { Colors, Fonts } from '../lib/theme';
@@ -40,6 +40,9 @@ export default function AppMessageOverlay() {
   const pathname = usePathname();
   const tourActif = !!useTourInfo('tour-active');
   const [pret, setPret] = useState(false);
+  // Une affiche qui ne charge pas (réseau lent, fichier effacé) ne doit pas
+  // laisser une fenêtre vide : on repasse alors en carte, titre et texte visibles.
+  const [imageKo, setImageKo] = useState(false);
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.94)).current;
 
@@ -48,6 +51,7 @@ export default function AppMessageOverlay() {
 
   useEffect(() => {
     if (!message) { setPret(false); return; }
+    setImageKo(false);
     const t = setTimeout(() => setPret(true), DELAI_AVANT_AFFICHAGE_MS);
     return () => clearTimeout(t);
   }, [message]);
@@ -77,6 +81,10 @@ export default function AppMessageOverlay() {
 
   const bloquant = isBlocking(message);
   const parure = PARURE[message.level] ?? PARURE.info;
+  const image = message.image_url && !imageKo ? message.image_url : null;
+  // Mode affiche : l'image PORTE le message, le titre et le texte s'effacent —
+  // mais ils reviennent d'eux-mêmes si l'image n'arrive pas.
+  const affiche = !!image && showsPoster(message);
 
   const agir = () => {
     const url = message.cta_url;
@@ -132,12 +140,34 @@ export default function AppMessageOverlay() {
           )}
         </View>
 
-        <Text style={{ fontSize: 19, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, lineHeight: 25 }}>
-          {message.title}
-        </Text>
-        <Text style={{ fontSize: 14, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, lineHeight: 20 }}>
-          {message.body}
-        </Text>
+        {image && (
+          <TouchableOpacity
+            activeOpacity={affiche ? 0.9 : 1}
+            disabled={!affiche}
+            onPress={affiche ? agir : undefined}
+            accessibilityRole={affiche ? 'imagebutton' : 'image'}
+            accessibilityLabel={message.title}>
+            <Image
+              source={{ uri: image }}
+              onError={() => setImageKo(true)}
+              resizeMode="cover"
+              // La proportion est connue AVANT le chargement : la carte ne
+              // grandit pas d'un coup sous le doigt quand l'image se pose.
+              style={{ width: '100%', aspectRatio: imageRatio(message), borderRadius: 16, backgroundColor: Colors.bg }}
+            />
+          </TouchableOpacity>
+        )}
+
+        {!affiche && (
+          <>
+            <Text style={{ fontSize: 19, fontFamily: Fonts.uiBlack, fontWeight: '900', color: Colors.textPrimary, lineHeight: 25 }}>
+              {message.title}
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: Fonts.uiSemi, color: Colors.textSecondary, lineHeight: 20 }}>
+              {message.body}
+            </Text>
+          </>
+        )}
 
         <TouchableOpacity
           onPress={agir}
