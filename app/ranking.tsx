@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   ScrollView, RefreshControl, ActivityIndicator, Image,
@@ -6,10 +6,12 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../hooks/usePlayer';
-import { supabase } from '../lib/supabase';
 import { Colors, getLeague, getLeagueLabel, formatPadelLevel, Fonts } from '../lib/theme';
 import { formatFrmtRanking } from '../lib/frmt-match';
 import { getFollowingIds, setFollow } from '../lib/community';
+import {
+  fetchRankingPage, fetchMonRang, fetchTotalJoueurs, aEncoreDesPages, pageDuRang, RANKING_PAGE,
+} from '../lib/ranking';
 import { ProfileAvatarButton } from '../components/ProfileAvatarButton';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { Icon } from '../components/community/icons';
@@ -52,7 +54,15 @@ export default function RankingScreen() {
   const insets = useSafeAreaInsets();
 
   const [tab,          setTab]          = useState<'global' | 'amis'>('global');
-  const [allPlayers,   setAllPlayers]   = useState<Player[]>([]);
+  // Les lignes CHARGÉES, pas tous les joueurs : on descend par pages de 50.
+  const [rows,         setRows]         = useState<RankedPlayer[]>([]);
+  const [page,         setPage]         = useState(0);
+  const [encorePlus,   setEncorePlus]   = useState(false);
+  const [chargePlus,   setChargePlus]   = useState(false);
+  // Mon rang, demandé à part : il reste juste même quand je regarde le haut
+  // du tableau ou que je filtre.
+  const [monRang,      setMonRang]      = useState<number | null>(null);
+  const [total,        setTotal]        = useState(0);
   const [search,       setSearch]       = useState('');
   const [leagueFilter, setLeagueFilter] = useState('tous');
   const [favorites,    setFavorites]    = useState<Set<string>>(new Set());
@@ -60,23 +70,79 @@ export default function RankingScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
 
-  const load = async (showLoading = false) => {
-    if (showLoading) setLoading(true);
-    const { data } = await supabase.from('players').select('*').is('deleted_at', null).order('elo_score', { ascending: false });
-    setAllPlayers(data ?? []);
-    if (me) {
-      // Onglet « Amis » = graphe de suivi (table follows), unifié avec « Ma communauté ».
+  // Une page vient du serveur, rang GLOBAL compris (fonction ranking_page).
+  // On ne filtre plus dans le téléphone : la recherche et la ligue partent
+  // avec la requête, sinon filtrer une liste partielle donnerait des réponses
+  // fausses — « aucun résultat » alors que le joueur existe page 4.
+  const chargerPage = useCallback(async (n: number, ajouter: boolean) => {
+    const lignes = await fetchRankingPage({
+      recherche: search,
+      ligue: leagueFilter as any,
+      ids: tab === 'amis' ? [...favorites] : null,
+      page: n,
+    });
+    const avecRang = lignes.map(l => ({ ...l, rank: l.rang })) as unknown as RankedPlayer[];
+    setRows(prev => (ajouter ? [...prev, ...avecRang] : avecRang));
+    setEncorePlus(aEncoreDesPages(lignes.length));
+    setPage(n);
+  }, [search, leagueFilter, tab, favorites]);
+
+  // L'onglet « Amis » a besoin de la liste des suivis AVANT de demander sa
+  // page : sans elle, il demanderait « restreins à rien » et afficherait tout.
+  useEffect(() => {
+    if (!me) return;
+    let vivant = true;
+    (async () => {
       const followingIds = await getFollowingIds(me.id);
-      setFavorites(new Set(followingIds));
-    }
-    if (showLoading) setLoading(false);
+      if (vivant) setFavorites(new Set(followingIds));
+    })();
+    return () => { vivant = false; };
+  }, [me?.id]);
+
+  useEffect(() => { fetchTotalJoueurs().then(setTotal); }, []);
+
+  // Mon rang : un comptage minuscule, pas le classement entier.
+  useEffect(() => {
+    if (!me) { setMonRang(null); return; }
+    let vivant = true;
+    fetchMonRang(me.elo_score).then(r => { if (vivant) setMonRang(r); });
+    return () => { vivant = false; };
+  }, [me?.id, me?.elo_score]);
+
+  // La recherche attend qu'on ait fini de taper : une requête par lettre
+  // rechargerait la page cinq fois pour trois caractères.
+  useEffect(() => {
+    let vivant = true;
+    const t = setTimeout(async () => {
+      if (!vivant) return;
+      setLoading(true);
+      await chargerPage(0, false);
+      if (vivant) setLoading(false);
+    }, search ? 300 : 0);
+    return () => { vivant = false; clearTimeout(t); };
+  }, [chargerPage]);
+
+  const voirPlus = async () => {
+    if (chargePlus || !encorePlus) return;
+    setChargePlus(true);
+    await chargerPage(page + 1, true);
+    setChargePlus(false);
   };
 
-  useEffect(() => { load(true); }, [me?.id]);
+  // « Voir ma position » : on charge d'un coup jusqu'à la page où l'on est,
+  // plutôt que de faire descendre le joueur à la main.
+  const allerAMaPosition = async () => {
+    if (!monRang) return;
+    const cible = pageDuRang(monRang);
+    setChargePlus(true);
+    for (let n = page + 1; n <= cible; n++) await chargerPage(n, true);
+    setChargePlus(false);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load(false);
+    await chargerPage(0, false);
+    if (me) setMonRang(await fetchMonRang(me.elo_score));
     setRefreshing(false);
   };
 
@@ -94,25 +160,23 @@ export default function RankingScreen() {
     setFavLoading(prev => { const next = new Set(prev); next.delete(playerId); return next; });
   };
 
-  const ranked = useMemo(
-    () => [...allPlayers].sort((a, b) => b.elo_score - a.elo_score).map((p, i) => ({ ...p, rank: i + 1 })),
-    [allPlayers],
+  // Le serveur a déjà trié et filtré : on affiche ce qu'il renvoie.
+  const displayed = rows;
+
+  // L'épingle se construit à partir de MA fiche, déjà en mémoire, et de mon
+  // rang. Elle n'attend donc pas que je sois dans la page affichée — c'est
+  // tout l'intérêt : savoir où l'on est sans descendre jusqu'à soi.
+  const myEntry = useMemo(
+    () => (me && monRang ? ({ ...me, rank: monRang } as RankedPlayer) : null),
+    [me, monRang],
   );
 
-  const myEntry = me ? ranked.find(p => p.id === me.id) ?? null : null;
-
-  const displayed = useMemo(() => {
-    let list = ranked;
-    if (tab === 'amis')          list = list.filter(p => favorites.has(p.id));
-    if (search)                  list = list.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
-    if (leagueFilter !== 'tous') list = list.filter(p => getLeague(p.elo_score) === leagueFilter);
-    return list;
-  }, [ranked, search, leagueFilter, tab, favorites]);
-
   const showPodium = !search && leagueFilter === 'tous' && tab === 'global';
-  const top3       = ranked.slice(0, 3);
-  const listData   = displayed.filter(p => !showPodium || p.rank > 3);
+  const top3       = showPodium ? rows.slice(0, 3) : [];
+  const listData   = showPodium ? rows.filter(p => p.rank > 3) : rows;
   const favCount   = favorites.size;
+  // Ma position est-elle déjà chargée ? Sinon on propose d'y aller.
+  const maPositionVisible = !!monRang && rows.some(p => p.id === me?.id);
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -152,7 +216,7 @@ export default function RankingScreen() {
               Le <Text style={{ color: Colors.brand, fontFamily: Fonts.welcome }}>classement</Text>
             </Text>
             <Text style={{ color: Colors.textSecondary, fontSize: 11, fontWeight: '600', marginTop: 4 }}>
-              {ranked.length} joueur{ranked.length !== 1 ? 's' : ''} classés
+              {total} joueur{total !== 1 ? 's' : ''} classés
             </Text>
           </View>
           {myEntry && (
@@ -279,8 +343,10 @@ export default function RankingScreen() {
                 />
               )}
 
-              {/* Votre position */}
-              {showPodium && myEntry && myEntry.rank > 3 && (
+              {/* Votre position — visible en permanence, y compris quand on
+                  filtre ou qu'on cherche. C'est elle qui remplace le
+                  défilement : savoir où l'on est sans descendre jusqu'à soi. */}
+              {myEntry && myEntry.rank > 3 && (
                 <View style={{
                   marginHorizontal: 14, marginTop: 4, marginBottom: 8,
                   flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -305,6 +371,17 @@ export default function RankingScreen() {
                     </Text>
                   </View>
                   <Text style={{ color: Colors.brandDeep, fontSize: 22, fontWeight: '900', fontFamily: Fonts.uiBlack }}>#{myEntry.rank}</Text>
+                  {!maPositionVisible && encorePlus && (
+                    <TouchableOpacity
+                      onPress={allerAMaPosition}
+                      disabled={chargePlus}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{ marginLeft: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: Colors.brandDeep }}>
+                      <Text style={{ color: Colors.textOnDark, fontSize: 11, fontWeight: '900', fontFamily: Fonts.uiBlack }}>
+                        {chargePlus ? '…' : 'Y aller'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -337,6 +414,24 @@ export default function RankingScreen() {
               onToggleFav={() => toggleFavorite(item.id)}
             />
           )}
+          ListFooterComponent={
+            encorePlus ? (
+              <TouchableOpacity
+                onPress={voirPlus}
+                disabled={chargePlus}
+                style={{
+                  marginHorizontal: 16, marginTop: 8, marginBottom: 8,
+                  paddingVertical: 12, borderRadius: 14, alignItems: 'center',
+                  backgroundColor: Colors.bgCardAlt,
+                }}>
+                {chargePlus
+                  ? <ActivityIndicator color={Colors.primary} />
+                  : <Text style={{ color: Colors.textSecondary, fontSize: 13, fontWeight: '900', fontFamily: Fonts.uiBlack }}>
+                      Voir {RANKING_PAGE} de plus
+                    </Text>}
+              </TouchableOpacity>
+            ) : null
+          }
           ListEmptyComponent={
             tab === 'amis' ? (
               <View style={{ alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24 }}>
