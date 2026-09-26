@@ -24,7 +24,7 @@
 
 export type AdminTab =
   | 'queue' | 'journal' | 'disputes' | 'frmt' | 'games'
-  | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'tournaments';
+  | 'gender' | 'reports' | 'players' | 'badges' | 'settings' | 'messages' | 'tournaments';
 
 export type AdminGroup = 'file' | 'donnees' | 'config' | 'tournois';
 
@@ -40,7 +40,7 @@ export const GROUPS: GroupDef[] = [
   // un dossier, on ne les choisit pas d'avance.
   { key: 'file',     label: 'File',     tabs: ['queue', 'disputes', 'reports', 'gender'] },
   { key: 'donnees',  label: 'Données',  tabs: ['frmt', 'players', 'games'] },
-  { key: 'config',   label: 'Config',   tabs: ['badges', 'settings'] },
+  { key: 'config',   label: 'Config',   tabs: ['badges', 'settings', 'messages'] },
   { key: 'tournois', label: 'Tournois', tabs: ['tournaments'] },
 ];
 
@@ -49,7 +49,7 @@ export const HEADER_TABS: AdminTab[] = ['journal'];
 
 export const ALL_TABS: AdminTab[] = [
   'queue', 'journal', 'disputes', 'frmt', 'games',
-  'gender', 'reports', 'players', 'badges', 'settings', 'tournaments',
+  'gender', 'reports', 'players', 'badges', 'settings', 'messages', 'tournaments',
 ];
 
 /** Le groupe qui contient cet onglet. `null` pour ceux de l'en-tête. */
@@ -97,5 +97,6 @@ export const TAB_LABEL: Record<AdminTab, string> = {
   games: 'Parties',
   badges: 'Badges',
   settings: 'Réglages',
+  messages: 'Messages',
   tournaments: 'Tournois',
 };

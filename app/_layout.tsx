@@ -16,6 +16,7 @@ import { NotificationProvider } from '../hooks/useNotificationCount';
 import { BadgeDefsProvider } from '../components/profile/BadgeDefsProvider';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import InAppBanner from '../components/InAppBanner';
+import AppMessageOverlay from '../components/AppMessageOverlay';
 import { Colors } from '../lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -134,6 +135,10 @@ export default function RootLayout() {
           <RootNavigator />
           {/* Bannière notif in-app — par-dessus la navigation, sous les providers. */}
           <InAppBanner />
+          {/* Message d'accueil (information, nouveauté, mise à jour obligatoire).
+              Monté ICI, à la racine : il doit pouvoir s'afficher par-dessus
+              n'importe quel écran, et survivre aux changements d'onglet. */}
+          <AppMessageOverlay />
         </BadgeDefsProvider>
       </NotificationProvider>
     </PlayerProvider>
