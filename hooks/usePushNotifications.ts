@@ -68,7 +68,10 @@ export async function registerForPushAsync(
       projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
     });
     const token = tokenData.data;
-    console.log('[push] token obtenu =', token);
+    // Le jeton est l'adresse du téléphone : on n'en écrit JAMAIS la valeur
+    // entière, même en développement. Les six derniers caractères suffisent à
+    // reconnaître « c'est bien le même appareil » sans rien livrer d'utile.
+    console.log('[push] jeton obtenu …' + String(token).slice(-6));
 
     // Le jeton ne vit plus dans la fiche joueur (lisible sans compte) mais
     // dans `player_push_tokens` — voir lib/pushToken.ts pour le pourquoi.
