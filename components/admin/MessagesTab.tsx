@@ -271,7 +271,10 @@ export default function MessagesTab() {
         <TextInput value={form.cta_label} onChangeText={t => set('cta_label', t)} style={champ}
           placeholder="Libellé — ex. « Voir les tournois »" placeholderTextColor={Colors.textMuted} />
         <TextInput value={form.cta_url} onChangeText={t => set('cta_url', t)} autoCapitalize="none" style={champ}
-          placeholder="Lien — /tournaments/index ou https://…" placeholderTextColor={Colors.textMuted} />
+          placeholder="Lien — /tournaments/index, https://…, tel:0661382155" placeholderTextColor={Colors.textMuted} />
+        <Text style={{ fontSize: 11.5, color: Colors.textMuted, lineHeight: 16 }}>
+          Un chemin qui commence par « / » ouvre un écran de l'app. Tout le reste sort de l'app : site web, téléphone (tel:), WhatsApp. En mode affiche, taper l'image suit ce même lien.
+        </Text>
 
         <Text style={etiquette}>Affiche (facultatif)</Text>
         {form.image_url ? (

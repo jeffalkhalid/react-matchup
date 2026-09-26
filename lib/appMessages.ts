@@ -110,6 +110,21 @@ export function showsPoster(m: Pick<AppMessage, 'layout' | 'image_url'>): boolea
   return m?.layout === 'poster' && !!m?.image_url;
 }
 
+/**
+ * Le lien mène-t-il HORS de l'app ?
+ *
+ * Tout ce qui porte un schéma (`https:`, `tel:`, `whatsapp:`, `mailto:`,
+ * `market:`…) part au système. Le reste est une route interne (`/tournaments`).
+ *
+ * La règle est volontairement générale. Une liste fermée de schémas avalait en
+ * silence le `tel:` d'une affiche de club : le numéro de téléphone est
+ * pourtant exactement ce sur quoi on tape, et le lien partait dans le
+ * navigateur de l'app comme si c'était un écran.
+ */
+export function estLienExterne(url: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(String(url ?? '').trim());
+}
+
 /** Une mise à jour obligatoire ne se ferme pas. Les deux autres, si. */
 export function isBlocking(m: Pick<AppMessage, 'level'>): boolean {
   return m.level === 'update';

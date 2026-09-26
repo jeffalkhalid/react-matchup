@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   compareVersions, isVisibleFor, pickMessage, isBlocking,
-  imageRatio, showsPoster, RATIO_PAR_DEFAUT,
+  imageRatio, showsPoster, estLienExterne, RATIO_PAR_DEFAUT,
   type AppMessage,
 } from '../appMessages';
 
@@ -168,6 +168,34 @@ describe('afficher en mode affiche', () => {
 
   it('mise en page carte avec une image : ce n’est pas une affiche', () => {
     expect(showsPoster(msg({ layout: 'card', image_url: 'https://x/a.jpg' }))).toBe(false);
+  });
+});
+
+describe('où mène le lien du bouton', () => {
+  it('une adresse web sort de l’app', () => {
+    expect(estLienExterne('https://padelcountryclub.ma')).toBe(true);
+  });
+
+  it('un numéro de téléphone sort de l’app', () => {
+    // Le cas de l'affiche de club : « INFO & RÉSERVATION 06 61 38 21 55 ».
+    expect(estLienExterne('tel:0661382155')).toBe(true);
+  });
+
+  it('WhatsApp aussi', () => {
+    expect(estLienExterne('whatsapp://send?phone=212661382155')).toBe(true);
+  });
+
+  it('un écran de l’app reste dans l’app', () => {
+    expect(estLienExterne('/tournaments/index')).toBe(false);
+  });
+
+  it('un lien vide reste dans l’app', () => {
+    expect(estLienExterne('')).toBe(false);
+  });
+
+  it('les espaces autour ne changent rien', () => {
+    expect(estLienExterne('  tel:0661382155  ')).toBe(true);
+    expect(estLienExterne('  /tournaments  ')).toBe(false);
   });
 });
 
