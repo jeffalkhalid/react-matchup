@@ -85,6 +85,6 @@ describe('sous-onglets', () => {
 
   it('les groupes a plusieurs onglets les listent', () => {
     expect(subTabs('donnees')).toEqual(['frmt', 'players', 'games']);
-    expect(subTabs('config')).toEqual(['badges', 'settings']);
+    expect(subTabs('config')).toEqual(['badges', 'settings', 'messages']);
   });
 });

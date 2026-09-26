@@ -16,6 +16,7 @@ import { Colors, Fonts, eloToLevel } from '../../lib/theme';
 import { PlayerAvatar } from '../../components/PlayerAvatar';
 import { DisputeEvidence } from '../../components/admin/DisputeEvidence';
 import { AdminJournal } from '../../components/admin/AdminJournal';
+import MessagesTab from '../../components/admin/MessagesTab';
 import { SearchBar, SearchResults } from '../../components/admin/GlobalSearch';
 import { searchAll, MIN_QUERY } from '../../lib/adminSearch';
 import {
@@ -1698,6 +1699,7 @@ export default function AdminScreen() {
         )}
         {tab === 'badges' && <BadgesTab />}
         {tab === 'settings' && <SettingsTab onTournamentsToggled={setTournamentsEnabled} />}
+        {tab === 'messages' && <MessagesTab />}
         {tab === 'tournaments' && tournamentsEnabled && player && (
           <TournamentsTab myPlayerId={player.id} />
         )}
